@@ -1504,7 +1504,7 @@ async function batchAnalyze() {
 async function approveTemplate() {
     if(!currentCat || !currentTmpl) return;
     let uid = currentCat + "_" + currentTmpl;
-    let pts = window.currentConfig ? window.currentConfig.quad : [];
+    let pts = window.currentConfig ? pts : [];
     if (!pts || pts.length !== 4) return alert("Geçerli 4 köşe yok!");
     
     try {
@@ -1555,3 +1555,21 @@ function toggleReviewOverlay() {
         document.getElementById("canvas-container").style.backgroundColor = "transparent";
     }
 }
+
+let oldDraw = window.draw || function(){};
+window.draw = function() {
+    oldDraw();
+    if (typeof showReviewOverlay !== 'undefined' && showReviewOverlay && pts.length === 4) {
+        let ctx = document.getElementById("c").getContext("2d");
+        ctx.save();
+        ctx.fillStyle = "rgba(0, 255, 0, 0.3)";
+        ctx.beginPath();
+        ctx.moveTo(pts[0][0]*baseScale + offsetX, pts[0][1]*baseScale + offsetY);
+        for(let i=1; i<4; i++) {
+            ctx.lineTo(pts[i][0]*baseScale + offsetX, pts[i][1]*baseScale + offsetY);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+    }
+};

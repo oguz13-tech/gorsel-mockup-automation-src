@@ -147,24 +147,7 @@ class CandidateGenerators:
             candidates.append(quad)
         return candidates
 
-    @staticmethod
-    def generate_color_region_quad(image_cv: np.ndarray) -> List[np.ndarray]:
-        # Minimal uniform color region detector using thresholding
-        gray = cv2.cvtColor(image_cv, cv2.COLOR_BGR2GRAY)
-        _, thresh = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY)
-        contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        candidates = []
-        for c in contours:
-            peri = cv2.arcLength(c, True)
-            approx = cv2.approxPolyDP(c, 0.05 * peri, True)
-            if len(approx) == 4 and cv2.contourArea(c) > 5000:
-                candidates.append(approx.reshape(4, 2))
-        return candidates
 
-    @staticmethod
-    def generate_color_region_quad(image_cv: np.ndarray) -> List[np.ndarray]:
-        # Minimal uniform color region detector
-        return []
 
 class TemplateAnalyzer:
     def __init__(self):
