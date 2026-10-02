@@ -7,8 +7,8 @@
       "api_secret": "",
       "folder": "trendyol_mockups"
     },
-    "imgbb_keys": ["INSERT_IMGBB_API_KEY_HERE"],
-    "freeimage_key": "6d207e02198a847aa98d0a2a901485a5"
+    "imgbb_keys": [],
+    "freeimage_key": ""
   },
   "kategoriler": {
     "01_Wifi_Kutusu": {

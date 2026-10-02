@@ -349,7 +349,7 @@ class StateManager:
     def is_artifact_completed(self, artifact_key: str) -> bool:
         with db_lock, self.conn:
             row = self.conn.execute("SELECT status FROM render_artifacts WHERE artifact_key = ?", (artifact_key,)).fetchone()
-            return row is not None and row["status"] in ("COMPLETED", "UPLOADED", "UPLOAD_FAILED")
+            return row is not None and row["status"] in ("COMPLETED", "UPLOADED")
 
     def save_render_artifact(self, data: dict):
         if not data: return
@@ -1306,7 +1306,8 @@ class MockupRenderer:
             # Kalite Kontrol Denetimi (Quality Inspector)
             valid, msg = QualityInspector.inspect_mockup(final_cv, koseler if "koseler" in config else None)
             if not valid:
-                logger.warning(f"  ⚠️ Kalite Denetimi Uyarısı ({raw_path.name}): {msg}")
+                logger.error(f"  ❌ Kalite Denetimi Başarısız ({raw_path.name}): {msg}. QUARANTINE!")
+                return False
 
             # Kaydet (Unicode güvenli)
             output_path.parent.mkdir(parents=True, exist_ok=True)
