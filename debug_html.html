@@ -1,0 +1,1200 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='4' fill='%23007acc'/><text x='16' y='23' text-anchor='middle' font-size='20' fill='white'>S</text></svg>">
+    <title>Şablon Hizalama Ekranı (Zoom ve Pan)</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #1e1e1e; color: #fff; margin: 0; display: flex; height: 100vh; overflow: hidden; }
+        #sidebar { width: 350px; background: #2d2d30; padding: 15px; overflow-y: auto; display: flex; flex-direction: column; z-index: 10; border-right: 1px solid #444; }
+        #main { flex: 1; display: flex; flex-direction: column; position: relative; }
+        #toolbar { min-height: 60px; height: auto; background: #3e3e42; display: flex; flex-direction: column; padding: 10px 20px; gap: 10px; z-index: 10; justify-content: center; }
+        #canvas-container { flex: 1; overflow: hidden; position: relative; background: #111 url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAMUlEQVQ4T2NkYGAQYcAP3uCTZhw1gGGYhAGBZIA/ENFMo/5BAv4wMBw1gGGYhAGBCgIAVqU12f71J0EAAAAASUVORK5CYII=') repeat; }
+        canvas { position: absolute; top: 0; left: 0; cursor: crosshair; }
+        
+        .category { margin-bottom: 10px; }
+        .category-title { font-weight: bold; cursor: pointer; padding: 8px; background: #444; border-radius: 4px; user-select: none; }
+        .category-title:hover { background: #555; }
+        .template-list { margin-left: 10px; display: none; }
+        .template-item { padding: 6px; cursor: pointer; font-size: 14px; border-bottom: 1px solid #333; }
+        .template-item:hover { background: #007acc; }
+        .template-item.active { background: #007acc; font-weight: bold; }
+        
+        button { background: #007acc; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold; }
+        button:hover { background: #005f9e; }
+        button.success { background: #28a745; }
+        button.success:hover { background: #218838; }
+        
+        #info { background: rgba(0,0,0,0.7); position: absolute; bottom: 20px; left: 20px; padding: 10px; border-radius: 4px; pointer-events: none; z-index: 10;}
+        #help-sidebar { margin-top: 20px; padding-top: 15px; border-top: 1px solid #555; font-size: 13px; color: #ccc; line-height: 1.5; }
+    </style>
+</head>
+<body>
+
+<div id="sidebar">
+    <h2 style="margin-top:0;">Şablonlar</h2>
+    <div id="categories" style="flex:1; overflow-y:auto;">Yükleniyor...</div>
+    <div id="help-sidebar" style="display:none; position: absolute; left: 360px; top: 60px; background: rgba(0,0,0,0.9); padding: 15px; border-radius: 8px; z-index: 9999; border: 1px solid #555; box-shadow: 0 4px 15px rgba(0,0,0,0.5);">
+        <b style="color:#fff;">Photoshop Tarzı Ön Plan Araçları:</b><br/>
+        - <b>🔴 4 Köşe:</b> Baskı köşelerini sürükleyin.<br/>
+        - <b>🪄 Otomatik Nesne:</b> Şablondaki taşan nesneleri otomatik bulur.<br/>
+        - <b>✨ Nesne Seç:</b> Nesneye kutu çekin (Shift+Tık ile sil).<br/>
+        - <b>➕ / ➖ Fırça:</b> Maskeye manuel alan ekle/çıkar.<br/>
+        - <b>↶ Geri Al:</b> <b>Ctrl+Z</b><br/>
+        - <b>Fırça Boyutu:</b> <b>[</b> ve <b>]</b> tuşları<br/>
+        - <b>Kısayollar:</b> <b>1, 2, 3, 4</b> ile araç seçimi<br/>
+        - <b>Tekerlek:</b> Yakınlaş/Uzaklaş<br/>
+        - <b>Sağ Tık Sürükle:</b> Ekranda Gezin (Pan)
+    </div>
+    <div style="padding-top: 10px; border-top: 1px solid #555;">
+        <button onclick="const h = document.getElementById('help-sidebar'); h.style.display = h.style.display === 'none' ? 'block' : 'none';" style="width: 100%; background: #444;">❓ Kısayollar ve Yardım</button>
+    </div>
+</div>
+
+<div id="main">
+    <div id="toolbar" style="flex-direction: row; justify-content: space-between; align-items: center;">
+        <div style="display:flex; align-items:center; gap:8px;">
+            <button type="button" onclick="prevTemplate()" style="background:#444; padding:6px 14px;" title="Önceki Şablon (P / Sol Ok)">⏮ Önceki</button>
+            <button type="button" onclick="nextTemplate()" style="background:#444; padding:6px 14px;" title="Sonraki Şablon (N / Sağ Ok)">Sonraki ⏭</button>
+            <span id="tmpl-counter" style="font-size: 13px; font-weight:bold; color: #00e5ff; margin-left: 5px;"></span>
+            <span id="current-file" style="font-size: 17px; font-weight: bold; margin-left: 10px;">Görsel Seçin</span>
+            <span id="template-type" style="margin-left: 10px; color: #aaa;"></span>
+        </div>
+        <div style="display:flex; align-items:center; gap:6px;">
+            <button onclick="toggleType()" style="background: #6f42c1;" title="Düz dikdörtgen ile Serbest Perspektif modu arasında geçiş yapar">🔄 Düz / Perspektif Modu</button>
+            <button onclick="saveAll()" class="success" style="padding: 10px 30px; font-size: 16px;">TÜMÜNÜ KAYDET</button>
+        </div>
+    </div>
+    
+    <div style="flex: 1; display: flex; overflow: hidden; position: relative;">
+        <!-- Canvas Area -->
+        <div id="canvas-container">
+            <canvas id="c"></canvas>
+            <div id="info">Sürükleyip köşeleri ayarlayın.</div>
+        </div>
+        
+        <!-- Vertical Toolbar on the Right -->
+        <div id="right-toolbar" style="width: 220px; background: #252526; display: flex; flex-direction: column; gap: 10px; padding: 15px; border-left: 1px solid #444; overflow-y: auto; z-index: 10;">
+            <h3 style="margin: 0 0 5px 0; font-size: 15px; color: #fff; text-align: center; border-bottom: 1px solid #444; padding-bottom: 10px;">Photoshop Araçları</h3>
+            
+            <button type="button" id="btnCorner" onclick="setEditorTool('corner')" style="outline: 3px solid #00aaff; width: 100%; text-align: left; padding: 12px 10px;" aria-label="4 Kose Modu">🔴 4 Köşe</button>
+            <button type="button" id="btnAutoCorner" onclick="autoDetectCorners()" style="background: linear-gradient(135deg, #00c853, #00bfa5); box-shadow: 0 2px 6px rgba(0,200,83,0.4); width: 100%; text-align: left; padding: 12px 10px; font-weight: bold;" title="Görseldeki baskı alanının 4 köşesini otomatik olarak tespit eder (SIFT/ORB + Contour). Elle ayar gerekmez!" aria-label="Otomatik Kose Algila">🟢 Otomatik Köşe Algıla</button>
+            <button type="button" id="btnAutoDetect" onclick="autoDetectObjects()" style="background: linear-gradient(135deg, #6f42c1, #007acc); box-shadow: 0 2px 6px rgba(111,66,193,0.4); width: 100%; text-align: left; padding: 12px 10px;" title="Şablondaki ön plan nesnelerini (domates, sarımsak, yeşillik vb.) otomatik bulup kutuları çeker" aria-label="Otomatik Nesne Bul">🪄 Oto. Nesne Bul</button>
+            
+            <div style="height: 1px; background: #444; margin: 15px 0;"></div>
+
+            
+            <h3 style="margin: 0 0 5px 0; font-size: 15px; color: #fff; text-align: center; border-bottom: 1px solid #444; padding-bottom: 10px;">Görsel İşlemleri</h3>
+            <button type="button" onclick="instantWhiten()" style="background: #28a745; width: 100%; padding: 12px 10px; font-weight: bold;" title="Seçtiğiniz alanları anında beyazlatarak sonucu önizleyin">✨ Anında Beyazlat (Önizle)</button>
+            <button type="button" onclick="restoreOriginal()" style="background: #6c757d; width: 100%; padding: 12px 10px; margin-top: 5px;" title="Görseli orijinal ve temiz haline geri döndür">🔄 Orijinale Dön (Temizle)</button>
+            
+            <div style="height: 1px; background: #444; margin: 15px 0;"></div>
+            <button type="button" onclick="deleteTemplate()" style="background: #dc3545; width: 100%; padding: 12px 10px; margin-top: 5px;" title="Bu şablonu çöpe at (geri alınabilir)">🗑️ Şablonu Çöpe At</button>
+            <button type="button" onclick="undoDelete()" style="background: #17a2b8; width: 100%; padding: 12px 10px; margin-top: 5px;" title="Son silinen şablonu geri al">♻️ Son Silineni Geri Al</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    let ayarlar = null;
+    let currentCat = null;
+    let currentTmpl = null;
+    let currentImg = null;
+    
+    // Zoom & Pan vars
+    let baseScale = 1;
+    let userZoom = 1;
+    let offsetX = 0;
+    let offsetY = 0;
+    
+    let pts = []; 
+    let draggingPoint = -1;
+    let isPanning = false;
+    let panStartX = 0;
+    let panStartY = 0;
+
+    // =========================================================
+    // FOREGROUND MASK EDITOR (Photoshop Object Selection & Brush)
+    // =========================================================
+    let editorTool = 'corner';
+
+    let foregroundMask = {
+        object_boxes: [],
+        add_brush: [],
+        subtract_brush: [],
+        feather: 1.2,
+        grabcut_iterations: 5
+    };
+
+    let maskDragStart = null;
+    let maskDragCurrent = null;
+
+    let brushRadius = 20;
+    let brushDrawing = false;
+    let lastBrushPoint = null;
+    let hoverBrushPoint = null;
+
+    let maskHistory = [];
+
+    const canvas = document.getElementById('c');
+    const ctx = canvas.getContext('2d');
+    const cont = document.getElementById('canvas-container');
+    
+    let allTemplates = [];
+
+    // Load config
+    fetch('/api/ayarlar').then(r=>r.json()).then(data => {
+        ayarlar = data;
+        renderSidebar();
+    });
+    
+    function renderSidebar() {
+        const catDiv = document.getElementById('categories');
+        catDiv.innerHTML = '';
+        allTemplates = [];
+        for (const cat in ayarlar.kategoriler) {
+            const div = document.createElement('div');
+            div.className = 'category';
+            const title = document.createElement('div');
+            title.className = 'category-title';
+            title.textContent = cat;
+            const list = document.createElement('div');
+            list.className = 'template-list';
+            title.onclick = () => { list.style.display = list.style.display === 'block' ? 'none' : 'block'; };
+            div.appendChild(title);
+            for (const tmpl in ayarlar.kategoriler[cat].sablonlar) {
+                const itemData = ayarlar.kategoriler[cat].sablonlar[tmpl];
+                const item = document.createElement('div');
+                item.className = 'template-item';
+                
+                if (itemData.supheli) {
+                    item.innerHTML = '⚠️ ' + tmpl;
+                    item.style.backgroundColor = 'rgba(220, 53, 69, 0.2)';
+                    item.style.color = '#ff9999';
+                    item.title = "Otomatik tespit güven puanı düşük! Lütfen köşeleri kontrol edin.";
+                } else {
+                    item.textContent = tmpl;
+                }
+                
+                item.onclick = () => loadTemplate(cat, tmpl, item);
+                list.appendChild(item);
+                allTemplates.push({cat, tmpl, elem: item, list});
+            }
+            div.appendChild(list);
+            catDiv.appendChild(div);
+        }
+    }
+
+    function nextTemplate() {
+        if (allTemplates.length === 0) return;
+        let idx = allTemplates.findIndex(t => t.cat === currentCat && t.tmpl === currentTmpl);
+        if (idx === -1 || idx === allTemplates.length - 1) idx = 0;
+        else idx++;
+        const target = allTemplates[idx];
+        if (target.list) target.list.style.display = 'block';
+        loadTemplate(target.cat, target.tmpl, target.elem);
+    }
+
+    function prevTemplate() {
+        if (allTemplates.length === 0) return;
+        let idx = allTemplates.findIndex(t => t.cat === currentCat && t.tmpl === currentTmpl);
+        if (idx <= 0) idx = allTemplates.length - 1;
+        else idx--;
+        const target = allTemplates[idx];
+        if (target.list) target.list.style.display = 'block';
+        loadTemplate(target.cat, target.tmpl, target.elem);
+    }
+
+    function updateCounter() {
+        let idx = allTemplates.findIndex(t => t.cat === currentCat && t.tmpl === currentTmpl);
+        const el = document.getElementById('tmpl-counter');
+        if (el) {
+            el.textContent = idx !== -1 ? `[${idx + 1} / ${allTemplates.length}]` : '';
+        }
+    }
+    
+    function loadTemplate(cat, tmpl, elem) {
+        document.querySelectorAll('.template-item').forEach(el => el.classList.remove('active'));
+        if(elem) elem.classList.add('active');
+        
+        currentCat = cat;
+        currentTmpl = tmpl;
+        const data = ayarlar.kategoriler[cat].sablonlar[tmpl];
+        
+        // KULLANICI TALEBI: Varsayilan olarak her zaman perspektif ile acilsin
+        if (data.tip !== 'perspektif') {
+            data.tip = 'perspektif';
+            if (!data.koseler && data.w && data.h) {
+                data.koseler = [
+                    [data.x, data.y],
+                    [data.x + data.w, data.y],
+                    [data.x + data.w, data.y + data.h],
+                    [data.x, data.y + data.h]
+                ];
+            }
+        }
+        
+        document.getElementById('current-file').textContent = cat + ' / ' + tmpl;
+        document.getElementById('template-type').textContent = 'Tip: ' + data.tip;
+        updateCounter();
+        
+        resetView();
+
+        // Ön plan maske verilerini yükle (Object selection & brush formatı)
+        if (data.on_plan && typeof data.on_plan === 'object' && !Array.isArray(data.on_plan)) {
+            foregroundMask = JSON.parse(JSON.stringify(data.on_plan));
+            if (!foregroundMask.object_boxes) foregroundMask.object_boxes = [];
+            if (!foregroundMask.add_brush) foregroundMask.add_brush = [];
+            if (!foregroundMask.subtract_brush) foregroundMask.subtract_brush = [];
+            if (foregroundMask.feather === undefined) foregroundMask.feather = 1.2;
+            if (foregroundMask.grabcut_iterations === undefined) foregroundMask.grabcut_iterations = 5;
+        } else {
+            foregroundMask = {
+                object_boxes: [],
+                add_brush: [],
+                subtract_brush: [],
+                feather: 1.2,
+                grabcut_iterations: 5
+            };
+        }
+        maskHistory = [];
+        setEditorTool('corner');
+        
+        const img = new Image();
+        img.onload = () => {
+            currentImg = img;
+            initPoints(data);
+            draw();
+        };
+        img.src = '/image/' + encodeURIComponent(cat) + '/' + encodeURIComponent(tmpl);
+    }
+    
+    function resetView() {
+        userZoom = 1;
+        offsetX = 0;
+        offsetY = 0;
+    }
+    
+    function initPoints(data) {
+        pts = [];
+        if (data.tip === 'perspektif' && data.koseler) {
+            pts = data.koseler.map(p => ({x: p[0], y: p[1]}));
+        } else {
+            let x = data.x || 0;
+            let y = data.y || 0;
+            let w = data.w || 100;
+            let h = data.h || 100;
+            pts = [
+                {x: x, y: y}, {x: x+w, y: y},
+                {x: x+w, y: y+h}, {x: x, y: y+h}
+            ];
+        }
+    }
+    
+    function toggleType() {
+        if(!currentCat) return;
+        const data = ayarlar.kategoriler[currentCat].sablonlar[currentTmpl];
+        if(data.tip === 'perspektif') {
+            data.tip = 'duz';
+            let minX = Math.min(...pts.map(p=>p.x)), maxX = Math.max(...pts.map(p=>p.x));
+            let minY = Math.min(...pts.map(p=>p.y)), maxY = Math.max(...pts.map(p=>p.y));
+            data.x = Math.round(minX); data.y = Math.round(minY);
+            data.w = Math.round(maxX - minX); data.h = Math.round(maxY - minY);
+            delete data.koseler;
+        } else {
+            data.tip = 'perspektif';
+            data.koseler = pts.map(p => [Math.round(p.x), Math.round(p.y)]);
+            delete data.x; delete data.y; delete data.w; delete data.h;
+        }
+        document.getElementById('template-type').textContent = 'Tip: ' + data.tip;
+        initPoints(data);
+        draw();
+    }
+    
+    function updateDataFromPoints() {
+        if(!currentCat) return;
+        const data = ayarlar.kategoriler[currentCat].sablonlar[currentTmpl];
+        if (data.supheli) {
+            delete data.supheli;
+        }
+        if (data.tip === 'perspektif') {
+            data.koseler = pts.map(p => [Math.round(p.x), Math.round(p.y)]);
+        } else {
+            let minX = Math.min(...pts.map(p=>p.x)), maxX = Math.max(...pts.map(p=>p.x));
+            let minY = Math.min(...pts.map(p=>p.y)), maxY = Math.max(...pts.map(p=>p.y));
+            data.x = Math.round(minX); data.y = Math.round(minY);
+            data.w = Math.round(maxX - minX); data.h = Math.round(maxY - minY);
+            initPoints(data);
+        }
+    }
+
+    // =========================================================
+    // FOREGROUND MASK İŞLEMLERİ
+    // =========================================================
+
+    function cloneForegroundMask() {
+        return JSON.parse(JSON.stringify(foregroundMask));
+    }
+
+    function pushMaskHistory() {
+        maskHistory.push(cloneForegroundMask());
+        if (maskHistory.length > 50) maskHistory.shift();
+    }
+
+    function undoMaskAction() {
+        if (maskHistory.length === 0) return;
+        foregroundMask = maskHistory.pop();
+        saveCurrentTemplateData();
+        draw();
+    }
+
+    function clearForegroundMask() {
+        if (confirm("Bu şablon için tüm nesne seçimlerini ve fırça maskelerini temizlemek istiyor musunuz?")) {
+            pushMaskHistory();
+            foregroundMask = {
+                object_boxes: [],
+                add_brush: [],
+                subtract_brush: [],
+                feather: 1.2,
+                grabcut_iterations: 5
+            };
+            saveCurrentTemplateData();
+            draw();
+        }
+    }
+
+    function setEditorTool(tool) {
+        editorTool = tool;
+        maskDragStart = null;
+        maskDragCurrent = null;
+        brushDrawing = false;
+        draggingPoint = -1;
+
+        const ids = {
+            corner: 'btnCorner',
+            object: 'btnObject',
+            add: 'btnAdd',
+            subtract: 'btnSubtract'
+        };
+
+        for (const key in ids) {
+            const el = document.getElementById(ids[key]);
+            if (!el) continue;
+            if (key === tool) {
+                el.style.outline = '3px solid #00aaff';
+            } else {
+                el.style.outline = '';
+            }
+        }
+
+        updateCursor();
+        draw();
+    }
+
+    function updateCursor() {
+        if (!canvas) return;
+        if (isPanning) {
+            canvas.style.cursor = 'grabbing';
+        } else if (editorTool === 'object') {
+            canvas.style.cursor = 'crosshair';
+        } else if (editorTool === 'add' || editorTool === 'subtract') {
+            canvas.style.cursor = 'none';
+        } else {
+            canvas.style.cursor = 'default';
+        }
+    }
+
+    function updateBrushSize(value) {
+        brushRadius = parseInt(value);
+        const el = document.getElementById('maskBrushValue');
+        if (el) el.textContent = brushRadius;
+        const slider = document.getElementById('maskBrushSize');
+        if (slider) slider.value = brushRadius;
+        draw();
+    }
+
+    function saveCurrentTemplateData() {
+        if (currentCat && currentTmpl && ayarlar && ayarlar.kategoriler[currentCat]) {
+            const tmplObj = ayarlar.kategoriler[currentCat].sablonlar[currentTmpl];
+            tmplObj.on_plan = cloneForegroundMask();
+        }
+    }
+
+    // Tam koordinat dönüştürme - sınır kontrolü YOK (köşe noktası dışarıda olabilir)
+    function eventToRawImagePoint(e) {
+        if (!currentImg) return null;
+        const finalScale = baseScale * userZoom;
+        const imgDrawW = currentImg.width * finalScale;
+        const imgDrawH = currentImg.height * finalScale;
+        const startX = (canvas.width - imgDrawW) / 2 + offsetX;
+        const startY = (canvas.height - imgDrawH) / 2 + offsetY;
+        const rect = canvas.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+        return {
+            x: (mouseX - startX) / finalScale,
+            y: (mouseY - startY) / finalScale
+        };
+    }
+
+    // Standart koordinat - sınır kontrolü VAR (nesne seçme, fırça için)
+    function eventToImagePoint(e) {
+        if (!currentImg) return null;
+        const finalScale = baseScale * userZoom;
+        const imgDrawW = currentImg.width * finalScale;
+        const imgDrawH = currentImg.height * finalScale;
+        const startX = (canvas.width - imgDrawW) / 2 + offsetX;
+        const startY = (canvas.height - imgDrawH) / 2 + offsetY;
+
+        const rect = canvas.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+
+        const imgX = (mouseX - startX) / finalScale;
+        const imgY = (mouseY - startY) / finalScale;
+
+        if (imgX < 0 || imgY < 0 || imgX >= currentImg.width || imgY >= currentImg.height) {
+            return null;
+        }
+
+        return {
+            x: Math.round(imgX),
+            y: Math.round(imgY)
+        };
+    }
+
+    function addBrushPoint(p) {
+        if (!p) return;
+        if (lastBrushPoint) {
+            const dx = p.x - lastBrushPoint.x;
+            const dy = p.y - lastBrushPoint.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < Math.max(2, brushRadius * 0.25)) return;
+        }
+
+        const record = [
+            Math.round(p.x),
+            Math.round(p.y),
+            Math.round(brushRadius)
+        ];
+
+        if (editorTool === 'add') {
+            foregroundMask.add_brush.push(record);
+        } else if (editorTool === 'subtract') {
+            foregroundMask.subtract_brush.push(record);
+        }
+        lastBrushPoint = p;
+    }
+
+    // =========================================================
+    // ÇİZİM MOTORU (CANVAS RENDER)
+    // =========================================================
+
+    function draw() {
+        if (!currentImg) return;
+        
+        canvas.width = cont.clientWidth;
+        canvas.height = cont.clientHeight;
+        
+        const padding = 40;
+        const scaleX = (canvas.width - padding) / currentImg.width;
+        const scaleY = (canvas.height - padding) / currentImg.height;
+        baseScale = Math.min(scaleX, scaleY, 1);
+        
+        const finalScale = baseScale * userZoom;
+        const imgDrawW = currentImg.width * finalScale;
+        const imgDrawH = currentImg.height * finalScale;
+        
+        const startX = (canvas.width - imgDrawW) / 2 + offsetX;
+        const startY = (canvas.height - imgDrawH) / 2 + offsetY;
+        
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.imageSmoothingEnabled = true;
+        ctx.drawImage(currentImg, startX, startY, imgDrawW, imgDrawH);
+        
+        // 1. Baskı Yüzeyi Poligonu (Kırmızı)
+        if (pts.length === 4) {
+            ctx.beginPath();
+            ctx.moveTo(startX + pts[0].x * finalScale, startY + pts[0].y * finalScale);
+            for(let i=1; i<4; i++) ctx.lineTo(startX + pts[i].x * finalScale, startY + pts[i].y * finalScale);
+            ctx.closePath();
+            
+            ctx.fillStyle = 'rgba(255, 0, 0, 0.22)';
+            ctx.fill();
+            ctx.strokeStyle = '#ff3333';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // Perspektif 3x3 Kılavuz Grid Çizgileri
+            const gridSteps = 3;
+            ctx.setLineDash([5, 4]);
+            for (let step = 1; step < gridSteps; step++) {
+                const t = step / gridSteps;
+                // Dikey perspektif çizgileri (üstten alta)
+                const topX = pts[0].x + (pts[1].x - pts[0].x) * t;
+                const topY = pts[0].y + (pts[1].y - pts[0].y) * t;
+                const botX = pts[3].x + (pts[2].x - pts[3].x) * t;
+                const botY = pts[3].y + (pts[2].y - pts[3].y) * t;
+                
+                ctx.beginPath();
+                ctx.moveTo(startX + topX * finalScale, startY + topY * finalScale);
+                ctx.lineTo(startX + botX * finalScale, startY + botY * finalScale);
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+
+                // Yatay perspektif çizgileri (soldan sağa)
+                const leftX = pts[0].x + (pts[3].x - pts[0].x) * t;
+                const leftY = pts[0].y + (pts[3].y - pts[0].y) * t;
+                const rightX = pts[1].x + (pts[2].x - pts[1].x) * t;
+                const rightY = pts[1].y + (pts[2].y - pts[1].y) * t;
+                
+                ctx.beginPath();
+                ctx.moveTo(startX + leftX * finalScale, startY + leftY * finalScale);
+                ctx.lineTo(startX + rightX * finalScale, startY + rightY * finalScale);
+                ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+                ctx.lineWidth = 1;
+                ctx.stroke();
+            }
+            ctx.setLineDash([]);
+            
+            // Köşe Noktaları ve Numaralandırma (1: Sol Üst, 2: Sağ Üst, 3: Sağ Alt, 4: Sol Alt)
+            const cornerColors = ['#00e5ff', '#ffeb3b', '#ff4081', '#76ff03'];
+            const cornerLabels = ['1: Sol Üst', '2: Sağ Üst', '3: Sağ Alt', '4: Sol Alt'];
+            for(let i=0; i<4; i++) {
+                const px = startX + pts[i].x * finalScale;
+                const py = startY + pts[i].y * finalScale;
+                
+                ctx.beginPath();
+                ctx.arc(px, py, 7, 0, Math.PI*2);
+                ctx.fillStyle = cornerColors[i];
+                ctx.fill();
+                ctx.strokeStyle = '#000';
+                ctx.lineWidth = 2;
+                ctx.stroke();
+
+                // Numara Etiketi
+                ctx.fillStyle = '#000';
+                ctx.font = 'bold 10px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText((i + 1).toString(), px, py);
+
+                // Köşe Adı
+                ctx.fillStyle = cornerColors[i];
+                ctx.font = 'bold 11px sans-serif';
+                ctx.textAlign = (i === 1 || i === 2) ? 'left' : 'right';
+                ctx.textBaseline = 'middle';
+                const offX = (i === 1 || i === 2) ? 12 : -12;
+                ctx.fillText(cornerLabels[i], px + offX, py);
+            }
+        }
+
+        // 2. Foreground Editor Katmanları (Object Boxes & Brushes)
+        drawForegroundEditor(startX, startY, finalScale);
+        
+        const objCount = foregroundMask.object_boxes.length;
+        const brushCount = foregroundMask.add_brush.length + foregroundMask.subtract_brush.length;
+        const toolNames = { corner: '🔴 4 KÖŞE', object: '✨ NESNE SEÇ', add: '➕ FIRÇAYLA EKLE', subtract: '➖ FIRÇAYLA ÇIKAR' };
+        let infoStr = `Görsel: ${currentImg.width}x${currentImg.height} | Zoom: ${Math.round(userZoom*100)}% | Aktif Araç: <b>${toolNames[editorTool] || editorTool}</b>`;
+        infoStr += ` | Nesne Kutuları: ${objCount} | Fırça Noktaları: ${brushCount}`;
+        document.getElementById('info').innerHTML = infoStr;
+    }
+
+    function drawForegroundEditor(startX, startY, finalScale) {
+        ctx.save();
+
+        // 1. Kayıtlı Nesne Seçim Kutuları (GrabCut Boxes)
+        for (let i = 0; i < foregroundMask.object_boxes.length; i++) {
+            const box = foregroundMask.object_boxes[i];
+            if (!box || box.length !== 4) continue;
+            const [x1, y1, x2, y2] = box;
+            const sx = startX + x1 * finalScale;
+            const sy = startY + y1 * finalScale;
+            const sw = (x2 - x1) * finalScale;
+            const sh = (y2 - y1) * finalScale;
+
+            ctx.fillStyle = 'rgba(0, 255, 80, 0.14)';
+            ctx.fillRect(sx, sy, sw, sh);
+
+            ctx.strokeStyle = '#00ff66';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([6, 4]);
+            ctx.strokeRect(sx, sy, sw, sh);
+
+            // Badge
+            ctx.fillStyle = '#00ff66';
+            ctx.font = 'bold 12px sans-serif';
+            ctx.fillText(`✨ Nesne #${i + 1}`, sx + 4, sy + 15);
+        }
+        ctx.setLineDash([]);
+
+        // 2. Şu An Sürüklenen Nesne Kutusu
+        if (maskDragStart && maskDragCurrent) {
+            const x1 = Math.min(maskDragStart.x, maskDragCurrent.x);
+            const y1 = Math.min(maskDragStart.y, maskDragCurrent.y);
+            const x2 = Math.max(maskDragStart.x, maskDragCurrent.x);
+            const y2 = Math.max(maskDragStart.y, maskDragCurrent.y);
+
+            ctx.fillStyle = 'rgba(0, 255, 255, 0.18)';
+            ctx.strokeStyle = '#00ffff';
+            ctx.lineWidth = 2;
+
+            const sx = startX + x1 * finalScale;
+            const sy = startY + y1 * finalScale;
+            const sw = (x2 - x1) * finalScale;
+            const sh = (y2 - y1) * finalScale;
+
+            ctx.fillRect(sx, sy, sw, sh);
+            ctx.strokeRect(sx, sy, sw, sh);
+        }
+
+        // 3. ➕ Ekle Fırça Katmanı
+        ctx.fillStyle = 'rgba(0, 255, 80, 0.32)';
+        for (const stroke of foregroundMask.add_brush) {
+            const [x, y, r] = stroke;
+            ctx.beginPath();
+            ctx.arc(startX + x * finalScale, startY + y * finalScale, r * finalScale, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        // 4. ➖ Çıkar Fırça Katmanı
+        ctx.fillStyle = 'rgba(255, 40, 40, 0.32)';
+        for (const stroke of foregroundMask.subtract_brush) {
+            const [x, y, r] = stroke;
+            ctx.beginPath();
+            ctx.arc(startX + x * finalScale, startY + y * finalScale, r * finalScale, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        // 5. Fırça İmleci Önizlemesi (Brush Cursor)
+        if ((editorTool === 'add' || editorTool === 'subtract') && hoverBrushPoint) {
+            const hx = startX + hoverBrushPoint.x * finalScale;
+            const hy = startY + hoverBrushPoint.y * finalScale;
+            const hr = brushRadius * finalScale;
+
+            ctx.beginPath();
+            ctx.arc(hx, hy, hr, 0, Math.PI * 2);
+            ctx.strokeStyle = (editorTool === 'add') ? '#00ff66' : '#ff3333';
+            ctx.lineWidth = 1.5;
+            ctx.stroke();
+
+            // Merkez artı işareti
+            ctx.beginPath();
+            ctx.moveTo(hx - 4, hy); ctx.lineTo(hx + 4, hy);
+            ctx.moveTo(hx, hy - 4); ctx.lineTo(hx, hy + 4);
+            ctx.strokeStyle = '#fff';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+        }
+
+        ctx.restore();
+    }
+
+    // =========================================================
+    // FARE VE İŞARETÇİ ETKİLEŞİMLERİ (POINTER EVENTS)
+    // =========================================================
+
+    canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+    canvas.addEventListener('pointerdown', function(e) {
+        if (!currentImg) return;
+
+        // Sağ Tık -> Pan (Ekranda Gezin)
+        if (e.button === 2) {
+            isPanning = true;
+            panStartX = e.clientX - offsetX;
+            panStartY = e.clientY - offsetY;
+            updateCursor();
+            return;
+        }
+
+        // Sol Tık
+        if (e.button === 0) {
+            // 1. Köşe Sürükleme Modu
+            if (editorTool === 'corner') {
+                // Köşe modu: sınır dışına taşan noktalar da yakalanabilsin
+                const rawPos = eventToRawImagePoint(e);
+                if (!rawPos) return;
+                const finalScale = baseScale * userZoom;
+                // Ekran piksel cinsinden 22px hit radius (zoom bağımsız)
+                let minDist = 22 / finalScale;
+                draggingPoint = -1;
+                for (let i = 0; i < 4; i++) {
+                    const dx = pts[i].x - rawPos.x;
+                    const dy = pts[i].y - rawPos.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist < minDist) {
+                        minDist = dist;
+                        draggingPoint = i;
+                    }
+                }
+                if (draggingPoint !== -1) {
+                    try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+                }
+                return;
+            }
+
+            // 2. Nesne Seç veya Fırça Modları
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            const p = eventToImagePoint(e);
+            if (!p) return;
+
+            try { canvas.setPointerCapture(e.pointerId); } catch (_) {}
+
+            if (editorTool === 'object') {
+                if (e.shiftKey) {
+                    // Shift+Tık ile tıklanan kutuyu sil
+                    for (let i = foregroundMask.object_boxes.length - 1; i >= 0; i--) {
+                        const b = foregroundMask.object_boxes[i];
+                        if (p.x >= b[0] && p.x <= b[2] && p.y >= b[1] && p.y <= b[3]) {
+                            pushMaskHistory();
+                            foregroundMask.object_boxes.splice(i, 1);
+                            saveCurrentTemplateData();
+                            draw();
+                            return;
+                        }
+                    }
+                }
+                pushMaskHistory();
+                maskDragStart = p;
+                maskDragCurrent = p;
+                draw();
+                return;
+            }
+
+            if (editorTool === 'add' || editorTool === 'subtract') {
+                pushMaskHistory();
+                brushDrawing = true;
+                lastBrushPoint = null;
+                addBrushPoint(p);
+                draw();
+                return;
+            }
+        }
+    }, true);
+
+    canvas.addEventListener('pointermove', function(e) {
+        if (!currentImg) return;
+
+        // Pan devam ediyor mu?
+        if (isPanning) {
+            offsetX = e.clientX - panStartX;
+            offsetY = e.clientY - panStartY;
+            draw();
+            return;
+        }
+
+        // Köşe sürükleniyor mu?
+        if (editorTool === 'corner' && draggingPoint !== -1) {
+            // Sınır kontrolsuz koordinat kullan - dışarıya taşabilsin
+            const rawPos = eventToRawImagePoint(e);
+            if (!rawPos) return;
+            const data = ayarlar.kategoriler[currentCat].sablonlar[currentTmpl];
+
+            if (data.tip === 'duz') {
+                const cx = Math.round(Math.max(0, Math.min(rawPos.x, currentImg.width)));
+                const cy = Math.round(Math.max(0, Math.min(rawPos.y, currentImg.height)));
+                if (draggingPoint === 0) { pts[0].x = cx; pts[0].y = cy; pts[3].x = cx; pts[1].y = cy; }
+                if (draggingPoint === 1) { pts[1].x = cx; pts[1].y = cy; pts[2].x = cx; pts[0].y = cy; }
+                if (draggingPoint === 2) { pts[2].x = cx; pts[2].y = cy; pts[1].x = cx; pts[3].y = cy; }
+                if (draggingPoint === 3) { pts[3].x = cx; pts[3].y = cy; pts[0].x = cx; pts[2].y = cy; }
+            } else {
+                // Perspektif: sınır yok, serbestce taşabilsin
+                pts[draggingPoint].x = Math.round(rawPos.x);
+                pts[draggingPoint].y = Math.round(rawPos.y);
+            }
+            updateDataFromPoints();
+            draw();
+            return;
+        }
+
+        const p = eventToImagePoint(e);
+        hoverBrushPoint = p;
+
+        if (editorTool === 'object' && maskDragStart) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            maskDragCurrent = p || maskDragCurrent;
+            draw();
+            return;
+        }
+
+        if ((editorTool === 'add' || editorTool === 'subtract') && brushDrawing && p) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            addBrushPoint(p);
+            draw();
+            return;
+        }
+
+        // Fırça önizleme imlecini çiz
+        if (editorTool === 'add' || editorTool === 'subtract') {
+            draw();
+        }
+    }, true);
+
+    canvas.addEventListener('pointerup', function(e) {
+        if (e.button === 2) {
+            isPanning = false;
+            updateCursor();
+            return;
+        }
+
+        if (editorTool === 'corner') {
+            draggingPoint = -1;
+            return;
+        }
+
+        e.preventDefault();
+        e.stopImmediatePropagation();
+
+        if (editorTool === 'object' && maskDragStart && maskDragCurrent) {
+            let x1 = Math.min(maskDragStart.x, maskDragCurrent.x);
+            let y1 = Math.min(maskDragStart.y, maskDragCurrent.y);
+            let x2 = Math.max(maskDragStart.x, maskDragCurrent.x);
+            let y2 = Math.max(maskDragStart.y, maskDragCurrent.y);
+
+            // Sadece tek tık yapılmışsa akıllı otomatik kutu oluştur
+            if ((x2 - x1) < 8 && (y2 - y1) < 8) {
+                const autoSize = Math.max(60, Math.round(Math.min(currentImg.width, currentImg.height) * 0.08));
+                const cx = maskDragStart.x;
+                const cy = maskDragStart.y;
+                x1 = Math.max(0, cx - autoSize);
+                y1 = Math.max(0, cy - autoSize);
+                x2 = Math.min(currentImg.width - 1, cx + autoSize);
+                y2 = Math.min(currentImg.height - 1, cy + autoSize);
+            }
+
+            foregroundMask.object_boxes.push([
+                Math.round(x1),
+                Math.round(y1),
+                Math.round(x2),
+                Math.round(y2)
+            ]);
+
+            maskDragStart = null;
+            maskDragCurrent = null;
+            saveCurrentTemplateData();
+        }
+
+        if (brushDrawing) {
+            brushDrawing = false;
+            lastBrushPoint = null;
+            saveCurrentTemplateData();
+        }
+
+        try { canvas.releasePointerCapture(e.pointerId); } catch (_) {}
+        draw();
+    }, true);
+
+    canvas.addEventListener('pointercancel', function(e) {
+        maskDragStart = null;
+        maskDragCurrent = null;
+        brushDrawing = false;
+        lastBrushPoint = null;
+        isPanning = false;
+        updateCursor();
+        draw();
+    }, true);
+
+    canvas.addEventListener('pointerleave', function(e) {
+        hoverBrushPoint = null;
+        draw();
+    });
+
+    // Klavye Kısayolları (Ctrl+Z, 1, 2, 3, 4, [ , ], N, P)
+    window.addEventListener('keydown', (e) => {
+        if (e.target && e.target.tagName === 'INPUT') return;
+        if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+            e.preventDefault();
+            undoMaskAction();
+        } else if (e.key === '[' ) {
+            e.preventDefault();
+            updateBrushSize(Math.max(3, brushRadius - 4));
+        } else if (e.key === ']') {
+            e.preventDefault();
+            updateBrushSize(Math.min(80, brushRadius + 4));
+        } else if (e.key === '1') {
+            setEditorTool('corner');
+        } else if (e.key === '2') {
+            setEditorTool('object');
+        } else if (e.key === '3') {
+            setEditorTool('add');
+        } else if (e.key === '4') {
+            setEditorTool('subtract');
+        } else if (e.key.toLowerCase() === 'n' || e.key === 'ArrowRight') {
+            e.preventDefault();
+            nextTemplate();
+        } else if (e.key.toLowerCase() === 'p' || e.key === 'ArrowLeft') {
+            e.preventDefault();
+            prevTemplate();
+        }
+    });
+
+    // Zooming
+    canvas.onwheel = (e) => {
+        if (!currentImg) return;
+        e.preventDefault();
+        
+        const zoomIntensity = 0.1;
+        const wheel = e.deltaY < 0 ? 1 : -1;
+        const zoomFactor = Math.exp(wheel * zoomIntensity);
+        
+        const rect = canvas.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+        
+        const centerX = canvas.width / 2;
+        const centerY = canvas.height / 2;
+        
+        const dx = mouseX - centerX;
+        const dy = mouseY - centerY;
+        
+        const newZoom = userZoom * zoomFactor;
+        
+        offsetX = offsetX * zoomFactor - dx * (zoomFactor - 1);
+        offsetY = offsetY * zoomFactor - dy * (zoomFactor - 1);
+        
+        userZoom = newZoom;
+        draw();
+    };
+    
+    // Double click to reset
+    canvas.ondblclick = () => {
+        resetView();
+        draw();
+    };
+    
+    window.onresize = draw;
+    
+    function autoDetectObjects() {
+        if (!currentCat || !currentTmpl) {
+            alert("Lutfen once listeden bir sablon secin!");
+            return;
+        }
+        if (!pts || pts.length < 3) {
+            alert("Lutfen once 4 koseyi belirleyin!");
+            return;
+        }
+        const btn = document.getElementById('btnAutoDetect');
+        const origText = btn.innerHTML;
+        btn.innerHTML = '⏳ Aranıyor...';
+        btn.disabled = true;
+
+        fetch('/api/auto_detect_objects', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                kategori: currentCat,
+                sablon: currentTmpl,
+                koseler: pts.map(p => [Math.round(p.x), Math.round(p.y)])
+            })
+        })
+        .then(r => r.json())
+        .then(res => {
+            btn.innerHTML = origText;
+            btn.disabled = false;
+            if (res.success && res.boxes) {
+                if (res.boxes.length === 0) {
+                    alert("On planda tasan belirgin bir nesne bulunamadi (baski alani temiz gorunuyor).\nDilerseniz Nesne Sec ile kendiniz manuel kutu cekebilirsiniz.");
+                    return;
+                }
+                pushMaskHistory();
+                foregroundMask.object_boxes = res.boxes;
+                saveCurrentTemplateData();
+                draw();
+                alert('Basarili! ' + res.boxes.length + ' adet on plan nesnesi otomatik tespit edildi.');
+            } else {
+                alert("Otomatik tespit hatasi: " + (res.error || "Bilinmeyen hata"));
+            }
+        })
+        .catch(err => {
+            btn.innerHTML = origText;
+            btn.disabled = false;
+            alert("Sunucu baglanti hatasi: " + err);
+        });
+    }
+
+    function autoDetectCorners() {
+        if (!currentCat || !currentTmpl) {
+            alert("Lutfen once listeden bir sablon secin!");
+            return;
+        }
+        const btn = document.getElementById('btnAutoCorner');
+        const origText = btn.innerHTML;
+        btn.innerHTML = '⏳ Köşeler Algılanıyor...';
+        btn.disabled = true;
+
+        fetch('/api/auto_detect_corners', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                kategori: currentCat,
+                sablon: currentTmpl
+            })
+        })
+        .then(r => r.json())
+        .then(res => {
+            btn.innerHTML = origText;
+            btn.disabled = false;
+            if (res.success && res.corners && res.corners.length === 4) {
+                pts = res.corners.map(p => ({x: p[0], y: p[1]}));
+                updateDataFromPoints();
+                draw();
+                alert('4 kose otomatik olarak basariyla tespit edildi! Koseleri kontrol edin, gerekirse ince ayar yapin.');
+            } else {
+                alert("Otomatik kose tespiti basarisiz: " + (res.error || "4 koselik bir alan bulunamadi. Lutfen elle ayarlayin."));
+            }
+        })
+        .catch(err => {
+            btn.innerHTML = origText;
+            btn.disabled = false;
+            alert("Sunucu baglanti hatasi: " + err);
+        });
+    }
+
+    function instantWhiten() {
+        if (!currentCat || !currentTmpl) return;
+        updateDataFromPoints();
+        saveCurrentTemplateData();
+        fetch('/api/anlik_beyazlat', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Active-Category': currentCat,
+                'X-Active-Template': currentTmpl
+            },
+            body: JSON.stringify(ayarlar)
+        }).then(r => r.json()).then(res => {
+            if(res.success) {
+                const tempImg = new Image();
+                tempImg.onload = () => {
+                    currentImg = tempImg;
+                    draw();
+                };
+                tempImg.src = '/image/' + encodeURIComponent(currentCat) + '/' + encodeURIComponent(currentTmpl) + '?t=' + new Date().getTime();
+            } else {
+                alert("Beyazlatma başarısız: " + (res.error || 'Bilinmeyen hata'));
+            }
+        });
+    }
+
+    function restoreOriginal() {
+        if (!currentCat || !currentTmpl) return;
+        fetch('/api/orijinal_yukle', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Active-Category': currentCat,
+                'X-Active-Template': currentTmpl
+            }
+        }).then(r => r.json()).then(res => {
+            if(res.success) {
+                const tempImg = new Image();
+                tempImg.onload = () => {
+                    currentImg = tempImg;
+                    draw();
+                };
+                tempImg.src = '/image/' + encodeURIComponent(currentCat) + '/' + encodeURIComponent(currentTmpl) + '?t=' + new Date().getTime();
+            } else {
+                alert("Orijinal yükleme başarısız: " + (res.error || 'Bu görselin eski bir kopyası (orijinal yedek) bulunamadı.'));
+            }
+        });
+    }
+
+    function deleteTemplate() {
+        if (!currentCat || !currentTmpl) return;
+        if (!confirm('Bu şablonu çöpe atmak istediğinize emin misiniz? (Geri alabilirsiniz)')) return;
+        
+        fetch('/api/sablon_sil', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Active-Category': currentCat,
+                'X-Active-Template': currentTmpl
+            }
+        }).then(r => r.json()).then(res => {
+            if(res.success) {
+                // Remove from ayarlar and UI
+                delete ayarlar.kategoriler[currentCat].sablonlar[currentTmpl];
+                renderSidebar();
+                // Load next template
+                const keys = Object.keys(ayarlar.kategoriler[currentCat].sablonlar);
+                if (keys.length > 0) {
+                    const nextTmpl = keys[0];
+                    const listItems = document.querySelectorAll('.template-item');
+                    let nextElem = null;
+                    listItems.forEach(el => {
+                        if (el.textContent === nextTmpl || el.textContent === '⚠️ ' + nextTmpl) {
+                            nextElem = el;
+                        }
+                    });
+                    loadTemplate(currentCat, nextTmpl, nextElem);
+                } else {
+                    currentTmpl = null;
+                    currentImg = null;
+                    draw();
+                }
+            } else {
+                alert("Silme başarısız: " + (res.error || 'Bilinmeyen hata'));
+            }
+        });
+    }
+
+    function undoDelete() {
+        fetch('/api/sablon_sil_geri_al', {
+            method: 'POST'
+        }).then(r => r.json()).then(res => {
+            if(res.success) {
+                // Reload ayarlar and UI
+                fetch('/api/ayarlar')
+                    .then(r => r.json())
+                    .then(data => {
+                        ayarlar = data;
+                        renderSidebar();
+                        alert("Şablon başarıyla geri getirildi: " + res.restored_tmpl);
+                    });
+            } else {
+                alert("Geri alma başarısız: " + (res.error || 'Çöpte dosya yok.'));
+            }
+        });
+    }
+
+    function saveAll() {
+        if (currentCat && currentTmpl) {
+            updateDataFromPoints();
+            saveCurrentTemplateData();
+        }
+        const saveCat = currentCat;
+        const saveTmpl = currentTmpl;
+        fetch('/api/ayarlar', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Active-Category': currentCat || '',
+                'X-Active-Template': currentTmpl || ''
+            },
+            body: JSON.stringify(ayarlar)
+        }).then(r => r.json()).then(res => {
+            if(res.success) {
+                // Kaydedilen gorseli canvas'ta taze yukle (cache bust)
+                if (saveCat && saveTmpl) {
+                    const stem = saveTmpl.replace(/\.[^.]+$/, '');
+                    const tempImg = new Image();
+                    tempImg.onload = () => { currentImg = tempImg; draw(); };
+                    tempImg.src = '/image/' + encodeURIComponent(saveCat) + '/' + encodeURIComponent(stem + '.png') + '?t=' + Date.now();
+                }
+                alert('Tum degisiklikler ve on plan maskeleri basariyla ayarlar.json dosyasina kaydedildi!');
+            } else {
+                alert('Hata olustu! Detay: ' + (res.error || 'Bilinmeyen'));
+            }
+        }).catch(err => {
+            alert('Kaydetme hatasi: ' + err);
+        });
+    }
+</script>
+
+</body>
+</html>

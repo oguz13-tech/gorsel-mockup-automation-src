@@ -1,0 +1,55 @@
+[NITELIK]
+Özel Baskılı
+Dekoratif Şık
+Lüks Tasarım
+Modern ve Şık
+Premium Kalite
+Estetik
+Şık
+Modern
+Renkli
+Minimalist
+İskandinav
+Lüks
+Kaliteli
+Dayanıklı
+Birinci Sınıf
+
+[MALZEME]
+Ahşap
+Masif Ahşap
+Doğal Ahşap
+
+[MONTAJ]
+Duvar Tipi
+Duvara Monte
+Sürgülü Kapaklı
+Çok Amaçlı
+
+[URUN]
+30x40Cm
+Modem Saklama Kutusu
+Sigorta Kutusu Saklama
+Wifi Kutusu
+Pano Kapatıcı
+Sigorta Saklama
+Sigorta Kutusu
+Dekoratif Sigorta Kutusu
+Modem Gizleme Kutusu
+Wifi Gizleme Kutusu
+Wifi Gizleme Dolabı
+Modem Gizleme Dolabı
+Dekoratif Modem Gizleme Dolabı
+Modem Saklama Dolabı
+Modem Saklama Kutusu
+İnternet Gizleme Kutusu
+Kablo Düzenleyici Dolap
+Router Gizleme Dolabı
+
+[TAMAMLAYICI]
+Kablo Gizleyici
+Kablo Düzenleyici
+Organizer
+Priz Kapatıcı
+Router Gizleyici
+Kapatıcı Dolap

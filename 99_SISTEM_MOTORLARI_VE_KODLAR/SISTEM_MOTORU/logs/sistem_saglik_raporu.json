@@ -1,0 +1,8 @@
+{
+    "cozulen_sayisi": 0,
+    "cozulenler": [],
+    "sorun_sayisi": 1,
+    "sorunlar": [
+        "ONAY BEKLEYEN ŞABLON: 'CamTabloDikey_009.png' ayarlar.json ve yedekte var ama havuzda yok. (Henüz arayüzden onaylanmamış olabilir)"
+    ]
+}

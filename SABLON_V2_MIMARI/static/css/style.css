@@ -1,0 +1,23 @@
+body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #1e1e1e; color: #fff; margin: 0; display: flex; height: 100vh; overflow: hidden; }
+        #sidebar { width: 350px; flex-shrink: 0; box-sizing: border-box; background: #2d2d30; padding: 15px; overflow-y: auto; display: flex; flex-direction: column; z-index: 10; border-right: 1px solid #444; }
+        .resizer { width: 5px; background: #333; cursor: col-resize; z-index: 100; transition: background 0.2s; flex-shrink: 0; border-left: 1px solid #222; border-right: 1px solid #222; }
+        .resizer:hover, .resizer.active { background: #007acc; }
+        #main { flex: 1; display: flex; flex-direction: column; position: relative; min-width: 300px; }
+        #toolbar { min-height: 60px; height: auto; background: #3e3e42; display: flex; flex-direction: column; padding: 10px 20px; gap: 10px; z-index: 10; justify-content: center; }
+        #canvas-container { flex: 1; overflow: hidden; position: relative; background: #111 url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAMUlEQVQ4T2NkYGAQYcAP3uCTZhw1gGGYhAGBZIA/ENFMo/5BAv4wMBw1gGGYhAGBCgIAVqU12f71J0EAAAAASUVORK5CYII=') repeat; }
+        canvas { position: absolute; top: 0; left: 0; cursor: crosshair; }        
+        .category { margin-bottom: 10px; }
+        .category-title { font-weight: bold; cursor: pointer; padding: 8px; background: #444; border-radius: 4px; user-select: none; }
+        .category-title:hover { background: #555; }
+        .template-list { margin-left: 10px; display: none; }
+        .template-item { padding: 6px; cursor: pointer; font-size: 14px; border-bottom: 1px solid #333; }
+        .template-item:hover { background: #007acc; }
+        .template-item.active { background: #007acc; font-weight: bold; }
+        
+        button { background: #007acc; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; font-size: 14px; font-weight: bold; }
+        button:hover { background: #005f9e; }
+        button.success { background: #28a745; }
+        button.success:hover { background: #218838; }
+        
+        #info { background: rgba(0,0,0,0.7); position: absolute; bottom: 20px; left: 20px; padding: 10px; border-radius: 4px; pointer-events: none; z-index: 10;}
+        #help-sidebar { margin-top: 20px; padding-top: 15px; border-top: 1px solid #555; font-size: 13px; color: #ccc; line-height: 1.5; }

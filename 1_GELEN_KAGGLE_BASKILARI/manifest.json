@@ -1,0 +1,25 @@
+{
+  "version": "5.0",
+  "generated_at": "2026-09-12T14:55:00",
+  "items": [
+    {
+      "master_id": "M000001",
+      "theme_id": 2,
+      "theme_title": "İslami Geometrik Altın Varak & Hat Sanatı",
+      "style_key": "islamic_calligraphy_gold",
+      "horizontal_path": "M000001_H.png",
+      "vertical_path": "M000001_V.png",
+      "horizontal": {
+        "file": "M000001_H.png",
+        "width": 1216,
+        "height": 912
+      },
+      "vertical": {
+        "file": "M000001_V.png",
+        "width": 1091,
+        "height": 1715
+      },
+      "status": "PASS"
+    }
+  ]
+}

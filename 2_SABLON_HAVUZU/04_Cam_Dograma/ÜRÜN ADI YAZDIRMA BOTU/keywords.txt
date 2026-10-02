@@ -1,0 +1,74 @@
+[NITELIK]
+Özel Baskılı
+Dekoratif Şık
+Lüks Tasarım
+Modern ve Şık
+Premium Kalite
+Estetik ve Şık
+Birinci Sınıf
+Özel Tasarım
+Zarif Tasarım
+Sanatsal Tasarım
+Göz Alıcı Şık
+Yüksek Kaliteli
+Modern ve Zarif
+Renkli ve Canlı
+Minimalist ve Şık
+İskandinav Tarzı
+Dayanıklı ve Şık
+
+[TEMA]
+Mermer Desenli
+İtalyan Mermer Desenli
+Siyah Mermer Desenli
+Beyaz Mermer Desenli
+Leopar Desenli
+Çini Motifli
+Mozaik Desenli
+Geyik Figürlü
+Botanik Çiçek Desenli
+Geometrik Çizgili
+Vintage Çini Desenli
+Mutfak Kuralları Temalı
+Soyut Sanatsal
+Retro Motifli
+Etnik Çini Desenli
+Kahve ve Mutfak Temalı
+Doğa Manzaralı
+Ahşap Görünümlü
+Altın Varak Efektli
+Boho Çini Desenli
+Çiçek Bahçesi Temalı
+
+[MALZEME]
+Temperli Cam
+Cam
+
+[URUN]
+Cam Kesme Tahtası
+Tezgah Üstü Cam Kesme Tahtası
+Cam Doğrama ve Sunum Panosu
+Dekoratif Cam Kesme Tahtası
+Kaymaz Ayaklı Cam Kesme Tahtası
+Cam Kesme ve Doğrama Tahtası
+Tezgah Üstü Cam Doğrama Panosu
+Cam Ekmek ve Sebze Kesme Tahtası
+Büyük Boy Cam Kesme Tahtası
+
+[TAMAMLAYICI]
+Bakteri Tutmaz
+Kolay Temizlenebilir
+Isıya Dayanıklı
+Renk Atmaz
+Bakteri ve Koku Tutmaz
+Solmaz ve Renk Atmaz
+Hijyenik Kolay Temizlenir
+Çizilmeye Dayanıklı
+Leke ve Koku Tutmaz
+Silikon Ayaklı Bakteri Tutmaz
+Kaymaz Tabanlı Renk Atmaz
+
+[EBAT]
+25x35 cm
+25x35 cm Boyut
+25x35 cm Ebat

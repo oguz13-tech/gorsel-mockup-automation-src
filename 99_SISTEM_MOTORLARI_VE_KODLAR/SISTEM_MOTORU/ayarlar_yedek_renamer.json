@@ -1,0 +1,1857 @@
+{
+  "bulut_ayarlari": {
+    "cloudinary": {
+      "aktif": false,
+      "cloud_name": "",
+      "api_key": "",
+      "api_secret": "",
+      "folder": "trendyol_mockups"
+    },
+    "imgbb_keys": ["INSERT_IMGBB_API_KEY_HERE"],
+    "freeimage_key": "6d207e02198a847aa98d0a2a901485a5"
+  },
+  "kategoriler": {
+    "01_Wifi_Kutusu": {
+      "etiket": "Wifi / Sigorta Kutusu",
+      "barkod_prefix": "sg-M",
+      "model_prefix": "M-sg-M",
+      "boyut_cm": "30x40 cm",
+      "sablonlar": {
+        "wifiKutusuBos1.jpeg": {
+          "tip": "duz",
+          "x": 902,
+          "y": 1201,
+          "w": 703,
+          "h": 472
+        },
+        "wifiKutusuBos2.webp": {
+          "tip": "duz",
+          "x": 1462,
+          "y": 1944,
+          "w": 1136,
+          "h": 766
+        },
+        "wifiKutusuBos3.webp": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              1583,
+              1942
+            ],
+            [
+              2602,
+              1938
+            ],
+            [
+              2602,
+              2716
+            ],
+            [
+              1583,
+              2715
+            ]
+          ]
+        },
+        "wifiKutusuBos4.jpeg": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              401,
+              484
+            ],
+            [
+              748,
+              488
+            ],
+            [
+              748,
+              762
+            ],
+            [
+              401,
+              789
+            ]
+          ]
+        },
+        "wifiKutusuBos5.jpeg": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              399,
+              484
+            ],
+            [
+              750,
+              489
+            ],
+            [
+              750,
+              764
+            ],
+            [
+              401,
+              789
+            ]
+          ]
+        },
+        "wifiKutusuBos6.jpeg": {
+          "tip": "duz",
+          "x": 451,
+          "y": 600,
+          "w": 351,
+          "h": 236
+        },
+        "wifiKutusuBos7.jpeg": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              400,
+              483
+            ],
+            [
+              750,
+              489
+            ],
+            [
+              749,
+              763
+            ],
+            [
+              401,
+              790
+            ]
+          ]
+        },
+        "wifiKutusuBos8.jpeg": {
+          "tip": "duz",
+          "x": 510,
+          "y": 590,
+          "w": 231,
+          "h": 151
+        },
+        "wifiKutusuBos9.jpeg": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              474,
+              600
+            ],
+            [
+              740,
+              590
+            ],
+            [
+              738,
+              789
+            ],
+            [
+              475,
+              815
+            ]
+          ]
+        },
+        "wifiKutusuBos10.jpeg": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              504,
+              603
+            ],
+            [
+              707,
+              601
+            ],
+            [
+              707,
+              741
+            ],
+            [
+              504,
+              750
+            ]
+          ]
+        },
+        "wifiKutusuBos11.jpeg": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              475,
+              600
+            ],
+            [
+              739,
+              591
+            ],
+            [
+              738,
+              790
+            ],
+            [
+              476,
+              815
+            ]
+          ]
+        },
+        "bos1-2.jpeg": {
+          "tip": "duz",
+          "x": 478,
+          "y": 554,
+          "w": 328,
+          "h": 221
+        },
+        "bos1-3.jpeg": {
+          "tip": "duz",
+          "x": 470,
+          "y": 584,
+          "w": 263,
+          "h": 179
+        },
+        "bos1-4.jpeg": {
+          "tip": "duz",
+          "x": 401,
+          "y": 620,
+          "w": 264,
+          "h": 182
+        },
+        "bos1-5.jpeg": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              489,
+              554
+            ],
+            [
+              809,
+              553
+            ],
+            [
+              809,
+              774
+            ],
+            [
+              489,
+              774
+            ]
+          ]
+        },
+        "bos1-6.jpeg": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              424,
+              567
+            ],
+            [
+              730,
+              565
+            ],
+            [
+              730,
+              783
+            ],
+            [
+              424,
+              782
+            ]
+          ]
+        },
+        "bos2-1.jpeg": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              904,
+              1201
+            ],
+            [
+              1604,
+              1201
+            ],
+            [
+              1604,
+              1674
+            ],
+            [
+              903,
+              1672
+            ]
+          ]
+        }
+      }
+    },
+    "03_Ahsap_Tablo": {
+      "etiket": "Doğal Ahşap Çerçeveli Tablo",
+      "barkod_prefix": "at-M",
+      "model_prefix": "M-at-M",
+      "boyut_cm": "40x60 cm",
+      "sablonlar": {
+        "vecteezy_mockup-frame-in-contemporary-scandinavian-living-room_32490928.jpg": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              608,
+              972
+            ],
+            [
+              1557,
+              1122
+            ],
+            [
+              1555,
+              2554
+            ],
+            [
+              608,
+              2552
+            ]
+          ]
+        },
+        "vecteezy_mockup-frame-on-cabinet-with-plant-and-vase-indoor_72708117.jpeg": {
+          "tip": "duz",
+          "x": 1248,
+          "y": 1244,
+          "w": 1596,
+          "h": 2540
+        },
+        "Frame-Poster-Mockup-1536x1536.jpg": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              468,
+              331
+            ],
+            [
+              990,
+              316
+            ],
+            [
+              1091,
+              1157
+            ],
+            [
+              571,
+              1236
+            ]
+          ]
+        },
+        "interior-poster-mockup-1229x1536.jpg": {
+          "tip": "duz",
+          "x": 421,
+          "y": 431,
+          "w": 338,
+          "h": 468
+        },
+        "5b472d0f30064-3.jpg": {
+          "tip": "duz",
+          "x": 384,
+          "y": 66,
+          "w": 442,
+          "h": 651
+        },
+        "5b9395982e458-1.jpg": {
+          "tip": "duz",
+          "x": 183,
+          "y": 113,
+          "w": 400,
+          "h": 590
+        },
+        "5b9395982e458-2.jpg": {
+          "tip": "duz",
+          "x": 251,
+          "y": 56,
+          "w": 482,
+          "h": 708
+        },
+        "5b9395e6f22a1-2.jpg": {
+          "tip": "duz",
+          "x": 371,
+          "y": 134,
+          "w": 372,
+          "h": 548
+        },
+        "5bfe6b7c2614f-1.jpg": {
+          "tip": "duz",
+          "x": 88,
+          "y": 267,
+          "w": 301,
+          "h": 442
+        },
+        "5bfe6b7c2614f-4.jpg": {
+          "tip": "duz",
+          "x": 240,
+          "y": 70,
+          "w": 373,
+          "h": 551
+        },
+        "5d20481e44fc0.jpg": {
+          "tip": "duz",
+          "x": 478,
+          "y": 119,
+          "w": 313,
+          "h": 451
+        },
+        "arcline2-m1kucuk_650x.webp": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              261,
+              135
+            ],
+            [
+              464,
+              135
+            ],
+            [
+              464,
+              443
+            ],
+            [
+              259,
+              442
+            ]
+          ]
+        },
+        "DSF9548_650x.webp": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              187,
+              255
+            ],
+            [
+              461,
+              220
+            ],
+            [
+              457,
+              901
+            ],
+            [
+              191,
+              805
+            ]
+          ]
+        },
+        "e22b3b899af2e8d7aee21e844b2f52de.jpg": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              205,
+              26
+            ],
+            [
+              514,
+              26
+            ],
+            [
+              514,
+              434
+            ],
+            [
+              205,
+              434
+            ]
+          ]
+        },
+        "IMG_8271_650x.webp": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              209,
+              202
+            ],
+            [
+              445,
+              204
+            ],
+            [
+              445,
+              565
+            ],
+            [
+              205,
+              563
+            ]
+          ]
+        },
+        "ahsapTabloBos1.jpg": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              484,
+              156
+            ],
+            [
+              908,
+              127
+            ],
+            [
+              910,
+              502
+            ],
+            [
+              486,
+              494
+            ]
+          ]
+        },
+        "ahsapTablo_GERCEK_BOS.jpg": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              486,
+              157
+            ],
+            [
+              910,
+              125
+            ],
+            [
+              909,
+              503
+            ],
+            [
+              486,
+              496
+            ]
+          ]
+        }
+      }
+    },
+    "04_Cam_Dograma": {
+      "etiket": "Cam Kesme ve Doğrama Tahtası",
+      "barkod_prefix": "cdt-M",
+      "model_prefix": "M-cdt-M",
+      "boyut_cm": "30x40 cm",
+      "sablonlar": {
+        "1_org_zoom.webp": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              480,
+              878
+            ],
+            [
+              1133,
+              1075
+            ],
+            [
+              755,
+              1358
+            ],
+            [
+              41,
+              1050
+            ]
+          ]
+        },
+        "1_org_zoom (1).webp": {
+          "tip": "duz",
+          "x": 275,
+          "y": 562,
+          "w": 660,
+          "h": 441
+        },
+        "1_org_zoom (3).webp": {
+          "tip": "duz",
+          "x": 199,
+          "y": 678,
+          "w": 829,
+          "h": 556,
+          "use_grabcut": true,
+          "on_plan": []
+        },
+        "18dd54f0574d4c9f9193d0af5d9898a6.png": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              317,
+              622
+            ],
+            [
+              881,
+              622
+            ],
+            [
+              880,
+              993
+            ],
+            [
+              317,
+              992
+            ]
+          ]
+        },
+        "1_org_zoom (2).webp": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              51,
+              1097
+            ],
+            [
+              724,
+              820
+            ],
+            [
+              1163,
+              1093
+            ],
+            [
+              467,
+              1449
+            ]
+          ]
+        },
+        "1_org_zoom (4).webp": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              207,
+              657
+            ],
+            [
+              1019,
+              657
+            ],
+            [
+              1021,
+              1196
+            ],
+            [
+              209,
+              1215
+            ]
+          ]
+        },
+        "1_org_zoom (5).webp": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              202,
+              550
+            ],
+            [
+              972,
+              551
+            ],
+            [
+              970,
+              1060
+            ],
+            [
+              201,
+              1068
+            ]
+          ]
+        },
+        "1_org_zoom (6).webp": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              463,
+              672
+            ],
+            [
+              1008,
+              1068
+            ],
+            [
+              734,
+              1436
+            ],
+            [
+              185,
+              1035
+            ]
+          ]
+        },
+        "1_org_zoom (7).webp": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              239,
+              940
+            ],
+            [
+              948,
+              940
+            ],
+            [
+              955,
+              1417
+            ],
+            [
+              239,
+              1425
+            ]
+          ]
+        },
+        "1_org_zoom (8).webp": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              406,
+              780
+            ],
+            [
+              1006,
+              780
+            ],
+            [
+              1010,
+              1203
+            ],
+            [
+              401,
+              1203
+            ]
+          ]
+        },
+        "1_org_zoom (9).webp": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              250,
+              920
+            ],
+            [
+              927,
+              920
+            ],
+            [
+              933,
+              1402
+            ],
+            [
+              246,
+              1405
+            ]
+          ]
+        },
+        "cam-kesme-tahtasi-kalin-ve-kirilmaz-cam-vintage-sebzeler-21-30cm-dograma-tahtasi-mutfak-dekoru-53384.webp": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              143,
+              1040
+            ],
+            [
+              2254,
+              1052
+            ],
+            [
+              2254,
+              2523
+            ],
+            [
+              152,
+              2538
+            ]
+          ]
+        },
+        "cam-kesme-tahtasi-kalin-ve-kirilmaz-cam-vintage-sebzeler-21-30cm-dograma-tahtasi-mutfak-dekoru-53385.webp": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              274,
+              1272
+            ],
+            [
+              2220,
+              1280
+            ],
+            [
+              2221,
+              2654
+            ],
+            [
+              268,
+              2658
+            ]
+          ]
+        },
+        "Claid-AI-170791df599c46bfa24c12170519176d.png": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              495,
+              1427
+            ],
+            [
+              1217,
+              1480
+            ],
+            [
+              1094,
+              1986
+            ],
+            [
+              335,
+              1898
+            ]
+          ]
+        },
+        "Claid-AI-21c4d45812084f458dee61b7daeb653a.png": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              526,
+              1333
+            ],
+            [
+              1316,
+              1334
+            ],
+            [
+              1325,
+              1875
+            ],
+            [
+              519,
+              1878
+            ]
+          ]
+        },
+        "Claid-AI-b5f043a60efa465ab67bdf9627d660b1.png": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              288,
+              822
+            ],
+            [
+              1578,
+              827
+            ],
+            [
+              1582,
+              1691
+            ],
+            [
+              285,
+              1685
+            ]
+          ]
+        },
+        "Claid-AI-c71780a5285046dea3b1819aa39803b7.png": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              316,
+              1225
+            ],
+            [
+              1513,
+              1220
+            ],
+            [
+              1520,
+              2072
+            ],
+            [
+              318,
+              2072
+            ]
+          ]
+        },
+        "image_1080 (1).webp": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              45,
+              1248
+            ],
+            [
+              588,
+              840
+            ],
+            [
+              1080,
+              1009
+            ],
+            [
+              582,
+              1456
+            ]
+          ]
+        },
+        "images.jpeg": {
+          "tip": "duz",
+          "x": 24,
+          "y": 174,
+          "w": 317,
+          "h": 221
+        },
+        "1200x1200_aryildiz-limone-cam-kesme-tahtasi-20x30-cm-kesme-tahtasi-aryildiz-143845-12-B.jpg": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              441,
+              148
+            ],
+            [
+              948,
+              227
+            ],
+            [
+              784,
+              1082
+            ],
+            [
+              311,
+              918
+            ]
+          ]
+        },
+        "1_org_zoom (10).webp": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              337,
+              620
+            ],
+            [
+              904,
+              621
+            ],
+            [
+              901,
+              1472
+            ],
+            [
+              340,
+              1476
+            ]
+          ]
+        },
+        "1_org_zoom (11).webp": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              130,
+              683
+            ],
+            [
+              537,
+              550
+            ],
+            [
+              708,
+              1138
+            ],
+            [
+              294,
+              1268
+            ]
+          ]
+        },
+        "image_1080.webp": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              182,
+              289
+            ],
+            [
+              891,
+              289
+            ],
+            [
+              931,
+              1324
+            ],
+            [
+              222,
+              1367
+            ]
+          ]
+        }
+      }
+    },
+    "05_Ocak_Arkasi": {
+      "etiket": "Ocak Arkası Koruyucu Cam Panel",
+      "barkod_prefix": "oact-M",
+      "model_prefix": "M-oact-M",
+      "boyut_cm": "60x80 cm",
+      "sablonlar": {
+        "1_org_zoom.webp": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              202,
+              455
+            ],
+            [
+              994,
+              457
+            ],
+            [
+              995,
+              1075
+            ],
+            [
+              202,
+              1075
+            ]
+          ]
+        },
+        "1_org_zoom (9).webp": {
+          "tip": "duz",
+          "x": 177,
+          "y": 458,
+          "w": 875,
+          "h": 646
+        },
+        "1_org_zoom (1).webp": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              205,
+              456
+            ],
+            [
+              1084,
+              424
+            ],
+            [
+              1084,
+              1214
+            ],
+            [
+              208,
+              1156
+            ]
+          ]
+        },
+        "1_org_zoom (2).webp": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              345,
+              552
+            ],
+            [
+              964,
+              546
+            ],
+            [
+              964,
+              1106
+            ],
+            [
+              345,
+              1048
+            ]
+          ]
+        },
+        "1_org_zoom (3).webp": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              398,
+              736
+            ],
+            [
+              1066,
+              676
+            ],
+            [
+              1066,
+              1240
+            ],
+            [
+              398,
+              1178
+            ]
+          ]
+        },
+        "1_org_zoom (4).webp": {
+          "tip": "duz",
+          "x": 96,
+          "y": 555,
+          "w": 1014,
+          "h": 585
+        },
+        "1_org_zoom (5).webp": {
+          "tip": "duz",
+          "x": 138,
+          "y": 439,
+          "w": 926,
+          "h": 603
+        },
+        "1_org_zoom (6).webp": {
+          "tip": "duz",
+          "x": 146,
+          "y": 620,
+          "w": 906,
+          "h": 532
+        },
+        "2222.jpg": {
+          "tip": "duz",
+          "x": 434,
+          "y": 549,
+          "w": 1139,
+          "h": 698
+        }
+      }
+    },
+    "02_Cam_Tablo_Dikey": {
+      "etiket": "Lüks Dikey Cam Tablo",
+      "barkod_prefix": "ct-M",
+      "model_prefix": "M-ct-M",
+      "boyut_cm": "50x70 cm",
+      "sablonlar": {
+        "Gemini_Generated_Image_484mjl484mjl484m (1).jpeg": {
+          "tip": "duz",
+          "x": 555,
+          "y": 409,
+          "w": 684,
+          "h": 1003
+        },
+        "Gemini_Generated_Image_484mjl484mjl484m (2).jpeg": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              502,
+              347
+            ],
+            [
+              1246,
+              176
+            ],
+            [
+              1246,
+              1530
+            ],
+            [
+              502,
+              1494
+            ]
+          ]
+        },
+        "Gemini_Generated_Image_484mjl484mjl484m (4).jpeg": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              523,
+              457
+            ],
+            [
+              1277,
+              394
+            ],
+            [
+              1277,
+              1696
+            ],
+            [
+              523,
+              1670
+            ]
+          ]
+        },
+        "Gemini_Generated_Image_484mjl484mjl484m (5).jpeg": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              454,
+              472
+            ],
+            [
+              1230,
+              412
+            ],
+            [
+              1230,
+              1754
+            ],
+            [
+              454,
+              1720
+            ]
+          ]
+        },
+        "Gemini_Generated_Image_484mjl484mjl484m (6).jpeg": {
+          "tip": "duz",
+          "x": 453,
+          "y": 471,
+          "w": 789,
+          "h": 1313
+        },
+        "Gemini_Generated_Image_484mjl484mjl484m (7).jpeg": {
+          "tip": "duz",
+          "x": 452,
+          "y": 604,
+          "w": 793,
+          "h": 1314
+        },
+        "Gemini_Generated_Image_484mjl484mjl484m.jpeg": {
+          "tip": "duz",
+          "x": 388,
+          "y": 443,
+          "w": 920,
+          "h": 1403
+        },
+        "Gemini_Generated_Image_5lx2i5lx2i5lx2i5 (1).jpeg": {
+          "tip": "duz",
+          "x": 407,
+          "y": 180,
+          "w": 883,
+          "h": 1412
+        },
+        "Gemini_Generated_Image_5lx2i5lx2i5lx2i5 (2).jpeg": {
+          "tip": "duz",
+          "x": 521,
+          "y": 515,
+          "w": 673,
+          "h": 935
+        },
+        "Gemini_Generated_Image_5lx2i5lx2i5lx2i5 (5).jpeg": {
+          "tip": "duz",
+          "x": 267,
+          "y": 408,
+          "w": 1160,
+          "h": 1695
+        },
+        "Gemini_Generated_Image_jv0dmwjv0dmwjv0d.jpeg": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              540,
+              592
+            ],
+            [
+              1149,
+              639
+            ],
+            [
+              1149,
+              1515
+            ],
+            [
+              540,
+              1537
+            ]
+          ]
+        },
+        "Gemini_Generated_Image_pu3lkgpu3lkgpu3l.jpeg": {
+          "tip": "duz",
+          "x": 542,
+          "y": 613,
+          "w": 606,
+          "h": 910
+        },
+        "085603757622e65a356d0ab700c4eb5b.jpg": {
+          "tip": "duz",
+          "x": 210,
+          "y": 187,
+          "w": 369,
+          "h": 579
+        },
+        "1_org_zoom (1).webp": {
+          "tip": "duz",
+          "x": 317,
+          "y": 93,
+          "w": 586,
+          "h": 866
+        },
+        "1_org_zoom (10).webp": {
+          "tip": "duz",
+          "x": 334,
+          "y": 175,
+          "w": 530,
+          "h": 838
+        },
+        "1_org_zoom (11).webp": {
+          "tip": "duz",
+          "x": 189,
+          "y": 181,
+          "w": 847,
+          "h": 1274
+        },
+        "1_org_zoom (12).webp": {
+          "tip": "duz",
+          "x": 356,
+          "y": 254,
+          "w": 524,
+          "h": 716
+        },
+        "1_org_zoom (13).webp": {
+          "tip": "duz",
+          "x": 365,
+          "y": 82,
+          "w": 495,
+          "h": 756
+        },
+        "1_org_zoom (14).webp": {
+          "tip": "duz",
+          "x": 229,
+          "y": 63,
+          "w": 500,
+          "h": 911
+        },
+        "1_org_zoom (2).webp": {
+          "tip": "duz",
+          "x": 192,
+          "y": 169,
+          "w": 876,
+          "h": 1384
+        },
+        "1_org_zoom (3).webp": {
+          "tip": "duz",
+          "x": 270,
+          "y": 324,
+          "w": 660,
+          "h": 957
+        },
+        "1_org_zoom (4).webp": {
+          "tip": "duz",
+          "x": 262,
+          "y": 131,
+          "w": 703,
+          "h": 1003
+        },
+        "1_org_zoom (5).webp": {
+          "tip": "duz",
+          "x": 198,
+          "y": 169,
+          "w": 867,
+          "h": 1425
+        },
+        "1_org_zoom (6).webp": {
+          "tip": "duz",
+          "x": 198,
+          "y": 169,
+          "w": 867,
+          "h": 1425
+        },
+        "1_org_zoom (7).webp": {
+          "tip": "duz",
+          "x": 350,
+          "y": 324,
+          "w": 531,
+          "h": 848
+        },
+        "1_org_zoom (8).webp": {
+          "tip": "duz",
+          "x": 417,
+          "y": 224,
+          "w": 531,
+          "h": 837
+        },
+        "1_org_zoom (9).webp": {
+          "tip": "duz",
+          "x": 334,
+          "y": 120,
+          "w": 530,
+          "h": 837
+        },
+        "1_org_zoom.webp": {
+          "tip": "duz",
+          "x": 198,
+          "y": 169,
+          "w": 867,
+          "h": 1425
+        },
+        "8c86d97cb4b4adb3f3818fb7658f6e0f.jpg": {
+          "tip": "duz",
+          "x": 286,
+          "y": 55,
+          "w": 597,
+          "h": 957
+        },
+        "ac1f0a5b347918c84bcfb2447af00da3.jpg": {
+          "tip": "duz",
+          "x": 435,
+          "y": 60,
+          "w": 314,
+          "h": 449
+        },
+        "Gemini_Generated_Image_484mjl484mjl484m (3).jpeg": {
+          "tip": "duz",
+          "x": 185,
+          "y": 239,
+          "w": 486,
+          "h": 770
+        },
+        "Gemini_Generated_Image_5lx2i5lx2i5lx2i5 (3).jpeg": {
+          "tip": "duz",
+          "x": 387,
+          "y": 443,
+          "w": 936,
+          "h": 1364
+        },
+        "Gemini_Generated_Image_5lx2i5lx2i5lx2i5 (4).jpeg": {
+          "tip": "duz",
+          "x": 133,
+          "y": 25,
+          "w": 373,
+          "h": 407
+        },
+        "Gemini_Generated_Image_5lx2i5lx2i5lx2i5.jpeg": {
+          "tip": "duz",
+          "x": 407,
+          "y": 447,
+          "w": 899,
+          "h": 1376
+        },
+        "il_1140xN.7842536652_5d5p.jpg": {
+          "tip": "duz",
+          "x": 385,
+          "y": 172,
+          "w": 370,
+          "h": 581
+        },
+        "il_1140xN.7842536654_m4nm.jpg": {
+          "tip": "duz",
+          "x": 349,
+          "y": 105,
+          "w": 379,
+          "h": 594
+        },
+        "il_1140xN.8191721770_km0f.jpg": {
+          "tip": "duz",
+          "x": 420,
+          "y": 45,
+          "w": 334,
+          "h": 499
+        },
+        "il_1140xN.8239646977_nhr8.webp": {
+          "tip": "duz",
+          "x": 404,
+          "y": 68,
+          "w": 365,
+          "h": 547
+        },
+        "il_1140xN.8550624797_pv36.webp": {
+          "tip": "duz",
+          "x": 332,
+          "y": 61,
+          "w": 489,
+          "h": 632
+        },
+        "il_794xN.7514788717_1xq3.jpg": {
+          "tip": "duz",
+          "x": 250,
+          "y": 54,
+          "w": 293,
+          "h": 569
+        },
+        "IMG-20251220-WA0065.webp": {
+          "tip": "duz",
+          "x": 397,
+          "y": 87,
+          "w": 361,
+          "h": 706
+        },
+        "IMG-20251220-WA0070.webp": {
+          "tip": "duz",
+          "x": 406,
+          "y": 145,
+          "w": 465,
+          "h": 652
+        },
+        "IMG-20251220-WA0088.webp": {
+          "tip": "duz",
+          "x": 441,
+          "y": 146,
+          "w": 469,
+          "h": 612
+        }
+      }
+    },
+    "02_Cam_Tablo_Yatay": {
+      "etiket": "Lüks Yatay Cam Tablo",
+      "barkod_prefix": "cty-M",
+      "model_prefix": "M-cty-M",
+      "boyut_cm": "70x100 cm",
+      "sablonlar": {
+        "olimpos-simsegi-cam-tablo_2.webp": {
+          "tip": "duz",
+          "x": 194,
+          "y": 418,
+          "w": 524,
+          "h": 368
+        },
+        "WhatsAppGorsel2025-09-20saat17.48.54_205a12c0.jpg": {
+          "tip": "duz",
+          "x": 24,
+          "y": 216,
+          "w": 844,
+          "h": 538
+        },
+        "olimpos-simsegi-cam-tablo_3.webp": {
+          "tip": "duz",
+          "x": 167,
+          "y": 282,
+          "w": 524,
+          "h": 369
+        },
+        "olimpos-simsegi-cam-tablo_4.webp": {
+          "tip": "duz",
+          "x": 153,
+          "y": 295,
+          "w": 524,
+          "h": 368
+        },
+        "olimpos-simsegi-cam-tablo_5.webp": {
+          "tip": "duz",
+          "x": 146,
+          "y": 255,
+          "w": 524,
+          "h": 368
+        },
+        "olimpos-simsegi-cam-tablo_6.webp": {
+          "tip": "duz",
+          "x": 146,
+          "y": 255,
+          "w": 524,
+          "h": 368
+        },
+        "olimpos-simsegi-cam-tablo_7.webp": {
+          "tip": "duz",
+          "x": 146,
+          "y": 255,
+          "w": 524,
+          "h": 368
+        },
+        "olimpos-simsegi-cam-tablo_8.webp": {
+          "tip": "duz",
+          "x": 146,
+          "y": 313,
+          "w": 524,
+          "h": 369
+        },
+        "10724b4edf73c7bf9220443cb62963ae.jpg": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              166,
+              227
+            ],
+            [
+              657,
+              152
+            ],
+            [
+              657,
+              582
+            ],
+            [
+              166,
+              574
+            ]
+          ]
+        },
+        "126a6575597122ebd0707b592c7f56c1.jpg": {
+          "tip": "duz",
+          "x": 17,
+          "y": 42,
+          "w": 690,
+          "h": 461
+        },
+        "63872fef88cf413f490f83633d36f3ae.jpg": {
+          "tip": "duz",
+          "x": 250,
+          "y": 182,
+          "w": 720,
+          "h": 427
+        },
+        "c0a3fa27a2aab9fc9ec71014913b5474.jpg": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              126,
+              128
+            ],
+            [
+              850,
+              53
+            ],
+            [
+              850,
+              702
+            ],
+            [
+              126,
+              680
+            ]
+          ]
+        },
+        "il_1140xN.7596374617_r1g4.webp": {
+          "tip": "duz",
+          "x": 290,
+          "y": 145,
+          "w": 604,
+          "h": 382
+        },
+        "il_1140xN.8128837494_eaaj.webp": {
+          "tip": "duz",
+          "x": 197,
+          "y": 302,
+          "w": 755,
+          "h": 457
+        },
+        "il_1140xN.8128837542_hsl1.webp": {
+          "tip": "duz",
+          "x": 296,
+          "y": 381,
+          "w": 561,
+          "h": 258
+        },
+        "il_1140xN.8128837548_ir22.webp": {
+          "tip": "duz",
+          "x": 211,
+          "y": 353,
+          "w": 717,
+          "h": 329
+        },
+        "il_1140xN.8128837602_rsyg.webp": {
+          "tip": "duz",
+          "x": 170,
+          "y": 130,
+          "w": 800,
+          "h": 511
+        },
+        "il_1140xN.8128837622_8btk.webp": {
+          "tip": "duz",
+          "x": 168,
+          "y": 171,
+          "w": 804,
+          "h": 549
+        },
+        "il_1140xN.8142399176_1n59.webp": {
+          "tip": "duz",
+          "x": 179,
+          "y": 280,
+          "w": 753,
+          "h": 519
+        },
+        "il_1140xN.8176749451_e6vp.webp": {
+          "tip": "duz",
+          "x": 558,
+          "y": 389,
+          "w": 453,
+          "h": 289
+        },
+        "il_1140xN.8176749475_lnql.webp": {
+          "tip": "duz",
+          "x": 497,
+          "y": 699,
+          "w": 495,
+          "h": 329
+        },
+        "il_1140xN.8176749479_f7n5.webp": {
+          "tip": "duz",
+          "x": 225,
+          "y": 121,
+          "w": 842,
+          "h": 508
+        },
+        "il_1140xN.8176755563_pwsp.jpg": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              138,
+              240
+            ],
+            [
+              980,
+              260
+            ],
+            [
+              995,
+              730
+            ],
+            [
+              138,
+              780
+            ]
+          ]
+        },
+        "il_1140xN.8266950910_no6q.webp": {
+          "tip": "duz",
+          "x": 263,
+          "y": 234,
+          "w": 604,
+          "h": 397
+        },
+        "il_1140xN.8266951084_lfmq.webp": {
+          "tip": "duz",
+          "x": 151,
+          "y": 201,
+          "w": 931,
+          "h": 489
+        },
+        "il_1140xN.8314864771_g0cj.webp": {
+          "tip": "duz",
+          "x": 450,
+          "y": 244,
+          "w": 349,
+          "h": 281
+        },
+        "il_1140xN.8321503982_kitn.webp": {
+          "tip": "duz",
+          "x": 190,
+          "y": 199,
+          "w": 417,
+          "h": 255
+        },
+        "il_1140xN.8338705552_ctok.webp": {
+          "tip": "duz",
+          "x": 358,
+          "y": 223,
+          "w": 604,
+          "h": 399
+        },
+        "il_1140xN.8369398361_6j2z.webp": {
+          "tip": "duz",
+          "x": 144,
+          "y": 106,
+          "w": 869,
+          "h": 675
+        },
+        "il_1140xN.8373208606_4tmy.webp": {
+          "tip": "duz",
+          "x": 575,
+          "y": 697,
+          "w": 370,
+          "h": 213
+        },
+        "IMG-20250919-WA0158.webp": {
+          "tip": "duz",
+          "x": 419,
+          "y": 223,
+          "w": 831,
+          "h": 668
+        },
+        "IMG-20250919-WA0159.webp": {
+          "tip": "duz",
+          "x": 257,
+          "y": 1116,
+          "w": 566,
+          "h": 333
+        },
+        "IMG-20250919-WA0160.webp": {
+          "tip": "duz",
+          "x": 341,
+          "y": 359,
+          "w": 922,
+          "h": 550
+        },
+        "IMG-20250919-WA0165.webp": {
+          "tip": "duz",
+          "x": 132,
+          "y": 1511,
+          "w": 1007,
+          "h": 521
+        },
+        "IMG-20250919-WA0166.webp": {
+          "tip": "duz",
+          "x": 271,
+          "y": 530,
+          "w": 1063,
+          "h": 677
+        },
+        "IMG-20250919-WA0167.webp": {
+          "tip": "duz",
+          "x": 53,
+          "y": 495,
+          "w": 764,
+          "h": 582
+        },
+        "IMG-20250919-WA0170.webp": {
+          "tip": "duz",
+          "x": 201,
+          "y": 439,
+          "w": 806,
+          "h": 602
+        },
+        "IMG-20250919-WA0172.webp": {
+          "tip": "duz",
+          "x": 285,
+          "y": 492,
+          "w": 1082,
+          "h": 712
+        },
+        "IMG-20250919-WA0176.webp": {
+          "tip": "duz",
+          "x": 2,
+          "y": 1243,
+          "w": 1069,
+          "h": 689
+        },
+        "IMG-20250926-WA0074.webp": {
+          "tip": "duz",
+          "x": 454,
+          "y": 348,
+          "w": 790,
+          "h": 483
+        },
+        "IMG-20250926-WA0075.webp": {
+          "tip": "duz",
+          "x": 440,
+          "y": 240,
+          "w": 715,
+          "h": 551
+        },
+        "IMG-20250926-WA0077.webp": {
+          "tip": "duz",
+          "x": 283,
+          "y": 501,
+          "w": 1050,
+          "h": 730
+        },
+        "IMG-20250926-WA0078.webp": {
+          "tip": "duz",
+          "x": 82,
+          "y": 218,
+          "w": 1419,
+          "h": 904
+        },
+        "IMG-20250926-WA0083.webp": {
+          "tip": "duz",
+          "x": 281,
+          "y": 356,
+          "w": 662,
+          "h": 487
+        },
+        "IMG-20250926-WA0085.webp": {
+          "tip": "duz",
+          "x": 623,
+          "y": 1281,
+          "w": 1015,
+          "h": 699
+        },
+        "IMG-20250926-WA0086.webp": {
+          "tip": "duz",
+          "x": 261,
+          "y": 121,
+          "w": 1276,
+          "h": 555
+        },
+        "IMG-20250926-WA0087.webp": {
+          "tip": "duz",
+          "x": 538,
+          "y": 1200,
+          "w": 1065,
+          "h": 594
+        },
+        "WhatsApp_Image_2026-09-04_at_20.42.28.webp": {
+          "tip": "duz",
+          "x": 274,
+          "y": 237,
+          "w": 1253,
+          "h": 836
+        },
+        "e2b8e9ae3f35c842c97d44dc69cb865c.jpg": {
+          "tip": "duz",
+          "x": 168,
+          "y": 275,
+          "w": 658,
+          "h": 438
+        }
+      }
+    }
+  }
+}

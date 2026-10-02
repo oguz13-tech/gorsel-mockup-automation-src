@@ -1,0 +1,1659 @@
+{
+  "bulut_ayarlari": {
+    "cloudinary": {
+      "aktif": false,
+      "cloud_name": "",
+      "api_key": "",
+      "api_secret": "",
+      "folder": "trendyol_mockups"
+    },
+    "imgbb_keys": ["INSERT_IMGBB_API_KEY_HERE"],
+    "freeimage_key": "6d207e02198a847aa98d0a2a901485a5"
+  },
+  "kategoriler": {
+    "01_Wifi_Kutusu": {
+      "etiket": "Wifi / Sigorta Kutusu",
+      "barkod_prefix": "sg-M",
+      "model_prefix": "M-sg-M",
+      "boyut_cm": "30x40 cm",
+      "sablonlar": {
+        "Wifi_Kutusu_001.jpeg": {
+          "tip": "duz",
+          "x": 478,
+          "y": 554,
+          "w": 328,
+          "h": 221
+        },
+        "Wifi_Kutusu_002.jpeg": {
+          "tip": "duz",
+          "x": 470,
+          "y": 584,
+          "w": 263,
+          "h": 179
+        },
+        "Wifi_Kutusu_003.jpeg": {
+          "tip": "duz",
+          "x": 401,
+          "y": 620,
+          "w": 264,
+          "h": 182
+        },
+        "Wifi_Kutusu_004.jpeg": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              489,
+              554
+            ],
+            [
+              809,
+              553
+            ],
+            [
+              809,
+              774
+            ],
+            [
+              489,
+              774
+            ]
+          ]
+        },
+        "Wifi_Kutusu_005.jpeg": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              424,
+              567
+            ],
+            [
+              730,
+              565
+            ],
+            [
+              730,
+              783
+            ],
+            [
+              424,
+              782
+            ]
+          ]
+        },
+        "Wifi_Kutusu_006.jpeg": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              904,
+              1201
+            ],
+            [
+              1604,
+              1201
+            ],
+            [
+              1604,
+              1674
+            ],
+            [
+              903,
+              1672
+            ]
+          ]
+        },
+        "Wifi_Kutusu_007.jpeg": {
+          "tip": "duz",
+          "x": 902,
+          "y": 1201,
+          "w": 703,
+          "h": 472
+        },
+        "Wifi_Kutusu_008.jpeg": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              504,
+              603
+            ],
+            [
+              707,
+              601
+            ],
+            [
+              707,
+              741
+            ],
+            [
+              504,
+              750
+            ]
+          ]
+        },
+        "Wifi_Kutusu_009.jpeg": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              475,
+              600
+            ],
+            [
+              739,
+              591
+            ],
+            [
+              738,
+              790
+            ],
+            [
+              476,
+              815
+            ]
+          ]
+        },
+        "Wifi_Kutusu_010.webp": {
+          "tip": "duz",
+          "x": 1462,
+          "y": 1944,
+          "w": 1136,
+          "h": 766
+        },
+        "Wifi_Kutusu_011.webp": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              1583,
+              1942
+            ],
+            [
+              2602,
+              1938
+            ],
+            [
+              2602,
+              2716
+            ],
+            [
+              1583,
+              2715
+            ]
+          ]
+        },
+        "Wifi_Kutusu_012.jpeg": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              401,
+              484
+            ],
+            [
+              748,
+              488
+            ],
+            [
+              748,
+              762
+            ],
+            [
+              401,
+              789
+            ]
+          ]
+        },
+        "Wifi_Kutusu_013.jpeg": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              399,
+              484
+            ],
+            [
+              750,
+              489
+            ],
+            [
+              750,
+              764
+            ],
+            [
+              401,
+              789
+            ]
+          ]
+        },
+        "Wifi_Kutusu_014.jpeg": {
+          "tip": "duz",
+          "x": 451,
+          "y": 600,
+          "w": 351,
+          "h": 236
+        },
+        "Wifi_Kutusu_015.jpeg": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              400,
+              483
+            ],
+            [
+              750,
+              489
+            ],
+            [
+              749,
+              763
+            ],
+            [
+              401,
+              790
+            ]
+          ]
+        },
+        "Wifi_Kutusu_016.jpeg": {
+          "tip": "duz",
+          "x": 510,
+          "y": 590,
+          "w": 231,
+          "h": 151
+        },
+        "Wifi_Kutusu_017.jpeg": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              474,
+              600
+            ],
+            [
+              740,
+              590
+            ],
+            [
+              738,
+              789
+            ],
+            [
+              475,
+              815
+            ]
+          ]
+        }
+      }
+    },
+    "03_Ahsap_Tablo": {
+      "etiket": "Doğal Ahşap Çerçeveli Tablo",
+      "barkod_prefix": "at-M",
+      "model_prefix": "M-at-M",
+      "boyut_cm": "40x60 cm",
+      "sablonlar": {
+        "AhsapTablo_001.jpg": {
+          "tip": "duz",
+          "x": 384,
+          "y": 66,
+          "w": 442,
+          "h": 651
+        },
+        "AhsapTablo_002.jpg": {
+          "tip": "duz",
+          "x": 183,
+          "y": 113,
+          "w": 400,
+          "h": 590
+        },
+        "AhsapTablo_003.jpg": {
+          "tip": "duz",
+          "x": 251,
+          "y": 56,
+          "w": 482,
+          "h": 708
+        },
+        "AhsapTablo_004.jpg": {
+          "tip": "duz",
+          "x": 371,
+          "y": 134,
+          "w": 372,
+          "h": 548
+        },
+        "AhsapTablo_005.jpg": {
+          "tip": "duz",
+          "x": 88,
+          "y": 267,
+          "w": 301,
+          "h": 442
+        },
+        "AhsapTablo_006.jpg": {
+          "tip": "duz",
+          "x": 240,
+          "y": 70,
+          "w": 373,
+          "h": 551
+        },
+        "AhsapTablo_007.jpg": {
+          "tip": "duz",
+          "x": 478,
+          "y": 119,
+          "w": 313,
+          "h": 451
+        },
+        "AhsapTablo_009.webp": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              261,
+              135
+            ],
+            [
+              464,
+              135
+            ],
+            [
+              464,
+              443
+            ],
+            [
+              259,
+              442
+            ]
+          ]
+        },
+        "AhsapTablo_013.webp": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              209,
+              202
+            ],
+            [
+              445,
+              204
+            ],
+            [
+              445,
+              565
+            ],
+            [
+              205,
+              563
+            ]
+          ]
+        },
+        "AhsapTablo_014.jpg": {
+          "tip": "duz",
+          "x": 421,
+          "y": 431,
+          "w": 338,
+          "h": 468
+        },
+        "AhsapTablo_015.jpg": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              608,
+              972
+            ],
+            [
+              1557,
+              1122
+            ],
+            [
+              1555,
+              2554
+            ],
+            [
+              608,
+              2552
+            ]
+          ]
+        },
+        "AhsapTablo_016.jpeg": {
+          "tip": "duz",
+          "x": 1248,
+          "y": 1244,
+          "w": 1596,
+          "h": 2540
+        },
+        "AhsapTablo_008.jpeg": {
+          "tip": "duz",
+          "x": 448,
+          "y": 480,
+          "w": 896,
+          "h": 1440
+        },
+        "AhsapTablo_010.jpeg": {
+          "tip": "duz",
+          "x": 448,
+          "y": 480,
+          "w": 896,
+          "h": 1440
+        },
+        "AhsapTablo_011.jpeg": {
+          "tip": "duz",
+          "x": 448,
+          "y": 480,
+          "w": 896,
+          "h": 1440
+        },
+        "AhsapTablo_012.jpeg": {
+          "tip": "duz",
+          "x": 448,
+          "y": 480,
+          "w": 896,
+          "h": 1440
+        }
+      }
+    },
+    "04_Cam_Dograma": {
+      "etiket": "Cam Kesme ve Doğrama Tahtası",
+      "barkod_prefix": "cdt-M",
+      "model_prefix": "M-cdt-M",
+      "boyut_cm": "30x40 cm",
+      "sablonlar": {
+        "CamDograma_001.jpg": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              441,
+              148
+            ],
+            [
+              948,
+              227
+            ],
+            [
+              784,
+              1082
+            ],
+            [
+              311,
+              918
+            ]
+          ]
+        },
+        "CamDograma_005.webp": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              337,
+              620
+            ],
+            [
+              904,
+              621
+            ],
+            [
+              901,
+              1472
+            ],
+            [
+              340,
+              1476
+            ]
+          ]
+        },
+        "CamDograma_006.webp": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              130,
+              683
+            ],
+            [
+              537,
+              550
+            ],
+            [
+              708,
+              1138
+            ],
+            [
+              294,
+              1268
+            ]
+          ]
+        },
+        "CamDograma_007.webp": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              51,
+              1097
+            ],
+            [
+              724,
+              820
+            ],
+            [
+              1163,
+              1093
+            ],
+            [
+              467,
+              1449
+            ]
+          ]
+        },
+        "CamDograma_017.webp": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              274,
+              1272
+            ],
+            [
+              2220,
+              1280
+            ],
+            [
+              2221,
+              2654
+            ],
+            [
+              268,
+              2658
+            ]
+          ]
+        },
+        "CamDograma_018.png": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              495,
+              1427
+            ],
+            [
+              1217,
+              1480
+            ],
+            [
+              1094,
+              1986
+            ],
+            [
+              335,
+              1898
+            ]
+          ]
+        },
+        "CamDograma_019.png": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              526,
+              1333
+            ],
+            [
+              1316,
+              1334
+            ],
+            [
+              1325,
+              1875
+            ],
+            [
+              519,
+              1878
+            ]
+          ]
+        },
+        "CamDograma_023.webp": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              182,
+              289
+            ],
+            [
+              891,
+              289
+            ],
+            [
+              931,
+              1324
+            ],
+            [
+              222,
+              1367
+            ]
+          ]
+        },
+        "CamDograma_024.jpeg": {
+          "tip": "duz",
+          "x": 24,
+          "y": 174,
+          "w": 317,
+          "h": 221
+        },
+        "CamDograma_025.jpeg": {
+          "tip": "duz",
+          "x": 448,
+          "y": 480,
+          "w": 896,
+          "h": 1440
+        },
+        "CamDograma_026.jpeg": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              239,
+              956
+            ],
+            [
+              1551,
+              958
+            ],
+            [
+              1552,
+              1848
+            ],
+            [
+              235,
+              1848
+            ]
+          ]
+        },
+        "CamDograma_027.jpeg": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              239,
+              957
+            ],
+            [
+              1551,
+              959
+            ],
+            [
+              1553,
+              1847
+            ],
+            [
+              235,
+              1847
+            ]
+          ]
+        },
+        "CamDograma_028.jpeg": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              239,
+              956
+            ],
+            [
+              1553,
+              957
+            ],
+            [
+              1556,
+              1849
+            ],
+            [
+              236,
+              1850
+            ]
+          ]
+        },
+        "CamDograma_003.jpeg": {
+          "tip": "duz",
+          "x": 412,
+          "y": 708,
+          "w": 988,
+          "h": 651,
+          "on_plan": {
+            "object_boxes": [],
+            "add_brush": [],
+            "subtract_brush": [],
+            "feather": 1.2,
+            "grabcut_iterations": 5
+          }
+        },
+        "CamDograma_008.jpeg": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              302,
+              820
+            ],
+            [
+              1524,
+              811
+            ],
+            [
+              1536,
+              1630
+            ],
+            [
+              306,
+              1635
+            ]
+          ]
+        },
+        "CamDograma_015.jpeg": {
+          "tip": "duz",
+          "x": 448,
+          "y": 480,
+          "w": 896,
+          "h": 1440
+        },
+        "CamDograma_029.jpeg": {
+          "tip": "duz",
+          "x": 448,
+          "y": 480,
+          "w": 896,
+          "h": 1440
+        },
+        "CamDograma_030.jpeg": {
+          "tip": "duz",
+          "x": 448,
+          "y": 480,
+          "w": 896,
+          "h": 1440
+        },
+        "CamDograma_031.jpeg": {
+          "tip": "duz",
+          "x": 448,
+          "y": 480,
+          "w": 896,
+          "h": 1440
+        },
+        "CamDograma_032.jpeg": {
+          "tip": "duz",
+          "x": 448,
+          "y": 480,
+          "w": 896,
+          "h": 1440
+        }
+      }
+    },
+    "05_Ocak_Arkasi": {
+      "etiket": "Ocak Arkası Koruyucu Cam Panel",
+      "barkod_prefix": "oact-M",
+      "model_prefix": "M-oact-M",
+      "boyut_cm": "60x80 cm",
+      "sablonlar": {
+        "OcakArkasi_001.webp": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              205,
+              456
+            ],
+            [
+              1084,
+              424
+            ],
+            [
+              1084,
+              1214
+            ],
+            [
+              208,
+              1156
+            ]
+          ]
+        },
+        "OcakArkasi_002.webp": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              345,
+              552
+            ],
+            [
+              964,
+              546
+            ],
+            [
+              964,
+              1106
+            ],
+            [
+              345,
+              1048
+            ]
+          ]
+        },
+        "OcakArkasi_003.webp": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              398,
+              736
+            ],
+            [
+              1066,
+              676
+            ],
+            [
+              1066,
+              1240
+            ],
+            [
+              398,
+              1178
+            ]
+          ]
+        },
+        "OcakArkasi_004.webp": {
+          "tip": "duz",
+          "x": 96,
+          "y": 555,
+          "w": 1014,
+          "h": 585
+        },
+        "OcakArkasi_005.webp": {
+          "tip": "duz",
+          "x": 138,
+          "y": 439,
+          "w": 926,
+          "h": 603
+        },
+        "OcakArkasi_006.webp": {
+          "tip": "duz",
+          "x": 146,
+          "y": 620,
+          "w": 906,
+          "h": 532
+        },
+        "OcakArkasi_007.webp": {
+          "tip": "duz",
+          "x": 177,
+          "y": 458,
+          "w": 875,
+          "h": 646
+        },
+        "OcakArkasi_008.webp": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              202,
+              455
+            ],
+            [
+              994,
+              457
+            ],
+            [
+              995,
+              1075
+            ],
+            [
+              202,
+              1075
+            ]
+          ]
+        },
+        "OcakArkasi_009.jpg": {
+          "tip": "duz",
+          "x": 434,
+          "y": 549,
+          "w": 1139,
+          "h": 698
+        }
+      }
+    },
+    "02_Cam_Tablo_Dikey": {
+      "etiket": "Lüks Dikey Cam Tablo",
+      "barkod_prefix": "ct-M",
+      "model_prefix": "M-ct-M",
+      "boyut_cm": "50x70 cm",
+      "sablonlar": {
+        "CamTabloDikey_001.jpg": {
+          "tip": "duz",
+          "x": 210,
+          "y": 187,
+          "w": 369,
+          "h": 579
+        },
+        "CamTabloDikey_002.webp": {
+          "tip": "duz",
+          "x": 317,
+          "y": 93,
+          "w": 586,
+          "h": 866
+        },
+        "CamTabloDikey_003.webp": {
+          "tip": "duz",
+          "x": 334,
+          "y": 175,
+          "w": 530,
+          "h": 838
+        },
+        "CamTabloDikey_004.webp": {
+          "tip": "duz",
+          "x": 189,
+          "y": 181,
+          "w": 847,
+          "h": 1274
+        },
+        "CamTabloDikey_005.webp": {
+          "tip": "duz",
+          "x": 356,
+          "y": 254,
+          "w": 524,
+          "h": 716
+        },
+        "CamTabloDikey_006.webp": {
+          "tip": "duz",
+          "x": 365,
+          "y": 82,
+          "w": 495,
+          "h": 756
+        },
+        "CamTabloDikey_007.webp": {
+          "tip": "duz",
+          "x": 229,
+          "y": 63,
+          "w": 500,
+          "h": 911
+        },
+        "CamTabloDikey_008.webp": {
+          "tip": "duz",
+          "x": 192,
+          "y": 169,
+          "w": 876,
+          "h": 1384
+        },
+        "CamTabloDikey_010.webp": {
+          "tip": "duz",
+          "x": 262,
+          "y": 131,
+          "w": 703,
+          "h": 1003
+        },
+        "CamTabloDikey_011.webp": {
+          "tip": "duz",
+          "x": 198,
+          "y": 169,
+          "w": 867,
+          "h": 1425
+        },
+        "CamTabloDikey_012.webp": {
+          "tip": "duz",
+          "x": 198,
+          "y": 169,
+          "w": 867,
+          "h": 1425
+        },
+        "CamTabloDikey_013.webp": {
+          "tip": "duz",
+          "x": 350,
+          "y": 324,
+          "w": 531,
+          "h": 848
+        },
+        "CamTabloDikey_014.webp": {
+          "tip": "duz",
+          "x": 417,
+          "y": 224,
+          "w": 531,
+          "h": 837
+        },
+        "CamTabloDikey_015.webp": {
+          "tip": "duz",
+          "x": 334,
+          "y": 120,
+          "w": 530,
+          "h": 837
+        },
+        "CamTabloDikey_016.webp": {
+          "tip": "duz",
+          "x": 198,
+          "y": 169,
+          "w": 867,
+          "h": 1425
+        },
+        "CamTabloDikey_017.jpg": {
+          "tip": "duz",
+          "x": 286,
+          "y": 55,
+          "w": 597,
+          "h": 957
+        },
+        "CamTabloDikey_018.jpg": {
+          "tip": "duz",
+          "x": 435,
+          "y": 60,
+          "w": 314,
+          "h": 449
+        },
+        "CamTabloDikey_019.jpeg": {
+          "tip": "duz",
+          "x": 555,
+          "y": 409,
+          "w": 684,
+          "h": 1003
+        },
+        "CamTabloDikey_020.jpeg": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              502,
+              347
+            ],
+            [
+              1246,
+              176
+            ],
+            [
+              1246,
+              1530
+            ],
+            [
+              502,
+              1494
+            ]
+          ]
+        },
+        "CamTabloDikey_021.jpeg": {
+          "tip": "duz",
+          "x": 185,
+          "y": 239,
+          "w": 486,
+          "h": 770
+        },
+        "CamTabloDikey_022.jpeg": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              523,
+              457
+            ],
+            [
+              1277,
+              394
+            ],
+            [
+              1277,
+              1696
+            ],
+            [
+              523,
+              1670
+            ]
+          ]
+        },
+        "CamTabloDikey_023.jpeg": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              454,
+              472
+            ],
+            [
+              1230,
+              412
+            ],
+            [
+              1230,
+              1754
+            ],
+            [
+              454,
+              1720
+            ]
+          ]
+        },
+        "CamTabloDikey_024.jpeg": {
+          "tip": "duz",
+          "x": 453,
+          "y": 471,
+          "w": 789,
+          "h": 1313
+        },
+        "CamTabloDikey_025.jpeg": {
+          "tip": "duz",
+          "x": 452,
+          "y": 604,
+          "w": 793,
+          "h": 1314
+        },
+        "CamTabloDikey_026.jpeg": {
+          "tip": "duz",
+          "x": 388,
+          "y": 443,
+          "w": 920,
+          "h": 1403
+        },
+        "CamTabloDikey_027.jpeg": {
+          "tip": "duz",
+          "x": 407,
+          "y": 180,
+          "w": 883,
+          "h": 1412
+        },
+        "CamTabloDikey_028.jpeg": {
+          "tip": "duz",
+          "x": 521,
+          "y": 515,
+          "w": 673,
+          "h": 935
+        },
+        "CamTabloDikey_029.jpeg": {
+          "tip": "duz",
+          "x": 387,
+          "y": 443,
+          "w": 936,
+          "h": 1364
+        },
+        "CamTabloDikey_030.jpeg": {
+          "tip": "duz",
+          "x": 133,
+          "y": 25,
+          "w": 373,
+          "h": 407
+        },
+        "CamTabloDikey_031.jpeg": {
+          "tip": "duz",
+          "x": 267,
+          "y": 408,
+          "w": 1160,
+          "h": 1695
+        },
+        "CamTabloDikey_032.jpeg": {
+          "tip": "duz",
+          "x": 407,
+          "y": 447,
+          "w": 899,
+          "h": 1376
+        },
+        "CamTabloDikey_033.jpeg": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              540,
+              592
+            ],
+            [
+              1149,
+              639
+            ],
+            [
+              1149,
+              1515
+            ],
+            [
+              540,
+              1537
+            ]
+          ]
+        },
+        "CamTabloDikey_034.jpeg": {
+          "tip": "duz",
+          "x": 542,
+          "y": 613,
+          "w": 606,
+          "h": 910
+        },
+        "CamTabloDikey_035.jpg": {
+          "tip": "duz",
+          "x": 385,
+          "y": 172,
+          "w": 370,
+          "h": 581
+        },
+        "CamTabloDikey_036.jpg": {
+          "tip": "duz",
+          "x": 349,
+          "y": 105,
+          "w": 379,
+          "h": 594
+        },
+        "CamTabloDikey_037.jpg": {
+          "tip": "duz",
+          "x": 420,
+          "y": 45,
+          "w": 334,
+          "h": 499
+        },
+        "CamTabloDikey_038.webp": {
+          "tip": "duz",
+          "x": 404,
+          "y": 68,
+          "w": 365,
+          "h": 547
+        },
+        "CamTabloDikey_039.webp": {
+          "tip": "duz",
+          "x": 332,
+          "y": 61,
+          "w": 489,
+          "h": 632
+        },
+        "CamTabloDikey_040.jpg": {
+          "tip": "duz",
+          "x": 250,
+          "y": 54,
+          "w": 293,
+          "h": 569
+        },
+        "CamTabloDikey_041.webp": {
+          "tip": "duz",
+          "x": 397,
+          "y": 87,
+          "w": 361,
+          "h": 706
+        },
+        "CamTabloDikey_042.webp": {
+          "tip": "duz",
+          "x": 406,
+          "y": 145,
+          "w": 465,
+          "h": 652
+        },
+        "CamTabloDikey_043.webp": {
+          "tip": "duz",
+          "x": 441,
+          "y": 146,
+          "w": 469,
+          "h": 612
+        },
+        "CamTabloDikey_044.jpg": {
+          "tip": "duz",
+          "x": 285,
+          "y": 217,
+          "w": 570,
+          "h": 653
+        }
+      }
+    },
+    "02_Cam_Tablo_Yatay": {
+      "etiket": "Lüks Yatay Cam Tablo",
+      "barkod_prefix": "cty-M",
+      "model_prefix": "M-cty-M",
+      "boyut_cm": "70x100 cm",
+      "sablonlar": {
+        "CamTabloYatay_001.jpg": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              166,
+              227
+            ],
+            [
+              657,
+              152
+            ],
+            [
+              657,
+              582
+            ],
+            [
+              166,
+              574
+            ]
+          ]
+        },
+        "CamTabloYatay_002.jpg": {
+          "tip": "duz",
+          "x": 17,
+          "y": 42,
+          "w": 690,
+          "h": 461
+        },
+        "CamTabloYatay_003.jpg": {
+          "tip": "duz",
+          "x": 250,
+          "y": 182,
+          "w": 720,
+          "h": 427
+        },
+        "CamTabloYatay_004.jpg": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              126,
+              128
+            ],
+            [
+              850,
+              53
+            ],
+            [
+              850,
+              702
+            ],
+            [
+              126,
+              680
+            ]
+          ]
+        },
+        "CamTabloYatay_005.jpg": {
+          "tip": "duz",
+          "x": 168,
+          "y": 275,
+          "w": 658,
+          "h": 438
+        },
+        "CamTabloYatay_006.webp": {
+          "tip": "duz",
+          "x": 290,
+          "y": 145,
+          "w": 604,
+          "h": 382
+        },
+        "CamTabloYatay_007.webp": {
+          "tip": "duz",
+          "x": 197,
+          "y": 302,
+          "w": 755,
+          "h": 457
+        },
+        "CamTabloYatay_008.webp": {
+          "tip": "duz",
+          "x": 296,
+          "y": 381,
+          "w": 561,
+          "h": 258
+        },
+        "CamTabloYatay_009.webp": {
+          "tip": "duz",
+          "x": 211,
+          "y": 353,
+          "w": 717,
+          "h": 329
+        },
+        "CamTabloYatay_010.webp": {
+          "tip": "duz",
+          "x": 170,
+          "y": 130,
+          "w": 800,
+          "h": 511
+        },
+        "CamTabloYatay_011.webp": {
+          "tip": "duz",
+          "x": 168,
+          "y": 171,
+          "w": 804,
+          "h": 549
+        },
+        "CamTabloYatay_012.webp": {
+          "tip": "duz",
+          "x": 179,
+          "y": 280,
+          "w": 753,
+          "h": 519
+        },
+        "CamTabloYatay_013.webp": {
+          "tip": "duz",
+          "x": 558,
+          "y": 389,
+          "w": 453,
+          "h": 289
+        },
+        "CamTabloYatay_014.webp": {
+          "tip": "duz",
+          "x": 497,
+          "y": 699,
+          "w": 495,
+          "h": 329
+        },
+        "CamTabloYatay_015.webp": {
+          "tip": "duz",
+          "x": 225,
+          "y": 121,
+          "w": 842,
+          "h": 508
+        },
+        "CamTabloYatay_016.jpg": {
+          "tip": "perspektif",
+          "koseler": [
+            [
+              138,
+              240
+            ],
+            [
+              980,
+              260
+            ],
+            [
+              995,
+              730
+            ],
+            [
+              138,
+              780
+            ]
+          ]
+        },
+        "CamTabloYatay_017.webp": {
+          "tip": "duz",
+          "x": 263,
+          "y": 234,
+          "w": 604,
+          "h": 397
+        },
+        "CamTabloYatay_018.webp": {
+          "tip": "duz",
+          "x": 151,
+          "y": 201,
+          "w": 931,
+          "h": 489
+        },
+        "CamTabloYatay_019.webp": {
+          "tip": "duz",
+          "x": 450,
+          "y": 244,
+          "w": 349,
+          "h": 281
+        },
+        "CamTabloYatay_020.webp": {
+          "tip": "duz",
+          "x": 190,
+          "y": 199,
+          "w": 417,
+          "h": 255
+        },
+        "CamTabloYatay_021.webp": {
+          "tip": "duz",
+          "x": 358,
+          "y": 223,
+          "w": 604,
+          "h": 399
+        },
+        "CamTabloYatay_022.webp": {
+          "tip": "duz",
+          "x": 144,
+          "y": 106,
+          "w": 869,
+          "h": 675
+        },
+        "CamTabloYatay_023.webp": {
+          "tip": "duz",
+          "x": 575,
+          "y": 697,
+          "w": 370,
+          "h": 213
+        },
+        "CamTabloYatay_024.webp": {
+          "tip": "duz",
+          "x": 419,
+          "y": 223,
+          "w": 831,
+          "h": 668
+        },
+        "CamTabloYatay_025.webp": {
+          "tip": "duz",
+          "x": 257,
+          "y": 1116,
+          "w": 566,
+          "h": 333
+        },
+        "CamTabloYatay_026.webp": {
+          "tip": "duz",
+          "x": 341,
+          "y": 359,
+          "w": 922,
+          "h": 550
+        },
+        "CamTabloYatay_027.webp": {
+          "tip": "duz",
+          "x": 132,
+          "y": 1511,
+          "w": 1007,
+          "h": 521
+        },
+        "CamTabloYatay_028.webp": {
+          "tip": "duz",
+          "x": 271,
+          "y": 530,
+          "w": 1063,
+          "h": 677
+        },
+        "CamTabloYatay_029.webp": {
+          "tip": "duz",
+          "x": 53,
+          "y": 495,
+          "w": 764,
+          "h": 582
+        },
+        "CamTabloYatay_030.webp": {
+          "tip": "duz",
+          "x": 201,
+          "y": 439,
+          "w": 806,
+          "h": 602
+        },
+        "CamTabloYatay_031.webp": {
+          "tip": "duz",
+          "x": 285,
+          "y": 492,
+          "w": 1082,
+          "h": 712
+        },
+        "CamTabloYatay_032.webp": {
+          "tip": "duz",
+          "x": 2,
+          "y": 1243,
+          "w": 1069,
+          "h": 689
+        },
+        "CamTabloYatay_033.webp": {
+          "tip": "duz",
+          "x": 454,
+          "y": 348,
+          "w": 790,
+          "h": 483
+        },
+        "CamTabloYatay_034.webp": {
+          "tip": "duz",
+          "x": 440,
+          "y": 240,
+          "w": 715,
+          "h": 551
+        },
+        "CamTabloYatay_035.webp": {
+          "tip": "duz",
+          "x": 283,
+          "y": 501,
+          "w": 1050,
+          "h": 730
+        },
+        "CamTabloYatay_036.webp": {
+          "tip": "duz",
+          "x": 82,
+          "y": 218,
+          "w": 1419,
+          "h": 904
+        },
+        "CamTabloYatay_037.webp": {
+          "tip": "duz",
+          "x": 281,
+          "y": 356,
+          "w": 662,
+          "h": 487
+        },
+        "CamTabloYatay_038.webp": {
+          "tip": "duz",
+          "x": 623,
+          "y": 1281,
+          "w": 1015,
+          "h": 699
+        },
+        "CamTabloYatay_039.webp": {
+          "tip": "duz",
+          "x": 261,
+          "y": 121,
+          "w": 1276,
+          "h": 555
+        },
+        "CamTabloYatay_040.webp": {
+          "tip": "duz",
+          "x": 538,
+          "y": 1200,
+          "w": 1065,
+          "h": 594
+        },
+        "CamTabloYatay_041.webp": {
+          "tip": "duz",
+          "x": 194,
+          "y": 418,
+          "w": 524,
+          "h": 368
+        },
+        "CamTabloYatay_042.webp": {
+          "tip": "duz",
+          "x": 167,
+          "y": 282,
+          "w": 524,
+          "h": 369
+        },
+        "CamTabloYatay_043.webp": {
+          "tip": "duz",
+          "x": 153,
+          "y": 295,
+          "w": 524,
+          "h": 368
+        },
+        "CamTabloYatay_044.webp": {
+          "tip": "duz",
+          "x": 146,
+          "y": 255,
+          "w": 524,
+          "h": 368
+        },
+        "CamTabloYatay_045.webp": {
+          "tip": "duz",
+          "x": 146,
+          "y": 255,
+          "w": 524,
+          "h": 368
+        },
+        "CamTabloYatay_046.webp": {
+          "tip": "duz",
+          "x": 146,
+          "y": 255,
+          "w": 524,
+          "h": 368
+        },
+        "CamTabloYatay_047.webp": {
+          "tip": "duz",
+          "x": 146,
+          "y": 313,
+          "w": 524,
+          "h": 369
+        },
+        "CamTabloYatay_048.webp": {
+          "tip": "duz",
+          "x": 274,
+          "y": 237,
+          "w": 1253,
+          "h": 836
+        },
+        "CamTabloYatay_049.jpg": {
+          "tip": "duz",
+          "x": 24,
+          "y": 216,
+          "w": 844,
+          "h": 538
+        },
+        "CamTabloYatay_050.jpg": {
+          "tip": "duz",
+          "x": 285,
+          "y": 228,
+          "w": 570,
+          "h": 684
+        }
+      }
+    }
+  }
+}

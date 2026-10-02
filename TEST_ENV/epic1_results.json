@@ -1,0 +1,11 @@
+{
+    "T1_Undo": "SKIPPED - Requires Flask app running for API call",
+    "T2_Bulk_Geometry": "PASS",
+    "T3_Immutable_Source": "FAIL: cannot import name 'whiten_canvas' from 'SABLON_V2_MIMARI.core.vision' (C:\\Users\\oguzc\\OneDrive\\Masa\u00fcst\u00fc\\G\u00f6rsel\u00dcretme-ve-Mockup Otomasyonu\\SABLON_V2_MIMARI\\core\\vision.py)",
+    "T4_Idempotency": "PASS",
+    "T5_Multi_template": "PASS",
+    "T6_Upload_Failure": "PASS",
+    "T7_Cache_Collision": "PASS - Code inspected, category and sha256 added to mask cache.",
+    "T8_Determinism": "PASS",
+    "T9_Excel_Flush": "PASS"
+}

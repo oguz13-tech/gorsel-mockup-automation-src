@@ -1,0 +1,35 @@
+===============================================================================
+              E-TICARET OTOMASYON MERKEZI - HIZLI KULLANIM KILAVUZU
+===============================================================================
+
+Bu otomasyon; Kaggle GPU matbaasinda uretilen Master Tasarimlari alir ve tek tusla
+5 farkli e-ticaret urunune (Wifi Kutusu, Cam Tablo Dikey/Yatay, Ahsap Tablo,
+Cam Dograma Tahtasi, Ocak Arkasi Cam) donusturur.
+
+-------------------------------------------------------------------------------
+KLASOR DUZENI VE ADIMLAR:
+-------------------------------------------------------------------------------
+
+1. 1_GELEN_KAGGLE_BASKILARI
+   -> Kaggle'dan indirdiginiz commercial_uv_prints.zip dosyasini buraya cikartin.
+   -> (manifest.json ve M000001_H.png, M000001_V.png dosyalari burada olmali)
+
+2. 2_SABLON_HAVUZU
+   -> Urunlerin oda ve mutfak sablonlari burada yer alir:
+      * 01_Wifi_Kutusu      (11 adet salon/antre sablonu)
+      * 02_Cam_Tablo_Dikey  (Altin kenarli ve perspektifli luks cam sablonu)
+      * 02_Cam_Tablo_Yatay  (Koltuk ustu modern salon sablonu)
+      * 03_Ahsap_Tablo      (Iskandinav dogal ahsap cerceve sablonu)
+      * 04_Cam_Dograma      (Ceviz tezgah uzeri gercekci cam kesme sablonu)
+      * 05_Ocak_Arkasi      (Spot isikli modern mutfak ocak arkasi sablonu)
+
+3. OTOMASYONU_CALISTIR.bat
+   -> Bu dosyaya CIFT TIKLAYIN!
+   -> Sistem otomatik olarak tum mockuplari milimetrik koordinatlarla basar,
+      buluta yukler ve Trendyol Excel'ini doldurur.
+
+4. 3_URETILEN_MOCKUPLAR
+   -> Satisa hazir, yuksek cozunurluklu urun fotograflariniz burada toplanir.
+
+5. 4_EXCEL_YUKLEME_LISTELERI
+   -> Trendyol'a dogrudan yukleyeceginiz Urun_Yukleme_Listesi.xlsx burada hazir olur.
