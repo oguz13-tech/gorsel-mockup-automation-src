@@ -30,6 +30,34 @@ def init_db():
                     key TEXT PRIMARY KEY,
                     value TEXT
                  )''')
+    
+    c.execute('''CREATE TABLE IF NOT EXISTS template_profiles (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    template_uid TEXT,
+                    category TEXT,
+                    source_relative_path TEXT,
+                    source_asset_sha256 TEXT,
+                    profile_version TEXT,
+                    analyzer_version TEXT,
+                    product_class TEXT,
+                    orientation TEXT,
+                    geometry_type TEXT,
+                    print_policy TEXT,
+                    surface_quad TEXT,
+                    outer_quad TEXT,
+                    surface_mask_path TEXT,
+                    material TEXT,
+                    has_frame INTEGER,
+                    has_mat INTEGER,
+                    has_reflection INTEGER,
+                    has_occlusion INTEGER,
+                    confidence_total REAL,
+                    component_confidences TEXT,
+                    review_status TEXT,
+                    manually_verified INTEGER,
+                    is_active INTEGER DEFAULT 1,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                 )''')
     conn.commit()
     conn.close()
 

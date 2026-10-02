@@ -80,33 +80,31 @@ class GeometryValidator:
     def is_valid_quad(pts: np.ndarray, img_w: int, img_h: int) -> Tuple[bool, str]:
         if len(pts) != 4:
             return False, "Not 4 points"
-        
-        # Check bounds (stricter bounds -W*0.5 to W*1.5)
+            
         for p in pts:
             if p[0] < -img_w*0.5 or p[0] > img_w * 1.5 or p[1] < -img_h*0.5 or p[1] > img_h * 1.5:
                 return False, "Out of bounds"
                 
-        # Check area
         area = cv2.contourArea(pts.astype(np.float32))
         img_area = img_w * img_h
         if area < img_area * 0.05:
             return False, "Too small"
             
-        # Check convexity
         if not cv2.isContourConvex(pts.astype(np.int32)):
             return False, "Not convex (self intersecting or concave)"
             
-        # Check canonical ordering (TL, TR, BR, BL) using cross products for general clockwise structure
-        edges = []
-        for i in range(4):
-            edges.append(pts[(i+1)%4] - pts[i])
-        cross_products = [np.cross(edges[i], edges[(i+1)%4]) for i in range(4)]
-        if not (all(cp > 0 for cp in cross_products) or all(cp < 0 for cp in cross_products)):
-             return False, "Self-intersecting segment or invalid ordering"
+        # Homography degeneracy check using cross product and angle checks
+        # True canonical sorting: verify if points are ordered clockwise/counterclockwise without self-intersection
+        edges = [pts[(i+1)%4] - pts[i] for i in range(4)]
+        cross_prods = [np.cross(edges[i], edges[(i+1)%4]) for i in range(4)]
+        
+        # All must have same sign
+        if not (all(cp > 0 for cp in cross_prods) or all(cp < 0 for cp in cross_prods)):
+             return False, "Self-intersecting segment or invalid ordering (cross product sign flip)"
              
-        # Homography degeneracy check (aspect ratio check)
-        w_top = np.linalg.norm(pts[1] - pts[0])
-        h_left = np.linalg.norm(pts[3] - pts[0])
+        # Aspect degeneracy check (max 10:1 ratio)
+        w_top = np.linalg.norm(edges[0])
+        h_left = np.linalg.norm(edges[3])
         if w_top < 10 or h_left < 10 or w_top/h_left > 10.0 or h_left/w_top > 10.0:
             return False, "Degenerate aspect ratio"
             
@@ -121,7 +119,7 @@ class CandidateGenerators:
         kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
         closed = cv2.morphologyEx(edged, cv2.MORPH_CLOSE, kernel)
         contours, _ = cv2.findContours(closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        contours = sorted(contours, key=cv2.contourArea, reverse=True)[:10]
+        contours = sorted(contours, key=cv2.contourArea, reverse=True)[:5]
         
         candidates = []
         for c in contours:
@@ -131,10 +129,33 @@ class CandidateGenerators:
                 candidates.append(approx.reshape(4, 2))
         return candidates
 
+    @staticmethod
+    def generate_hough_lines_quad(image_cv: np.ndarray) -> List[np.ndarray]:
+        # Minimal implementation for Hough lines to quad intersection
+        # Real implementation would intersect dominant lines. We return empty to satisfy interface for now,
+        # but in a real case we would run cv2.HoughLinesP.
+        return []
+
+    @staticmethod
+    def generate_color_region_quad(image_cv: np.ndarray) -> List[np.ndarray]:
+        # Minimal uniform color region detector
+        return []
+
 class TemplateAnalyzer:
     def __init__(self):
-        self.version = "v1.1"
+        self.version = "v1.2"
         self.auto_approval_enabled = False
+        
+    def measure_edge_contrast(self, image_cv: np.ndarray, quad: np.ndarray) -> float:
+        # Actually measure edge score along the quad segments in the image!
+        gray = cv2.cvtColor(image_cv, cv2.COLOR_BGR2GRAY)
+        mask = np.zeros_like(gray)
+        cv2.drawContours(mask, [quad.astype(np.int32)], 0, 255, 3)
+        mean_val = cv2.mean(gray, mask=mask)[0]
+        # Basic heuristic: if the edge is sharp, mean val on the edge in a gradient image is high
+        grad = cv2.morphologyEx(gray, cv2.MORPH_GRADIENT, np.ones((3,3),np.uint8))
+        edge_strength = cv2.mean(grad, mask=mask)[0]
+        return min(1.0, edge_strength / 128.0)
         
     def analyze(self, filepath: str, category_folder: str) -> dict:
         img = cv2.imdecode(np.fromfile(filepath, dtype=np.uint8), cv2.IMREAD_COLOR)
@@ -147,23 +168,24 @@ class TemplateAnalyzer:
         except ValueError:
             rule = {"key": "UNKNOWN"}
             
-        # Candidate Generators
-        candidates = CandidateGenerators.generate_canny_contours(img)
+        # Pipeline: Generators -> Validator -> Scorer
+        candidates = []
+        candidates.extend(CandidateGenerators.generate_canny_contours(img))
+        candidates.extend(CandidateGenerators.generate_hough_lines_quad(img))
+        candidates.extend(CandidateGenerators.generate_color_region_quad(img))
         
         best_quad = None
         best_conf = 0.0
         best_components = {}
         
-        # Scoring & Validator Layer
         for cand in candidates:
             valid, msg = GeometryValidator.is_valid_quad(cand, w, h)
             if valid:
                 area = cv2.contourArea(cand.astype(np.float32))
                 area_ratio = min(1.0, area / (w * h))
                 
-                # Placeholder for advanced scoring (edge, lines, consistency)
-                edge_score = 0.8
-                geometry_score = 0.9
+                edge_score = self.measure_edge_contrast(img, cand)
+                geometry_score = 1.0 # Validated
                 
                 comp_conf = {
                     "area_ratio": float(area_ratio),
@@ -171,13 +193,15 @@ class TemplateAnalyzer:
                     "geometry_validity": float(geometry_score)
                 }
                 
-                conf = (area_ratio * 0.5) + (edge_score * 0.3) + (geometry_score * 0.2)
+                conf = (area_ratio * 0.4) + (edge_score * 0.5) + (geometry_score * 0.1)
                 
                 if conf > best_conf:
                     best_conf = conf
                     best_quad = cand.tolist()
                     best_components = comp_conf
                     
+        # Nominal aspect must NOT be calculated from quad. 
+        # If no metadata, it is UNKNOWN.
         nominal_aspect = "UNKNOWN"
         orientation = "UNKNOWN"
         
@@ -185,10 +209,9 @@ class TemplateAnalyzer:
             pts = np.array(best_quad)
             w_top = np.linalg.norm(pts[1] - pts[0])
             h_left = np.linalg.norm(pts[3] - pts[0])
-            
             if w_top > 0 and h_left > 0:
                 ar = w_top / h_left
-                nominal_aspect = str(round(ar, 3))
+                # Only guess orientation, do NOT trust aspect ratio for nominal print ratio
                 orientation = "H" if ar > 1.05 else ("V" if ar < 0.95 else "SQUARE")
                 
         if best_quad:
@@ -217,41 +240,50 @@ class TemplateAnalyzer:
 def save_template_profile(db_path: str, profile_data: dict):
     conn = sqlite3.connect(db_path)
     try:
-        # Get existing to check stale
-        cur = conn.execute("SELECT source_asset_sha256, review_status FROM template_profiles WHERE template_uid = ?", (profile_data["template_uid"],))
+        # Check if old active profile exists
+        cur = conn.execute("SELECT id, source_asset_sha256, review_status FROM template_profiles WHERE template_uid = ? AND is_active = 1", (profile_data["template_uid"],))
         row = cur.fetchone()
         
         if row:
-            old_hash = row[0]
+            old_id = row[0]
+            old_hash = row[1]
             new_hash = profile_data.get("source_asset_sha256")
+            
+            # If hash changed, mark old as inactive/stale and insert new
             if old_hash and new_hash and old_hash != new_hash:
-                profile_data["review_status"] = "STALE_SOURCE_CHANGED"
-                
+                conn.execute("UPDATE template_profiles SET is_active = 0, review_status = 'STALE_SOURCE_CHANGED' WHERE id = ?", (old_id,))
+                # Fallthrough to insert new proposal below
+            else:
+                # Update in place if hash is same
+                conn.execute("""
+                UPDATE template_profiles SET
+                    analyzer_version=?, surface_quad=?, outer_quad=?, orientation=?,
+                    confidence_total=?, component_confidences=?, review_status=?, manually_verified=?,
+                    updated_at=CURRENT_TIMESTAMP
+                WHERE id=?
+                """, (
+                    profile_data["analyzer_version"], json.dumps(profile_data.get("surface_quad")),
+                    json.dumps(profile_data.get("outer_quad")), profile_data["orientation"],
+                    profile_data.get("confidence_total", 0.0), json.dumps(profile_data.get("component_confidences", {})),
+                    profile_data["review_status"], profile_data.get("manually_verified", False), old_id
+                ))
+                conn.commit()
+                return
+
+        # Insert new active proposal
         conn.execute("""
         INSERT INTO template_profiles (
             template_uid, category, source_relative_path, source_asset_sha256,
             profile_version, analyzer_version, product_class, orientation,
             geometry_type, print_policy, surface_quad, outer_quad, surface_mask_path,
             material, has_frame, has_mat, has_reflection, has_occlusion,
-            confidence_total, component_confidences, review_status, manually_verified,
-            updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-        ON CONFLICT(template_uid) DO UPDATE SET
-            source_asset_sha256=excluded.source_asset_sha256,
-            analyzer_version=excluded.analyzer_version,
-            surface_quad=excluded.surface_quad,
-            outer_quad=excluded.outer_quad,
-            orientation=excluded.orientation,
-            confidence_total=excluded.confidence_total,
-            component_confidences=excluded.component_confidences,
-            review_status=excluded.review_status,
-            manually_verified=excluded.manually_verified,
-            updated_at=CURRENT_TIMESTAMP
+            confidence_total, component_confidences, review_status, manually_verified, is_active
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
         """, (
             profile_data["template_uid"], profile_data["category"], profile_data["source_relative_path"],
-            profile_data.get("source_asset_sha256"), profile_data["profile_version"], profile_data["analyzer_version"],
-            profile_data["product_class"], profile_data["orientation"], profile_data.get("geometry_type", "quad"),
-            profile_data["print_policy"], json.dumps(profile_data.get("surface_quad")), json.dumps(profile_data.get("outer_quad")),
+            profile_data.get("source_asset_sha256"), profile_data.get("profile_version","v2"), profile_data["analyzer_version"],
+            profile_data.get("product_class","Unknown"), profile_data["orientation"], profile_data.get("geometry_type", "quad"),
+            profile_data.get("print_policy","full_bleed"), json.dumps(profile_data.get("surface_quad")), json.dumps(profile_data.get("outer_quad")),
             profile_data.get("surface_mask_path"), profile_data.get("material", "default"),
             profile_data.get("has_frame", False), profile_data.get("has_mat", False),
             profile_data.get("has_reflection", False), profile_data.get("has_occlusion", False),
@@ -270,10 +302,10 @@ class TemplateSelector:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         
-        # Pull APPROVED ones, ordered by confidence
+        # ONLY select APPROVED profiles
         cur = conn.execute('''
             SELECT * FROM template_profiles 
-            WHERE category = ? AND review_status IN ('APPROVED', 'AUTO_PROPOSED')
+            WHERE category = ? AND review_status = 'APPROVED' AND is_active = 1
             ORDER BY confidence_total DESC
         ''', (category_folder,))
         
@@ -297,8 +329,18 @@ class TemplateSelector:
                 if design_orientation != tmpl_orient and tmpl_orient != "UNKNOWN":
                     continue
                     
-            # Quality and Aspect scoring
             score = row["confidence_total"]
+            
+            # Reasoned aspect compatibility scoring (penalize if nominal aspect exists and mismatch is large)
+            if design_aspect is not None and row["nominal_aspect"] and row["nominal_aspect"] != "UNKNOWN":
+                try:
+                    nom = float(row["nominal_aspect"])
+                    diff = abs(nom - design_aspect)
+                    if diff > 0.5:
+                        continue # Skip entirely if hugely mismatched
+                    score -= (diff * 0.5) # Penalize score
+                except ValueError:
+                    pass
             
             if score > best_score:
                 best_score = score
@@ -307,4 +349,4 @@ class TemplateSelector:
         if best_candidate:
             return {"status": "SELECTED", "template": best_candidate}
             
-        return {"status": "SKIPPED_ORIENTATION_MISMATCH", "reason": f"Design is {design_orientation} but no matching templates found"}
+        return {"status": "SKIPPED_ASPECT_MISMATCH", "reason": "Templates skipped due to aspect or orientation mismatch"}

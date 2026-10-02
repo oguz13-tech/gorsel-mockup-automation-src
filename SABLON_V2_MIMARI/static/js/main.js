@@ -1478,3 +1478,68 @@ window.onerror = function(msg, url, line, col, error) {
             }
         });
     }
+
+// --- YZ ONAY SISTEMI ---
+async function batchAnalyze() {
+    if(!activeCategory) return alert("Kategori seçili değil!");
+    if(!confirm(activeCategory + " kategorisindeki tüm şablonlar analiz edilecek. Onaylıyor musunuz?")) return;
+    
+    try {
+        let res = await fetch('/api/templates/batch_analyze', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ category: activeCategory })
+        });
+        let data = await res.json();
+        if(data.success) {
+            alert("Analiz tamamlandı. İşlenen dosya: " + data.results.length);
+        } else {
+            alert("Hata: " + data.error);
+        }
+    } catch(e) {
+        alert("Bağlantı hatası: " + e);
+    }
+}
+
+async function approveTemplate() {
+    if(!activeCategory || !activeTemplate) return;
+    let uid = activeCategory + "_" + activeTemplate;
+    let pts = window.activeConfig ? window.activeConfig.quad : [];
+    if (!pts || pts.length !== 4) return alert("Geçerli 4 köşe yok!");
+    
+    try {
+        let res = await fetch('/api/templates/update_corners', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ template_uid: uid, corners: pts })
+        });
+        let data = await res.json();
+        if(data.success) {
+            alert("Geometri başarıyla onaylandı (APPROVED).");
+        } else {
+            alert("Hata: " + data.error);
+        }
+    } catch(e) {
+        alert("Bağlantı hatası: " + e);
+    }
+}
+
+async function rejectTemplate() {
+    if(!activeCategory || !activeTemplate) return;
+    let uid = activeCategory + "_" + activeTemplate;
+    try {
+        let res = await fetch('/api/templates/reject', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ template_uid: uid })
+        });
+        let data = await res.json();
+        if(data.success) {
+            alert("Geometri reddedildi (REJECTED).");
+        } else {
+            alert("Hata: " + data.error);
+        }
+    } catch(e) {
+        alert("Bağlantı hatası: " + e);
+    }
+}

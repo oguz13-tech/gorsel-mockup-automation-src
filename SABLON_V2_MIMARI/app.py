@@ -444,6 +444,81 @@ def api_templates_approve():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
+
+@app.route('/api/templates/batch_analyze', methods=['POST'])
+def api_templates_batch_analyze():
+    try:
+        req = request.json
+        category = req.get("category")
+        if not category:
+            return jsonify({"success": False, "error": "Kategori eksik"}), 400
+            
+        ayarlar = get_all_ayarlar()
+        sablonlar = ayarlar.get("kategoriler", {}).get(category, {}).get("sablonlar", {})
+        
+        analyzer = TemplateAnalyzer()
+        db_path = os.path.join(BASE_DIR, "SABLON_V2_MIMARI", "ayarlar.db")
+        
+        results = []
+        for tmpl in sablonlar.keys():
+            img_path = os.path.join(BASE_DIR, "2_SABLON_HAVUZU", category, tmpl)
+            if os.path.exists(img_path):
+                res = analyzer.analyze(img_path, category)
+                uid = f"{category}_{tmpl}"
+                profile_data = {
+                    "template_uid": uid,
+                    "category": category,
+                    "source_relative_path": f"{category}/{tmpl}",
+                    "source_asset_sha256": res.get("source_asset_sha256"),
+                    "analyzer_version": res.get("analyzer_version"),
+                    "orientation": res.get("orientation", "UNKNOWN"),
+                    "surface_quad": res.get("surface_quad"),
+                    "confidence_total": res.get("confidence_total", 0.0),
+                    "component_confidences": res.get("component_confidences", {}),
+                    "review_status": res.get("review_status", "UNANALYZED")
+                }
+                save_template_profile(db_path, profile_data)
+                results.append({"template": tmpl, "status": res.get("review_status")})
+                
+        return jsonify({"success": True, "results": results})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/api/templates/reject', methods=['POST'])
+def api_templates_reject():
+    try:
+        req = request.json
+        uid = req.get("template_uid")
+        if not uid:
+            return jsonify({"success": False, "error": "Eksik parametre"}), 400
+            
+        db_path = os.path.join(BASE_DIR, "SABLON_V2_MIMARI", "ayarlar.db")
+        conn = sqlite3.connect(db_path)
+        conn.execute("UPDATE template_profiles SET review_status='REJECTED', manually_verified=1 WHERE template_uid=? AND is_active=1", (uid,))
+        conn.commit()
+        conn.close()
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/api/templates/update_corners', methods=['POST'])
+def api_templates_update_corners():
+    try:
+        req = request.json
+        uid = req.get("template_uid")
+        corners = req.get("corners")
+        if not uid or not corners:
+            return jsonify({"success": False, "error": "Eksik parametre"}), 400
+            
+        db_path = os.path.join(BASE_DIR, "SABLON_V2_MIMARI", "ayarlar.db")
+        conn = sqlite3.connect(db_path)
+        conn.execute("UPDATE template_profiles SET surface_quad=?, review_status='APPROVED', manually_verified=1 WHERE template_uid=? AND is_active=1", (json.dumps(corners), uid))
+        conn.commit()
+        conn.close()
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
 # KAGGLE ONAY SİSTEMİ (0_KAGGLE_ONAY_BEKLEYENLER -> 1_GELEN_KAGGLE_BASKILARI)
 # ==========================================
 WORKSPACE_DIR = BASE_DIR
