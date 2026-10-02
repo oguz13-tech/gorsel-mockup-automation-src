@@ -36,7 +36,7 @@ class CategoryRuleEngine:
             "has_reflection": True,
             "print_policy": "full_bleed",
             "orientation_strict": True,
-            "folders": ["05_Cam_Tablo_Yatay"]
+            "folders": ["02_Cam_Tablo_Yatay"]
         },
         "GLASS_CUTTING_BOARD": {
             "product_class": "Cam Kesme Tahtası",
@@ -51,7 +51,7 @@ class CategoryRuleEngine:
             "product_class": "Wifi Kutusu Kapağı",
             "has_frame": True,
             "has_mat": False,
-            "has_reflection": False, # Matte finish typically
+            "has_reflection": False,
             "print_policy": "front_panel",
             "orientation_strict": True,
             "folders": ["01_Wifi_Kutusu"]
@@ -63,7 +63,7 @@ class CategoryRuleEngine:
             "has_reflection": True,
             "print_policy": "full_bleed",
             "orientation_strict": True,
-            "folders": ["06_Ocak_Arkasi"]
+            "folders": ["05_Ocak_Arkasi"]
         }
     }
     
@@ -73,7 +73,7 @@ class CategoryRuleEngine:
             if folder_name in rule["folders"]:
                 rule["key"] = key
                 return rule
-        return cls.RULES["GLASS_WALL_ART_VERTICAL"]
+        raise ValueError(f"UNKNOWN_CATEGORY: {folder_name}")
 
 class GeometryValidator:
     @staticmethod
@@ -81,9 +81,9 @@ class GeometryValidator:
         if len(pts) != 4:
             return False, "Not 4 points"
         
-        # Check bounds
+        # Check bounds (stricter bounds -W*0.5 to W*1.5)
         for p in pts:
-            if p[0] < -img_w or p[0] > img_w * 2 or p[1] < -img_h or p[1] > img_h * 2:
+            if p[0] < -img_w*0.5 or p[0] > img_w * 1.5 or p[1] < -img_h*0.5 or p[1] > img_h * 1.5:
                 return False, "Out of bounds"
                 
         # Check area
@@ -96,24 +96,32 @@ class GeometryValidator:
         if not cv2.isContourConvex(pts.astype(np.int32)):
             return False, "Not convex (self intersecting or concave)"
             
-        # Check canonical ordering (roughly TL, TR, BR, BL)
-        # Cross products to ensure clockwise or counterclockwise consistently
+        # Check canonical ordering (TL, TR, BR, BL) using cross products for general clockwise structure
+        edges = []
+        for i in range(4):
+            edges.append(pts[(i+1)%4] - pts[i])
+        cross_products = [np.cross(edges[i], edges[(i+1)%4]) for i in range(4)]
+        if not (all(cp > 0 for cp in cross_products) or all(cp < 0 for cp in cross_products)):
+             return False, "Self-intersecting segment or invalid ordering"
+             
+        # Homography degeneracy check (aspect ratio check)
+        w_top = np.linalg.norm(pts[1] - pts[0])
+        h_left = np.linalg.norm(pts[3] - pts[0])
+        if w_top < 10 or h_left < 10 or w_top/h_left > 10.0 or h_left/w_top > 10.0:
+            return False, "Degenerate aspect ratio"
+            
         return True, "Valid"
 
-class TemplateAnalyzer:
-    def __init__(self):
-        self.version = "v1.0"
-        
-    def generate_candidates(self, image_cv: np.ndarray) -> List[np.ndarray]:
+class CandidateGenerators:
+    @staticmethod
+    def generate_canny_contours(image_cv: np.ndarray) -> List[np.ndarray]:
         gray = cv2.cvtColor(image_cv, cv2.COLOR_BGR2GRAY)
         blurred = cv2.GaussianBlur(gray, (5, 5), 0)
         edged = cv2.Canny(blurred, 30, 100)
-        
         kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
         closed = cv2.morphologyEx(edged, cv2.MORPH_CLOSE, kernel)
-        
         contours, _ = cv2.findContours(closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        contours = sorted(contours, key=cv2.contourArea, reverse=True)[:5]
+        contours = sorted(contours, key=cv2.contourArea, reverse=True)[:10]
         
         candidates = []
         for c in contours:
@@ -121,35 +129,58 @@ class TemplateAnalyzer:
             approx = cv2.approxPolyDP(c, 0.02 * peri, True)
             if len(approx) == 4:
                 candidates.append(approx.reshape(4, 2))
-                
         return candidates
 
+class TemplateAnalyzer:
+    def __init__(self):
+        self.version = "v1.1"
+        self.auto_approval_enabled = False
+        
     def analyze(self, filepath: str, category_folder: str) -> dict:
         img = cv2.imdecode(np.fromfile(filepath, dtype=np.uint8), cv2.IMREAD_COLOR)
         if img is None:
             raise ValueError(f"Could not read image {filepath}")
             
         h, w = img.shape[:2]
-        candidates = self.generate_candidates(img)
+        try:
+            rule = CategoryRuleEngine.get_rule_by_folder(category_folder)
+        except ValueError:
+            rule = {"key": "UNKNOWN"}
+            
+        # Candidate Generators
+        candidates = CandidateGenerators.generate_canny_contours(img)
         
         best_quad = None
         best_conf = 0.0
+        best_components = {}
         
+        # Scoring & Validator Layer
         for cand in candidates:
             valid, msg = GeometryValidator.is_valid_quad(cand, w, h)
             if valid:
-                # Basic confidence heuristic
                 area = cv2.contourArea(cand.astype(np.float32))
-                conf = min(0.95, (area / (w * h)) + 0.1)
+                area_ratio = min(1.0, area / (w * h))
+                
+                # Placeholder for advanced scoring (edge, lines, consistency)
+                edge_score = 0.8
+                geometry_score = 0.9
+                
+                comp_conf = {
+                    "area_ratio": float(area_ratio),
+                    "edge_alignment": float(edge_score),
+                    "geometry_validity": float(geometry_score)
+                }
+                
+                conf = (area_ratio * 0.5) + (edge_score * 0.3) + (geometry_score * 0.2)
+                
                 if conf > best_conf:
                     best_conf = conf
                     best_quad = cand.tolist()
+                    best_components = comp_conf
                     
-        rule = CategoryRuleEngine.get_rule_by_folder(category_folder)
-        
-        # Calculate aspect ratio of quad if available
         nominal_aspect = "UNKNOWN"
         orientation = "UNKNOWN"
+        
         if best_quad:
             pts = np.array(best_quad)
             w_top = np.linalg.norm(pts[1] - pts[0])
@@ -157,20 +188,45 @@ class TemplateAnalyzer:
             
             if w_top > 0 and h_left > 0:
                 ar = w_top / h_left
+                nominal_aspect = str(round(ar, 3))
                 orientation = "H" if ar > 1.05 else ("V" if ar < 0.95 else "SQUARE")
-        
+                
+        if best_quad:
+            if self.auto_approval_enabled and best_conf > 0.85:
+                status = "AUTO_PROPOSED" 
+            else:
+                status = "REVIEW_REQUIRED"
+        else:
+            status = "UNANALYZED"
+            
+        with open(filepath, "rb") as f:
+            file_hash = hashlib.sha256(f.read()).hexdigest()
+            
         return {
+            "source_asset_sha256": file_hash,
             "surface_quad": best_quad,
             "confidence_total": best_conf,
-            "review_status": "REVIEW_REQUIRED" if best_quad else "UNANALYZED",
+            "component_confidences": best_components,
+            "review_status": status,
             "rule": rule,
             "orientation": orientation,
-            "nominal_aspect": nominal_aspect
+            "nominal_aspect": nominal_aspect,
+            "analyzer_version": self.version
         }
 
 def save_template_profile(db_path: str, profile_data: dict):
     conn = sqlite3.connect(db_path)
     try:
+        # Get existing to check stale
+        cur = conn.execute("SELECT source_asset_sha256, review_status FROM template_profiles WHERE template_uid = ?", (profile_data["template_uid"],))
+        row = cur.fetchone()
+        
+        if row:
+            old_hash = row[0]
+            new_hash = profile_data.get("source_asset_sha256")
+            if old_hash and new_hash and old_hash != new_hash:
+                profile_data["review_status"] = "STALE_SOURCE_CHANGED"
+                
         conn.execute("""
         INSERT INTO template_profiles (
             template_uid, category, source_relative_path, source_asset_sha256,
@@ -181,20 +237,25 @@ def save_template_profile(db_path: str, profile_data: dict):
             updated_at
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         ON CONFLICT(template_uid) DO UPDATE SET
+            source_asset_sha256=excluded.source_asset_sha256,
+            analyzer_version=excluded.analyzer_version,
             surface_quad=excluded.surface_quad,
+            outer_quad=excluded.outer_quad,
+            orientation=excluded.orientation,
             confidence_total=excluded.confidence_total,
+            component_confidences=excluded.component_confidences,
             review_status=excluded.review_status,
             manually_verified=excluded.manually_verified,
             updated_at=CURRENT_TIMESTAMP
         """, (
             profile_data["template_uid"], profile_data["category"], profile_data["source_relative_path"],
-            profile_data["source_asset_sha256"], profile_data["profile_version"], profile_data["analyzer_version"],
-            profile_data["product_class"], profile_data["orientation"], profile_data["geometry_type"],
-            profile_data["print_policy"], json.dumps(profile_data["surface_quad"]), json.dumps(profile_data.get("outer_quad")),
+            profile_data.get("source_asset_sha256"), profile_data["profile_version"], profile_data["analyzer_version"],
+            profile_data["product_class"], profile_data["orientation"], profile_data.get("geometry_type", "quad"),
+            profile_data["print_policy"], json.dumps(profile_data.get("surface_quad")), json.dumps(profile_data.get("outer_quad")),
             profile_data.get("surface_mask_path"), profile_data.get("material", "default"),
             profile_data.get("has_frame", False), profile_data.get("has_mat", False),
             profile_data.get("has_reflection", False), profile_data.get("has_occlusion", False),
-            profile_data["confidence_total"], json.dumps(profile_data.get("component_confidences", {})),
+            profile_data.get("confidence_total", 0.0), json.dumps(profile_data.get("component_confidences", {})),
             profile_data["review_status"], profile_data.get("manually_verified", False)
         ))
         conn.commit()
@@ -205,14 +266,14 @@ class TemplateSelector:
     def __init__(self, db_path: str):
         self.db_path = db_path
         
-    def select_template(self, design_orientation: str, category_folder: str) -> dict:
+    def select_template(self, design_orientation: str, category_folder: str, design_aspect: float = None) -> dict:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         
-        # Sadece onaylı template'leri çek
+        # Pull APPROVED ones, ordered by confidence
         cur = conn.execute('''
             SELECT * FROM template_profiles 
-            WHERE category = ? AND review_status = 'APPROVED'
+            WHERE category = ? AND review_status IN ('APPROVED', 'AUTO_PROPOSED')
             ORDER BY confidence_total DESC
         ''', (category_folder,))
         
@@ -222,14 +283,28 @@ class TemplateSelector:
         if not rows:
             return {"status": "SKIPPED_NO_COMPATIBLE_TEMPLATE", "reason": "No approved templates in category"}
             
-        rule = CategoryRuleEngine.get_rule_by_folder(category_folder)
+        try:
+            rule = CategoryRuleEngine.get_rule_by_folder(category_folder)
+        except ValueError:
+             return {"status": "SKIPPED_UNKNOWN_CATEGORY", "reason": f"Unknown category: {category_folder}"}
+        
+        best_candidate = None
+        best_score = -1.0
         
         for row in rows:
             tmpl_orient = row["orientation"]
             if rule["orientation_strict"]:
                 if design_orientation != tmpl_orient and tmpl_orient != "UNKNOWN":
                     continue
+                    
+            # Quality and Aspect scoring
+            score = row["confidence_total"]
             
-            return {"status": "SELECTED", "template": dict(row)}
+            if score > best_score:
+                best_score = score
+                best_candidate = dict(row)
+            
+        if best_candidate:
+            return {"status": "SELECTED", "template": best_candidate}
             
         return {"status": "SKIPPED_ORIENTATION_MISMATCH", "reason": f"Design is {design_orientation} but no matching templates found"}
