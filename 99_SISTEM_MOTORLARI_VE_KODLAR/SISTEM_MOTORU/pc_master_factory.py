@@ -106,8 +106,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger("Factory")
 
-excel_lock = threading.Lock()
-db_lock = threading.Lock()
+excel_lock = threading.RLock()
+db_lock = threading.RLock()
 
 # ==============================================================================
 # 2. ÜRÜN VE FORMAT SÖZLEŞMESİ (URUN_FORMAT_HARITASI)
@@ -1573,7 +1573,7 @@ class PCMasterFactory:
                         
                     # P0 Fix: Call RealESRGAN Quality Engine
                     # We check if 4K engine is active/available
-                    if RealESRGANQualityEngine.get_exe_path():
+                    if AYARLAR.get("bulut_ayarlari", {}).get("use_realesrgan", False) and RealESRGANQualityEngine.get_exe_path():
                         logger.info(f"  🔍 Kalite Artırılıyor (4K RealESRGAN): {out_path.name}")
                         upscaled_path = out_path.with_name("4k_" + out_path.name)
                         if RealESRGANQualityEngine.upscale_4k(out_path, upscaled_path):
@@ -1616,7 +1616,13 @@ class PCMasterFactory:
         logger.info(f"📁 Çıktı Excel: {self.excel.file_path}")
 
     def _async_upload_and_excel(self, mockup_path: Path, prod_record: dict):
-        url = self.uploader.upload_sync(mockup_path)
+        url = None
+        for attempt in range(3):
+            url = self.uploader.upload_sync(mockup_path)
+            if url: break
+            import time
+            time.sleep(2)
+            
         if url:
             prod_record["resim_linki"] = url
             prod_record["upload_url"] = url
@@ -1624,7 +1630,7 @@ class PCMasterFactory:
             logger.info(f"    ☁️ Bulut Yüklendi: {prod_record['sku']} -> {url}")
         else:
             prod_record["status"] = "UPLOAD_FAILED"
-            logger.info(f"    💾 Yerel Kaydedildi (Bulut atlandı/Hata): {prod_record['sku']}")
+            logger.error(f"    ❌ BULUT YÜKLEME BAŞARISIZ (3 deneme): {prod_record['sku']}")
 
         self.state.save_render_artifact(prod_record)
         # Sadece backward-compatibility icin products'a update
