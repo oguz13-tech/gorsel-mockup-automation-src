@@ -1293,7 +1293,8 @@ class MockupRenderer:
             # Kalite Kontrol Denetimi (Quality Inspector)
             valid, msg = QualityInspector.inspect_mockup(final_cv, koseler if "koseler" in config else None)
             if not valid:
-                logger.warning(f"  ⚠️ Kalite Denetimi Uyarısı ({raw_path.name}): {msg}")
+                logger.error(f"  ❌ Kalite Denetimi Başarısız ({raw_path.name}): {msg}. QUARANTINE!")
+                return False
 
             # Kaydet (Unicode güvenli)
             output_path.parent.mkdir(parents=True, exist_ok=True)

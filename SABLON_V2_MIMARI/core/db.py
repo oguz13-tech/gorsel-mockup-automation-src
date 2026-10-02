@@ -59,6 +59,17 @@ def init_db():
                     is_active INTEGER DEFAULT 1,
                     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
                  )''')
+
+    # --- MIGRATION: Add columns to existing DBs ---
+    try:
+        c.execute("SELECT nominal_aspect FROM template_profiles LIMIT 1")
+    except sqlite3.OperationalError:
+        c.execute("ALTER TABLE template_profiles ADD COLUMN nominal_aspect TEXT")
+    try:
+        c.execute("SELECT is_active FROM template_profiles LIMIT 1")
+    except sqlite3.OperationalError:
+        c.execute("ALTER TABLE template_profiles ADD COLUMN is_active INTEGER DEFAULT 1")
+
     conn.commit()
     conn.close()
 
@@ -111,6 +122,17 @@ def save_settings_node(node_name, data):
                  ON CONFLICT(key) 
                  DO UPDATE SET value=excluded.value''',
               (node_name, json.dumps(data, ensure_ascii=False)))
+
+    # --- MIGRATION: Add columns to existing DBs ---
+    try:
+        c.execute("SELECT nominal_aspect FROM template_profiles LIMIT 1")
+    except sqlite3.OperationalError:
+        c.execute("ALTER TABLE template_profiles ADD COLUMN nominal_aspect TEXT")
+    try:
+        c.execute("SELECT is_active FROM template_profiles LIMIT 1")
+    except sqlite3.OperationalError:
+        c.execute("ALTER TABLE template_profiles ADD COLUMN is_active INTEGER DEFAULT 1")
+
     conn.commit()
     conn.close()
 
@@ -122,6 +144,17 @@ def save_category(cat_id, label):
                  ON CONFLICT(id) 
                  DO UPDATE SET label=excluded.label''',
               (cat_id, label))
+
+    # --- MIGRATION: Add columns to existing DBs ---
+    try:
+        c.execute("SELECT nominal_aspect FROM template_profiles LIMIT 1")
+    except sqlite3.OperationalError:
+        c.execute("ALTER TABLE template_profiles ADD COLUMN nominal_aspect TEXT")
+    try:
+        c.execute("SELECT is_active FROM template_profiles LIMIT 1")
+    except sqlite3.OperationalError:
+        c.execute("ALTER TABLE template_profiles ADD COLUMN is_active INTEGER DEFAULT 1")
+
     conn.commit()
     conn.close()
 
@@ -134,6 +167,17 @@ def save_template(category_id, filename, data):
                  ON CONFLICT(category_id, filename) 
                  DO UPDATE SET data=excluded.data''',
               (category_id, filename, json.dumps(data, ensure_ascii=False)))
+
+    # --- MIGRATION: Add columns to existing DBs ---
+    try:
+        c.execute("SELECT nominal_aspect FROM template_profiles LIMIT 1")
+    except sqlite3.OperationalError:
+        c.execute("ALTER TABLE template_profiles ADD COLUMN nominal_aspect TEXT")
+    try:
+        c.execute("SELECT is_active FROM template_profiles LIMIT 1")
+    except sqlite3.OperationalError:
+        c.execute("ALTER TABLE template_profiles ADD COLUMN is_active INTEGER DEFAULT 1")
+
     conn.commit()
     conn.close()
 
@@ -164,5 +208,16 @@ def delete_template(category_id, filename):
     conn = get_db_connection()
     c = conn.cursor()
     c.execute("DELETE FROM templates WHERE category_id=? AND filename=?", (category_id, filename))
+
+    # --- MIGRATION: Add columns to existing DBs ---
+    try:
+        c.execute("SELECT nominal_aspect FROM template_profiles LIMIT 1")
+    except sqlite3.OperationalError:
+        c.execute("ALTER TABLE template_profiles ADD COLUMN nominal_aspect TEXT")
+    try:
+        c.execute("SELECT is_active FROM template_profiles LIMIT 1")
+    except sqlite3.OperationalError:
+        c.execute("ALTER TABLE template_profiles ADD COLUMN is_active INTEGER DEFAULT 1")
+
     conn.commit()
     conn.close()

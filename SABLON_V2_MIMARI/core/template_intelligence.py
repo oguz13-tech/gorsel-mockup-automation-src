@@ -139,8 +139,10 @@ class CandidateGenerators:
             # Basic fallback heuristic to return the bounding box of all lines
             pts = []
             for line in lines:
-                x1, y1, x2, y2 = line[0]
-                pts.extend([[x1,y1], [x2,y2]])
+                coords = line.flatten()
+                if len(coords) >= 4:
+                    x1, y1, x2, y2 = coords[:4]
+                    pts.extend([[int(x1),int(y1)], [int(x2),int(y2)]])
             pts = np.array(pts)
             x,y,w,h = cv2.boundingRect(pts)
             quad = np.array([[x,y], [x+w,y], [x+w,y+h], [x,y+h]], dtype=np.int32)
@@ -148,6 +150,27 @@ class CandidateGenerators:
         return candidates
 
 
+
+
+    @staticmethod
+    def generate_color_region_quad(image_cv: np.ndarray) -> List[np.ndarray]:
+        """Detect uniform color regions that could be mockup surfaces."""
+        gray = cv2.cvtColor(image_cv, cv2.COLOR_BGR2GRAY)
+        # Use adaptive threshold to find large uniform areas
+        thresh = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                                        cv2.THRESH_BINARY, 51, 5)
+        contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        candidates = []
+        img_area = image_cv.shape[0] * image_cv.shape[1]
+        for c in contours:
+            area = cv2.contourArea(c)
+            if area < img_area * 0.05:
+                continue
+            peri = cv2.arcLength(c, True)
+            approx = cv2.approxPolyDP(c, 0.04 * peri, True)
+            if len(approx) == 4 and cv2.isContourConvex(approx):
+                candidates.append(approx.reshape(4, 2))
+        return candidates
 
 class TemplateAnalyzer:
     def __init__(self):
