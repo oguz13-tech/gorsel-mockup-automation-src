@@ -200,8 +200,8 @@ def load_ayarlar() -> dict:
         logger.warning(f"SQLite veritabanı bulunamadı: {db_path}. Fallback yükleniyor.")
         return {
             "bulut_ayarlari": {
-                "imgbb_keys": [os.getenv("IMGBB_API_KEY", "")],
-                "freeimage_key": "6d207e02198a847aa98d0a2a901485a5"
+                "imgbb_keys": [],
+                "freeimage_key": os.environ.get("FREEIMAGE_KEY", "")
             },
             "kategoriler": {}
         }
@@ -298,6 +298,18 @@ class StateManager:
             CREATE TABLE IF NOT EXISTS system_meta (
                 key TEXT PRIMARY KEY,
                 value TEXT,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE TABLE IF NOT EXISTS render_artifacts (
+                artifact_key TEXT PRIMARY KEY,
+                sku TEXT,
+                source_identity TEXT,
+                category TEXT,
+                template_identity TEXT,
+                local_output_path TEXT,
+                upload_url TEXT,
+                status TEXT,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
 
@@ -403,13 +415,8 @@ class StateManager:
 class AsyncCloudUploader:
     def __init__(self):
         cloud_cfg = AYARLAR.get("bulut_ayarlari", {})
-        self.imgbb_keys = cloud_cfg.get("imgbb_keys", [
-            "5e1f5e0e6477654f2d72eb0ca5bea181",
-            "06ed7ebc958d7a2fafc5d3ecbf8bf49e",
-            "1b165e98a26bcb8a110718f14eda2e8b",
-            "17bfb92dcc58513236003b9344c73621"
-        ])
-        self.freeimage_key = cloud_cfg.get("freeimage_key", "6d207e02198a847aa98d0a2a901485a5")
+        self.imgbb_keys = cloud_cfg.get("imgbb_keys", os.environ.get("IMGBB_KEYS", "").split(",")))
+        self.freeimage_key = cloud_cfg.get("freeimage_key", os.environ.get("FREEIMAGE_KEY", ""))
         self.active_key_idx = 0
         self.key_lock = threading.Lock()
         self.freeimage_active = True
@@ -593,7 +600,13 @@ class QualityInspector:
                 if px < 0 or px >= w or py < 0 or py >= h:
                     return False, f"Köşe koordinatı görsel sınırları dışında: ({px}, {py})"
 
-        return True, "100/100 Mükemmel Kalite Onayı"
+        # Gerçek Kalite Denetimi
+        gray = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
+        laplacian_var = cv2.Laplacian(gray, cv2.CV_64F).var()
+        if laplacian_var < 50:
+            return False, f"Düşük kalite/Bulanık (Laplacian: {laplacian_var:.1f})"
+        
+        return True, f"Kalite Onaylandı (Keskinlik: {laplacian_var:.1f})"
 
 # ==============================================================================
 # 9. MOCKUP MOTORU (Optik Cam Parlaması, Bevel Pahı, Gün Işığı & Sıfır Kenar Hatası)
@@ -1510,7 +1523,7 @@ class PCMasterFactory:
                     continue
 
                 # Get SKU consistently for this source_identity if needed
-                sku_key = f"sku_{source_identity}_{prod_key}"
+                sku_key = f"sku_{source_design_identity}_{prod_key}"
                 with db_lock, self.state.conn:
                     row = self.state.conn.execute("SELECT value FROM system_meta WHERE key = ?", (sku_key,)).fetchone()
                     if row:
@@ -1557,6 +1570,16 @@ class PCMasterFactory:
 
                     if not success:
                         continue
+                        
+                    # P0 Fix: Call RealESRGAN Quality Engine
+                    # We check if 4K engine is active/available
+                    if RealESRGANQualityEngine.get_exe_path():
+                        logger.info(f"  🔍 Kalite Artırılıyor (4K RealESRGAN): {out_path.name}")
+                        upscaled_path = out_path.with_name("4k_" + out_path.name)
+                        if RealESRGANQualityEngine.upscale_4k(out_path, upscaled_path):
+                            # Replace original with upscaled
+                            import shutil
+                            shutil.move(str(upscaled_path), str(out_path))
 
                     # SEO Başlık ve Açıklama
                     seo_title = self.seo.generate_title(prod_key, theme_title)
