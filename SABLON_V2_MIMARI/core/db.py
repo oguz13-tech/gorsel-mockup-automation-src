@@ -41,6 +41,7 @@ def init_db():
                     analyzer_version TEXT,
                     product_class TEXT,
                     orientation TEXT,
+                    nominal_aspect TEXT,
                     geometry_type TEXT,
                     print_policy TEXT,
                     surface_quad TEXT,

@@ -131,10 +131,35 @@ class CandidateGenerators:
 
     @staticmethod
     def generate_hough_lines_quad(image_cv: np.ndarray) -> List[np.ndarray]:
-        # Minimal implementation for Hough lines to quad intersection
-        # Real implementation would intersect dominant lines. We return empty to satisfy interface for now,
-        # but in a real case we would run cv2.HoughLinesP.
-        return []
+        gray = cv2.cvtColor(image_cv, cv2.COLOR_BGR2GRAY)
+        edged = cv2.Canny(gray, 50, 150, apertureSize=3)
+        lines = cv2.HoughLinesP(edged, 1, np.pi/180, threshold=100, minLineLength=100, maxLineGap=10)
+        candidates = []
+        if lines is not None and len(lines) > 4:
+            # Basic fallback heuristic to return the bounding box of all lines
+            pts = []
+            for line in lines:
+                x1, y1, x2, y2 = line[0]
+                pts.extend([[x1,y1], [x2,y2]])
+            pts = np.array(pts)
+            x,y,w,h = cv2.boundingRect(pts)
+            quad = np.array([[x,y], [x+w,y], [x+w,y+h], [x,y+h]], dtype=np.int32)
+            candidates.append(quad)
+        return candidates
+
+    @staticmethod
+    def generate_color_region_quad(image_cv: np.ndarray) -> List[np.ndarray]:
+        # Minimal uniform color region detector using thresholding
+        gray = cv2.cvtColor(image_cv, cv2.COLOR_BGR2GRAY)
+        _, thresh = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY)
+        contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        candidates = []
+        for c in contours:
+            peri = cv2.arcLength(c, True)
+            approx = cv2.approxPolyDP(c, 0.05 * peri, True)
+            if len(approx) == 4 and cv2.contourArea(c) > 5000:
+                candidates.append(approx.reshape(4, 2))
+        return candidates
 
     @staticmethod
     def generate_color_region_quad(image_cv: np.ndarray) -> List[np.ndarray]:

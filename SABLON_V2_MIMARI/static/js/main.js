@@ -1481,14 +1481,14 @@ window.onerror = function(msg, url, line, col, error) {
 
 // --- YZ ONAY SISTEMI ---
 async function batchAnalyze() {
-    if(!activeCategory) return alert("Kategori seçili değil!");
-    if(!confirm(activeCategory + " kategorisindeki tüm şablonlar analiz edilecek. Onaylıyor musunuz?")) return;
+    if(!currentCat) return alert("Kategori seçili değil!");
+    if(!confirm(currentCat + " kategorisindeki tüm şablonlar analiz edilecek. Onaylıyor musunuz?")) return;
     
     try {
         let res = await fetch('/api/templates/batch_analyze', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ category: activeCategory })
+            body: JSON.stringify({ category: currentCat })
         });
         let data = await res.json();
         if(data.success) {
@@ -1502,9 +1502,9 @@ async function batchAnalyze() {
 }
 
 async function approveTemplate() {
-    if(!activeCategory || !activeTemplate) return;
-    let uid = activeCategory + "_" + activeTemplate;
-    let pts = window.activeConfig ? window.activeConfig.quad : [];
+    if(!currentCat || !currentTmpl) return;
+    let uid = currentCat + "_" + currentTmpl;
+    let pts = window.currentConfig ? window.currentConfig.quad : [];
     if (!pts || pts.length !== 4) return alert("Geçerli 4 köşe yok!");
     
     try {
@@ -1525,8 +1525,8 @@ async function approveTemplate() {
 }
 
 async function rejectTemplate() {
-    if(!activeCategory || !activeTemplate) return;
-    let uid = activeCategory + "_" + activeTemplate;
+    if(!currentCat || !currentTmpl) return;
+    let uid = currentCat + "_" + currentTmpl;
     try {
         let res = await fetch('/api/templates/reject', {
             method: 'POST',
@@ -1541,5 +1541,17 @@ async function rejectTemplate() {
         }
     } catch(e) {
         alert("Bağlantı hatası: " + e);
+    }
+}
+
+let showReviewOverlay = false;
+function toggleReviewOverlay() {
+    showReviewOverlay = !showReviewOverlay;
+    if(showReviewOverlay) {
+        document.getElementById("c").style.opacity = "0.7";
+        document.getElementById("canvas-container").style.backgroundColor = "#00ff00";
+    } else {
+        document.getElementById("c").style.opacity = "1";
+        document.getElementById("canvas-container").style.backgroundColor = "transparent";
     }
 }
