@@ -18,6 +18,7 @@ class CategoryRuleEngine:
             "has_reflection": False,
             "print_policy": "inner_frame",
             "orientation_strict": True,
+            "expected_orientation": "ANY",
             "folders": ["03_Ahsap_Tablo"]
         },
         "GLASS_WALL_ART_VERTICAL": {
@@ -27,6 +28,7 @@ class CategoryRuleEngine:
             "has_reflection": True,
             "print_policy": "full_bleed",
             "orientation_strict": True,
+            "expected_orientation": "V",
             "folders": ["02_Cam_Tablo_Dikey"]
         },
         "GLASS_WALL_ART_HORIZONTAL": {
@@ -36,6 +38,7 @@ class CategoryRuleEngine:
             "has_reflection": True,
             "print_policy": "full_bleed",
             "orientation_strict": True,
+            "expected_orientation": "H",
             "folders": ["02_Cam_Tablo_Yatay"]
         },
         "GLASS_CUTTING_BOARD": {
@@ -45,6 +48,7 @@ class CategoryRuleEngine:
             "has_reflection": True,
             "print_policy": "full_surface",
             "orientation_strict": False,
+            "expected_orientation": "ANY",
             "folders": ["04_Cam_Dograma"]
         },
         "WIFI_COVER_PANEL": {
@@ -54,6 +58,7 @@ class CategoryRuleEngine:
             "has_reflection": False,
             "print_policy": "front_panel",
             "orientation_strict": True,
+            "expected_orientation": "ANY",
             "folders": ["01_Wifi_Kutusu"]
         },
         "GLASS_BACKSPLASH": {
@@ -63,6 +68,7 @@ class CategoryRuleEngine:
             "has_reflection": True,
             "print_policy": "full_bleed",
             "orientation_strict": True,
+            "expected_orientation": "H",
             "folders": ["05_Ocak_Arkasi"]
         }
     }
@@ -97,14 +103,14 @@ class GeometryValidator:
             if p[0] < -img_w*0.5 or p[0] > img_w * 1.5 or p[1] < -img_h*0.5 or p[1] > img_h * 1.5:
                 return False, "Out of bounds"
                 
-        area = cv2.contourArea(pts.astype(np.float32))
+        # Canonical sort for consistent edges FIRST
+        sorted_pts = GeometryValidator.canonical_sort(pts)
+        
+        area = cv2.contourArea(sorted_pts.astype(np.float32))
         img_area = img_w * img_h
         if area < img_area * 0.05:
             return False, "Too small"
             
-        # Canonical sort for consistent edges FIRST
-        sorted_pts = GeometryValidator.canonical_sort(pts)
-        
         if not cv2.isContourConvex(sorted_pts.astype(np.int32)):
             return False, "Not convex (self intersecting or concave)"
             
@@ -215,6 +221,7 @@ class TemplateAnalyzer:
         best_conf = 0.0
         best_components = {}
         
+        provenance = "AUTO"
         if manual_geometry_prior and "surface_quad" in manual_geometry_prior:
             cand = np.array(manual_geometry_prior["surface_quad"], dtype=np.float32)
             valid, msg = GeometryValidator.is_valid_quad(cand, w, h)
@@ -224,8 +231,10 @@ class TemplateAnalyzer:
                 best_components = {
                     "candidate_agreement": 1.0,
                     "line_score": 1.0,
-                    "orientation_score": 1.0
+                    "orientation_score": 1.0,
+                    "manual_prior": 1.0
                 }
+                provenance = "MANUAL_PRIOR"
         else:
             # Pipeline: Generators -> Validator -> Scorer
             candidates = []
@@ -267,12 +276,13 @@ class TemplateAnalyzer:
                 if w_top > 0 and h_left > 0:
                     ar = w_top / h_left
                     cand_orient = "H" if ar > 1.05 else ("V" if ar < 0.95 else "SQUARE")
-                    if "Vertical" in rule.get("key", "") and cand_orient == "V":
+                    expected = rule.get("expected_orientation", "ANY")
+                    if expected == "ANY":
                         orient_score = 1.0
-                    elif "Horizontal" in rule.get("key", "") and cand_orient == "H":
+                    elif expected == cand_orient:
                         orient_score = 1.0
-                    elif "Square" in rule.get("key", "") and cand_orient == "SQUARE":
-                        orient_score = 1.0
+                    else:
+                        orient_score = 0.0
                         
                 comp_conf = {
                     "area_ratio": float(area_ratio),
@@ -303,7 +313,9 @@ class TemplateAnalyzer:
                 orientation = "H" if ar > 1.05 else ("V" if ar < 0.95 else "SQUARE")
                 
         if best_quad:
-            if self.auto_approval_enabled and best_conf > 0.85:
+            if provenance == "MANUAL_PRIOR":
+                status = "APPROVED"
+            elif self.auto_approval_enabled and best_conf > 0.85:
                 status = "AUTO_PROPOSED" 
             else:
                 status = "REVIEW_REQUIRED"
@@ -315,6 +327,7 @@ class TemplateAnalyzer:
             
         return {
             "source_asset_sha256": file_hash,
+            "provenance": provenance,
             "surface_quad": best_quad,
             "confidence_total": best_conf,
             "component_confidences": best_components,
@@ -410,11 +423,13 @@ class TemplateSelector:
         
         best_candidate = None
         best_score = -1.0
+        orientation_mismatches = 0
         
         for row in rows:
             tmpl_orient = row["orientation"]
             if rule["orientation_strict"]:
                 if design_orientation != tmpl_orient and tmpl_orient != "UNKNOWN":
+                    orientation_mismatches += 1
                     continue
                     
             score = row["confidence_total"]
@@ -437,4 +452,7 @@ class TemplateSelector:
         if best_candidate:
             return {"status": "SELECTED", "template": best_candidate}
             
-        return {"status": "SKIPPED_ASPECT_MISMATCH", "reason": "Templates skipped due to aspect or orientation mismatch"}
+        if orientation_mismatches == len(rows):
+            return {"status": "SKIPPED_ORIENTATION_MISMATCH", "reason": "All templates skipped due to orientation mismatch"}
+            
+        return {"status": "SKIPPED_NO_COMPATIBLE_TEMPLATE", "reason": "No compatible templates found due to aspect or other mismatch"}

@@ -417,7 +417,8 @@ def api_templates_analyze():
             "surface_quad": result.get("surface_quad"),
             "confidence_total": result.get("confidence_total", 0.0),
             "component_confidences": result.get("component_confidences", {}),
-            "review_status": result.get("review_status", "UNANALYZED")
+            "review_status": result.get("review_status", "UNANALYZED"),
+            "manually_verified": True if result.get("provenance") == "MANUAL_PRIOR" else False
         }
         
         save_template_profile(db_path, profile_data)
@@ -475,7 +476,8 @@ def api_templates_batch_analyze():
                     "surface_quad": res.get("surface_quad"),
                     "confidence_total": res.get("confidence_total", 0.0),
                     "component_confidences": res.get("component_confidences", {}),
-                    "review_status": res.get("review_status", "UNANALYZED")
+                    "review_status": res.get("review_status", "UNANALYZED"),
+                    "manually_verified": True if res.get("provenance") == "MANUAL_PRIOR" else False
                 }
                 save_template_profile(db_path, profile_data)
                 results.append({"template": tmpl, "status": res.get("review_status")})

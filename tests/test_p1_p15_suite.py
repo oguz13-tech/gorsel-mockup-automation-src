@@ -47,6 +47,14 @@ class TestP1GeometryValidator(unittest.TestCase):
             ok, msg = GeometryValidator.is_valid_quad(quad, 500, 500)
             self.assertFalse(ok)
             self.assertIn("Homography", msg)
+            
+    def test_unsorted_valid_quad(self):
+        from core.template_intelligence import GeometryValidator
+        # Unsorted valid square: BR, TR, BL, TL
+        quad = np.array([[300,300], [300,100], [100,300], [100,100]])
+        ok, msg = GeometryValidator.is_valid_quad(quad, 500, 500)
+        self.assertTrue(ok)
+        self.assertEqual(msg, "Valid")
 
 class TestP4CandidateGenerators(unittest.TestCase):
     def test_canny_returns_list(self):
@@ -178,17 +186,39 @@ class TestP1_P15Acceptance(unittest.TestCase):
 
     def test_p2_mismatch_skip_hv(self):
         from core.template_intelligence import TemplateSelector
-        from unittest.mock import patch
         import sqlite3
-        with patch('sqlite3.connect') as mock_conn:
-            mock_db = sqlite3.connect(':memory:')
-            mock_db.execute('CREATE TABLE template_profiles (id INTEGER, review_status TEXT, orientation TEXT, category TEXT, product_class TEXT, print_policy TEXT, has_frame BOOLEAN, has_reflection BOOLEAN)')
-            mock_conn.return_value = mock_db
-            selector = TemplateSelector(db_path=':memory:')
-            res1 = selector.select_template('H', '02_Cam_Tablo_Dikey')
-            res2 = selector.select_template('V', '02_Cam_Tablo_Yatay')
-            self.assertEqual(res1['status'], 'SKIPPED_ASPECT_MISMATCH')
-            self.assertEqual(res2['status'], 'SKIPPED_ASPECT_MISMATCH')
+        import tempfile
+        import os
+        
+        db_path = os.path.join(tempfile.mkdtemp(), "test.db")
+        conn = sqlite3.connect(db_path)
+        conn.execute('''
+            CREATE TABLE template_profiles (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                template_uid TEXT, category TEXT, source_relative_path TEXT,
+                source_asset_sha256 TEXT, profile_version TEXT, analyzer_version TEXT,
+                product_class TEXT, orientation TEXT, geometry_type TEXT,
+                print_policy TEXT, surface_quad TEXT, outer_quad TEXT,
+                surface_mask_path TEXT, material TEXT, has_frame BOOLEAN,
+                has_mat BOOLEAN, has_reflection BOOLEAN, has_occlusion BOOLEAN,
+                confidence_total REAL, component_confidences TEXT, review_status TEXT,
+                manually_verified BOOLEAN, is_active BOOLEAN, updated_at TIMESTAMP,
+                nominal_aspect TEXT
+            )
+        ''')
+        # Insert vertical template for Cam Tablo Dikey
+        conn.execute("INSERT INTO template_profiles (category, orientation, review_status, is_active, confidence_total) VALUES ('02_Cam_Tablo_Dikey', 'V', 'APPROVED', 1, 0.95)")
+        # Insert horizontal template for Cam Tablo Yatay
+        conn.execute("INSERT INTO template_profiles (category, orientation, review_status, is_active, confidence_total) VALUES ('02_Cam_Tablo_Yatay', 'H', 'APPROVED', 1, 0.95)")
+        conn.commit()
+        conn.close()
+        
+        selector = TemplateSelector(db_path=db_path)
+        res1 = selector.select_template('H', '02_Cam_Tablo_Dikey')
+        res2 = selector.select_template('V', '02_Cam_Tablo_Yatay')
+        
+        self.assertEqual(res1['status'], 'SKIPPED_ORIENTATION_MISMATCH')
+        self.assertEqual(res2['status'], 'SKIPPED_ORIENTATION_MISMATCH')
     def test_p3_wood_outer_quad(self):
         from core.template_intelligence import CategoryRuleEngine
         rule = CategoryRuleEngine.get_rule_by_folder("03_Ahsap_Tablo")
