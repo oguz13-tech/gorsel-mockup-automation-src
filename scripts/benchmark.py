@@ -93,7 +93,7 @@ def run_benchmark(dataset_path: str, output_json: str):
         }
         
         if not cat_samples:
-            cat_samples = [f"dummy_{cat}_{i}.jpg" for i in range(10)]
+            continue
             
         cat_ious = []
         cat_errors = []
@@ -102,16 +102,22 @@ def run_benchmark(dataset_path: str, output_json: str):
             results["total_samples"] += 1
             
             gt_quad = dataset.get(sample, {}).get("quad", [[10,10],[90,10],[90,90],[10,90]])
-            w, h = 100, 100
+            w, h = 100, 100 # This should really come from the image, but we'll leave as is if no real image
+            
+            # Old IOU is read from ground_truth if available, else we don't fabricate it
+            old_iou = dataset.get(sample, {}).get("old_iou", 0.0)
+            
+            full_sample_path = os.path.join(dataset_path, sample)
+            if not os.path.exists(full_sample_path):
+                raise ValueError(f"CRITICAL: Missing sample file {full_sample_path}. Benchmark blocked.")
             
             try:
-                if os.path.exists(sample):
-                    res = analyzer.analyze(sample, cat)
-                    pred_quad = res.get("geometry", {}).get("surface_quad")
-                    conf = res.get("confidence", {}).get("total_score", 0.0)
-                else:
-                    pred_quad = [[12,12],[88,12],[88,88],[12,88]]
-                    conf = 0.9
+                img = cv2.imread(full_sample_path)
+                if img is not None:
+                    h, w = img.shape[:2]
+                res = analyzer.analyze(full_sample_path, cat)
+                pred_quad = res.get("surface_quad")
+                conf = res.get("confidence_total", 0.0)
             except Exception as e:
                 results["global_metrics"]["invalid_exclusions"] += 1
                 pred_quad = None
@@ -129,7 +135,7 @@ def run_benchmark(dataset_path: str, output_json: str):
             results["raw_evidence"].append({
                 "sample": sample,
                 "category": cat,
-                "old_iou": iou * 0.9, 
+                "old_iou": old_iou, 
                 "new_iou": iou,
                 "new_conf": conf,
                 "corner_error": err

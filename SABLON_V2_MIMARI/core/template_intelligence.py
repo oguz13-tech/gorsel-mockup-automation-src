@@ -102,11 +102,11 @@ class GeometryValidator:
         if area < img_area * 0.05:
             return False, "Too small"
             
-        if not cv2.isContourConvex(pts.astype(np.int32)):
-            return False, "Not convex (self intersecting or concave)"
-            
-        # Canonical sort for consistent edges
+        # Canonical sort for consistent edges FIRST
         sorted_pts = GeometryValidator.canonical_sort(pts)
+        
+        if not cv2.isContourConvex(sorted_pts.astype(np.int32)):
+            return False, "Not convex (self intersecting or concave)"
             
         edges = [sorted_pts[(i+1)%4] - sorted_pts[i] for i in range(4)]
         cross_prods = [np.cross(edges[i], edges[(i+1)%4]) for i in range(4)]
@@ -185,20 +185,7 @@ class CandidateGenerators:
                 candidates.append(approx.reshape(4, 2))
         return candidates
 
-    @staticmethod
-    def generate_manual_prior_quad(image_cv: np.ndarray, config: dict = None) -> List[np.ndarray]:
-        """A manual prior geometric generator (e.g. golden ratio or center crop)."""
-        candidates = []
-        h, w = image_cv.shape[:2]
-        pad = int(min(w, h) * 0.1)
-        quad = np.array([
-            [pad, pad],
-            [w - pad, pad],
-            [w - pad, h - pad],
-            [pad, h - pad]
-        ], dtype=np.int32)
-        candidates.append(quad)
-        return candidates
+    # Removed heuristic generate_manual_prior_quad
 
 class TemplateAnalyzer:
     def __init__(self):
@@ -213,7 +200,7 @@ class TemplateAnalyzer:
         edge_strength = cv2.mean(grad, mask=mask)[0]
         return min(1.0, edge_strength / 128.0)
         
-    def analyze(self, filepath: str, category_folder: str) -> dict:
+    def analyze(self, filepath: str, category_folder: str, manual_geometry_prior: dict = None) -> dict:
         img = cv2.imdecode(np.fromfile(filepath, dtype=np.uint8), cv2.IMREAD_COLOR)
         if img is None:
             raise ValueError(f"Could not read image {filepath}")
@@ -224,47 +211,82 @@ class TemplateAnalyzer:
         except ValueError:
             rule = {"key": "UNKNOWN"}
             
-        # Pipeline: Generators -> Validator -> Scorer
-        candidates = []
-        candidates.extend(CandidateGenerators.generate_canny_contours(img))
-        candidates.extend(CandidateGenerators.generate_hough_lines_quad(img))
-        candidates.extend(CandidateGenerators.generate_color_region_quad(img))
-        candidates.extend(CandidateGenerators.generate_manual_prior_quad(img))
-        
-        # Deduplicate and validate candidates
-        valid_cands = []
-        for cand in candidates:
-            valid, msg = GeometryValidator.is_valid_quad(cand, w, h)
-            if valid:
-                valid_cands.append(GeometryValidator.canonical_sort(cand))
-        
         best_quad = None
         best_conf = 0.0
         best_components = {}
         
-        for cand in valid_cands:
-            area = cv2.contourArea(cand.astype(np.float32))
-            area_ratio = min(1.0, area / (w * h))
+        if manual_geometry_prior and "surface_quad" in manual_geometry_prior:
+            cand = np.array(manual_geometry_prior["surface_quad"], dtype=np.float32)
+            valid, msg = GeometryValidator.is_valid_quad(cand, w, h)
+            if valid:
+                best_quad = GeometryValidator.canonical_sort(cand).tolist()
+                best_conf = 1.0
+                best_components = {
+                    "candidate_agreement": 1.0,
+                    "line_score": 1.0,
+                    "orientation_score": 1.0
+                }
+        else:
+            # Pipeline: Generators -> Validator -> Scorer
+            candidates = []
+            candidates.extend(CandidateGenerators.generate_canny_contours(img))
+            candidates.extend(CandidateGenerators.generate_hough_lines_quad(img))
+            candidates.extend(CandidateGenerators.generate_color_region_quad(img))
             
-            edge_score = self.measure_edge_contrast(img, cand)
+            # Deduplicate and validate candidates
+            valid_cands = []
+            for cand in candidates:
+                valid, msg = GeometryValidator.is_valid_quad(cand, w, h)
+                if valid:
+                    valid_cands.append(GeometryValidator.canonical_sort(cand))
             
-            # Additional scores based on candidate_agreement / category rules
-            candidate_agreement = 1.0 # Placeholder for advanced multi-cand voting
-            category_score = 1.0 if rule.get("key") != "UNKNOWN" else 0.5
-            
-            comp_conf = {
-                "area_ratio": float(area_ratio),
-                "edge_alignment": float(edge_score),
-                "candidate_agreement": float(candidate_agreement),
-                "category_score": float(category_score)
-            }
-            
-            conf = (area_ratio * 0.3) + (edge_score * 0.4) + (candidate_agreement * 0.2) + (category_score * 0.1)
-            
-            if conf > best_conf:
-                best_conf = conf
-                best_quad = cand.tolist()
-                best_components = comp_conf
+            # Calculate agreement (how many candidates are similar to each valid cand)
+            for i, cand1 in enumerate(valid_cands):
+                agreement_count = 1
+                for j, cand2 in enumerate(valid_cands):
+                    if i != j:
+                        # Simple IoU or distance check for agreement
+                        # Since they are sorted, we can use euclidean distance
+                        dist = np.linalg.norm(cand1 - cand2) / w
+                        if dist < 0.05:
+                            agreement_count += 1
+                
+                area = cv2.contourArea(cand1.astype(np.float32))
+                area_ratio = min(1.0, area / (w * h))
+                
+                line_score = self.measure_edge_contrast(img, cand1)
+                
+                # Real candidate agreement
+                candidate_agreement = min(1.0, agreement_count / max(1, len(valid_cands)))
+                
+                # Real orientation score (does it match category expected orientation roughly?)
+                # We calculate aspect ratio of cand1
+                w_top = np.linalg.norm(cand1[1] - cand1[0])
+                h_left = np.linalg.norm(cand1[3] - cand1[0])
+                orient_score = 0.5
+                if w_top > 0 and h_left > 0:
+                    ar = w_top / h_left
+                    cand_orient = "H" if ar > 1.05 else ("V" if ar < 0.95 else "SQUARE")
+                    if "Vertical" in rule.get("key", "") and cand_orient == "V":
+                        orient_score = 1.0
+                    elif "Horizontal" in rule.get("key", "") and cand_orient == "H":
+                        orient_score = 1.0
+                    elif "Square" in rule.get("key", "") and cand_orient == "SQUARE":
+                        orient_score = 1.0
+                        
+                comp_conf = {
+                    "area_ratio": float(area_ratio),
+                    "line_score": float(line_score),
+                    "candidate_agreement": float(candidate_agreement),
+                    "orientation_score": float(orient_score)
+                }
+                
+                conf = (area_ratio * 0.3) + (line_score * 0.4) + (candidate_agreement * 0.2) + (orient_score * 0.1)
+                
+                if conf > best_conf:
+                    best_conf = conf
+                    best_quad = cand1.tolist()
+                    best_components = comp_conf
                 
         # Nominal aspect must NOT be calculated from quad. 
         # If no metadata, it is UNKNOWN.

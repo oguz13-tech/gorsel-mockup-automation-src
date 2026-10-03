@@ -65,6 +65,18 @@ class TestT1DeleteUndoIntegrity(unittest.TestCase):
         conn.commit()
         conn.close()
         
+        # Create physical test image
+        self.img_dir = os.path.join(self.test_dir, "2_SABLON_HAVUZU", "test_cat")
+        os.makedirs(self.img_dir, exist_ok=True)
+        self.img_path = os.path.join(self.img_dir, "test_tmpl.png")
+        
+        # Write dummy image data
+        with open(self.img_path, "wb") as f:
+            f.write(b"dummy image data for SHA test")
+            
+        with open(self.img_path, "rb") as f:
+            self.file_sha = hashlib.sha256(f.read()).hexdigest()
+        
         # Mock app.py's direct sqlite3 connections to use our temp DB
         self.app_sqlite3_connect = sqlite3.connect
         def mock_app_sqlite3_connect(db_path, *args, **kwargs):
@@ -79,8 +91,14 @@ class TestT1DeleteUndoIntegrity(unittest.TestCase):
 
     def tearDown(self):
         db_core.get_db_connection = self.original_get_db_connection
+        if hasattr(self, 'original_db_path'):
+            db_core.DB_PATH = self.original_db_path
+            
         import app as app_module
         app_module.sqlite3.connect = self.app_sqlite3_connect
+        if hasattr(self, 'original_app_base_dir'):
+            app_module.BASE_DIR = self.original_app_base_dir
+            
         shutil.rmtree(self.test_dir, ignore_errors=True)
 
     def test_delete_preserves_data_for_undo(self):
@@ -109,6 +127,13 @@ class TestT1DeleteUndoIntegrity(unittest.TestCase):
             ("test_cat", "test_tmpl.png")
         ).fetchone()
         self.assertIsNone(row, "Template should be deleted")
+        
+        # Verify physical file is gone
+        self.assertFalse(os.path.exists(self.img_path), "Physical image file should be moved/deleted")
+        
+        # Verify physical file is in trash
+        trash_path = os.path.join(self.test_dir, "SILINEN_SABLONLAR_COP_KUTUSU", "test_tmpl.png")
+        self.assertTrue(os.path.exists(trash_path), "Physical file should be in trash")
 
         # Step 3: Undo via Flask Endpoint (re-insert with original data)
         res = self.client.post('/api/sablon_sil_geri_al')
@@ -123,6 +148,13 @@ class TestT1DeleteUndoIntegrity(unittest.TestCase):
         restored_sha = hashlib.sha256(row["data"].encode()).hexdigest()
         self.assertEqual(restored_sha, self.test_data_sha,
                          "SHA mismatch after undo! Data corruption detected.")
+                         
+        # Verify physical file restored
+        self.assertTrue(os.path.exists(self.img_path), "Physical image file should be restored")
+        with open(self.img_path, "rb") as f:
+            restored_file_sha = hashlib.sha256(f.read()).hexdigest()
+        self.assertEqual(restored_file_sha, self.file_sha, "Physical file SHA mismatch after undo!")
+        
         conn.close()
 
 if __name__ == "__main__":
