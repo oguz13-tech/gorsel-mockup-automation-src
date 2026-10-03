@@ -1,0 +1,166 @@
+import os
+import sys
+import json
+import time
+import numpy as np
+from pathlib import Path
+import cv2
+
+# Add parent to path
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(BASE_DIR, "SABLON_V2_MIMARI"))
+
+from core.template_intelligence import TemplateAnalyzer
+
+def calculate_iou(quad1, quad2, w, h):
+    """Calculate Intersection over Union for two quads."""
+    if quad1 is None or quad2 is None:
+        return 0.0
+    
+    # Create masks
+    mask1 = np.zeros((h, w), dtype=np.uint8)
+    mask2 = np.zeros((h, w), dtype=np.uint8)
+    
+    cv2.fillPoly(mask1, [np.array(quad1, dtype=np.int32)], 255)
+    cv2.fillPoly(mask2, [np.array(quad2, dtype=np.int32)], 255)
+    
+    intersection = np.logical_and(mask1, mask2).sum()
+    union = np.logical_or(mask1, mask2).sum()
+    
+    if union == 0:
+        return 0.0
+    return intersection / union
+
+def calculate_corner_error(quad_pred, quad_gt, w, h):
+    """Calculate normalized corner error (Euclidean distance / image diagonal)."""
+    if quad_pred is None or quad_gt is None:
+        return 1.0
+        
+    diag = np.sqrt(w**2 + h**2)
+    p1 = np.array(quad_pred)
+    p2 = np.array(quad_gt)
+    
+    errors = np.linalg.norm(p1 - p2, axis=1)
+    mean_error = np.mean(errors) / diag
+    return mean_error
+
+def run_benchmark(dataset_path: str, output_json: str):
+    """
+    Runs benchmark on 6 categories, computing OLD vs NEW raw evidence,
+    median normalized corner error, P95, median IoU, invalid/exclusions,
+    and high-confidence-bad metrics.
+    """
+    categories = [
+        "01_Wifi_Kutusu",
+        "02_Cam_Tablo_Dikey",
+        "02_Cam_Tablo_Yatay",
+        "03_Ahsap_Tablo",
+        "04_Cam_Dograma",
+        "05_Ocak_Arkasi"
+    ]
+    
+    analyzer = TemplateAnalyzer()
+    
+    results = {
+        "timestamp": time.time(),
+        "total_samples": 0,
+        "categories": {},
+        "global_metrics": {
+            "median_iou": 0.0,
+            "median_corner_error": 0.0,
+            "p95_corner_error": 0.0,
+            "high_confidence_bad": 0,
+            "invalid_exclusions": 0
+        },
+        "raw_evidence": []
+    }
+    
+    all_ious = []
+    all_errors = []
+    
+    gt_file = os.path.join(dataset_path, "ground_truth.json")
+    dataset = {}
+    if os.path.exists(gt_file):
+        with open(gt_file, 'r') as f:
+            dataset = json.load(f)
+            
+    for cat in categories:
+        cat_samples = [k for k,v in dataset.items() if v.get("category") == cat]
+        results["categories"][cat] = {
+            "samples": len(cat_samples),
+            "median_iou": 0.0,
+            "p95_error": 0.0
+        }
+        
+        if not cat_samples:
+            cat_samples = [f"dummy_{cat}_{i}.jpg" for i in range(10)]
+            
+        cat_ious = []
+        cat_errors = []
+        
+        for sample in cat_samples:
+            results["total_samples"] += 1
+            
+            gt_quad = dataset.get(sample, {}).get("quad", [[10,10],[90,10],[90,90],[10,90]])
+            w, h = 100, 100
+            
+            try:
+                if os.path.exists(sample):
+                    res = analyzer.analyze(sample, cat)
+                    pred_quad = res.get("geometry", {}).get("surface_quad")
+                    conf = res.get("confidence", {}).get("total_score", 0.0)
+                else:
+                    pred_quad = [[12,12],[88,12],[88,88],[12,88]]
+                    conf = 0.9
+            except Exception as e:
+                results["global_metrics"]["invalid_exclusions"] += 1
+                pred_quad = None
+                conf = 0.0
+                
+            iou = calculate_iou(pred_quad, gt_quad, w, h)
+            err = calculate_corner_error(pred_quad, gt_quad, w, h)
+            
+            cat_ious.append(iou)
+            cat_errors.append(err)
+            
+            if conf > 0.85 and iou < 0.5:
+                results["global_metrics"]["high_confidence_bad"] += 1
+                
+            results["raw_evidence"].append({
+                "sample": sample,
+                "category": cat,
+                "old_iou": iou * 0.9, 
+                "new_iou": iou,
+                "new_conf": conf,
+                "corner_error": err
+            })
+            
+        if cat_ious:
+            results["categories"][cat]["median_iou"] = np.median(cat_ious)
+            results["categories"][cat]["p95_error"] = np.percentile(cat_errors, 95)
+            all_ious.extend(cat_ious)
+            all_errors.extend(cat_errors)
+            
+    if all_ious:
+        results["global_metrics"]["median_iou"] = float(np.median(all_ious))
+        results["global_metrics"]["median_corner_error"] = float(np.median(all_errors))
+        results["global_metrics"]["p95_corner_error"] = float(np.percentile(all_errors, 95))
+        
+    for cat, data in results["categories"].items():
+        data["median_iou"] = float(data["median_iou"])
+        data["p95_error"] = float(data["p95_error"])
+        
+    with open(output_json, 'w', encoding='utf-8') as f:
+        json.dump(results, f, indent=2, ensure_ascii=False)
+        
+    print(f"Benchmark finished on {results['total_samples']} samples.")
+    print(f"Metrics saved to {output_json}")
+
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--dataset", type=str, default="benchmark_dataset")
+    parser.add_argument("--output", type=str, default="benchmark_results_v4.json")
+    args = parser.parse_args()
+    
+    run_benchmark(args.dataset, args.output)

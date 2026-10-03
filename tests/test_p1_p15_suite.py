@@ -27,6 +27,26 @@ class TestP1GeometryValidator(unittest.TestCase):
         quad = np.array([[0,0],[100,100],[100,0],[0,100]])
         ok, msg = GeometryValidator.is_valid_quad(quad, 500, 500)
         self.assertFalse(ok)
+        
+    def test_canonical_sorting(self):
+        from core.template_intelligence import GeometryValidator
+        # Unsorted: BR, TL, BL, TR
+        quad = np.array([[300,300],[100,100],[100,300],[300,100]])
+        sorted_quad = GeometryValidator.canonical_sort(quad)
+        self.assertTrue((sorted_quad[0] == [100,100]).all(), "TL mismatch")
+        self.assertTrue((sorted_quad[1] == [300,100]).all(), "TR mismatch")
+        self.assertTrue((sorted_quad[2] == [300,300]).all(), "BR mismatch")
+        self.assertTrue((sorted_quad[3] == [100,300]).all(), "BL mismatch")
+        
+    def test_homography_degeneracy(self):
+        from core.template_intelligence import GeometryValidator
+        from unittest.mock import patch
+        
+        quad = np.array([[100,100],[300,100],[300,300],[100,300]])
+        with patch('cv2.findHomography', return_value=(None, None)):
+            ok, msg = GeometryValidator.is_valid_quad(quad, 500, 500)
+            self.assertFalse(ok)
+            self.assertIn("Homography", msg)
 
 class TestP4CandidateGenerators(unittest.TestCase):
     def test_canny_returns_list(self):
@@ -56,6 +76,17 @@ class TestP4CandidateGenerators(unittest.TestCase):
         cv2.rectangle(img, (20,20), (180,180), (255,255,255), -1)
         result = CandidateGenerators.generate_color_region_quad(img)
         self.assertIsInstance(result, list)
+        
+    def test_manual_prior_returns_list(self):
+        from core.template_intelligence import CandidateGenerators
+        img = np.zeros((200,300,3), dtype=np.uint8)
+        result = CandidateGenerators.generate_manual_prior_quad(img)
+        self.assertIsInstance(result, list)
+        self.assertEqual(len(result), 1)
+        # Verify 10% padding
+        pad = int(min(300, 200) * 0.1) # 20
+        self.assertTrue((result[0][0] == [20, 20]).all())
+        self.assertTrue((result[0][2] == [300-20, 200-20]).all())
 
 class TestP7CategoryRuleEngine(unittest.TestCase):
     def test_known_category(self):
@@ -73,8 +104,7 @@ class TestP10NominalAspect(unittest.TestCase):
         """nominal_aspect must not be computed from quad; it should be UNKNOWN unless metadata provided."""
         from core.template_intelligence import TemplateAnalyzer
         analyzer = TemplateAnalyzer()
-        # We cant run full analyze without a real image, but we verify the code path
-        self.assertEqual(analyzer.version, "v1.2")
+        self.assertEqual(analyzer.version, "v1.3")
 
 class TestP13EdgeContrast(unittest.TestCase):
     def test_edge_contrast_returns_float(self):

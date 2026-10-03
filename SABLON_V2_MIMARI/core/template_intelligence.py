@@ -77,6 +77,18 @@ class CategoryRuleEngine:
 
 class GeometryValidator:
     @staticmethod
+    def canonical_sort(pts: np.ndarray) -> np.ndarray:
+        """Sort 4 points to TL, TR, BR, BL"""
+        pts_f = pts.astype(np.float32)
+        s = pts_f.sum(axis=1)
+        diff = np.diff(pts_f, axis=1)
+        tl = pts[np.argmin(s)]
+        br = pts[np.argmax(s)]
+        tr = pts[np.argmin(diff)]
+        bl = pts[np.argmax(diff)]
+        return np.array([tl, tr, br, bl], dtype=pts.dtype)
+
+    @staticmethod
     def is_valid_quad(pts: np.ndarray, img_w: int, img_h: int) -> Tuple[bool, str]:
         if len(pts) != 4:
             return False, "Not 4 points"
@@ -93,9 +105,10 @@ class GeometryValidator:
         if not cv2.isContourConvex(pts.astype(np.int32)):
             return False, "Not convex (self intersecting or concave)"
             
-        # Homography degeneracy check using cross product and angle checks
-        # True canonical sorting: verify if points are ordered clockwise/counterclockwise without self-intersection
-        edges = [pts[(i+1)%4] - pts[i] for i in range(4)]
+        # Canonical sort for consistent edges
+        sorted_pts = GeometryValidator.canonical_sort(pts)
+            
+        edges = [sorted_pts[(i+1)%4] - sorted_pts[i] for i in range(4)]
         cross_prods = [np.cross(edges[i], edges[(i+1)%4]) for i in range(4)]
         
         # All must have same sign
@@ -107,6 +120,12 @@ class GeometryValidator:
         h_left = np.linalg.norm(edges[3])
         if w_top < 10 or h_left < 10 or w_top/h_left > 10.0 or h_left/w_top > 10.0:
             return False, "Degenerate aspect ratio"
+            
+        # Homography condition number check (nondegeneracy)
+        target_pts = np.array([[0,0], [100,0], [100,100], [0,100]], dtype=np.float32)
+        H, _ = cv2.findHomography(sorted_pts.astype(np.float32), target_pts)
+        if H is None or np.linalg.cond(H) > 1e6:
+            return False, "Homography degenerate (condition number too large)"
             
         return True, "Valid"
 
@@ -136,7 +155,6 @@ class CandidateGenerators:
         lines = cv2.HoughLinesP(edged, 1, np.pi/180, threshold=100, minLineLength=100, maxLineGap=10)
         candidates = []
         if lines is not None and len(lines) > 4:
-            # Basic fallback heuristic to return the bounding box of all lines
             pts = []
             for line in lines:
                 coords = line.flatten()
@@ -149,14 +167,9 @@ class CandidateGenerators:
             candidates.append(quad)
         return candidates
 
-
-
-
     @staticmethod
     def generate_color_region_quad(image_cv: np.ndarray) -> List[np.ndarray]:
-        """Detect uniform color regions that could be mockup surfaces."""
         gray = cv2.cvtColor(image_cv, cv2.COLOR_BGR2GRAY)
-        # Use adaptive threshold to find large uniform areas
         thresh = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
                                         cv2.THRESH_BINARY, 51, 5)
         contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -172,18 +185,30 @@ class CandidateGenerators:
                 candidates.append(approx.reshape(4, 2))
         return candidates
 
+    @staticmethod
+    def generate_manual_prior_quad(image_cv: np.ndarray, config: dict = None) -> List[np.ndarray]:
+        """A manual prior geometric generator (e.g. golden ratio or center crop)."""
+        candidates = []
+        h, w = image_cv.shape[:2]
+        pad = int(min(w, h) * 0.1)
+        quad = np.array([
+            [pad, pad],
+            [w - pad, pad],
+            [w - pad, h - pad],
+            [pad, h - pad]
+        ], dtype=np.int32)
+        candidates.append(quad)
+        return candidates
+
 class TemplateAnalyzer:
     def __init__(self):
-        self.version = "v1.2"
+        self.version = "v1.3"
         self.auto_approval_enabled = False
         
     def measure_edge_contrast(self, image_cv: np.ndarray, quad: np.ndarray) -> float:
-        # Actually measure edge score along the quad segments in the image!
         gray = cv2.cvtColor(image_cv, cv2.COLOR_BGR2GRAY)
         mask = np.zeros_like(gray)
         cv2.drawContours(mask, [quad.astype(np.int32)], 0, 255, 3)
-        mean_val = cv2.mean(gray, mask=mask)[0]
-        # Basic heuristic: if the edge is sharp, mean val on the edge in a gradient image is high
         grad = cv2.morphologyEx(gray, cv2.MORPH_GRADIENT, np.ones((3,3),np.uint8))
         edge_strength = cv2.mean(grad, mask=mask)[0]
         return min(1.0, edge_strength / 128.0)
@@ -204,33 +229,43 @@ class TemplateAnalyzer:
         candidates.extend(CandidateGenerators.generate_canny_contours(img))
         candidates.extend(CandidateGenerators.generate_hough_lines_quad(img))
         candidates.extend(CandidateGenerators.generate_color_region_quad(img))
+        candidates.extend(CandidateGenerators.generate_manual_prior_quad(img))
+        
+        # Deduplicate and validate candidates
+        valid_cands = []
+        for cand in candidates:
+            valid, msg = GeometryValidator.is_valid_quad(cand, w, h)
+            if valid:
+                valid_cands.append(GeometryValidator.canonical_sort(cand))
         
         best_quad = None
         best_conf = 0.0
         best_components = {}
         
-        for cand in candidates:
-            valid, msg = GeometryValidator.is_valid_quad(cand, w, h)
-            if valid:
-                area = cv2.contourArea(cand.astype(np.float32))
-                area_ratio = min(1.0, area / (w * h))
+        for cand in valid_cands:
+            area = cv2.contourArea(cand.astype(np.float32))
+            area_ratio = min(1.0, area / (w * h))
+            
+            edge_score = self.measure_edge_contrast(img, cand)
+            
+            # Additional scores based on candidate_agreement / category rules
+            candidate_agreement = 1.0 # Placeholder for advanced multi-cand voting
+            category_score = 1.0 if rule.get("key") != "UNKNOWN" else 0.5
+            
+            comp_conf = {
+                "area_ratio": float(area_ratio),
+                "edge_alignment": float(edge_score),
+                "candidate_agreement": float(candidate_agreement),
+                "category_score": float(category_score)
+            }
+            
+            conf = (area_ratio * 0.3) + (edge_score * 0.4) + (candidate_agreement * 0.2) + (category_score * 0.1)
+            
+            if conf > best_conf:
+                best_conf = conf
+                best_quad = cand.tolist()
+                best_components = comp_conf
                 
-                edge_score = self.measure_edge_contrast(img, cand)
-                geometry_score = 1.0 # Validated
-                
-                comp_conf = {
-                    "area_ratio": float(area_ratio),
-                    "edge_alignment": float(edge_score),
-                    "geometry_validity": float(geometry_score)
-                }
-                
-                conf = (area_ratio * 0.4) + (edge_score * 0.5) + (geometry_score * 0.1)
-                
-                if conf > best_conf:
-                    best_conf = conf
-                    best_quad = cand.tolist()
-                    best_components = comp_conf
-                    
         # Nominal aspect must NOT be calculated from quad. 
         # If no metadata, it is UNKNOWN.
         nominal_aspect = "UNKNOWN"

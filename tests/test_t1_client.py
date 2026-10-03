@@ -11,28 +11,45 @@ import tempfile
 import shutil
 
 # Add parent to path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "SABLON_V2_MIMARI")))
+
+from app import app
+import core.db as db_core
 
 class TestT1DeleteUndoIntegrity(unittest.TestCase):
     """Test that deleting and undoing a template preserves data integrity."""
 
     def setUp(self):
         """Set up a test DB and Flask client."""
+        app.config['TESTING'] = True
+        self.client = app.test_client()
+        
+        # We need to temporarily mock the DB path in db_core to point to a temp file
         self.test_dir = tempfile.mkdtemp()
-        self.test_db = os.path.join(self.test_dir, "test_ayarlar.db")
-
-        # Create a minimal SQLite DB for testing
-        import sqlite3
-        conn = sqlite3.connect(self.test_db)
-        c = conn.cursor()
-        c.execute("""CREATE TABLE IF NOT EXISTS templates (
-            category_id TEXT,
-            filename TEXT,
-            data TEXT,
-            PRIMARY KEY (category_id, filename)
-        )""")
+        self.test_db = os.path.join(self.test_dir, "ayarlar.db")
+        
+        # Patch the db connection string in db_core
+        self.original_db_path = getattr(db_core, "DB_PATH", None)
+        db_core.DB_PATH = self.test_db
+        
+        # A bit hacky: we override get_db_connection
+        self.original_get_db_connection = db_core.get_db_connection
+        
+        def mock_get_db_connection():
+            import sqlite3
+            conn = sqlite3.connect(self.test_db)
+            conn.row_factory = sqlite3.Row
+            return conn
+            
+        db_core.get_db_connection = mock_get_db_connection
+        
+        # Initialize schema
+        db_core.init_db()
 
         # Insert a test template with known data
+        import sqlite3
+        conn = mock_get_db_connection()
+        c = conn.cursor()
         self.test_data = {
             "tip": "perspektif",
             "koseler": [[100,200],[300,200],[300,400],[100,400]],
@@ -40,46 +57,63 @@ class TestT1DeleteUndoIntegrity(unittest.TestCase):
         }
         self.test_data_json = json.dumps(self.test_data, ensure_ascii=False)
         self.test_data_sha = hashlib.sha256(self.test_data_json.encode()).hexdigest()
+        
+        c.execute("INSERT INTO categories (id, label) VALUES (?, ?)", ("test_cat", "Test Category"))
 
         c.execute("INSERT INTO templates (category_id, filename, data) VALUES (?, ?, ?)",
                   ("test_cat", "test_tmpl.png", self.test_data_json))
         conn.commit()
         conn.close()
+        
+        # Mock app.py's direct sqlite3 connections to use our temp DB
+        self.app_sqlite3_connect = sqlite3.connect
+        def mock_app_sqlite3_connect(db_path, *args, **kwargs):
+            if "ayarlar.db" in db_path:
+                return self.app_sqlite3_connect(self.test_db, *args, **kwargs)
+            return self.app_sqlite3_connect(db_path, *args, **kwargs)
+            
+        import app as app_module
+        app_module.sqlite3.connect = mock_app_sqlite3_connect
+        self.original_app_base_dir = getattr(app_module, "BASE_DIR", None)
+        app_module.BASE_DIR = self.test_dir
 
     def tearDown(self):
+        db_core.get_db_connection = self.original_get_db_connection
+        import app as app_module
+        app_module.sqlite3.connect = self.app_sqlite3_connect
         shutil.rmtree(self.test_dir, ignore_errors=True)
 
     def test_delete_preserves_data_for_undo(self):
         """Simulate delete -> verify data gone -> undo -> verify SHA matches."""
-        import sqlite3
-
         # Step 1: Read original
-        conn = sqlite3.connect(self.test_db)
-        conn.row_factory = sqlite3.Row
+        conn = db_core.get_db_connection()
         row = conn.execute(
             "SELECT data FROM templates WHERE category_id=? AND filename=?",
             ("test_cat", "test_tmpl.png")
         ).fetchone()
         original_sha = hashlib.sha256(row["data"].encode()).hexdigest()
-        original_data = row["data"]
         self.assertEqual(original_sha, self.test_data_sha)
 
-        # Step 2: Delete
-        conn.execute("DELETE FROM templates WHERE category_id=? AND filename=?",
-                     ("test_cat", "test_tmpl.png"))
-        conn.commit()
+        # Step 2: Delete via Flask Endpoint
+        res = self.client.post('/api/sablon_sil', headers={
+            "X-Active-Category": "test_cat",
+            "X-Active-Template": "test_tmpl.png"
+        })
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertTrue(data["success"])
 
-        # Verify deleted
+        # Verify deleted in DB
         row = conn.execute(
             "SELECT data FROM templates WHERE category_id=? AND filename=?",
             ("test_cat", "test_tmpl.png")
         ).fetchone()
         self.assertIsNone(row, "Template should be deleted")
 
-        # Step 3: Undo (re-insert with original data)
-        conn.execute("INSERT INTO templates (category_id, filename, data) VALUES (?, ?, ?)",
-                     ("test_cat", "test_tmpl.png", original_data))
-        conn.commit()
+        # Step 3: Undo via Flask Endpoint (re-insert with original data)
+        res = self.client.post('/api/sablon_sil_geri_al')
+        self.assertEqual(res.status_code, 200)
+        self.assertTrue(res.get_json()["success"])
 
         # Step 4: Verify SHA integrity
         row = conn.execute(
@@ -90,7 +124,6 @@ class TestT1DeleteUndoIntegrity(unittest.TestCase):
         self.assertEqual(restored_sha, self.test_data_sha,
                          "SHA mismatch after undo! Data corruption detected.")
         conn.close()
-
 
 if __name__ == "__main__":
     unittest.main()
