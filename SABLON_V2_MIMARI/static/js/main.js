@@ -632,6 +632,23 @@ window.onerror = function(msg, url, line, col, error) {
             }
         }
 
+        // CALIBRATION OVERLAY (Review Mode — controlled by showReviewOverlay)
+        if (typeof showReviewOverlay !== 'undefined' && showReviewOverlay && pts.length === 4) {
+            ctx.save();
+            ctx.fillStyle = 'rgba(0, 255, 0, 0.25)';
+            ctx.beginPath();
+            ctx.moveTo(startX + pts[0].x * finalScale, startY + pts[0].y * finalScale);
+            for(let i=1; i<4; i++) {
+                ctx.lineTo(startX + pts[i].x * finalScale, startY + pts[i].y * finalScale);
+            }
+            ctx.closePath();
+            ctx.fill();
+            ctx.strokeStyle = '#00ff00';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+            ctx.restore();
+        }
+
         // 2. Foreground Editor Katmanları (Object Boxes & Brushes)
         drawForegroundEditor(startX, startY, finalScale);
         

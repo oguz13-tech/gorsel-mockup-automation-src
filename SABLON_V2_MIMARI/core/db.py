@@ -10,6 +10,20 @@ def get_db_connection():
     conn.row_factory = sqlite3.Row
     return conn
 
+def migrate_schema(conn):
+    """Single idempotent schema migration point. Add all ALTER TABLE operations here."""
+    c = conn.cursor()
+    migrations = [
+        ("nominal_aspect", "ALTER TABLE template_profiles ADD COLUMN nominal_aspect TEXT"),
+        ("is_active", "ALTER TABLE template_profiles ADD COLUMN is_active INTEGER DEFAULT 1"),
+    ]
+    for col_name, alter_sql in migrations:
+        try:
+            c.execute(f"SELECT {col_name} FROM template_profiles LIMIT 1")
+        except sqlite3.OperationalError:
+            c.execute(alter_sql)
+
+
 def init_db():
     conn = get_db_connection()
     c = conn.cursor()
@@ -60,15 +74,8 @@ def init_db():
                     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
                  )''')
 
-    # --- MIGRATION: Add columns to existing DBs ---
-    try:
-        c.execute("SELECT nominal_aspect FROM template_profiles LIMIT 1")
-    except sqlite3.OperationalError:
-        c.execute("ALTER TABLE template_profiles ADD COLUMN nominal_aspect TEXT")
-    try:
-        c.execute("SELECT is_active FROM template_profiles LIMIT 1")
-    except sqlite3.OperationalError:
-        c.execute("ALTER TABLE template_profiles ADD COLUMN is_active INTEGER DEFAULT 1")
+    # Run idempotent migrations for existing DBs
+    migrate_schema(conn)
 
     conn.commit()
     conn.close()

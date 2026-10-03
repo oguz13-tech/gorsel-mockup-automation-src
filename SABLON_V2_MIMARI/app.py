@@ -436,7 +436,7 @@ def api_templates_approve():
             
         db_path = os.path.join(BASE_DIR, "SABLON_V2_MIMARI", "ayarlar.db")
         conn = sqlite3.connect(db_path)
-        conn.execute("UPDATE template_profiles SET review_status='APPROVED', manually_verified=1 WHERE template_uid=?", (uid,))
+        conn.execute("UPDATE template_profiles SET review_status='APPROVED', manually_verified=1 WHERE template_uid=? AND is_active=1", (uid,))
         conn.commit()
         conn.close()
         
