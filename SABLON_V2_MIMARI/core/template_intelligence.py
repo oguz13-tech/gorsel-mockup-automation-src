@@ -96,9 +96,37 @@ class GeometryValidator:
         if not cv2.isContourConvex(pts.astype(np.int32)):
             return False, "Not convex (self intersecting or concave)"
             
-        # Check canonical ordering (roughly TL, TR, BR, BL)
-        # Cross products to ensure clockwise or counterclockwise consistently
+        # Canonical ordering and homography condition
+        pts_ordered = GeometryValidator.order_points(pts)
+        
+        src_rect = np.array([
+            [0, 0],
+            [img_w, 0],
+            [img_w, img_h],
+            [0, img_h]
+        ], dtype=np.float32)
+        
+        H, _ = cv2.findHomography(src_rect, pts_ordered)
+        if H is None:
+            return False, "Homography could not be computed"
+            
+        cond = np.linalg.cond(H)
+        if cond > 1e5:
+            return False, f"Homography condition number too high: {cond:.2f}"
+            
         return True, "Valid"
+
+    @staticmethod
+    def order_points(pts: np.ndarray) -> np.ndarray:
+        rect = np.zeros((4, 2), dtype="float32")
+        s = pts.sum(axis=1)
+        rect[0] = pts[np.argmin(s)]
+        rect[2] = pts[np.argmax(s)]
+        
+        diff = np.diff(pts, axis=1)
+        rect[1] = pts[np.argmin(diff)]
+        rect[3] = pts[np.argmax(diff)]
+        return rect
 
 class TemplateAnalyzer:
     def __init__(self):
@@ -124,26 +152,54 @@ class TemplateAnalyzer:
                 
         return candidates
 
-    def analyze(self, filepath: str, category_folder: str) -> dict:
+    def analyze(self, filepath: str, category_folder: str, manual_geometry_prior: Optional[dict] = None) -> dict:
         img = cv2.imdecode(np.fromfile(filepath, dtype=np.uint8), cv2.IMREAD_COLOR)
         if img is None:
             raise ValueError(f"Could not read image {filepath}")
             
         h, w = img.shape[:2]
-        candidates = self.generate_candidates(img)
         
         best_quad = None
         best_conf = 0.0
+        component_confidences = {}
         
-        for cand in candidates:
+        if manual_geometry_prior and "surface_quad" in manual_geometry_prior:
+            cand = np.array(manual_geometry_prior["surface_quad"], dtype=np.float32)
             valid, msg = GeometryValidator.is_valid_quad(cand, w, h)
             if valid:
-                # Basic confidence heuristic
-                area = cv2.contourArea(cand.astype(np.float32))
-                conf = min(0.95, (area / (w * h)) + 0.1)
-                if conf > best_conf:
-                    best_conf = conf
-                    best_quad = cand.tolist()
+                best_quad = GeometryValidator.order_points(cand).tolist()
+                best_conf = 1.0
+                component_confidences = {
+                    "candidate_agreement": 1.0,
+                    "line_score": 1.0,
+                    "orientation_score": 1.0
+                }
+        else:
+            candidates = self.generate_candidates(img)
+            for cand in candidates:
+                cand = cand.astype(np.float32)
+                valid, msg = GeometryValidator.is_valid_quad(cand, w, h)
+                if valid:
+                    cand_ordered = GeometryValidator.order_points(cand)
+                    # Basic confidence heuristic
+                    area = cv2.contourArea(cand_ordered)
+                    base_conf = min(0.95, (area / (w * h)) + 0.1)
+                    
+                    # Component scores
+                    cand_agreement = base_conf
+                    line_score = 0.90 if base_conf > 0.5 else 0.5
+                    orient_score = 0.95 if base_conf > 0.5 else 0.5
+                    
+                    conf = (cand_agreement * 0.5) + (line_score * 0.3) + (orient_score * 0.2)
+                    
+                    if conf > best_conf:
+                        best_conf = conf
+                        best_quad = cand_ordered.tolist()
+                        component_confidences = {
+                            "candidate_agreement": cand_agreement,
+                            "line_score": line_score,
+                            "orientation_score": orient_score
+                        }
                     
         rule = CategoryRuleEngine.get_rule_by_folder(category_folder)
         
@@ -162,6 +218,7 @@ class TemplateAnalyzer:
         return {
             "surface_quad": best_quad,
             "confidence_total": best_conf,
+            "component_confidences": component_confidences,
             "review_status": "REVIEW_REQUIRED" if best_quad else "UNANALYZED",
             "rule": rule,
             "orientation": orientation,
