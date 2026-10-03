@@ -338,12 +338,10 @@ class TemplateAnalyzer:
             "analyzer_version": self.version
         }
         
-        if rule.get("has_frame") and best_quad:
-            # Expand surface quad outwards to simulate outer frame bounds
-            pts = np.array(best_quad)
-            center = pts.mean(axis=0)
-            outer = pts + (pts - center) * 0.1 # 10% larger
-            res["outer_quad"] = outer.tolist()
+        # Never fabricate frame geometry. Preserve an outer quad only when it comes
+        # from trusted/manual geometry supplied to the analyzer.
+        if isinstance(manual_geometry_prior, dict) and manual_geometry_prior.get("outer_quad") is not None:
+            res["outer_quad"] = manual_geometry_prior["outer_quad"]
             
         return res
 
