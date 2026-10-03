@@ -254,9 +254,9 @@ AYARLAR = load_ayarlar()
 # 4. SQLITE DURUM YÖNETİCİSİ (WAL Mode, Idempotent, Atomic Counter)
 # ==============================================================================
 class StateManager:
-    def __init__(self, db_path: Path = DB_PATH):
-        self.db_path = db_path
-        self.conn = sqlite3.connect(str(db_path), check_same_thread=False, timeout=30)
+    def __init__(self, db_path: Path = None):
+        self.db_path = db_path if db_path is not None else DB_PATH
+        self.conn = sqlite3.connect(str(self.db_path), check_same_thread=False, timeout=30)
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA foreign_keys = ON")
         self.conn.execute("PRAGMA journal_mode = WAL")
@@ -1621,7 +1621,7 @@ class PCMasterFactory:
         for attempt in range(3):
             url = self.uploader.upload_sync(mockup_path)
             if url: break
-            import time
+            # Her deneme arasi ufak bekleme
             time.sleep(2)
             
         if url:
