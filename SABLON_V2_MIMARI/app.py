@@ -385,6 +385,34 @@ def serve_image(cat, tmpl):
 
 # ==========================================
 
+def _load_matching_manual_prior(db_path, uid, img_path):
+    """Load trusted manual geometry only when it belongs to the current source bytes."""
+    with open(img_path, "rb") as source_file:
+        current_hash = hashlib.sha256(source_file.read()).hexdigest()
+
+    conn = sqlite3.connect(db_path)
+    try:
+        row = conn.execute(
+            """SELECT surface_quad, outer_quad, source_asset_sha256
+               FROM template_profiles
+               WHERE template_uid=? AND is_active=1 AND manually_verified=1""",
+            (uid,)
+        ).fetchone()
+    finally:
+        conn.close()
+
+    if not row or not row[0] or not row[2] or row[2] != current_hash:
+        return None
+
+    try:
+        prior = {"surface_quad": json.loads(row[0])}
+        if row[1]:
+            prior["outer_quad"] = json.loads(row[1])
+        return prior
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return None
+
+
 @app.route('/api/templates/analyze', methods=['POST'])
 def api_templates_analyze():
     try:
@@ -400,21 +428,16 @@ def api_templates_analyze():
         uid = f"{active_cat}_{active_tmpl}"
         db_path = os.path.join(BASE_DIR, "SABLON_V2_MIMARI", "ayarlar.db")
         
-        # Determine manual prior from request or active DB record
+        # Explicit request geometry may be used for this analysis. DB geometry is trusted
+        # only when it was manually verified for the exact same source bytes.
         manual_prior = None
         if request.is_json:
-            manual_prior = request.json.get("manual_geometry_prior")
-            
+            requested_prior = request.json.get("manual_geometry_prior")
+            if isinstance(requested_prior, dict):
+                manual_prior = requested_prior
+
         if not manual_prior:
-            conn = sqlite3.connect(db_path)
-            row = conn.execute("SELECT surface_quad FROM template_profiles WHERE template_uid=? AND is_active=1 AND manually_verified=1", (uid,)).fetchone()
-            conn.close()
-            if row and row[0]:
-                import json
-                try:
-                    manual_prior = json.loads(row[0])
-                except:
-                    pass
+            manual_prior = _load_matching_manual_prior(db_path, uid, img_path)
 
         analyzer = TemplateAnalyzer()
         result = analyzer.analyze(img_path, active_cat, manual_geometry_prior=manual_prior)
@@ -434,6 +457,7 @@ def api_templates_analyze():
             "orientation": result.get("orientation", "UNKNOWN"),
             "print_policy": result.get("rule", {}).get("print_policy", "full_bleed"),
             "surface_quad": result.get("surface_quad"),
+            "outer_quad": result.get("outer_quad"),
             "confidence_total": result.get("confidence_total", 0.0),
             "component_confidences": result.get("component_confidences", {}),
             "review_status": result.get("review_status", "UNANALYZED"),
@@ -484,18 +508,7 @@ def api_templates_batch_analyze():
             img_path = os.path.join(BASE_DIR, "2_SABLON_HAVUZU", category, tmpl)
             if os.path.exists(img_path):
                 uid = f"{category}_{tmpl}"
-                manual_prior = None
-                
-                conn = sqlite3.connect(db_path)
-                row = conn.execute("SELECT surface_quad FROM template_profiles WHERE template_uid=? AND is_active=1 AND manually_verified=1", (uid,)).fetchone()
-                conn.close()
-                if row and row[0]:
-                    import json
-                    try:
-                        manual_prior = json.loads(row[0])
-                    except:
-                        pass
-                        
+                manual_prior = _load_matching_manual_prior(db_path, uid, img_path)
                 res = analyzer.analyze(img_path, category, manual_geometry_prior=manual_prior)
                 profile_data = {
                     "template_uid": uid,
@@ -505,6 +518,7 @@ def api_templates_batch_analyze():
                     "analyzer_version": res.get("analyzer_version"),
                     "orientation": res.get("orientation", "UNKNOWN"),
                     "surface_quad": res.get("surface_quad"),
+                    "outer_quad": res.get("outer_quad"),
                     "confidence_total": res.get("confidence_total", 0.0),
                     "component_confidences": res.get("component_confidences", {}),
                     "review_status": res.get("review_status", "UNANALYZED"),
