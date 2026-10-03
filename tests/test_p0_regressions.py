@@ -78,7 +78,6 @@ class TestSecretsRemoved(unittest.TestCase):
             self.assertEqual(len(matches), 0, f"Found hardcoded secret patterns in {pf}: {matches}")
 
 
-@unittest.skipIf(not IMPORT_SUCCESS, "Production module failed to import")
 class TestSQLiteBootstrap(unittest.TestCase):
     """Verify production module can bootstrap a temp SQLite DB."""
 
@@ -113,7 +112,6 @@ class TestSQLiteBootstrap(unittest.TestCase):
         self.assertTrue(is_completed2, "UPLOADED should be treated as completed")
 
 
-@unittest.skipIf(not IMPORT_SUCCESS, "Production module failed to import")
 class TestENVFallbackBehavior(unittest.TestCase):
     """Test that AsyncCloudUploader config values correctly fall through to ENV."""
 
@@ -136,7 +134,6 @@ class TestENVFallbackBehavior(unittest.TestCase):
                 self.assertEqual(uploader.freeimage_key, "env_freeimage")
 
 
-@unittest.skipIf(not IMPORT_SUCCESS, "Production module failed to import")
 class TestExcelFlushNoDeadlock(unittest.TestCase):
     """Verify real Excel write operations don't deadlock with threading."""
 
