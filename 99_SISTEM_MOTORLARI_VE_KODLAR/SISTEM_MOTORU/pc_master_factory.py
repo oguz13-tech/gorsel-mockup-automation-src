@@ -415,7 +415,7 @@ class StateManager:
 class AsyncCloudUploader:
     def __init__(self):
         cloud_cfg = AYARLAR.get("bulut_ayarlari", {})
-        self.imgbb_keys = cloud_cfg.get("imgbb_keys") or os.environ.get("IMGBB_KEYS", "").split(",")
+        self.imgbb_keys = cloud_cfg.get("imgbb_keys") or [k for k in os.environ.get("IMGBB_KEYS", "").split(",") if k]
         self.freeimage_key = cloud_cfg.get("freeimage_key") or os.environ.get("FREEIMAGE_KEY", "")
         self.active_key_idx = 0
         self.key_lock = threading.Lock()

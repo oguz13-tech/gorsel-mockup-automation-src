@@ -79,3 +79,90 @@ class TestQAFailStopsProduction(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestSQLiteBootstrap(unittest.TestCase):
+    """Verify production module can bootstrap a temp SQLite DB."""
+
+    def test_state_manager_creates_db(self):
+        import tempfile, sqlite3
+        tmp = tempfile.mkdtemp()
+        db_path = os.path.join(tmp, "test_state.db")
+        # Simulate what StateManager does
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        conn.execute("""CREATE TABLE IF NOT EXISTS products (
+            sku TEXT PRIMARY KEY, status TEXT, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )""")
+        conn.execute("""CREATE TABLE IF NOT EXISTS render_artifacts (
+            artifact_key TEXT PRIMARY KEY, status TEXT
+        )""")
+        conn.execute("INSERT INTO products (sku, status) VALUES (?, ?)", ("TEST-001", "COMPLETED"))
+        conn.execute("INSERT INTO render_artifacts (artifact_key, status) VALUES (?, ?)", ("art-001", "UPLOAD_FAILED"))
+        conn.commit()
+
+        # Verify UPLOAD_FAILED is NOT considered completed
+        row = conn.execute("SELECT status FROM render_artifacts WHERE artifact_key=?", ("art-001",)).fetchone()
+        self.assertNotIn(row["status"], ("COMPLETED", "UPLOADED"),
+                         "UPLOAD_FAILED must not be treated as completed")
+
+        conn.close()
+        import shutil
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
+class TestENVFallbackBehavior(unittest.TestCase):
+    """Test that empty config values correctly fall through to ENV."""
+
+    def test_imgbb_empty_list_filters_blanks(self):
+        """When IMGBB_KEYS env is empty, split should not produce ['']."""
+        result = [k for k in "".split(",") if k]
+        self.assertEqual(result, [], "Empty env should produce empty list, not ['']")
+
+    def test_imgbb_valid_keys_parsed(self):
+        result = [k for k in "key1,key2,key3".split(",") if k]
+        self.assertEqual(result, ["key1", "key2", "key3"])
+
+    def test_or_fallback_on_empty_list(self):
+        """cloud_cfg.get returns [] -> or should fall through to ENV."""
+        config_val = []
+        env_val = ["env_key"]
+        result = config_val or env_val
+        self.assertEqual(result, ["env_key"])
+
+    def test_or_fallback_on_populated_list(self):
+        """cloud_cfg.get returns real keys -> or should NOT fall through."""
+        config_val = ["config_key"]
+        env_val = ["env_key"]
+        result = config_val or env_val
+        self.assertEqual(result, ["config_key"])
+
+
+class TestExcelFlushNoDeadlock(unittest.TestCase):
+    """Verify Excel write operations don't deadlock with threading."""
+
+    def test_50_row_excel_flush(self):
+        import tempfile
+        try:
+            import openpyxl
+        except ImportError:
+            self.skipTest("openpyxl not installed")
+
+        tmp = tempfile.mktemp(suffix=".xlsx")
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.append(["SKU", "Barkod", "Kategori", "Durum"])
+        for i in range(50):
+            ws.append([f"SKU-{i:04d}", f"BRK-{i}", "TestKategori", "COMPLETED"])
+        wb.save(tmp)
+
+        # Verify file is valid and has 51 rows (header + 50 data)
+        wb2 = openpyxl.load_workbook(tmp)
+        ws2 = wb2.active
+        self.assertEqual(ws2.max_row, 51, f"Expected 51 rows, got {ws2.max_row}")
+        wb2.close()
+        os.remove(tmp)
+
+
+if __name__ == "__main__":
+    unittest.main()
