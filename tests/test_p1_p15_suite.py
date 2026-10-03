@@ -139,25 +139,28 @@ class TestP1_P15Acceptance(unittest.TestCase):
         # Even though design is V and template is H, because it's non-strict, it should select it!
         self.assertEqual(res['status'], 'SELECTED')
 
-    def test_p8_wood_profile_outer_quad_distinct(self):
+    def test_p8_manual_geometry_distinct_surface_and_outer(self):
         from core.template_intelligence import TemplateAnalyzer
-        img_path = os.path.join(self.temp_dir, "wood.png")
-        # Draw a simulated wood frame: outer dark, inner white
+        img_path = os.path.join(self.temp_dir, "wood_manual.png")
         img = np.zeros((200, 200, 3), dtype=np.uint8)
-        # Inner white
         cv2.rectangle(img, (50, 50), (150, 150), (255, 255, 255), -1)
         cv2.imwrite(img_path, img)
-        
+
+        manual_prior = {
+            "surface_quad": [[60, 60], [140, 60], [140, 140], [60, 140]],
+            "outer_quad": [[40, 40], [160, 40], [160, 160], [40, 160]],
+        }
         analyzer = TemplateAnalyzer()
-        res = analyzer.analyze(img_path, "03_Ahsap_Tablo")
-        
-        self.assertIn("surface_quad", res)
-        self.assertIn("outer_quad", res)
-        
-        # Verify they are distinct values (surface is the inner white, outer is the full bounding/frame)
-        sq = res["surface_quad"]
-        oq = res["outer_quad"]
-        self.assertNotEqual(sq, oq, "Surface quad and outer quad must be distinct for wood profile")
+        res = analyzer.analyze(
+            img_path,
+            "03_Ahsap_Tablo",
+            manual_geometry_prior=manual_prior,
+        )
+
+        self.assertEqual(res["provenance"], "MANUAL_PRIOR")
+        self.assertEqual(res["surface_quad"], manual_prior["surface_quad"])
+        self.assertEqual(res["outer_quad"], manual_prior["outer_quad"])
+        self.assertNotEqual(res["surface_quad"], res["outer_quad"])
 
     def test_p9_glass_wall_art_print_policy_full_bleed(self):
         from core.template_intelligence import CategoryRuleEngine
@@ -311,6 +314,157 @@ class TestP1_P15Acceptance(unittest.TestCase):
         import json
         saved_quad = json.loads(row[1])
         self.assertEqual(saved_quad, [[1,1], [9,1], [9,9], [1,9]])
+
+    def test_p17_endpoint_uses_matching_persisted_manual_prior_without_overwrite(self):
+        from app import app
+        from core.template_intelligence import save_template_profile
+        import hashlib
+
+        cat = "03_Ahsap_Tablo"
+        tmpl = "p17.png"
+        uid = f"{cat}_{tmpl}"
+        img_dir = os.path.join(self.temp_dir, "2_SABLON_HAVUZU", cat)
+        os.makedirs(img_dir, exist_ok=True)
+        img_path = os.path.join(img_dir, tmpl)
+        cv2.imwrite(img_path, np.zeros((120, 120, 3), dtype=np.uint8))
+        with open(img_path, "rb") as handle:
+            source_hash = hashlib.sha256(handle.read()).hexdigest()
+
+        manual_surface = [[10, 10], [110, 10], [110, 110], [10, 110]]
+        manual_outer = [[5, 5], [115, 5], [115, 115], [5, 115]]
+        save_template_profile(
+            self.db_path,
+            {
+                "template_uid": uid,
+                "category": cat,
+                "source_relative_path": f"{cat}/{tmpl}",
+                "source_asset_sha256": source_hash,
+                "analyzer_version": "v1.3",
+                "orientation": "SQUARE",
+                "review_status": "APPROVED",
+                "manually_verified": True,
+                "surface_quad": manual_surface,
+                "outer_quad": manual_outer,
+            },
+        )
+
+        target_db_dir = os.path.join(self.temp_dir, "SABLON_V2_MIMARI")
+        os.makedirs(target_db_dir, exist_ok=True)
+        target_db = os.path.join(target_db_dir, "ayarlar.db")
+        shutil.copy2(self.db_path, target_db)
+
+        app.testing = True
+        client = app.test_client()
+        with patch("app.BASE_DIR", self.temp_dir):
+            response = client.post(
+                "/api/templates/analyze",
+                headers={
+                    "X-Active-Category": cat,
+                    "X-Active-Template": tmpl,
+                },
+                json={},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        analysis = response.get_json()["analysis"]
+        self.assertEqual(analysis["provenance"], "MANUAL_PRIOR")
+        self.assertEqual(analysis["surface_quad"], manual_surface)
+        self.assertEqual(analysis["outer_quad"], manual_outer)
+        self.assertNotEqual(analysis["review_status"], "APPROVED")
+
+        conn = sqlite3.connect(target_db)
+        row = conn.execute(
+            """SELECT review_status, manually_verified, surface_quad, outer_quad
+               FROM template_profiles
+               WHERE template_uid=? AND is_active=1""",
+            (uid,),
+        ).fetchone()
+        conn.close()
+        self.assertEqual(row[0], "APPROVED")
+        self.assertEqual(row[1], 1)
+        self.assertEqual(json.loads(row[2]), manual_surface)
+        self.assertEqual(json.loads(row[3]), manual_outer)
+
+    def test_p18_endpoint_does_not_reuse_manual_prior_after_source_hash_change(self):
+        from app import app
+        from core.template_intelligence import save_template_profile
+        import hashlib
+
+        cat = "03_Ahsap_Tablo"
+        tmpl = "p18.png"
+        uid = f"{cat}_{tmpl}"
+        img_dir = os.path.join(self.temp_dir, "2_SABLON_HAVUZU", cat)
+        os.makedirs(img_dir, exist_ok=True)
+        img_path = os.path.join(img_dir, tmpl)
+
+        old_img = np.zeros((120, 120, 3), dtype=np.uint8)
+        cv2.imwrite(img_path, old_img)
+        with open(img_path, "rb") as handle:
+            old_hash = hashlib.sha256(handle.read()).hexdigest()
+
+        save_template_profile(
+            self.db_path,
+            {
+                "template_uid": uid,
+                "category": cat,
+                "source_relative_path": f"{cat}/{tmpl}",
+                "source_asset_sha256": old_hash,
+                "analyzer_version": "v1.3",
+                "orientation": "SQUARE",
+                "review_status": "APPROVED",
+                "manually_verified": True,
+                "surface_quad": [[10, 10], [110, 10], [110, 110], [10, 110]],
+            },
+        )
+
+        changed_img = np.full((120, 120, 3), 255, dtype=np.uint8)
+        cv2.rectangle(changed_img, (20, 20), (100, 100), (0, 0, 0), 3)
+        cv2.imwrite(img_path, changed_img)
+        with open(img_path, "rb") as handle:
+            new_hash = hashlib.sha256(handle.read()).hexdigest()
+        self.assertNotEqual(old_hash, new_hash)
+
+        target_db_dir = os.path.join(self.temp_dir, "SABLON_V2_MIMARI")
+        os.makedirs(target_db_dir, exist_ok=True)
+        target_db = os.path.join(target_db_dir, "ayarlar.db")
+        shutil.copy2(self.db_path, target_db)
+
+        app.testing = True
+        client = app.test_client()
+        with patch("app.BASE_DIR", self.temp_dir):
+            response = client.post(
+                "/api/templates/analyze",
+                headers={
+                    "X-Active-Category": cat,
+                    "X-Active-Template": tmpl,
+                },
+                json={},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        analysis = response.get_json()["analysis"]
+        self.assertNotEqual(analysis["provenance"], "MANUAL_PRIOR")
+        self.assertEqual(analysis["source_asset_sha256"], new_hash)
+
+        conn = sqlite3.connect(target_db)
+        rows = conn.execute(
+            """SELECT source_asset_sha256, is_active, review_status, manually_verified
+               FROM template_profiles
+               WHERE template_uid=?
+               ORDER BY id""",
+            (uid,),
+        ).fetchall()
+        conn.close()
+
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0][0], old_hash)
+        self.assertEqual(rows[0][1], 0)
+        self.assertEqual(rows[0][2], "STALE_SOURCE_CHANGED")
+        self.assertEqual(rows[1][0], new_hash)
+        self.assertEqual(rows[1][1], 1)
+        self.assertEqual(rows[1][3], 0)
+        self.assertNotEqual(rows[1][2], "APPROVED")
+
 
 if __name__ == "__main__":
     unittest.main()
