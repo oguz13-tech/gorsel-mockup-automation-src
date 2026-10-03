@@ -66,12 +66,15 @@ def run_benchmark(dataset_path: str, output_json: str):
         "total_samples": 0,
         "categories": {},
         "global_metrics": {
+            "baseline_sha": "b638203db97e262dd75d17766ec796a996c28686",
             "median_iou": 0.0,
             "median_corner_error": 0.0,
             "p95_corner_error": 0.0,
             "high_confidence_bad": 0,
-            "invalid_exclusions": 0
+            "invalid_exclusions": 0,
+            "invalid_rate": 0.0
         },
+        "exclusions": [],
         "raw_evidence": []
     }
     
@@ -107,6 +110,7 @@ def run_benchmark(dataset_path: str, output_json: str):
             gt_quad = dataset.get(sample, {}).get("quad")
             if gt_quad is None or len(gt_quad) != 4:
                 results["global_metrics"]["invalid_exclusions"] += 1
+                results["exclusions"].append({"sample": sample, "category": cat, "reason": "Missing/invalid ground-truth quad"})
                 continue
             
             full_sample_path = os.path.join(dataset_path, sample)
@@ -124,6 +128,7 @@ def run_benchmark(dataset_path: str, output_json: str):
                 conf = res.get("confidence_total", 0.0)
             except Exception as e:
                 results["global_metrics"]["invalid_exclusions"] += 1
+                results["exclusions"].append({"sample": sample, "category": cat, "reason": f"Analyzer exception: {str(e)}"})
                 pred_quad = None
                 conf = 0.0
                 
@@ -132,16 +137,30 @@ def run_benchmark(dataset_path: str, output_json: str):
             
             # Use real OLD analyzer snapshot
             try:
+                old_intel_path = os.path.join(os.path.dirname(__file__), "old_intelligence_utf8.py")
+                if not os.path.exists(old_intel_path):
+                    import subprocess
+                    import codecs
+                    # Extract from git baseline commit
+                    cmd = ["git", "show", "b638203db97e262dd75d17766ec796a996c28686:SABLON_V2_MIMARI/core/template_intelligence.py"]
+                    result = subprocess.run(cmd, capture_output=True, check=True)
+                    try:
+                        content = result.stdout.decode('utf-8')
+                    except UnicodeDecodeError:
+                        content = result.stdout.decode('utf-16')
+                    with open(old_intel_path, 'w', encoding='utf-8') as f:
+                        f.write(content)
+                        
                 import importlib.util
-                spec = importlib.util.spec_from_file_location("old_intel", "old_intelligence_utf8.py")
+                spec = importlib.util.spec_from_file_location("old_intel", old_intel_path)
                 old_intel = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(old_intel)
                 old_analyzer = old_intel.TemplateAnalyzer()
                 old_res = old_analyzer.analyze(full_sample_path, cat)
                 old_pred = old_res.get("surface_quad")
-            except Exception:
+            except Exception as e:
                 # If old analyzer fails or isn't available, BLOCK the benchmark.
-                raise ValueError("CRITICAL: Failed to run real OLD algorithm adapter. Benchmark blocked.")
+                raise ValueError(f"CRITICAL: Failed to run real OLD algorithm adapter. Exception: {e}. Benchmark blocked.")
             
             old_iou = calculate_iou(old_pred, gt_quad, w, h)
             
@@ -175,6 +194,9 @@ def run_benchmark(dataset_path: str, output_json: str):
         results["global_metrics"]["median_corner_error"] = float(np.median(all_errors))
         results["global_metrics"]["p95_corner_error"] = float(np.percentile(all_errors, 95))
         results["global_metrics"]["detection_rate"] = sum(c["detection_rate"] * c["samples"] for c in results["categories"].values()) / results["total_samples"]
+        
+    if results["total_samples"] > 0:
+        results["global_metrics"]["invalid_rate"] = float(results["global_metrics"]["invalid_exclusions"] / results["total_samples"])
         
     for cat, data in results["categories"].items():
         data["median_iou"] = float(data["median_iou"])

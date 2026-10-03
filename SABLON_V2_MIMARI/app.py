@@ -397,8 +397,27 @@ def api_templates_analyze():
         if not os.path.exists(img_path):
             return jsonify({"success": False, "error": "Görsel bulunamadı"}), 404
             
+        uid = f"{active_cat}_{active_tmpl}"
+        db_path = os.path.join(BASE_DIR, "SABLON_V2_MIMARI", "ayarlar.db")
+        
+        # Determine manual prior from request or active DB record
+        manual_prior = None
+        if request.is_json:
+            manual_prior = request.json.get("manual_geometry_prior")
+            
+        if not manual_prior:
+            conn = sqlite3.connect(db_path)
+            row = conn.execute("SELECT surface_quad FROM template_profiles WHERE template_uid=? AND is_active=1 AND manually_verified=1", (uid,)).fetchone()
+            conn.close()
+            if row and row[0]:
+                import json
+                try:
+                    manual_prior = json.loads(row[0])
+                except:
+                    pass
+
         analyzer = TemplateAnalyzer()
-        result = analyzer.analyze(img_path, active_cat)
+        result = analyzer.analyze(img_path, active_cat, manual_geometry_prior=manual_prior)
         
         # Save to DB as proposed/unanalyzed/review_required
         db_path = os.path.join(BASE_DIR, "SABLON_V2_MIMARI", "ayarlar.db")
@@ -464,8 +483,20 @@ def api_templates_batch_analyze():
         for tmpl in sablonlar.keys():
             img_path = os.path.join(BASE_DIR, "2_SABLON_HAVUZU", category, tmpl)
             if os.path.exists(img_path):
-                res = analyzer.analyze(img_path, category)
                 uid = f"{category}_{tmpl}"
+                manual_prior = None
+                
+                conn = sqlite3.connect(db_path)
+                row = conn.execute("SELECT surface_quad FROM template_profiles WHERE template_uid=? AND is_active=1 AND manually_verified=1", (uid,)).fetchone()
+                conn.close()
+                if row and row[0]:
+                    import json
+                    try:
+                        manual_prior = json.loads(row[0])
+                    except:
+                        pass
+                        
+                res = analyzer.analyze(img_path, category, manual_geometry_prior=manual_prior)
                 profile_data = {
                     "template_uid": uid,
                     "category": category,

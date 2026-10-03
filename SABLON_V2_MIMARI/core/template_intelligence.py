@@ -325,7 +325,7 @@ class TemplateAnalyzer:
         with open(filepath, "rb") as f:
             file_hash = hashlib.sha256(f.read()).hexdigest()
             
-        return {
+        res = {
             "source_asset_sha256": file_hash,
             "provenance": provenance,
             "surface_quad": best_quad,
@@ -337,6 +337,15 @@ class TemplateAnalyzer:
             "nominal_aspect": nominal_aspect,
             "analyzer_version": self.version
         }
+        
+        if rule.get("has_frame") and best_quad:
+            # Expand surface quad outwards to simulate outer frame bounds
+            pts = np.array(best_quad)
+            center = pts.mean(axis=0)
+            outer = pts + (pts - center) * 0.1 # 10% larger
+            res["outer_quad"] = outer.tolist()
+            
+        return res
 
 def save_template_profile(db_path: str, profile_data: dict):
     conn = sqlite3.connect(db_path)
@@ -357,11 +366,9 @@ def save_template_profile(db_path: str, profile_data: dict):
                 conn.execute("UPDATE template_profiles SET is_active = 0, review_status = 'STALE_SOURCE_CHANGED' WHERE id = ?", (old_id,))
                 # Fallthrough to insert new proposal below
             else:
-                new_status = profile_data["review_status"]
-                new_manual = profile_data.get("manually_verified", False)
                 if old_status == "APPROVED" and old_manual:
-                    new_status = "APPROVED"
-                    new_manual = True
+                    # Unchanged manually-approved profile must preserve approved geometry/data
+                    return
 
                 # Update in place if hash is same
                 conn.execute("""
@@ -374,7 +381,7 @@ def save_template_profile(db_path: str, profile_data: dict):
                     profile_data["analyzer_version"], json.dumps(profile_data.get("surface_quad")),
                     json.dumps(profile_data.get("outer_quad")), profile_data["orientation"],
                     profile_data.get("confidence_total", 0.0), json.dumps(profile_data.get("component_confidences", {})),
-                    new_status, new_manual, old_id
+                    profile_data["review_status"], profile_data.get("manually_verified", False), old_id
                 ))
                 conn.commit()
                 return

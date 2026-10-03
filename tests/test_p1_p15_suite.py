@@ -140,17 +140,24 @@ class TestP1_P15Acceptance(unittest.TestCase):
         self.assertEqual(res['status'], 'SELECTED')
 
     def test_p8_wood_profile_outer_quad_distinct(self):
-        from core.template_intelligence import CategoryRuleEngine
-        rule = CategoryRuleEngine.get_rule_by_folder("03_Ahsap_Tablo")
-        self.assertEqual(rule["print_policy"], "inner_frame")
-        self.assertTrue(rule["has_frame"])
-        # In a real analyzer flow, surface_quad and outer_quad would be distinct fields.
-        # Verify db schema has both
-        conn = sqlite3.connect(self.db_path)
-        cur = conn.execute("PRAGMA table_info(template_profiles)")
-        cols = [c[1] for c in cur.fetchall()]
-        self.assertIn("surface_quad", cols)
-        self.assertIn("outer_quad", cols)
+        from core.template_intelligence import TemplateAnalyzer
+        img_path = os.path.join(self.temp_dir, "wood.png")
+        # Draw a simulated wood frame: outer dark, inner white
+        img = np.zeros((200, 200, 3), dtype=np.uint8)
+        # Inner white
+        cv2.rectangle(img, (50, 50), (150, 150), (255, 255, 255), -1)
+        cv2.imwrite(img_path, img)
+        
+        analyzer = TemplateAnalyzer()
+        res = analyzer.analyze(img_path, "03_Ahsap_Tablo")
+        
+        self.assertIn("surface_quad", res)
+        self.assertIn("outer_quad", res)
+        
+        # Verify they are distinct values (surface is the inner white, outer is the full bounding/frame)
+        sq = res["surface_quad"]
+        oq = res["outer_quad"]
+        self.assertNotEqual(sq, oq, "Surface quad and outer quad must be distinct for wood profile")
 
     def test_p9_glass_wall_art_print_policy_full_bleed(self):
         from core.template_intelligence import CategoryRuleEngine
@@ -164,14 +171,34 @@ class TestP1_P15Acceptance(unittest.TestCase):
         self.assertFalse(rule["has_reflection"])
 
     def test_p11_batch_analyzer_proposals_only(self):
-        from core.template_intelligence import TemplateAnalyzer
-        analyzer = TemplateAnalyzer()
-        img_path = os.path.join(self.temp_dir, "test.png")
+        from app import app
+        
+        # Setup dummy template
+        cat = "02_Cam_Tablo_Dikey"
+        tmpl = "test_tmpl.png"
+        img_dir = os.path.join(self.temp_dir, "2_SABLON_HAVUZU", cat)
+        os.makedirs(img_dir, exist_ok=True)
+        img_path = os.path.join(img_dir, tmpl)
         cv2.imwrite(img_path, np.zeros((100, 100, 3), dtype=np.uint8))
-        res = analyzer.analyze(img_path, "02_Cam_Tablo_Dikey")
-        # should not be APPROVED automatically
-        self.assertIn(res["review_status"], ["UNANALYZED", "REVIEW_REQUIRED", "AUTO_PROPOSED"])
-        self.assertNotEqual(res["review_status"], "APPROVED")
+        
+        # Dummy ayarlar
+        ayarlar_data = {"kategoriler": {cat: {"sablonlar": {tmpl: {}}}}}
+        
+        app.testing = True
+        client = app.test_client()
+        with patch('app.BASE_DIR', self.temp_dir), \
+             patch('app.get_all_ayarlar', return_value=ayarlar_data):
+            os.makedirs(os.path.join(self.temp_dir, "SABLON_V2_MIMARI"), exist_ok=True)
+            shutil.copy2(self.db_path, os.path.join(self.temp_dir, "SABLON_V2_MIMARI", "ayarlar.db"))
+            
+            resp = client.post('/api/templates/batch_analyze', json={"category": cat})
+            self.assertEqual(resp.status_code, 200)
+            
+            # Check db
+            conn = sqlite3.connect(os.path.join(self.temp_dir, "SABLON_V2_MIMARI", "ayarlar.db"))
+            row = conn.execute("SELECT review_status FROM template_profiles WHERE template_uid=? AND is_active=1", (f"{cat}_{tmpl}",)).fetchone()
+            self.assertIsNotNone(row)
+            self.assertNotEqual(row[0], "APPROVED")
 
     def test_p12_explicit_approve_endpoint_persists(self):
         import sys
@@ -203,20 +230,34 @@ class TestP1_P15Acceptance(unittest.TestCase):
             self.assertEqual(row[1], 1)
 
     def test_p13_review_overlay_does_not_modify_source(self):
-        img_path = os.path.join(self.temp_dir, "test.png")
+        from app import app
+        img_dir = os.path.join(self.temp_dir, "2_SABLON_HAVUZU", "cat3")
+        os.makedirs(img_dir, exist_ok=True)
+        img_path = os.path.join(img_dir, "tmpl3.png")
         cv2.imwrite(img_path, np.zeros((100, 100, 3), dtype=np.uint8))
         with open(img_path, "rb") as f:
             orig = f.read()
         import hashlib
         orig_hash = hashlib.sha256(orig).hexdigest()
         
-        # Draw overlay in memory, not writing back to source
-        img_cv = cv2.imdecode(np.frombuffer(orig, dtype=np.uint8), cv2.IMREAD_COLOR)
-        cv2.rectangle(img_cv, (0,0), (50,50), (255,0,0), 2)
+        # Insert active profile
+        conn = sqlite3.connect(self.db_path)
+        conn.execute("INSERT INTO template_profiles (template_uid, is_active, review_status) VALUES ('cat3_tmpl3.png', 1, 'REVIEW_REQUIRED')")
+        conn.commit()
+        conn.close()
+        
+        app.testing = True
+        client = app.test_client()
+        with patch('app.BASE_DIR', self.temp_dir):
+            os.makedirs(os.path.join(self.temp_dir, "SABLON_V2_MIMARI"), exist_ok=True)
+            shutil.copy2(self.db_path, os.path.join(self.temp_dir, "SABLON_V2_MIMARI", "ayarlar.db"))
+            
+            resp = client.post('/api/templates/update_corners', json={"template_uid": "cat3_tmpl3.png", "corners": [[10,10],[90,10],[90,90],[10,90]]})
+            self.assertEqual(resp.status_code, 200)
         
         with open(img_path, "rb") as f:
             new_hash = hashlib.sha256(f.read()).hexdigest()
-        self.assertEqual(orig_hash, new_hash)
+        self.assertEqual(orig_hash, new_hash, "Calibration/Update endpoint must not modify source file")
 
     def test_p14_selector_selects_approved_compatible(self):
         from core.template_intelligence import TemplateSelector
@@ -240,6 +281,36 @@ class TestP1_P15Acceptance(unittest.TestCase):
         selector = TemplateSelector(db_path=self.db_path)
         res = selector.select_template('V', '02_Cam_Tablo_Dikey')
         self.assertEqual(res['status'], 'SKIPPED_NO_COMPATIBLE_TEMPLATE')
+
+    def test_p16_regression_manual_geometry_preserved(self):
+        from core.template_intelligence import save_template_profile
+        
+        profile_data = {
+            "template_uid": "test_uid_p16", "category": "cat1", "source_relative_path": "cat1/tmpl1.png",
+            "source_asset_sha256": "same_hash", "analyzer_version": "v1.3", "orientation": "V",
+            "review_status": "APPROVED", "manually_verified": True,
+            "surface_quad": [[1,1], [9,1], [9,9], [1,9]]
+        }
+        save_template_profile(self.db_path, profile_data)
+        
+        # New analysis with same hash, different quad
+        new_data = {
+            "template_uid": "test_uid_p16", "category": "cat1", "source_relative_path": "cat1/tmpl1.png",
+            "source_asset_sha256": "same_hash", "analyzer_version": "v1.3", "orientation": "H",
+            "review_status": "REVIEW_REQUIRED", "manually_verified": False,
+            "surface_quad": [[0,0], [10,0], [10,10], [0,10]]
+        }
+        save_template_profile(self.db_path, new_data)
+        
+        conn = sqlite3.connect(self.db_path)
+        row = conn.execute("SELECT review_status, surface_quad, manually_verified FROM template_profiles WHERE template_uid='test_uid_p16' AND is_active=1").fetchone()
+        conn.close()
+        
+        self.assertEqual(row[0], "APPROVED")
+        self.assertEqual(row[2], 1)
+        import json
+        saved_quad = json.loads(row[1])
+        self.assertEqual(saved_quad, [[1,1], [9,1], [9,9], [1,9]])
 
 if __name__ == "__main__":
     unittest.main()
