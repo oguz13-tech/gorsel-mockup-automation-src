@@ -314,7 +314,7 @@ class TemplateAnalyzer:
                 
         if best_quad:
             if provenance == "MANUAL_PRIOR":
-                status = "APPROVED"
+                status = "REVIEW_REQUIRED"
             elif self.auto_approval_enabled and best_conf > 0.85:
                 status = "AUTO_PROPOSED" 
             else:
@@ -342,12 +342,14 @@ def save_template_profile(db_path: str, profile_data: dict):
     conn = sqlite3.connect(db_path)
     try:
         # Check if old active profile exists
-        cur = conn.execute("SELECT id, source_asset_sha256, review_status FROM template_profiles WHERE template_uid = ? AND is_active = 1", (profile_data["template_uid"],))
+        cur = conn.execute("SELECT id, source_asset_sha256, review_status, manually_verified FROM template_profiles WHERE template_uid = ? AND is_active = 1", (profile_data["template_uid"],))
         row = cur.fetchone()
         
         if row:
             old_id = row[0]
             old_hash = row[1]
+            old_status = row[2]
+            old_manual = row[3]
             new_hash = profile_data.get("source_asset_sha256")
             
             # If hash changed, mark old as inactive/stale and insert new
@@ -355,6 +357,12 @@ def save_template_profile(db_path: str, profile_data: dict):
                 conn.execute("UPDATE template_profiles SET is_active = 0, review_status = 'STALE_SOURCE_CHANGED' WHERE id = ?", (old_id,))
                 # Fallthrough to insert new proposal below
             else:
+                new_status = profile_data["review_status"]
+                new_manual = profile_data.get("manually_verified", False)
+                if old_status == "APPROVED" and old_manual:
+                    new_status = "APPROVED"
+                    new_manual = True
+
                 # Update in place if hash is same
                 conn.execute("""
                 UPDATE template_profiles SET
@@ -366,7 +374,7 @@ def save_template_profile(db_path: str, profile_data: dict):
                     profile_data["analyzer_version"], json.dumps(profile_data.get("surface_quad")),
                     json.dumps(profile_data.get("outer_quad")), profile_data["orientation"],
                     profile_data.get("confidence_total", 0.0), json.dumps(profile_data.get("component_confidences", {})),
-                    profile_data["review_status"], profile_data.get("manually_verified", False), old_id
+                    new_status, new_manual, old_id
                 ))
                 conn.commit()
                 return

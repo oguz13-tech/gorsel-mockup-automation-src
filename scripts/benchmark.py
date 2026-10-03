@@ -104,17 +104,21 @@ def run_benchmark(dataset_path: str, output_json: str):
         for sample in cat_samples:
             results["total_samples"] += 1
             
-            gt_quad = dataset.get(sample, {}).get("quad", [[10,10],[90,10],[90,90],[10,90]])
-            w, h = 100, 100
+            gt_quad = dataset.get(sample, {}).get("quad")
+            if gt_quad is None or len(gt_quad) != 4:
+                results["global_metrics"]["invalid_exclusions"] += 1
+                continue
             
             full_sample_path = os.path.join(dataset_path, sample)
             if not os.path.exists(full_sample_path):
                 raise ValueError(f"CRITICAL: Missing sample file {full_sample_path}. Benchmark blocked.")
             
+            img = cv2.imread(full_sample_path)
+            if img is None:
+                raise ValueError(f"CRITICAL: Unreadable image {full_sample_path}. Benchmark blocked.")
+            h, w = img.shape[:2]
+            
             try:
-                img = cv2.imread(full_sample_path)
-                if img is not None:
-                    h, w = img.shape[:2]
                 res = analyzer.analyze(full_sample_path, cat)
                 pred_quad = res.get("surface_quad")
                 conf = res.get("confidence_total", 0.0)
@@ -126,8 +130,19 @@ def run_benchmark(dataset_path: str, output_json: str):
             iou = calculate_iou(pred_quad, gt_quad, w, h)
             err = calculate_corner_error(pred_quad, gt_quad, w, h)
             
-            # Simple OLD adapter: a 10% inset bounding box
-            old_pred = [[w*0.1, h*0.1], [w*0.9, h*0.1], [w*0.9, h*0.9], [w*0.1, h*0.9]]
+            # Use real OLD analyzer snapshot
+            try:
+                import importlib.util
+                spec = importlib.util.spec_from_file_location("old_intel", "old_intelligence_utf8.py")
+                old_intel = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(old_intel)
+                old_analyzer = old_intel.TemplateAnalyzer()
+                old_res = old_analyzer.analyze(full_sample_path, cat)
+                old_pred = old_res.get("surface_quad")
+            except Exception:
+                # If old analyzer fails or isn't available, BLOCK the benchmark.
+                raise ValueError("CRITICAL: Failed to run real OLD algorithm adapter. Benchmark blocked.")
+            
             old_iou = calculate_iou(old_pred, gt_quad, w, h)
             
             if pred_quad is not None and len(pred_quad) == 4:
