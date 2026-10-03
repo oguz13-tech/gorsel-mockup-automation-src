@@ -4,4 +4,4 @@ __pycache__/
 .env
 *.jpg
 *.png
-**/logs/*.logold_intelligence_utf8.py
+**/logs/*.log
