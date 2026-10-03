@@ -1,10 +1,24 @@
 """P0 Regression Tests - Real assertions, not stubs."""
 import os
+import sys
 import json
 import glob
 import unittest
+import py_compile
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+class TestProductionModuleCompiles(unittest.TestCase):
+    """Verify that the production module has no SyntaxErrors."""
+
+    def test_pc_master_factory_compiles(self):
+        pc_path = os.path.join(BASE_DIR, "99_SISTEM_MOTORLARI_VE_KODLAR",
+                               "SISTEM_MOTORU", "pc_master_factory.py")
+        try:
+            py_compile.compile(pc_path, doraise=True)
+        except py_compile.PyCompileError as e:
+            self.fail(f"SyntaxError in pc_master_factory.py: {e}")
 
 class TestSecretsRemoved(unittest.TestCase):
     """Verify no API keys remain in any ayarlar*.json file."""
