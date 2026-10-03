@@ -1506,12 +1506,14 @@ async function approveTemplate() {
     let uid = currentCat + "_" + currentTmpl;
     // Use the global pts array from the canvas editor
     if (!pts || pts.length !== 4) return alert("Geçerli 4 köşe yok!");
+    // Convert {x,y} objects to [[x,y],...] canonical format for DB/profile
+    let canonicalCorners = pts.map(p => [p.x, p.y]);
     
     try {
         let res = await fetch('/api/templates/update_corners', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ template_uid: uid, corners: pts })
+            body: JSON.stringify({ template_uid: uid, corners: canonicalCorners })
         });
         let data = await res.json();
         if(data.success) {
