@@ -1,6 +1,7 @@
 import os
 import sys
 import json
+import sqlite3
 import base64
 import time
 import shutil
@@ -21,6 +22,9 @@ from core.vision import (
 )
 
 from core.db import get_all_ayarlar, save_settings_node, save_category, save_template, delete_template, save_templates_bulk
+from core.template_intelligence import TemplateAnalyzer, save_template_profile, TemplateSelector
+import hashlib
+import uuid
 
 app = Flask(__name__)
 
@@ -380,6 +384,188 @@ def serve_image(cat, tmpl):
     return "Resim bulunamadi", 404
 
 # ==========================================
+
+def _load_matching_manual_prior(db_path, uid, img_path):
+    """Load trusted manual geometry only when it belongs to the current source bytes."""
+    with open(img_path, "rb") as source_file:
+        current_hash = hashlib.sha256(source_file.read()).hexdigest()
+
+    conn = sqlite3.connect(db_path)
+    try:
+        row = conn.execute(
+            """SELECT surface_quad, outer_quad, source_asset_sha256
+               FROM template_profiles
+               WHERE template_uid=? AND is_active=1 AND manually_verified=1""",
+            (uid,)
+        ).fetchone()
+    finally:
+        conn.close()
+
+    if not row or not row[0] or not row[2] or row[2] != current_hash:
+        return None
+
+    try:
+        prior = {"surface_quad": json.loads(row[0])}
+        if row[1]:
+            prior["outer_quad"] = json.loads(row[1])
+        return prior
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return None
+
+
+@app.route('/api/templates/analyze', methods=['POST'])
+def api_templates_analyze():
+    try:
+        active_cat = request.headers.get('X-Active-Category', '')
+        active_tmpl = request.headers.get('X-Active-Template', '')
+        if not active_cat or not active_tmpl:
+            return jsonify({"success": False, "error": "Kategori/Sablon eksik"}), 400
+            
+        img_path = os.path.join(BASE_DIR, "2_SABLON_HAVUZU", active_cat, active_tmpl)
+        if not os.path.exists(img_path):
+            return jsonify({"success": False, "error": "Görsel bulunamadı"}), 404
+            
+        uid = f"{active_cat}_{active_tmpl}"
+        db_path = os.path.join(BASE_DIR, "SABLON_V2_MIMARI", "ayarlar.db")
+        
+        # Explicit request geometry may be used for this analysis. DB geometry is trusted
+        # only when it was manually verified for the exact same source bytes.
+        manual_prior = None
+        if request.is_json:
+            requested_prior = request.json.get("manual_geometry_prior")
+            if isinstance(requested_prior, dict):
+                manual_prior = requested_prior
+
+        if not manual_prior:
+            manual_prior = _load_matching_manual_prior(db_path, uid, img_path)
+
+        analyzer = TemplateAnalyzer()
+        result = analyzer.analyze(img_path, active_cat, manual_geometry_prior=manual_prior)
+        
+        # Save to DB as proposed/unanalyzed/review_required
+        db_path = os.path.join(BASE_DIR, "SABLON_V2_MIMARI", "ayarlar.db")
+        uid = f"{active_cat}_{active_tmpl}"
+        
+        profile_data = {
+            "template_uid": uid,
+            "category": active_cat,
+            "source_relative_path": f"{active_cat}/{active_tmpl}",
+            "source_asset_sha256": result.get("source_asset_sha256"),
+            "profile_version": "v2",
+            "analyzer_version": result.get("analyzer_version"),
+            "product_class": result.get("rule", {}).get("product_class", "Bilinmeyen"),
+            "orientation": result.get("orientation", "UNKNOWN"),
+            "print_policy": result.get("rule", {}).get("print_policy", "full_bleed"),
+            "surface_quad": result.get("surface_quad"),
+            "outer_quad": result.get("outer_quad"),
+            "confidence_total": result.get("confidence_total", 0.0),
+            "component_confidences": result.get("component_confidences", {}),
+            "review_status": result.get("review_status", "UNANALYZED"),
+            "manually_verified": False
+        }
+        
+        save_template_profile(db_path, profile_data)
+        
+        return jsonify({"success": True, "analysis": result})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/api/templates/approve', methods=['POST'])
+def api_templates_approve():
+    try:
+        req = request.json
+        uid = req.get("template_uid")
+        if not uid:
+            return jsonify({"success": False, "error": "Eksik parametre"}), 400
+            
+        db_path = os.path.join(BASE_DIR, "SABLON_V2_MIMARI", "ayarlar.db")
+        conn = sqlite3.connect(db_path)
+        conn.execute("UPDATE template_profiles SET review_status='APPROVED', manually_verified=1 WHERE template_uid=? AND is_active=1", (uid,))
+        conn.commit()
+        conn.close()
+        
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route('/api/templates/batch_analyze', methods=['POST'])
+def api_templates_batch_analyze():
+    try:
+        req = request.json
+        category = req.get("category")
+        if not category:
+            return jsonify({"success": False, "error": "Kategori eksik"}), 400
+            
+        ayarlar = get_all_ayarlar()
+        sablonlar = ayarlar.get("kategoriler", {}).get(category, {}).get("sablonlar", {})
+        
+        analyzer = TemplateAnalyzer()
+        db_path = os.path.join(BASE_DIR, "SABLON_V2_MIMARI", "ayarlar.db")
+        
+        results = []
+        for tmpl in sablonlar.keys():
+            img_path = os.path.join(BASE_DIR, "2_SABLON_HAVUZU", category, tmpl)
+            if os.path.exists(img_path):
+                uid = f"{category}_{tmpl}"
+                manual_prior = _load_matching_manual_prior(db_path, uid, img_path)
+                res = analyzer.analyze(img_path, category, manual_geometry_prior=manual_prior)
+                profile_data = {
+                    "template_uid": uid,
+                    "category": category,
+                    "source_relative_path": f"{category}/{tmpl}",
+                    "source_asset_sha256": res.get("source_asset_sha256"),
+                    "analyzer_version": res.get("analyzer_version"),
+                    "orientation": res.get("orientation", "UNKNOWN"),
+                    "surface_quad": res.get("surface_quad"),
+                    "outer_quad": res.get("outer_quad"),
+                    "confidence_total": res.get("confidence_total", 0.0),
+                    "component_confidences": res.get("component_confidences", {}),
+                    "review_status": res.get("review_status", "UNANALYZED"),
+                    "manually_verified": False
+                }
+                save_template_profile(db_path, profile_data)
+                results.append({"template": tmpl, "status": res.get("review_status")})
+                
+        return jsonify({"success": True, "results": results})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/api/templates/reject', methods=['POST'])
+def api_templates_reject():
+    try:
+        req = request.json
+        uid = req.get("template_uid")
+        if not uid:
+            return jsonify({"success": False, "error": "Eksik parametre"}), 400
+            
+        db_path = os.path.join(BASE_DIR, "SABLON_V2_MIMARI", "ayarlar.db")
+        conn = sqlite3.connect(db_path)
+        conn.execute("UPDATE template_profiles SET review_status='REJECTED', manually_verified=1 WHERE template_uid=? AND is_active=1", (uid,))
+        conn.commit()
+        conn.close()
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/api/templates/update_corners', methods=['POST'])
+def api_templates_update_corners():
+    try:
+        req = request.json
+        uid = req.get("template_uid")
+        corners = req.get("corners")
+        if not uid or not corners:
+            return jsonify({"success": False, "error": "Eksik parametre"}), 400
+            
+        db_path = os.path.join(BASE_DIR, "SABLON_V2_MIMARI", "ayarlar.db")
+        conn = sqlite3.connect(db_path)
+        conn.execute("UPDATE template_profiles SET surface_quad=?, review_status='APPROVED', manually_verified=1 WHERE template_uid=? AND is_active=1", (json.dumps(corners), uid))
+        conn.commit()
+        conn.close()
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
 # KAGGLE ONAY SİSTEMİ (0_KAGGLE_ONAY_BEKLEYENLER -> 1_GELEN_KAGGLE_BASKILARI)
 # ==========================================
 WORKSPACE_DIR = BASE_DIR

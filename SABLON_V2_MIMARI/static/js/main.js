@@ -632,6 +632,23 @@ window.onerror = function(msg, url, line, col, error) {
             }
         }
 
+        // CALIBRATION OVERLAY (Review Mode — controlled by showReviewOverlay)
+        if (typeof showReviewOverlay !== 'undefined' && showReviewOverlay && pts.length === 4) {
+            ctx.save();
+            ctx.fillStyle = 'rgba(0, 255, 0, 0.25)';
+            ctx.beginPath();
+            ctx.moveTo(startX + pts[0].x * finalScale, startY + pts[0].y * finalScale);
+            for(let i=1; i<4; i++) {
+                ctx.lineTo(startX + pts[i].x * finalScale, startY + pts[i].y * finalScale);
+            }
+            ctx.closePath();
+            ctx.fill();
+            ctx.strokeStyle = '#00ff00';
+            ctx.lineWidth = 3;
+            ctx.stroke();
+            ctx.restore();
+        }
+
         // 2. Foreground Editor Katmanları (Object Boxes & Brushes)
         drawForegroundEditor(startX, startY, finalScale);
         
@@ -1478,3 +1495,78 @@ window.onerror = function(msg, url, line, col, error) {
             }
         });
     }
+
+// --- YZ ONAY SISTEMI ---
+async function batchAnalyze() {
+    if(!currentCat) return alert("Kategori seçili değil!");
+    if(!confirm(currentCat + " kategorisindeki tüm şablonlar analiz edilecek. Onaylıyor musunuz?")) return;
+    
+    try {
+        let res = await fetch('/api/templates/batch_analyze', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ category: currentCat })
+        });
+        let data = await res.json();
+        if(data.success) {
+            alert("Analiz tamamlandı. İşlenen dosya: " + data.results.length);
+        } else {
+            alert("Hata: " + data.error);
+        }
+    } catch(e) {
+        alert("Bağlantı hatası: " + e);
+    }
+}
+
+async function approveTemplate() {
+    if(!currentCat || !currentTmpl) return;
+    let uid = currentCat + "_" + currentTmpl;
+    // Use the global pts array from the canvas editor
+    if (!pts || pts.length !== 4) return alert("Geçerli 4 köşe yok!");
+    // Convert {x,y} objects to [[x,y],...] canonical format for DB/profile
+    let canonicalCorners = pts.map(p => [p.x, p.y]);
+    
+    try {
+        let res = await fetch('/api/templates/update_corners', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ template_uid: uid, corners: canonicalCorners })
+        });
+        let data = await res.json();
+        if(data.success) {
+            alert("Geometri başarıyla onaylandı (APPROVED).");
+        } else {
+            alert("Hata: " + data.error);
+        }
+    } catch(e) {
+        alert("Bağlantı hatası: " + e);
+    }
+}
+
+async function rejectTemplate() {
+    if(!currentCat || !currentTmpl) return;
+    let uid = currentCat + "_" + currentTmpl;
+    try {
+        let res = await fetch('/api/templates/reject', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ template_uid: uid })
+        });
+        let data = await res.json();
+        if(data.success) {
+            alert("Geometri reddedildi (REJECTED).");
+        } else {
+            alert("Hata: " + data.error);
+        }
+    } catch(e) {
+        alert("Bağlantı hatası: " + e);
+    }
+}
+
+let showReviewOverlay = false;
+function toggleReviewOverlay() {
+    showReviewOverlay = !showReviewOverlay;
+    draw(); // Redraw canvas with or without overlay
+}
+
+

@@ -1,0 +1,161 @@
+"""
+T1 Test: Delete -> Undo -> SHA Integrity Check
+Tests the actual Flask delete/undo flow with SHA hash verification.
+"""
+import os
+import sys
+import json
+import hashlib
+import unittest
+import tempfile
+import shutil
+
+# Add parent to path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "SABLON_V2_MIMARI")))
+
+from app import app
+import core.db as db_core
+
+class TestT1DeleteUndoIntegrity(unittest.TestCase):
+    """Test that deleting and undoing a template preserves data integrity."""
+
+    def setUp(self):
+        """Set up a test DB and Flask client."""
+        app.config['TESTING'] = True
+        self.client = app.test_client()
+        
+        # We need to temporarily mock the DB path in db_core to point to a temp file
+        self.test_dir = tempfile.mkdtemp()
+        self.test_db = os.path.join(self.test_dir, "ayarlar.db")
+        
+        # Patch the db connection string in db_core
+        self.original_db_path = getattr(db_core, "DB_PATH", None)
+        db_core.DB_PATH = self.test_db
+        
+        # A bit hacky: we override get_db_connection
+        self.original_get_db_connection = db_core.get_db_connection
+        
+        def mock_get_db_connection():
+            import sqlite3
+            conn = sqlite3.connect(self.test_db)
+            conn.row_factory = sqlite3.Row
+            return conn
+            
+        db_core.get_db_connection = mock_get_db_connection
+        
+        # Initialize schema
+        db_core.init_db()
+
+        # Insert a test template with known data
+        import sqlite3
+        conn = mock_get_db_connection()
+        c = conn.cursor()
+        self.test_data = {
+            "tip": "perspektif",
+            "koseler": [[100,200],[300,200],[300,400],[100,400]],
+            "x": 100, "y": 200, "w": 200, "h": 200
+        }
+        self.test_data_json = json.dumps(self.test_data, ensure_ascii=False)
+        self.test_data_sha = hashlib.sha256(self.test_data_json.encode()).hexdigest()
+        
+        c.execute("INSERT INTO categories (id, label) VALUES (?, ?)", ("test_cat", "Test Category"))
+
+        c.execute("INSERT INTO templates (category_id, filename, data) VALUES (?, ?, ?)",
+                  ("test_cat", "test_tmpl.png", self.test_data_json))
+        conn.commit()
+        conn.close()
+        
+        # Create physical test image
+        self.img_dir = os.path.join(self.test_dir, "2_SABLON_HAVUZU", "test_cat")
+        os.makedirs(self.img_dir, exist_ok=True)
+        self.img_path = os.path.join(self.img_dir, "test_tmpl.png")
+        
+        # Write dummy image data
+        with open(self.img_path, "wb") as f:
+            f.write(b"dummy image data for SHA test")
+            
+        with open(self.img_path, "rb") as f:
+            self.file_sha = hashlib.sha256(f.read()).hexdigest()
+        
+        # Mock app.py's direct sqlite3 connections to use our temp DB
+        self.app_sqlite3_connect = sqlite3.connect
+        def mock_app_sqlite3_connect(db_path, *args, **kwargs):
+            if "ayarlar.db" in db_path:
+                return self.app_sqlite3_connect(self.test_db, *args, **kwargs)
+            return self.app_sqlite3_connect(db_path, *args, **kwargs)
+            
+        import app as app_module
+        app_module.sqlite3.connect = mock_app_sqlite3_connect
+        self.original_app_base_dir = getattr(app_module, "BASE_DIR", None)
+        app_module.BASE_DIR = self.test_dir
+
+    def tearDown(self):
+        db_core.get_db_connection = self.original_get_db_connection
+        if hasattr(self, 'original_db_path'):
+            db_core.DB_PATH = self.original_db_path
+            
+        import app as app_module
+        app_module.sqlite3.connect = self.app_sqlite3_connect
+        if hasattr(self, 'original_app_base_dir'):
+            app_module.BASE_DIR = self.original_app_base_dir
+            
+        shutil.rmtree(self.test_dir, ignore_errors=True)
+
+    def test_delete_preserves_data_for_undo(self):
+        """Simulate delete -> verify data gone -> undo -> verify SHA matches."""
+        # Step 1: Read original
+        conn = db_core.get_db_connection()
+        row = conn.execute(
+            "SELECT data FROM templates WHERE category_id=? AND filename=?",
+            ("test_cat", "test_tmpl.png")
+        ).fetchone()
+        original_sha = hashlib.sha256(row["data"].encode()).hexdigest()
+        self.assertEqual(original_sha, self.test_data_sha)
+
+        # Step 2: Delete via Flask Endpoint
+        res = self.client.post('/api/sablon_sil', headers={
+            "X-Active-Category": "test_cat",
+            "X-Active-Template": "test_tmpl.png"
+        })
+        self.assertEqual(res.status_code, 200)
+        data = res.get_json()
+        self.assertTrue(data["success"])
+
+        # Verify deleted in DB
+        row = conn.execute(
+            "SELECT data FROM templates WHERE category_id=? AND filename=?",
+            ("test_cat", "test_tmpl.png")
+        ).fetchone()
+        self.assertIsNone(row, "Template should be deleted")
+        
+        # Verify physical file is gone
+        self.assertFalse(os.path.exists(self.img_path), "Physical image file should be moved/deleted")
+        
+        # Verify physical file is in trash
+        trash_path = os.path.join(self.test_dir, "SILINEN_SABLONLAR_COP_KUTUSU", "test_tmpl.png")
+        self.assertTrue(os.path.exists(trash_path), "Physical file should be in trash")
+
+        # Step 3: Undo via Flask Endpoint (re-insert with original data)
+        res = self.client.post('/api/sablon_sil_geri_al')
+        self.assertEqual(res.status_code, 200)
+        self.assertTrue(res.get_json()["success"])
+
+        # Step 4: Verify SHA integrity
+        row = conn.execute(
+            "SELECT data FROM templates WHERE category_id=? AND filename=?",
+            ("test_cat", "test_tmpl.png")
+        ).fetchone()
+        restored_sha = hashlib.sha256(row["data"].encode()).hexdigest()
+        self.assertEqual(restored_sha, self.test_data_sha,
+                         "SHA mismatch after undo! Data corruption detected.")
+                         
+        # Verify physical file restored
+        self.assertTrue(os.path.exists(self.img_path), "Physical image file should be restored")
+        with open(self.img_path, "rb") as f:
+            restored_file_sha = hashlib.sha256(f.read()).hexdigest()
+        self.assertEqual(restored_file_sha, self.file_sha, "Physical file SHA mismatch after undo!")
+        
+        conn.close()
+
+if __name__ == "__main__":
+    unittest.main()

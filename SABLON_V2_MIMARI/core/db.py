@@ -10,6 +10,20 @@ def get_db_connection():
     conn.row_factory = sqlite3.Row
     return conn
 
+def migrate_schema(conn):
+    """Single idempotent schema migration point. Add all ALTER TABLE operations here."""
+    c = conn.cursor()
+    migrations = [
+        ("nominal_aspect", "ALTER TABLE template_profiles ADD COLUMN nominal_aspect TEXT"),
+        ("is_active", "ALTER TABLE template_profiles ADD COLUMN is_active INTEGER DEFAULT 1"),
+    ]
+    for col_name, alter_sql in migrations:
+        try:
+            c.execute(f"SELECT {col_name} FROM template_profiles LIMIT 1")
+        except sqlite3.OperationalError:
+            c.execute(alter_sql)
+
+
 def init_db():
     conn = get_db_connection()
     c = conn.cursor()
@@ -30,6 +44,39 @@ def init_db():
                     key TEXT PRIMARY KEY,
                     value TEXT
                  )''')
+    
+    c.execute('''CREATE TABLE IF NOT EXISTS template_profiles (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    template_uid TEXT,
+                    category TEXT,
+                    source_relative_path TEXT,
+                    source_asset_sha256 TEXT,
+                    profile_version TEXT,
+                    analyzer_version TEXT,
+                    product_class TEXT,
+                    orientation TEXT,
+                    nominal_aspect TEXT,
+                    geometry_type TEXT,
+                    print_policy TEXT,
+                    surface_quad TEXT,
+                    outer_quad TEXT,
+                    surface_mask_path TEXT,
+                    material TEXT,
+                    has_frame INTEGER,
+                    has_mat INTEGER,
+                    has_reflection INTEGER,
+                    has_occlusion INTEGER,
+                    confidence_total REAL,
+                    component_confidences TEXT,
+                    review_status TEXT,
+                    manually_verified INTEGER,
+                    is_active INTEGER DEFAULT 1,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                 )''')
+
+    # Run idempotent migrations for existing DBs
+    migrate_schema(conn)
+
     conn.commit()
     conn.close()
 
@@ -82,6 +129,9 @@ def save_settings_node(node_name, data):
                  ON CONFLICT(key) 
                  DO UPDATE SET value=excluded.value''',
               (node_name, json.dumps(data, ensure_ascii=False)))
+
+
+
     conn.commit()
     conn.close()
 
@@ -93,6 +143,9 @@ def save_category(cat_id, label):
                  ON CONFLICT(id) 
                  DO UPDATE SET label=excluded.label''',
               (cat_id, label))
+
+
+
     conn.commit()
     conn.close()
 
@@ -105,6 +158,9 @@ def save_template(category_id, filename, data):
                  ON CONFLICT(category_id, filename) 
                  DO UPDATE SET data=excluded.data''',
               (category_id, filename, json.dumps(data, ensure_ascii=False)))
+
+
+
     conn.commit()
     conn.close()
 
@@ -135,5 +191,8 @@ def delete_template(category_id, filename):
     conn = get_db_connection()
     c = conn.cursor()
     c.execute("DELETE FROM templates WHERE category_id=? AND filename=?", (category_id, filename))
+
+
+
     conn.commit()
     conn.close()
