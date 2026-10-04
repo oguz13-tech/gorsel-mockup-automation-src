@@ -195,7 +195,7 @@ class CandidateGenerators:
 
 class TemplateAnalyzer:
     def __init__(self):
-        self.version = "v1.3"
+        self.version = "v1.4"
         self.auto_approval_enabled = False
         
     def measure_edge_contrast(self, image_cv: np.ndarray, quad: np.ndarray) -> float:
@@ -205,6 +205,65 @@ class TemplateAnalyzer:
         grad = cv2.morphologyEx(gray, cv2.MORPH_GRADIENT, np.ones((3,3),np.uint8))
         edge_strength = cv2.mean(grad, mask=mask)[0]
         return min(1.0, edge_strength / 128.0)
+
+    @staticmethod
+    def score_area_plausibility(area_ratio: float) -> float:
+        """Score geometric coverage without rewarding near-full-frame quads.
+
+        The previous scorer used raw area_ratio directly, so a bounding box
+        covering almost the entire image received the strongest possible area
+        contribution. Real EPIC-3 telemetry showed this systematically beating
+        tighter, high-edge-contrast candidates. This transform is deliberately
+        category-agnostic: it rewards a broad useful coverage band and only
+        penalizes extreme tiny/full-frame geometry.
+        """
+        ar = float(np.clip(area_ratio, 0.0, 1.0))
+
+        if ar <= 0.05:
+            return 0.0
+        if ar < 0.15:
+            return (ar - 0.05) / 0.10
+        if ar <= 0.60:
+            return 1.0
+        if ar <= 0.80:
+            return 1.0 - (0.50 * ((ar - 0.60) / 0.20))
+        if ar < 0.95:
+            return 0.50 * (1.0 - ((ar - 0.80) / 0.15))
+        return 0.0
+
+    @classmethod
+    def score_candidate(
+        cls,
+        area_ratio: float,
+        line_score: float,
+        candidate_agreement: float,
+        orientation_score: float,
+    ) -> Tuple[float, Dict[str, float]]:
+        """Return bounded confidence and transparent component values.
+
+        Edge evidence is the strongest runtime signal. Area is now a
+        plausibility prior rather than a monotonic reward for larger boxes.
+        No ground-truth information is used here.
+        """
+        area_score = cls.score_area_plausibility(area_ratio)
+        line = float(np.clip(line_score, 0.0, 1.0))
+        agreement = float(np.clip(candidate_agreement, 0.0, 1.0))
+        orientation = float(np.clip(orientation_score, 0.0, 1.0))
+
+        confidence = (
+            (area_score * 0.20)
+            + (line * 0.50)
+            + (agreement * 0.20)
+            + (orientation * 0.10)
+        )
+        components = {
+            "area_ratio": float(np.clip(area_ratio, 0.0, 1.0)),
+            "area_score": float(area_score),
+            "line_score": line,
+            "candidate_agreement": agreement,
+            "orientation_score": orientation,
+        }
+        return float(np.clip(confidence, 0.0, 1.0)), components
         
     def analyze(self, filepath: str, category_folder: str, manual_geometry_prior: dict = None) -> dict:
         img = cv2.imdecode(np.fromfile(filepath, dtype=np.uint8), cv2.IMREAD_COLOR)
@@ -284,14 +343,12 @@ class TemplateAnalyzer:
                     else:
                         orient_score = 0.0
                         
-                comp_conf = {
-                    "area_ratio": float(area_ratio),
-                    "line_score": float(line_score),
-                    "candidate_agreement": float(candidate_agreement),
-                    "orientation_score": float(orient_score)
-                }
-                
-                conf = (area_ratio * 0.3) + (line_score * 0.4) + (candidate_agreement * 0.2) + (orient_score * 0.1)
+                conf, comp_conf = self.score_candidate(
+                    area_ratio=area_ratio,
+                    line_score=line_score,
+                    candidate_agreement=candidate_agreement,
+                    orientation_score=orient_score,
+                )
                 
                 if conf > best_conf:
                     best_conf = conf
