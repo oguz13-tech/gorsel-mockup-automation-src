@@ -381,7 +381,7 @@ class CandidateGenerators:
 
 class TemplateAnalyzer:
     def __init__(self):
-        self.version = "v1.5"
+        self.version = "v1.6"
         self.auto_approval_enabled = False
         
     def measure_edge_contrast(self, image_cv: np.ndarray, quad: np.ndarray) -> float:
@@ -507,17 +507,39 @@ class TemplateAnalyzer:
                     continue
                 seen_candidates.add(key)
                 valid_cands.append(canonical)
+
+            # Multi-scale generators intentionally trade precision for recall.
+            # Keep runtime bounded by retaining a generous set of candidates
+            # ranked only with runtime-visible evidence (never GT).
+            max_candidates = 180
+            if len(valid_cands) > max_candidates:
+                pre_ranked = []
+                for cand in valid_cands:
+                    cand_area = abs(cv2.contourArea(cand.astype(np.float32)))
+                    cand_area_ratio = min(1.0, cand_area / float(w * h))
+                    cand_line = self.measure_edge_contrast(img, cand)
+                    pre_score = (
+                        self.score_area_plausibility(cand_area_ratio) * 0.35
+                        + cand_line * 0.65
+                    )
+                    pre_ranked.append((pre_score, cand))
+                pre_ranked.sort(key=lambda item: item[0], reverse=True)
+                valid_cands = [item[1] for item in pre_ranked[:max_candidates]]
+
+            candidate_stack = (
+                np.stack(valid_cands).astype(np.float32)
+                if valid_cands
+                else np.empty((0, 4, 2), dtype=np.float32)
+            )
             
-            # Calculate agreement (how many candidates are similar to each valid cand)
+            # Calculate agreement (how many candidates are similar to each
+            # candidate). This preserves the previous distance definition but
+            # performs the pairwise work in NumPy instead of a Python O(N^2)
+            # inner loop.
             for i, cand1 in enumerate(valid_cands):
-                agreement_count = 1
-                for j, cand2 in enumerate(valid_cands):
-                    if i != j:
-                        # Simple IoU or distance check for agreement
-                        # Since they are sorted, we can use euclidean distance
-                        dist = np.linalg.norm(cand1 - cand2) / w
-                        if dist < 0.05:
-                            agreement_count += 1
+                diffs = candidate_stack - cand1
+                distances = np.sqrt(np.sum(diffs * diffs, axis=(1, 2))) / max(float(w), 1.0)
+                agreement_count = int(np.count_nonzero(distances < 0.05))
                 
                 area = cv2.contourArea(cand1.astype(np.float32))
                 area_ratio = min(1.0, area / (w * h))
