@@ -4,3 +4,4 @@ __pycache__/
 .env
 *.jpg
 *.png
+**/logs/*.log

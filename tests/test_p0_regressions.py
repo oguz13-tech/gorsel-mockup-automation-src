@@ -1,0 +1,343 @@
+"""P0 Regression Tests - Real assertions, not stubs."""
+import os
+import sys
+import json
+import glob
+import unittest
+import py_compile
+import tempfile
+import sqlite3
+import shutil
+from pathlib import Path
+from unittest.mock import patch
+
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(BASE_DIR, "99_SISTEM_MOTORLARI_VE_KODLAR"))
+
+try:
+    from SISTEM_MOTORU.pc_master_factory import StateManager, AsyncCloudUploader, FastExcelManager
+    IMPORT_SUCCESS = True
+except ImportError as e:
+    IMPORT_SUCCESS = False
+    IMPORT_ERROR = str(e)
+
+
+class TestProductionModuleCompiles(unittest.TestCase):
+    """Verify that the production module has no SyntaxErrors."""
+
+    def test_pc_master_factory_compiles(self):
+        pc_path = os.path.join(BASE_DIR, "99_SISTEM_MOTORLARI_VE_KODLAR",
+                               "SISTEM_MOTORU", "pc_master_factory.py")
+        try:
+            py_compile.compile(pc_path, doraise=True)
+        except py_compile.PyCompileError as e:
+            self.fail(f"SyntaxError in pc_master_factory.py: {e}")
+            
+    def test_module_imports(self):
+        self.assertTrue(IMPORT_SUCCESS, f"Could not import pc_master_factory: {globals().get('IMPORT_ERROR')}")
+
+class TestSecretsRemoved(unittest.TestCase):
+    """Verify no API keys remain in any ayarlar*.json file."""
+
+    def test_no_secrets_in_any_json(self):
+        json_files = glob.glob(os.path.join(BASE_DIR, "**", "ayarlar*.json"), recursive=True)
+        self.assertGreater(len(json_files), 0, "No ayarlar JSON files found")
+
+        for jf in json_files:
+            with open(jf, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            cloud = data.get("bulut_ayarlari", {})
+
+            # imgbb_keys must be empty list
+            keys = cloud.get("imgbb_keys", [])
+            self.assertEqual(keys, [], f"imgbb_keys not empty in {jf}")
+
+            # freeimage_key must be empty string
+            fk = cloud.get("freeimage_key", "")
+            self.assertEqual(fk, "", f"freeimage_key not empty in {jf}")
+
+            # cloudinary secrets must be empty
+            cl = cloud.get("cloudinary", {})
+            self.assertEqual(cl.get("api_key", ""), "", f"cloudinary api_key not empty in {jf}")
+            self.assertEqual(cl.get("api_secret", ""), "", f"cloudinary api_secret not empty in {jf}")
+            
+    def test_no_hardcoded_secrets_in_code(self):
+        """Scan production python code for hardcoded API keys or passwords."""
+        import re
+        py_files = glob.glob(os.path.join(BASE_DIR, "99_SISTEM_MOTORLARI_VE_KODLAR", "**", "*.py"), recursive=True)
+        
+        # We look for common patterns but ignore empty assignments or our own test variables.
+        # This regex looks for variables like 'api_key = "some_long_string"'
+        secret_pattern = re.compile(r'(?i)(api_key|secret|password|token)\s*=\s*[\'"](?!\s*[\'"])([a-zA-Z0-9_\-]{8,})[\'"]')
+        
+        for pf in py_files:
+            with open(pf, "r", encoding="utf-8") as f:
+                content = f.read()
+                
+            matches = secret_pattern.findall(content)
+            self.assertEqual(len(matches), 0, f"Found hardcoded secret patterns in {pf}: {matches}")
+
+
+class TestSQLiteBootstrap(unittest.TestCase):
+    """Verify production module can bootstrap a temp SQLite DB."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.db_path = Path(self.tmp) / "test_state.db"
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_state_manager_creates_db(self):
+        sm = StateManager(db_path=self.db_path)
+        
+        # Insert a failed artifact
+        with sm.conn:
+            sm.conn.execute(
+                "INSERT INTO render_artifacts (artifact_key, status) VALUES (?, ?)", 
+                ("art-001", "UPLOAD_FAILED")
+            )
+        
+        # Verify UPLOAD_FAILED is NOT considered completed
+        is_completed = sm.is_artifact_completed("art-001")
+        self.assertFalse(is_completed, "UPLOAD_FAILED must not be treated as completed by StateManager")
+        
+        # Simulate successful upload
+        sm.save_render_artifact({
+            "artifact_key": "art-001",
+            "upload_url": "http://test.url",
+            "status": "UPLOADED"
+        })
+        is_completed2 = sm.is_artifact_completed("art-001")
+        self.assertTrue(is_completed2, "UPLOADED should be treated as completed")
+
+
+class TestENVFallbackBehavior(unittest.TestCase):
+    """Test that AsyncCloudUploader config values correctly fall through to ENV."""
+
+    def test_imgbb_empty_list_filters_blanks(self):
+        with patch.dict(os.environ, {"IMGBB_KEYS": ""}):
+            with patch("SISTEM_MOTORU.pc_master_factory.AYARLAR", {"bulut_ayarlari": {"imgbb_keys": []}}):
+                uploader = AsyncCloudUploader()
+                self.assertEqual(uploader.imgbb_keys, [], "Empty env should produce empty list, not ['']")
+
+    def test_imgbb_valid_keys_parsed(self):
+        with patch.dict(os.environ, {"IMGBB_KEYS": "key1,key2"}):
+            with patch("SISTEM_MOTORU.pc_master_factory.AYARLAR", {"bulut_ayarlari": {"imgbb_keys": []}}):
+                uploader = AsyncCloudUploader()
+                self.assertEqual(uploader.imgbb_keys, ["key1", "key2"])
+
+    def test_freeimage_fallback(self):
+        with patch.dict(os.environ, {"FREEIMAGE_KEY": "env_freeimage"}):
+            with patch("SISTEM_MOTORU.pc_master_factory.AYARLAR", {"bulut_ayarlari": {"freeimage_key": ""}}):
+                uploader = AsyncCloudUploader()
+                self.assertEqual(uploader.freeimage_key, "env_freeimage")
+
+
+class TestExcelFlushNoDeadlock(unittest.TestCase):
+    """Verify real Excel write operations don't deadlock with threading."""
+
+    def setUp(self):
+        self.tmp = tempfile.mktemp(suffix=".xlsx")
+
+    def tearDown(self):
+        if os.path.exists(self.tmp):
+            os.remove(self.tmp)
+
+    def test_50_row_excel_flush(self):
+        import threading
+        
+        manager = FastExcelManager(file_path=Path(self.tmp))
+        
+        def write_rows(start, count):
+            for i in range(start, start+count):
+                row_data = {
+                    "Stok Kodu": f"SKU-{i:04d}",
+                    "Barkod": f"BRK-{i}",
+                    "Model Kodu": "MODEL1",
+                    "Kategori": "TestKategori",
+                    "Ham Baskı Dosyası": "a.jpg",
+                    "Mağaza Grubu": "GRUP",
+                    "Ürün Adı": "Urun",
+                    "Açıklama": "Aciklama",
+                    "Mockup Dosya Adı": "m.jpg",
+                    "Resim Linki": "http://x",
+                    "Eklenme Zamanı": "now"
+                }
+                manager.append_row(row_data)
+                
+        threads = []
+        # Create 5 threads, each writing 10 rows
+        for i in range(5):
+            t = threading.Thread(target=write_rows, args=(i*10, 10))
+            threads.append(t)
+            t.start()
+            
+        for t in threads:
+            t.join(timeout=5.0)
+            self.assertFalse(t.is_alive(), "Thread deadlocked during Excel append")
+            
+        # Verify file has 51 rows (header + 50 data)
+        import openpyxl
+        wb2 = openpyxl.load_workbook(self.tmp)
+        ws2 = wb2.active
+        self.assertEqual(ws2.max_row, 51, f"Expected 51 rows, got {ws2.max_row}")
+        wb2.close()
+
+
+class TestQAFailStopsProduction(unittest.TestCase):
+    """Verify QA failure returns False (quarantine), not just a warning."""
+    
+    @patch("SISTEM_MOTORU.pc_master_factory.QualityInspector.inspect_mockup")
+    @patch("SISTEM_MOTORU.pc_master_factory.MockupRenderer.render_cv2_optik")
+    @patch("SISTEM_MOTORU.pc_master_factory.np.fromfile")
+    @patch("SISTEM_MOTORU.pc_master_factory.cv2.imdecode")
+    @patch("SISTEM_MOTORU.pc_master_factory.cv2.imencode")
+    def test_qa_fail_returns_false(self, mock_imencode, mock_imdecode, mock_fromfile, mock_render, mock_qa):
+        from SISTEM_MOTORU.pc_master_factory import MockupRenderer
+        import numpy as np
+        import cv2
+        
+        # Mock dependencies to reach QA logic safely
+        mock_fromfile.return_value = np.array([])
+        mock_imdecode.return_value = np.zeros((10, 10, 3), dtype=np.uint8)
+        mock_render.return_value = np.zeros((10, 10, 3), dtype=np.uint8)
+        mock_qa.return_value = (False, "Mocked QA fail")
+        mock_imencode.return_value = (True, np.array([1]))
+        
+        # Create dummy paths
+        tmp_dir = Path(tempfile.mkdtemp())
+        raw_path = tmp_dir / "fake_raw.jpg"
+        template_path = tmp_dir / "fake_template.png"
+        output_path = tmp_dir / "fake_output.jpg"
+        
+        cv2.imwrite(str(raw_path), np.zeros((10,10,3), dtype=np.uint8))
+        cv2.imwrite(str(template_path), np.zeros((10,10,3), dtype=np.uint8))
+        
+        try:
+            # We must mock Path.exists dynamically inside process_mockup ONLY for orig_path,
+            # or just mock Path.exists everywhere to True and let mock_fromfile handle the non-existent file
+            # Wait, if mock_exists is True everywhere, process_mockup calls orig_path.exists() -> True
+            # then calls np.fromfile(str(orig_path)). BUT we already mocked np.fromfile!
+            # So we don't need the file to exist on disk!
+            with patch("SISTEM_MOTORU.pc_master_factory.Path.exists", return_value=True):
+                # Run process_mockup
+                result = MockupRenderer.process_mockup(raw_path, template_path, {}, False, output_path)
+                
+                # QA should fail and cause process_mockup to return False
+                self.assertFalse(result, "process_mockup should return False on QA failure")
+                mock_qa.assert_called_once()
+                mock_imencode.assert_not_called()
+        finally:
+            import shutil
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
+class TestNextRunRetryAcceptance(unittest.TestCase):
+    """Verify that the factory run-loop correctly retries failed uploads without changing SKUs."""
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.factory_dir = Path(self.tmp) / "FACTORY"
+        self.sablon_dir = Path(self.tmp) / "SABLON"
+        self.out_dir = Path(self.tmp) / "OUT"
+        self.db_path = Path(self.tmp) / "state.db"
+        
+        self.factory_dir.mkdir()
+        self.sablon_dir.mkdir()
+        self.out_dir.mkdir()
+        
+        # Create a fake master and manifest using a real category name like "01_Wifi_Kutusu"
+        manifest = {
+            "batch_id": "test_batch",
+            "items": [
+                {
+                    "master_id": "M01",
+                    "theme_id": "T01",
+                    "theme_title": "Test Theme",
+                    "style_key": "Style",
+                    "horizontal_path": "M01_H.jpg",
+                    "vertical_path": "M01_V.jpg"
+                }
+            ]
+        }
+        with open(self.factory_dir / "manifest.json", "w") as f:
+            json.dump(manifest, f)
+            
+        # Create fake raw image
+        import numpy as np
+        import cv2
+        cv2.imwrite(str(self.factory_dir / "M01_H.jpg"), np.zeros((10,10,3), dtype=np.uint8))
+        cv2.imwrite(str(self.factory_dir / "M01_V.jpg"), np.zeros((10,10,3), dtype=np.uint8))
+        
+        # Create fake category template for 01_Wifi_Kutusu (which requires Yatay orientation)
+        cat_dir = self.sablon_dir / "01_Wifi_Kutusu"
+        cat_dir.mkdir()
+        cv2.imwrite(str(cat_dir / "tmpl1.png"), np.zeros((10,10,3), dtype=np.uint8))
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def test_factory_next_run_retry(self):
+        from SISTEM_MOTORU.pc_master_factory import PCMasterFactory, StateManager
+        
+        with patch("SISTEM_MOTORU.pc_master_factory.FACTORY_DIR", new=self.factory_dir), \
+             patch("SISTEM_MOTORU.pc_master_factory.SABLON_DIR", new=self.sablon_dir), \
+             patch("SISTEM_MOTORU.pc_master_factory.OUTPUT_DIR", new=self.out_dir), \
+             patch("SISTEM_MOTORU.pc_master_factory.DB_PATH", new=self.db_path), \
+             patch("SISTEM_MOTORU.pc_master_factory.EXCEL_DIR", new=Path(self.tmp)), \
+             patch("SISTEM_MOTORU.pc_master_factory.MockupRenderer.process_mockup") as mock_render, \
+             patch("SISTEM_MOTORU.pc_master_factory.AsyncCloudUploader.upload_sync") as mock_upload:
+             
+            def fake_submit(fn, *args, **kwargs):
+                class FakeFuture:
+                    def result(self): pass
+                fn(*args, **kwargs)
+                return FakeFuture()
+                
+            with patch("SISTEM_MOTORU.pc_master_factory.ThreadPoolExecutor.submit", side_effect=fake_submit):
+                # Mocking to skip real CV2 ops but return success
+                mock_render.return_value = True
+                
+                # First run: fail upload
+                mock_upload.return_value = None
+                
+                # Run 1
+                bot = PCMasterFactory(mode="dongusel")
+                bot.process_all()
+                
+                # Check DB state
+                sm = StateManager(db_path=self.db_path)
+                
+                print("\n--- DB DEBUG ---")
+                for table in ["system_meta", "render_artifacts", "products"]:
+                    print(f"Table {table}:", sm.conn.execute(f"SELECT * FROM {table}").fetchall())
+                print("----------------\n")
+                
+                artifacts = sm.conn.execute("SELECT * FROM render_artifacts").fetchall()
+                self.assertEqual(len(artifacts), 1)
+                self.assertEqual(artifacts[0]["status"], "UPLOAD_FAILED")
+                
+                # Capture SKU from system_meta
+                meta_run1 = sm.conn.execute("SELECT value FROM system_meta WHERE key LIKE 'sku_%'").fetchall()
+                self.assertEqual(len(meta_run1), 1)
+                sku1 = meta_run1[0]["value"]
+                
+                # Run 2: succeed upload
+                mock_upload.return_value = "http://success.com/mock.jpg"
+                bot2 = PCMasterFactory(mode="dongusel")
+                bot2.process_all()
+                
+                # Check DB state after run 2
+                sm2 = StateManager(db_path=self.db_path)
+                artifacts_run2 = sm2.conn.execute("SELECT * FROM render_artifacts").fetchall()
+                self.assertEqual(len(artifacts_run2), 1, "Should not create duplicate artifact")
+                self.assertEqual(artifacts_run2[0]["status"], "UPLOADED", "Retry should update status")
+                
+                meta_run2 = sm2.conn.execute("SELECT value FROM system_meta WHERE key LIKE 'sku_%'").fetchall()
+                self.assertEqual(len(meta_run2), 1)
+                sku2 = meta_run2[0]["value"]
+                
+                self.assertEqual(sku1, sku2, "SKU must not change on retry")
+
+if __name__ == "__main__":
+    unittest.main()
