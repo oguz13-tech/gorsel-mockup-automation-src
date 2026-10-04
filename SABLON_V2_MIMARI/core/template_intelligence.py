@@ -193,21 +193,141 @@ class CandidateGenerators:
 
     @staticmethod
     def generate_hough_lines_quad(image_cv: np.ndarray) -> List[np.ndarray]:
+        """Generate perspective quads from compatible Hough line pairs.
+
+        The legacy implementation collapsed every detected segment into one
+        global bounding rectangle. On cluttered images that frequently became
+        a near-full-frame false positive. We retain that rectangle only as a
+        fallback and additionally form quads from top/bottom and left/right
+        line-pair intersections.
+        """
         gray = cv2.cvtColor(image_cv, cv2.COLOR_BGR2GRAY)
-        edged = cv2.Canny(gray, 50, 150, apertureSize=3)
-        lines = cv2.HoughLinesP(edged, 1, np.pi/180, threshold=100, minLineLength=100, maxLineGap=10)
+        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+        edged = cv2.Canny(blurred, 40, 140, apertureSize=3)
+        h_img, w_img = image_cv.shape[:2]
+        min_len = max(40, int(min(w_img, h_img) * 0.12))
+        lines = cv2.HoughLinesP(
+            edged,
+            1,
+            np.pi / 180,
+            threshold=max(40, int(min(w_img, h_img) * 0.08)),
+            minLineLength=min_len,
+            maxLineGap=max(8, int(min(w_img, h_img) * 0.02)),
+        )
+
         candidates = []
-        if lines is not None and len(lines) > 4:
-            pts = []
-            for line in lines:
-                coords = line.flatten()
-                if len(coords) >= 4:
-                    x1, y1, x2, y2 = coords[:4]
-                    pts.extend([[int(x1),int(y1)], [int(x2),int(y2)]])
-            pts = np.array(pts)
-            x,y,w,h = cv2.boundingRect(pts)
-            quad = np.array([[x,y], [x+w,y], [x+w,y+h], [x,y+h]], dtype=np.int32)
+        if lines is None or len(lines) < 4:
+            return candidates
+
+        segments = []
+        for line in lines:
+            coords = line.flatten()
+            if len(coords) < 4:
+                continue
+            x1, y1, x2, y2 = map(float, coords[:4])
+            dx, dy = x2 - x1, y2 - y1
+            length = float(np.hypot(dx, dy))
+            if length < min_len:
+                continue
+            segments.append(
+                {
+                    "pts": (x1, y1, x2, y2),
+                    "length": length,
+                    "mid_x": (x1 + x2) * 0.5,
+                    "mid_y": (y1 + y2) * 0.5,
+                    "horizontal": abs(dx) >= abs(dy),
+                }
+            )
+
+        if len(segments) < 4:
+            return candidates
+
+        horizontal = sorted(
+            (s for s in segments if s["horizontal"]),
+            key=lambda item: item["length"],
+            reverse=True,
+        )[:6]
+        vertical = sorted(
+            (s for s in segments if not s["horizontal"]),
+            key=lambda item: item["length"],
+            reverse=True,
+        )[:6]
+
+        def _det(a, b):
+            return (a[0] * b[1]) - (a[1] * b[0])
+
+        def _intersection(seg_a, seg_b):
+            x1, y1, x2, y2 = seg_a["pts"]
+            x3, y3, x4, y4 = seg_b["pts"]
+            xdiff = (x1 - x2, x3 - x4)
+            ydiff = (y1 - y2, y3 - y4)
+            div = _det(xdiff, ydiff)
+            if abs(div) < 1e-6:
+                return None
+            d = (_det((x1, y1), (x2, y2)), _det((x3, y3), (x4, y4)))
+            x = _det(d, xdiff) / div
+            y = _det(d, ydiff) / div
+            if not np.isfinite(x) or not np.isfinite(y):
+                return None
+            return np.array([x, y], dtype=np.float32)
+
+        # Build perspective candidates. Pair separation avoids using duplicate
+        # lines from the same physical edge.
+        for hi in range(len(horizontal)):
+            for hj in range(hi + 1, len(horizontal)):
+                h1, h2 = horizontal[hi], horizontal[hj]
+                if abs(h1["mid_y"] - h2["mid_y"]) < h_img * 0.05:
+                    continue
+                top, bottom = sorted((h1, h2), key=lambda item: item["mid_y"])
+
+                for vi in range(len(vertical)):
+                    for vj in range(vi + 1, len(vertical)):
+                        v1, v2 = vertical[vi], vertical[vj]
+                        if abs(v1["mid_x"] - v2["mid_x"]) < w_img * 0.05:
+                            continue
+                        left, right = sorted((v1, v2), key=lambda item: item["mid_x"])
+
+                        tl = _intersection(top, left)
+                        tr = _intersection(top, right)
+                        br = _intersection(bottom, right)
+                        bl = _intersection(bottom, left)
+                        if any(p is None for p in (tl, tr, br, bl)):
+                            continue
+
+                        quad = np.array([tl, tr, br, bl], dtype=np.float32)
+                        # Reject wildly extrapolated intersections early. The
+                        # canonical validator performs the final geometry gate.
+                        if (
+                            np.any(quad[:, 0] < -w_img * 0.20)
+                            or np.any(quad[:, 0] > w_img * 1.20)
+                            or np.any(quad[:, 1] < -h_img * 0.20)
+                            or np.any(quad[:, 1] > h_img * 1.20)
+                        ):
+                            continue
+
+                        area_ratio = abs(cv2.contourArea(quad)) / float(w_img * h_img)
+                        if 0.04 <= area_ratio <= 0.98:
+                            candidates.append(np.round(quad).astype(np.int32))
+
+        # Preserve a legacy-style fallback, but the new scorer no longer
+        # rewards it merely for filling the image.
+        pts = []
+        for segment in segments:
+            x1, y1, x2, y2 = segment["pts"]
+            pts.extend([[int(x1), int(y1)], [int(x2), int(y2)]])
+        if pts:
+            pts_arr = np.asarray(pts, dtype=np.int32)
+            x, y, bw, bh = cv2.boundingRect(pts_arr)
+            quad = np.array(
+                [[x, y], [x + bw, y], [x + bw, y + bh], [x, y + bh]],
+                dtype=np.int32,
+            )
             candidates.append(quad)
+
+            rect = cv2.minAreaRect(pts_arr.astype(np.float32))
+            box = cv2.boxPoints(rect)
+            candidates.append(np.round(box).astype(np.int32))
+
         return candidates
 
     @staticmethod
@@ -261,7 +381,7 @@ class CandidateGenerators:
 
 class TemplateAnalyzer:
     def __init__(self):
-        self.version = "v1.4"
+        self.version = "v1.5"
         self.auto_approval_enabled = False
         
     def measure_edge_contrast(self, image_cv: np.ndarray, quad: np.ndarray) -> float:
