@@ -138,20 +138,57 @@ class GeometryValidator:
 class CandidateGenerators:
     @staticmethod
     def generate_canny_contours(image_cv: np.ndarray) -> List[np.ndarray]:
+        """Generate quadrilateral candidates across several edge scales.
+
+        EPIC-3 showed that a single Canny threshold plus RETR_EXTERNAL misses
+        useful nested product surfaces. Multi-threshold extraction keeps the
+        method deterministic while improving recall for low-contrast and
+        nested panels. Final validation/scoring remains the responsibility of
+        TemplateAnalyzer.
+        """
         gray = cv2.cvtColor(image_cv, cv2.COLOR_BGR2GRAY)
         blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-        edged = cv2.Canny(blurred, 30, 100)
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
-        closed = cv2.morphologyEx(edged, cv2.MORPH_CLOSE, kernel)
-        contours, _ = cv2.findContours(closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        contours = sorted(contours, key=cv2.contourArea, reverse=True)[:5]
-        
+        img_area = float(image_cv.shape[0] * image_cv.shape[1])
         candidates = []
-        for c in contours:
-            peri = cv2.arcLength(c, True)
-            approx = cv2.approxPolyDP(c, 0.02 * peri, True)
-            if len(approx) == 4:
-                candidates.append(approx.reshape(4, 2))
+
+        for low, high in ((25, 80), (40, 120), (60, 180)):
+            edged = cv2.Canny(blurred, low, high)
+            for kernel_size in (3, 5):
+                kernel = cv2.getStructuringElement(
+                    cv2.MORPH_RECT, (kernel_size, kernel_size)
+                )
+                closed = cv2.morphologyEx(edged, cv2.MORPH_CLOSE, kernel)
+                contours, _ = cv2.findContours(
+                    closed, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE
+                )
+                contours = sorted(contours, key=cv2.contourArea, reverse=True)[:30]
+
+                for contour in contours:
+                    area = float(abs(cv2.contourArea(contour)))
+                    if area < img_area * 0.025 or area > img_area * 0.985:
+                        continue
+
+                    hull = cv2.convexHull(contour)
+                    peri = cv2.arcLength(hull, True)
+                    if peri <= 0:
+                        continue
+
+                    for epsilon_ratio in (0.012, 0.02, 0.03, 0.045):
+                        approx = cv2.approxPolyDP(
+                            hull, epsilon_ratio * peri, True
+                        )
+                        if len(approx) == 4 and cv2.isContourConvex(approx):
+                            candidates.append(approx.reshape(4, 2))
+
+                    # A rotated minimum-area rectangle is useful when an
+                    # occluder fragments one side of an otherwise rectangular
+                    # surface. It is only a proposal; scorer/validator can
+                    # reject it.
+                    rect = cv2.minAreaRect(hull)
+                    box = cv2.boxPoints(rect)
+                    if abs(cv2.contourArea(box.astype(np.float32))) >= img_area * 0.05:
+                        candidates.append(np.round(box).astype(np.int32))
+
         return candidates
 
     @staticmethod
@@ -175,20 +212,49 @@ class CandidateGenerators:
 
     @staticmethod
     def generate_color_region_quad(image_cv: np.ndarray) -> List[np.ndarray]:
+        """Generate region-based quads from adaptive and global thresholds."""
         gray = cv2.cvtColor(image_cv, cv2.COLOR_BGR2GRAY)
-        thresh = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-                                        cv2.THRESH_BINARY, 51, 5)
-        contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+        img_area = float(image_cv.shape[0] * image_cv.shape[1])
+
+        adaptive = cv2.adaptiveThreshold(
+            blurred,
+            255,
+            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv2.THRESH_BINARY,
+            51,
+            5,
+        )
+        adaptive_inv = cv2.bitwise_not(adaptive)
+        _, otsu = cv2.threshold(
+            blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
+        )
+        otsu_inv = cv2.bitwise_not(otsu)
+
         candidates = []
-        img_area = image_cv.shape[0] * image_cv.shape[1]
-        for c in contours:
-            area = cv2.contourArea(c)
-            if area < img_area * 0.05:
-                continue
-            peri = cv2.arcLength(c, True)
-            approx = cv2.approxPolyDP(c, 0.04 * peri, True)
-            if len(approx) == 4 and cv2.isContourConvex(approx):
-                candidates.append(approx.reshape(4, 2))
+        for mask in (adaptive, adaptive_inv, otsu, otsu_inv):
+            contours, _ = cv2.findContours(
+                mask, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE
+            )
+            contours = sorted(contours, key=cv2.contourArea, reverse=True)[:40]
+
+            for contour in contours:
+                area = float(abs(cv2.contourArea(contour)))
+                if area < img_area * 0.025 or area > img_area * 0.985:
+                    continue
+
+                hull = cv2.convexHull(contour)
+                peri = cv2.arcLength(hull, True)
+                if peri <= 0:
+                    continue
+
+                for epsilon_ratio in (0.015, 0.025, 0.04, 0.06):
+                    approx = cv2.approxPolyDP(
+                        hull, epsilon_ratio * peri, True
+                    )
+                    if len(approx) == 4 and cv2.isContourConvex(approx):
+                        candidates.append(approx.reshape(4, 2))
+
         return candidates
 
     # Removed heuristic generate_manual_prior_quad
@@ -301,12 +367,26 @@ class TemplateAnalyzer:
             candidates.extend(CandidateGenerators.generate_hough_lines_quad(img))
             candidates.extend(CandidateGenerators.generate_color_region_quad(img))
             
-            # Deduplicate and validate candidates
+            # Deduplicate and validate candidates. Multi-scale generators can
+            # rediscover the same quad; duplicates must not artificially boost
+            # candidate-agreement or distort the denominator.
             valid_cands = []
+            seen_candidates = set()
             for cand in candidates:
                 valid, msg = GeometryValidator.is_valid_quad(cand, w, h)
-                if valid:
-                    valid_cands.append(GeometryValidator.canonical_sort(cand))
+                if not valid:
+                    continue
+
+                canonical = GeometryValidator.canonical_sort(cand).astype(np.float32)
+                key = tuple(
+                    int(round(float(value)))
+                    for point in canonical
+                    for value in point
+                )
+                if key in seen_candidates:
+                    continue
+                seen_candidates.add(key)
+                valid_cands.append(canonical)
             
             # Calculate agreement (how many candidates are similar to each valid cand)
             for i, cand1 in enumerate(valid_cands):
