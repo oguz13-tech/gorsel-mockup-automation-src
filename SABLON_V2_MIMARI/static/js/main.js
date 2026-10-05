@@ -1053,6 +1053,70 @@ window.onerror = function(msg, url, line, col, error) {
     
     window.onresize = draw;
 
+    async function autoDetectForeground() {
+        if (!currentCat || !currentTmpl || !currentImg) {
+            alert("Lütfen önce bir şablon seçin.");
+            return;
+        }
+        if (!pts || pts.length !== 4) {
+            alert("AI ön plan analizi için önce 4 baskı köşesini doğrulayın.");
+            return;
+        }
+
+        const btn = document.getElementById('btnAutoForeground');
+        const originalText = btn ? btn.innerHTML : '';
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '⏳ AI Ön Plan Arıyor...';
+        }
+
+        try {
+            const response = await fetch('/api/templates/foreground_detect', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    category: currentCat,
+                    template: currentTmpl,
+                    corners: pts.map(p => [p.x, p.y])
+                })
+            });
+            const data = await response.json();
+            if (!response.ok || !data.success) {
+                throw new Error(data.error || 'AI ön plan analizi başarısız.');
+            }
+
+            pushMaskHistory();
+            const detectedBoxes = Array.isArray(data.boxes) ? data.boxes : [];
+            // Preserve manual brush refinements. Replace only AI/object boxes so
+            // re-running discovery cannot duplicate stale detections endlessly.
+            foregroundMask.object_boxes = detectedBoxes.map(box => box.slice(0, 4));
+            saveCurrentTemplateData();
+            setEditorTool('object');
+            draw();
+
+            if (detectedBoxes.length === 0) {
+                alert(
+                    'AI baskının önünde güvenilir bir nesne bulmadı. ' +
+                    'Gerekirse Nesne Seç / Maske Ekle araçlarıyla elle düzeltin.'
+                );
+            } else {
+                const confidence = Number(data.confidence || 0);
+                alert(
+                    detectedBoxes.length + ' ön plan nesnesi bulundu. ' +
+                    'Kutuları kontrol edin; gerekirse ekle/çıkar fırçasıyla düzeltin. ' +
+                    'Güven: ' + confidence.toFixed(2)
+                );
+            }
+        } catch (err) {
+            alert('AI ön plan analizi kullanılamadı: ' + err.message);
+        } finally {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = originalText;
+            }
+        }
+    }
+
     function autoDetectCorners() {
         if (!currentCat || !currentTmpl) {
             alert("Lutfen once listeden bir sablon secin!");
