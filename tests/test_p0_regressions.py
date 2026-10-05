@@ -102,14 +102,22 @@ class TestSQLiteBootstrap(unittest.TestCase):
         is_completed = sm.is_artifact_completed("art-001")
         self.assertFalse(is_completed, "UPLOAD_FAILED must not be treated as completed by StateManager")
         
-        # Simulate successful upload
+        # Upload success alone is not end-to-end completion. The Excel row must
+        # be durably flushed before the artifact becomes COMPLETED.
         sm.save_render_artifact({
             "artifact_key": "art-001",
             "upload_url": "http://test.url",
-            "status": "UPLOADED"
+            "status": "UPLOADED_PENDING_EXCEL"
         })
-        is_completed2 = sm.is_artifact_completed("art-001")
-        self.assertTrue(is_completed2, "UPLOADED should be treated as completed")
+        self.assertFalse(
+            sm.is_artifact_completed("art-001"),
+            "Upload-only state must not be treated as completed",
+        )
+        sm.mark_artifacts_completed(["art-001"])
+        self.assertTrue(
+            sm.is_artifact_completed("art-001"),
+            "Only COMPLETED proves render + upload + Excel finished",
+        )
 
 
 class TestENVFallbackBehavior(unittest.TestCase):
@@ -200,7 +208,7 @@ class TestQAFailStopsProduction(unittest.TestCase):
         
         # Mock dependencies to reach QA logic safely
         mock_fromfile.return_value = np.array([])
-        mock_imdecode.return_value = np.zeros((10, 10, 3), dtype=np.uint8)
+        mock_imdecode.return_value = np.zeros((10, 20, 3), dtype=np.uint8)
         mock_render.return_value = np.zeros((10, 10, 3), dtype=np.uint8)
         mock_qa.return_value = (False, "Mocked QA fail")
         mock_imencode.return_value = (True, np.array([1]))
@@ -222,7 +230,13 @@ class TestQAFailStopsProduction(unittest.TestCase):
             # So we don't need the file to exist on disk!
             with patch("SISTEM_MOTORU.pc_master_factory.Path.exists", return_value=True):
                 # Run process_mockup
-                result = MockupRenderer.process_mockup(raw_path, template_path, {}, False, output_path)
+                result = MockupRenderer.process_mockup(
+                    raw_path,
+                    template_path,
+                    {"profile_orientation": "H", "nominal_aspect": 2.0},
+                    False,
+                    output_path,
+                )
                 
                 # QA should fail and cause process_mockup to return False
                 self.assertFalse(result, "process_mockup should return False on QA failure")
@@ -286,7 +300,16 @@ class TestNextRunRetryAcceptance(unittest.TestCase):
              patch("SISTEM_MOTORU.pc_master_factory.DB_PATH", new=self.db_path), \
              patch("SISTEM_MOTORU.pc_master_factory.EXCEL_DIR", new=Path(self.tmp)), \
              patch("SISTEM_MOTORU.pc_master_factory.MockupRenderer.process_mockup") as mock_render, \
-             patch("SISTEM_MOTORU.pc_master_factory.AsyncCloudUploader.upload_sync") as mock_upload:
+             patch("SISTEM_MOTORU.pc_master_factory.AsyncCloudUploader.upload_sync") as mock_upload, \
+             patch.object(
+                 PCMasterFactory,
+                 "get_template_pool",
+                 return_value=[(
+                     "tmpl1.png",
+                     self.sablon_dir / "01_Wifi_Kutusu" / "tmpl1.png",
+                     {"profile_orientation": "H", "nominal_aspect": 4.0 / 3.0},
+                 )],
+             ):
              
             def fake_submit(fn, *args, **kwargs):
                 class FakeFuture:
@@ -331,7 +354,11 @@ class TestNextRunRetryAcceptance(unittest.TestCase):
                 sm2 = StateManager(db_path=self.db_path)
                 artifacts_run2 = sm2.conn.execute("SELECT * FROM render_artifacts").fetchall()
                 self.assertEqual(len(artifacts_run2), 1, "Should not create duplicate artifact")
-                self.assertEqual(artifacts_run2[0]["status"], "UPLOADED", "Retry should update status")
+                self.assertEqual(
+                    artifacts_run2[0]["status"],
+                    "COMPLETED",
+                    "Successful retry must finish upload + Excel transaction",
+                )
                 
                 meta_run2 = sm2.conn.execute("SELECT value FROM system_meta WHERE key LIKE 'sku_%'").fetchall()
                 self.assertEqual(len(meta_run2), 1)
