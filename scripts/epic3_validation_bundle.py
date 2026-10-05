@@ -58,6 +58,18 @@ SCORER_CATEGORIES = (
     "05_Ocak_Arkasi",
 )
 
+# Canonical EPIC-2 golden baseline. These are minimum VALID sample counts, not
+# exact totals, so a future expanded dataset can still pass while a truncated or
+# accidentally empty category cannot masquerade as six-category evidence.
+MIN_GOLDEN_VALID_COUNTS = {
+    "01_Wifi_Kutusu": 125,
+    "02_Cam_Tablo_Dikey": 43,
+    "02_Cam_Tablo_Yatay": 50,
+    "03_Ahsap_Tablo": 36,
+    "04_Cam_Dograma": 68,
+    "05_Ocak_Arkasi": 14,
+}
+
 EXPECTED_BRANCH = "feature/epic-3-geometry-accuracy"
 
 
@@ -213,6 +225,7 @@ def _benchmark_summary(bench: Dict[str, Any]) -> Dict[str, Any]:
         new = row.get("epic3") or {}
         categories[category] = {
             "attempted": int(row.get("attempted", 0) or 0),
+            "valid_evaluated": int(row.get("valid_evaluated", 0) or 0),
             "excluded": int(row.get("excluded", 0) or 0),
             "epic2_median_iou": float(old.get("median_iou", 0.0) or 0.0),
             "epic3_median_iou": float(new.get("median_iou", 0.0) or 0.0),
@@ -241,6 +254,44 @@ def _benchmark_summary(bench: Dict[str, Any]) -> Dict[str, Any]:
         "categories": categories,
         "all_required_categories_present": all(
             category in raw_categories for category in REQUIRED_CATEGORIES
+        ),
+    }
+
+
+def _golden_coverage_check(benchmark: Dict[str, Any]) -> Dict[str, Any]:
+    """Require at least the canonical six-category real-golden baseline."""
+    categories = benchmark.get("categories") or {}
+    per_category: Dict[str, Any] = {}
+    for category, minimum in MIN_GOLDEN_VALID_COUNTS.items():
+        summary = categories.get(category) or {}
+        actual = int(summary.get("valid_evaluated", 0) or 0)
+        attempted = int(summary.get("attempted", 0) or 0)
+        per_category[category] = {
+            "minimum_valid": minimum,
+            "actual_valid": actual,
+            "attempted": attempted,
+            "meets_minimum": actual >= minimum and attempted >= actual,
+        }
+
+    required_total = sum(MIN_GOLDEN_VALID_COUNTS.values())
+    reported_global_valid = int(benchmark.get("valid_evaluated", 0) or 0)
+    category_valid_total = sum(
+        int((categories.get(category) or {}).get("valid_evaluated", 0) or 0)
+        for category in MIN_GOLDEN_VALID_COUNTS
+    )
+    return {
+        "required_minimum_valid_total": required_total,
+        "reported_global_valid": reported_global_valid,
+        "category_valid_total": category_valid_total,
+        "per_category": per_category,
+        "all_categories_meet_minimum": all(
+            item["meets_minimum"] for item in per_category.values()
+        ),
+        "global_matches_category_total": reported_global_valid == category_valid_total,
+        "ok": (
+            reported_global_valid >= required_total
+            and reported_global_valid == category_valid_total
+            and all(item["meets_minimum"] for item in per_category.values())
         ),
     }
 
@@ -482,7 +533,9 @@ def main() -> int:
 
     if benchmark_json.exists():
         try:
-            evidence["benchmark"] = _benchmark_summary(_load_json(benchmark_json))
+            raw_benchmark = _load_json(benchmark_json)
+            evidence["benchmark"] = _benchmark_summary(raw_benchmark)
+            evidence["golden_coverage"] = _golden_coverage_check(raw_benchmark)
         except Exception as exc:
             evidence["benchmark_error"] = str(exc)
 
@@ -526,6 +579,9 @@ def main() -> int:
             "all_required_categories_present", False
         )
     )
+    golden_coverage_ok = bool(
+        (evidence.get("golden_coverage") or {}).get("ok", False)
+    )
     integrity_ok = bool(
         dataset_unchanged
         and branch_before == EXPECTED_BRANCH
@@ -537,11 +593,13 @@ def main() -> int:
         "commands_ok": evidence["all_commands_ok"],
         "diagnostic_invariants_ok": diagnostic_ok,
         "required_benchmark_categories_ok": benchmark_ok,
+        "golden_coverage_ok": golden_coverage_ok,
         "integrity_ok": integrity_ok,
         "ready_for_human_review": bool(
             evidence["all_commands_ok"]
             and diagnostic_ok
             and benchmark_ok
+            and golden_coverage_ok
             and integrity_ok
         ),
     }
