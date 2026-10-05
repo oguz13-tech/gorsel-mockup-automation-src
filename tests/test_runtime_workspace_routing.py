@@ -127,7 +127,7 @@ print(json.dumps({
             runtime = Path(tmp).resolve()
             result = _run_probe(
                 """
-import importlib.util, json, os, sqlite3
+import importlib.util, json, os, sqlite3, sys
 from pathlib import Path
 root = Path.cwd()
 factory_path = (
@@ -138,6 +138,7 @@ factory_path = (
 )
 spec = importlib.util.spec_from_file_location("factory_readonly_probe", factory_path)
 mod = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = mod
 spec.loader.exec_module(mod)
 
 db_path = Path(os.environ["MOCKUP_RUNTIME_WORKSPACE"]) / "readonly_probe.db"
