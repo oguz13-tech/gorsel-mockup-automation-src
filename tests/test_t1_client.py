@@ -131,8 +131,20 @@ class TestT1DeleteUndoIntegrity(unittest.TestCase):
         # Verify physical file is gone
         self.assertFalse(os.path.exists(self.img_path), "Physical image file should be moved/deleted")
         
-        # Verify physical file is in trash
-        trash_path = os.path.join(self.test_dir, "SILINEN_SABLONLAR_COP_KUTUSU", "test_tmpl.png")
+        # Verify physical file is in trash through the durable recovery
+        # metadata returned by the endpoint. Trash filenames are intentionally
+        # collision-safe and therefore are not the original filename.
+        trash_dir = os.path.join(
+            self.test_dir,
+            "SILINEN_SABLONLAR_COP_KUTUSU",
+        )
+        trash_record = data.get("trash_record")
+        self.assertTrue(trash_record, "Delete must return a recovery record")
+        meta_path = os.path.join(trash_dir, trash_record)
+        self.assertTrue(os.path.isfile(meta_path), "Recovery metadata should exist")
+        with open(meta_path, "r", encoding="utf-8") as handle:
+            recovery = json.load(handle)
+        trash_path = os.path.join(trash_dir, recovery["trash_image_name"])
         self.assertTrue(os.path.exists(trash_path), "Physical file should be in trash")
 
         # Step 3: Undo via Flask Endpoint (re-insert with original data)
