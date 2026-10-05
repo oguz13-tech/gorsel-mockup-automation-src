@@ -20,6 +20,9 @@ BASE_DIR = os.path.abspath(
     os.path.expanduser(_runtime_override)
 ) if _runtime_override else SOURCE_ROOT
 
+# Propagate the resolved runtime root to imported helpers and child processes.
+os.environ["MOCKUP_RUNTIME_WORKSPACE"] = BASE_DIR
+
 if SOURCE_ROOT not in sys.path:
     sys.path.append(SOURCE_ROOT)
 
