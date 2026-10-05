@@ -97,6 +97,8 @@ class TestEpic3ValidationGoldenCoverage(unittest.TestCase):
             "diagnostic_ok": True,
             "benchmark_ok": True,
             "golden_coverage_ok": True,
+            "telemetry_ok": True,
+            "cross_evidence_ok": True,
             "integrity_ok": True,
         }
         self.assertFalse(
@@ -108,6 +110,73 @@ class TestEpic3ValidationGoldenCoverage(unittest.TestCase):
         self.assertTrue(
             bundle._review_readiness(
                 unit_tests_executed=True,
+                **common,
+            )
+        )
+
+    def test_cross_evidence_consistency_requires_matching_valid_counts(self):
+        bench = bundle._benchmark_summary(
+            _benchmark(bundle.MIN_GOLDEN_VALID_COUNTS)
+        )
+        diag_categories = {
+            category: {
+                "valid_evaluated": count,
+                "classification_total": count,
+                "counts_match": True,
+            }
+            for category, count in bundle.MIN_GOLDEN_VALID_COUNTS.items()
+        }
+        evidence = {
+            "benchmark": bench,
+            "diagnostic_invariants": {
+                "global_valid_evaluated": sum(
+                    bundle.MIN_GOLDEN_VALID_COUNTS.values()
+                ),
+                "global_counts_match": True,
+                "all_category_counts_match": True,
+                "categories": diag_categories,
+            },
+        }
+
+        result = bundle._cross_evidence_consistency(evidence)
+        self.assertTrue(result["ok"])
+
+        evidence["diagnostic_invariants"]["categories"][
+            "04_Cam_Dograma"
+        ]["valid_evaluated"] -= 1
+        result = bundle._cross_evidence_consistency(evidence)
+        self.assertFalse(result["ok"])
+        self.assertFalse(
+            result["per_category"]["04_Cam_Dograma"]["match"]
+        )
+
+    def test_review_readiness_requires_telemetry_and_cross_evidence(self):
+        common = {
+            "commands_ok": True,
+            "unit_tests_executed": True,
+            "diagnostic_ok": True,
+            "benchmark_ok": True,
+            "golden_coverage_ok": True,
+            "integrity_ok": True,
+        }
+        self.assertFalse(
+            bundle._review_readiness(
+                telemetry_ok=False,
+                cross_evidence_ok=True,
+                **common,
+            )
+        )
+        self.assertFalse(
+            bundle._review_readiness(
+                telemetry_ok=True,
+                cross_evidence_ok=False,
+                **common,
+            )
+        )
+        self.assertTrue(
+            bundle._review_readiness(
+                telemetry_ok=True,
+                cross_evidence_ok=True,
                 **common,
             )
         )
