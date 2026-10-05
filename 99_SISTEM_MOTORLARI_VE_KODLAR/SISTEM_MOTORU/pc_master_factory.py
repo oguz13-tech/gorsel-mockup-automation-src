@@ -2404,6 +2404,8 @@ class PCMasterFactory:
         self.metrics_lock = threading.Lock()
         self.upload_failures = 0
         self.persistence_failures = 0
+        self.worker_failures = 0
+        self.upload_futures = []
         self.pending_excel_lock = threading.Lock()
         self.pending_excel_artifacts = []
 
@@ -3002,14 +3004,29 @@ class PCMasterFactory:
                         )
                     }
 
-                    self.thread_pool.submit(
+                    future = self.thread_pool.submit(
                         self._async_upload_and_excel,
                         out_path,
                         prod_record,
                     )
+                    self.upload_futures.append(future)
 
         logger.info("\n⏳ Render aşaması bitti, arkaplandaki bulut yüklemeleri tamamlanıyor...")
         self.thread_pool.shutdown(wait=True)
+
+        # ThreadPoolExecutor does not raise worker exceptions from shutdown().
+        # Resolve every future explicitly so an unexpected background exception
+        # can never be mistaken for a successful production run.
+        for future in self.upload_futures:
+            try:
+                future.result()
+            except Exception as exc:
+                self.worker_failures += 1
+                logger.error(
+                    f"❌ Arkaplan upload/Excel worker beklenmeyen hatayla durdu: {exc}",
+                    exc_info=True,
+                )
+
         excel_flush_ok = self.excel.flush()
         if excel_flush_ok:
             with self.pending_excel_lock:
@@ -3031,7 +3048,8 @@ class PCMasterFactory:
             f"render_failed={render_failed} "
             f"upload_resumed={upload_resumed} "
             f"upload_failed={self.upload_failures} "
-            f"persistence_failed={self.persistence_failures}"
+            f"persistence_failed={self.persistence_failures} "
+            f"worker_failed={self.worker_failures}"
         )
         logger.info(f"📊 Durum Özeti: {self.state.get_summary()}")
         logger.info(f"📁 Çıktı Excel: {self.excel.file_path}")
@@ -3066,6 +3084,13 @@ class PCMasterFactory:
             logger.error(
                 f"❌ {self.persistence_failures} durum kaydı DB'ye güvenli "
                 "şekilde yazılamadı. Koşu tamamlanmış sayılmayacak."
+            )
+            return False
+
+        if self.worker_failures > 0:
+            logger.error(
+                f"❌ {self.worker_failures} arkaplan worker hatası oluştu. "
+                "Koşu tamamlanmış sayılmayacak."
             )
             return False
 
