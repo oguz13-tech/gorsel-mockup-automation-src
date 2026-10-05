@@ -1414,6 +1414,8 @@ class MockupRenderer:
         fg_mask = None
         cache_file = None
         cache_loaded = False
+        foreground_analysis_completed = not auto_foreground
+        foreground_failure_reason = None
         try:
             source_for_mask = orig_bg_cv if orig_bg_cv is not None else bg_cv
             h_mask, w_mask = source_for_mask.shape[:2]
@@ -1469,6 +1471,8 @@ class MockupRenderer:
 
                 fg_mask = _read_mask(cache_file)
                 cache_loaded = fg_mask is not None
+                if cache_loaded:
+                    foreground_analysis_completed = True
 
                 if not cache_loaded:
                     for legacy_path in (legacy_cache_cat, legacy_cache):
@@ -1476,6 +1480,7 @@ class MockupRenderer:
                         if legacy_mask is not None:
                             fg_mask = legacy_mask
                             cache_loaded = True
+                            foreground_analysis_completed = True
                             _save_mask_atomic(cache_file, fg_mask)
                             logger.info(
                                 f"[MASK] Legacy ön plan maskesi yeni cache adına taşındı: {cache_file.name}"
@@ -1502,6 +1507,7 @@ class MockupRenderer:
                     if ai_result.get("success") and ai_result.get("mask") is not None:
                         fg_mask = _normalize_mask(ai_result["mask"])
                         cache_loaded = True
+                        foreground_analysis_completed = True
                         if cache_file is not None:
                             _save_mask_atomic(cache_file, fg_mask)
                         logger.info(
@@ -1510,14 +1516,18 @@ class MockupRenderer:
                             f"confidence={ai_result.get('confidence', 0.0)}"
                         )
                     else:
+                        foreground_failure_reason = str(
+                            ai_result.get("reason", "unknown")
+                        )
                         logger.warning(
                             "[MASK_AI] Otomatik ön plan analizi sonuç vermedi: "
-                            f"{ai_result.get('reason', 'unknown')}"
+                            f"{foreground_failure_reason}"
                         )
                 except Exception as exc:
-                    # Occlusion AI is enhancement, never a reason to destroy a
-                    # valid render. Manual/cache path remains available.
-                    logger.warning(f"[MASK_AI] Otomatik maskeleme kullanılamadı: {exc}")
+                    foreground_failure_reason = str(exc)
+                    logger.warning(
+                        f"[MASK_AI] Otomatik maskeleme kullanılamadı: {exc}"
+                    )
 
             # Manual Object Selection / brush corrections are additive to the
             # automatic mask. Subtract brush remains handled inside on_plan.
@@ -1532,6 +1542,27 @@ class MockupRenderer:
                 )
                 fg_mask = _normalize_mask(fg_mask)
 
+                # A reviewed positive manual selection is sufficient evidence
+                # even when the optional AI path is unavailable. A subtract-
+                # only plan is not sufficient without an AI/cache base mask.
+                if isinstance(on_plan, list):
+                    if len(on_plan) >= 3:
+                        foreground_analysis_completed = True
+                elif isinstance(on_plan, dict):
+                    if on_plan.get("object_boxes") or on_plan.get("add_brush"):
+                        foreground_analysis_completed = True
+
+            if auto_foreground and not foreground_analysis_completed:
+                raise RuntimeError(
+                    "Occlusion-safe render blocked: foreground analysis "
+                    "did not complete"
+                    + (
+                        f" ({foreground_failure_reason})"
+                        if foreground_failure_reason
+                        else ""
+                    )
+                )
+
             if fg_mask is not None and np.any(fg_mask):
                 final = MockupRenderer.restore_foreground(
                     final,
@@ -1539,6 +1570,11 @@ class MockupRenderer:
                     fg_mask,
                 )
         except Exception as e:
+            if auto_foreground:
+                # For occlusion-sensitive templates an uncertain foreground
+                # result is worse than a failed render. Propagate so the factory
+                # can quarantine/retry instead of silently painting over objects.
+                raise
             logger.warning(f"[FOREGROUND_RESTORE] Ön plan geri yükleme hatası: {e}")
 
         # ---------------------------------------------------------
