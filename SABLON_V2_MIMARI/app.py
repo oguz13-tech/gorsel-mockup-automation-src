@@ -921,6 +921,18 @@ def api_templates_update_corners():
         corners = req.get("corners")
         req_category = str(req.get("category") or "").strip()
         req_template = str(req.get("template") or "").strip()
+        req_on_plan = req.get("on_plan")
+        if req_on_plan is not None and not isinstance(req_on_plan, dict):
+            return jsonify({
+                "success": False,
+                "error": "on_plan maske verisi nesne olmali.",
+            }), 422
+        has_manual_occlusion = False
+        if isinstance(req_on_plan, dict):
+            has_manual_occlusion = bool(
+                req_on_plan.get("object_boxes")
+                or req_on_plan.get("add_brush")
+            )
         if not uid or corners is None:
             return jsonify({"success": False, "error": "Eksik parametre"}), 400
 
@@ -1078,7 +1090,7 @@ def api_templates_update_corners():
                            manually_verified, is_active
                        ) VALUES (
                            ?, ?, ?, ?, 'v2', 'manual-v1', ?, ?, ?, 'quad', ?,
-                           ?, NULL, NULL, 'default', ?, ?, ?, 0, 1.0, ?,
+                           ?, NULL, NULL, 'default', ?, ?, ?, ?, 1.0, ?,
                            'APPROVED', 1, 1
                        )""",
                     (
@@ -1094,6 +1106,7 @@ def api_templates_update_corners():
                         int(bool(rule.get("has_frame"))),
                         int(bool(rule.get("has_mat"))),
                         int(bool(rule.get("has_reflection"))),
+                        int(has_manual_occlusion),
                         json.dumps(manual_components),
                     ),
                 )
@@ -1102,6 +1115,7 @@ def api_templates_update_corners():
                 conn.execute(
                     """UPDATE template_profiles
                        SET surface_quad=?, orientation=?, nominal_aspect=?,
+                           has_occlusion=?,
                            confidence_total=1.0, component_confidences=?,
                            review_status='APPROVED', manually_verified=1,
                            updated_at=CURRENT_TIMESTAMP
@@ -1110,6 +1124,7 @@ def api_templates_update_corners():
                         json.dumps(canonical.tolist()),
                         orientation,
                         nominal_aspect,
+                        int(has_manual_occlusion),
                         json.dumps(manual_components),
                         profile_id,
                     ),
@@ -1132,6 +1147,8 @@ def api_templates_update_corners():
                     legacy_data = {}
                 legacy_data["tip"] = "perspektif"
                 legacy_data["koseler"] = canonical.tolist()
+                if isinstance(req_on_plan, dict):
+                    legacy_data["on_plan"] = req_on_plan
                 conn.execute(
                     """UPDATE templates SET data=?
                        WHERE category_id=? AND filename=?""",
