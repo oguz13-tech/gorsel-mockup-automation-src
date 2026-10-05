@@ -59,6 +59,27 @@ class TestEpic3ValidationGoldenCoverage(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertFalse(result["global_matches_category_total"])
 
+    def test_review_readiness_requires_unit_tests(self):
+        common = {
+            "commands_ok": True,
+            "diagnostic_ok": True,
+            "benchmark_ok": True,
+            "golden_coverage_ok": True,
+            "integrity_ok": True,
+        }
+        self.assertFalse(
+            bundle._review_readiness(
+                unit_tests_executed=False,
+                **common,
+            )
+        )
+        self.assertTrue(
+            bundle._review_readiness(
+                unit_tests_executed=True,
+                **common,
+            )
+        )
+
     def test_expanded_dataset_is_allowed(self):
         counts = {
             category: minimum + 3
