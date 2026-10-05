@@ -1425,6 +1425,104 @@ class MockupRenderer:
 
         return final
 
+    @staticmethod
+    def prepare_marketplace_canvas(
+        image_cv: np.ndarray,
+        target_width: int = 1200,
+        target_height: int = 1600,
+    ) -> np.ndarray:
+        """Return a marketplace-ready 3:4 canvas without cropping the scene.
+
+        The primary rendered template is always fitted with "contain" semantics:
+        no content is cropped and no non-uniform stretch is applied. If the
+        template aspect differs from the marketplace canvas, a heavily blurred
+        cover copy is used only as background extension.
+        """
+        if image_cv is None or image_cv.size == 0:
+            raise ValueError("Marketplace canvas received an empty image")
+        if target_width <= 0 or target_height <= 0:
+            raise ValueError("Marketplace output dimensions must be positive")
+
+        src_h, src_w = image_cv.shape[:2]
+        if src_w <= 0 or src_h <= 0:
+            raise ValueError("Marketplace source dimensions are invalid")
+
+        src_ratio = src_w / float(src_h)
+        target_ratio = target_width / float(target_height)
+
+        # Near-identical aspect: a uniform resize is sufficient.
+        if abs(src_ratio - target_ratio) <= 0.01:
+            return cv2.resize(
+                image_cv,
+                (target_width, target_height),
+                interpolation=cv2.INTER_LANCZOS4,
+            )
+
+        # Background extension may be cropped because it is decorative only.
+        cover_scale = max(
+            target_width / float(src_w),
+            target_height / float(src_h),
+        )
+        cover_w = max(target_width, int(round(src_w * cover_scale)))
+        cover_h = max(target_height, int(round(src_h * cover_scale)))
+        cover = cv2.resize(
+            image_cv,
+            (cover_w, cover_h),
+            interpolation=cv2.INTER_LANCZOS4,
+        )
+        x0 = max(0, (cover_w - target_width) // 2)
+        y0 = max(0, (cover_h - target_height) // 2)
+        background = cover[
+            y0:y0 + target_height,
+            x0:x0 + target_width,
+        ].copy()
+
+        # Strong blur prevents the extension from looking like duplicated
+        # product content while preserving the scene's overall light/color.
+        sigma = max(12.0, min(target_width, target_height) * 0.025)
+        background = cv2.GaussianBlur(background, (0, 0), sigmaX=sigma, sigmaY=sigma)
+
+        contain_scale = min(
+            target_width / float(src_w),
+            target_height / float(src_h),
+        )
+        fitted_w = max(1, int(round(src_w * contain_scale)))
+        fitted_h = max(1, int(round(src_h * contain_scale)))
+        fitted = cv2.resize(
+            image_cv,
+            (fitted_w, fitted_h),
+            interpolation=cv2.INTER_LANCZOS4,
+        )
+
+        x1 = (target_width - fitted_w) // 2
+        y1 = (target_height - fitted_h) // 2
+
+        # A narrow feather hides the rectangular join without materially
+        # changing the actual mockup/product region.
+        alpha = np.ones((fitted_h, fitted_w), dtype=np.float32)
+        feather_px = max(2, int(round(min(fitted_w, fitted_h) * 0.006)))
+        if feather_px > 1:
+            alpha[:feather_px, :] = 0.0
+            alpha[-feather_px:, :] = 0.0
+            alpha[:, :feather_px] = 0.0
+            alpha[:, -feather_px:] = 0.0
+            alpha = cv2.GaussianBlur(
+                alpha,
+                (0, 0),
+                sigmaX=max(1.0, feather_px * 0.45),
+                sigmaY=max(1.0, feather_px * 0.45),
+            )
+            alpha = np.clip(alpha, 0.0, 1.0)
+
+        roi = background[y1:y1 + fitted_h, x1:x1 + fitted_w].astype(np.float32)
+        fitted_f = fitted.astype(np.float32)
+        alpha_3c = alpha[..., None]
+        blended = fitted_f * alpha_3c + roi * (1.0 - alpha_3c)
+        background[y1:y1 + fitted_h, x1:x1 + fitted_w] = np.clip(
+            blended, 0, 255
+        ).astype(np.uint8)
+        return background
+
     @classmethod
     def process_mockup(cls, raw_path: Path, template_path: Path,
                        config: dict, is_glass: bool, output_path: Path, source_design_identity: str = None, template_identity: str = None, recipe_version: str = None, template_sha: str = None) -> bool:
@@ -1492,7 +1590,16 @@ class MockupRenderer:
             orig_path = USER_WORKSPACE_DIR / "2_SABLON_HAVUZU_ORIJINAL_YEDEK" / template_path.parent.name / template_path.name
             orig_bg_cv = None
             if orig_path.exists():
-                orig_bg_cv = cv2.imdecode(np.fromfile(str(orig_path), dtype=np.uint8), cv2.IMREAD_UNCHANGED)
+                orig_bg_cv = cv2.imdecode(
+                    np.fromfile(str(orig_path), dtype=np.uint8),
+                    cv2.IMREAD_UNCHANGED,
+                )
+                if (
+                    orig_bg_cv is not None
+                    and orig_bg_cv.ndim == 3
+                    and orig_bg_cv.shape[2] == 4
+                ):
+                    orig_bg_cv = orig_bg_cv[:, :, :3]
 
             final_cv = cls.render_cv2_optik(
                 art_cv, bg_cv, koseler, is_glass, 
@@ -1512,9 +1619,25 @@ class MockupRenderer:
                 logger.error(f"  ❌ Kalite Denetimi Başarısız ({raw_path.name}): {msg}. QUARANTINE!")
                 return False
 
+            # Marketplace-ready output. Defaults to Trendyol-friendly 3:4
+            # while allowing an explicit per-template override.
+            output_width = int(config.get("output_width", 1200) or 1200)
+            output_height = int(config.get("output_height", 1600) or 1600)
+            marketplace_ready = bool(config.get("marketplace_ready", True))
+            if marketplace_ready:
+                final_cv = cls.prepare_marketplace_canvas(
+                    final_cv,
+                    target_width=output_width,
+                    target_height=output_height,
+                )
+
             # Kaydet (Unicode güvenli)
             output_path.parent.mkdir(parents=True, exist_ok=True)
-            success, enc_img = cv2.imencode('.jpg', final_cv, [int(cv2.IMWRITE_JPEG_QUALITY), 95])
+            success, enc_img = cv2.imencode(
+                '.jpg',
+                final_cv,
+                [int(cv2.IMWRITE_JPEG_QUALITY), 95],
+            )
             if success:
                 enc_img.tofile(str(output_path))
                 return True
