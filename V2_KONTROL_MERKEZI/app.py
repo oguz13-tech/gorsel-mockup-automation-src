@@ -94,6 +94,7 @@ def safe_two_phase_rename(files, prefix):
 
     token = f".rename_tmp_{int(time.time() * 1000)}_"
     staged = []
+    finalized = []
     results = []
     try:
         # Stage first so target names can overlap original selected names.
@@ -105,14 +106,25 @@ def safe_two_phase_rename(files, prefix):
             os.rename(source, temp_path)
             staged.append((source, temp_path, ext))
 
-        for idx, (_, temp_path, ext) in enumerate(staged, 1):
+        for idx, (source, temp_path, ext) in enumerate(staged, 1):
             requested = os.path.join(folder, f"{prefix}{idx:03d}{ext}")
             target = collision_safe_path(requested)
             os.rename(temp_path, target)
+            finalized.append((source, temp_path, target))
             results.append(target)
         return results
     except Exception:
-        # Best-effort rollback for items still in staging.
+        # Roll completed phase-2 moves back into their unique staging names
+        # first. Directly moving target -> source is unsafe when a target name
+        # overlaps another selected file's original path (rename chains/swaps).
+        for _, temp_path, target in reversed(finalized):
+            if os.path.exists(target) and not os.path.exists(temp_path):
+                try:
+                    os.rename(target, temp_path)
+                except OSError:
+                    pass
+
+        # Once every recoverable file is back in staging, restore originals.
         for source, temp_path, _ in reversed(staged):
             if os.path.exists(temp_path) and not os.path.exists(source):
                 try:
