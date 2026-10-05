@@ -413,7 +413,10 @@ class StateManager:
 
     def is_artifact_completed(self, artifact_key: str) -> bool:
         row = self.get_artifact(artifact_key)
-        return row is not None and row.get("status") in ("COMPLETED", "UPLOADED")
+        # Legacy "UPLOADED" means cloud upload succeeded, but older code wrote
+        # that state before the Excel row was durably flushed. Only COMPLETED
+        # proves the full render -> upload -> Excel transaction finished.
+        return row is not None and row.get("status") == "COMPLETED"
 
     def save_render_artifact(self, data: dict) -> bool:
         if not data:
@@ -473,7 +476,7 @@ class StateManager:
                     """SELECT COUNT(*) AS c
                        FROM render_artifacts
                        WHERE sku=?
-                         AND status NOT IN ('COMPLETED', 'UPLOADED')""",
+                         AND status <> 'COMPLETED'""",
                     (sku,),
                 ).fetchone()["c"]
                 if int(pending) == 0:
@@ -2763,8 +2766,7 @@ class PCMasterFactory:
                         "artifact_state": artifact_state,
                         "completed": (
                             artifact_state is not None
-                            and artifact_state.get("status")
-                            in ("COMPLETED", "UPLOADED")
+                            and artifact_state.get("status") == "COMPLETED"
                         ),
                     })
 
@@ -2882,13 +2884,18 @@ class PCMasterFactory:
                     )
                     prior_status = prior_artifact.get("status")
                     pending_excel_only = (
-                        prior_status == "UPLOADED_PENDING_EXCEL"
+                        prior_status in ("UPLOADED_PENDING_EXCEL", "UPLOADED")
                         and prior_local.is_file()
                         and bool(prior_artifact.get("upload_url"))
                     )
                     can_resume_local = (
                         prior_status
-                        in ("RENDERED", "UPLOAD_FAILED", "UPLOADED_PENDING_EXCEL")
+                        in (
+                            "RENDERED",
+                            "UPLOAD_FAILED",
+                            "UPLOADED_PENDING_EXCEL",
+                            "UPLOADED",
+                        )
                         and prior_local.is_file()
                     )
 
