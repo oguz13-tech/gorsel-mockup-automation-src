@@ -73,6 +73,18 @@ MIN_GOLDEN_VALID_COUNTS = {
     "05_Ocak_Arkasi": 14,
 }
 
+# Runtime inputs that factory preflight is allowed to READ but never mutate.
+# Output, Excel and log directories are intentionally excluded because they are
+# production outputs rather than immutable validation inputs.
+RUNTIME_READONLY_INPUTS = (
+    Path("1_GELEN_KAGGLE_BASKILARI"),
+    Path("2_SABLON_HAVUZU"),
+    Path("2_SABLON_HAVUZU_ORIJINAL_YEDEK"),
+    Path("99_SISTEM_MOTORLARI_VE_KODLAR") / "SISTEM_MOTORU" / "ayarlar.json",
+    Path("99_SISTEM_MOTORLARI_VE_KODLAR") / "SISTEM_MOTORU" / "masks",
+    Path("SABLON_V2_MIMARI") / "ayarlar.db",
+)
+
 EXPECTED_BRANCH = "feature/epic-3-geometry-accuracy"
 
 
@@ -167,6 +179,30 @@ def _snapshot_dataset(dataset: Path) -> Dict[str, str]:
         rel = path.relative_to(dataset).as_posix()
         snapshot[rel] = _sha256_file(path)
     return snapshot
+
+
+def _snapshot_runtime_readonly_inputs(runtime_workspace: Path) -> Dict[str, Any]:
+    """Hash production inputs that preflight may read but must never mutate.
+
+    Each configured root records existence/type as well as per-file SHA-256 so
+    creating/deleting an empty directory is detected in addition to byte edits.
+    """
+    result: Dict[str, Any] = {}
+    for relative_root in RUNTIME_READONLY_INPUTS:
+        path = runtime_workspace / relative_root
+        key = relative_root.as_posix()
+        entry: Dict[str, Any] = {
+            "exists": path.exists(),
+            "is_dir": path.is_dir(),
+            "files": {},
+        }
+        if path.is_file():
+            entry["files"]["."] = _sha256_file(path)
+        elif path.is_dir():
+            for child in sorted(p for p in path.rglob("*") if p.is_file()):
+                entry["files"][child.relative_to(path).as_posix()] = _sha256_file(child)
+        result[key] = entry
+    return result
 
 
 def _parse_preflight(commands: List[Dict[str, Any]]) -> Dict[str, Any] | None:
@@ -511,6 +547,7 @@ def main() -> int:
         )
 
     dataset_before = _snapshot_dataset(dataset)
+    runtime_inputs_before = _snapshot_runtime_readonly_inputs(runtime_workspace)
     commands: List[Dict[str, Any]] = []
 
     # Never let a globally configured runtime override leak into source-only
@@ -657,10 +694,14 @@ def main() -> int:
         )
 
     dataset_after = _snapshot_dataset(dataset)
+    runtime_inputs_after = _snapshot_runtime_readonly_inputs(runtime_workspace)
     tracked_after = _tracked_worktree_snapshot()
     head_after = _git_head()
     branch_after = _git_branch()
     dataset_unchanged = dataset_before == dataset_after
+    runtime_readonly_inputs_unchanged = (
+        runtime_inputs_before == runtime_inputs_after
+    )
     tracked_worktree_unchanged = (
         tracked_before["fingerprint"] == tracked_after["fingerprint"]
     )
@@ -683,6 +724,9 @@ def main() -> int:
             "dataset_file_count_before": len(dataset_before),
             "dataset_file_count_after": len(dataset_after),
             "dataset_unchanged": dataset_unchanged,
+            "runtime_readonly_inputs_unchanged": runtime_readonly_inputs_unchanged,
+            "runtime_readonly_inputs_before": runtime_inputs_before,
+            "runtime_readonly_inputs_after": runtime_inputs_after,
             "expected_branch": EXPECTED_BRANCH,
             "branch_before": branch_before,
             "branch_after": branch_after,
@@ -779,6 +823,7 @@ def main() -> int:
 
     integrity_ok = bool(
         dataset_unchanged
+        and runtime_readonly_inputs_unchanged
         and branch_before == EXPECTED_BRANCH
         and git_revision_unchanged
         and not tracked_before["dirty"]
