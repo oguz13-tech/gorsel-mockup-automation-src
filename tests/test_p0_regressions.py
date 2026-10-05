@@ -88,6 +88,50 @@ class TestSQLiteBootstrap(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
+    def test_old_recipe_failure_does_not_block_current_product_completion(self):
+        from SISTEM_MOTORU.pc_master_factory import StateManager
+
+        sm = StateManager(db_path=self.db_path)
+        with sm.conn:
+            sm.conn.execute(
+                """INSERT INTO products (
+                       sku, master_id, kategori_key, barkod, model_kodu, status
+                   ) VALUES (?, ?, ?, ?, ?, ?)""",
+                ("sg-M00001", "M00001", "01_Wifi_Kutusu", "sg-M00001", "M-sg-M00001", "UPLOADED_PENDING_EXCEL"),
+            )
+            sm.conn.execute(
+                """INSERT INTO render_artifacts (
+                       artifact_key, sku, status
+                   ) VALUES (?, ?, ?)""",
+                ("old_source_01_Wifi_Kutusu_old_template_v2_old", "sg-M00001", "UPLOAD_FAILED"),
+            )
+            sm.conn.execute(
+                """INSERT INTO render_artifacts (
+                       artifact_key, sku, status
+                   ) VALUES (?, ?, ?)""",
+                ("new_source_01_Wifi_Kutusu_new_template_v3_epic3_20261005_r2", "sg-M00001", "UPLOADED_PENDING_EXCEL"),
+            )
+
+        sm.mark_artifacts_completed(
+            ["new_source_01_Wifi_Kutusu_new_template_v3_epic3_20261005_r2"],
+            recipe_version="v3_epic3_20261005_r2",
+        )
+
+        row = sm.conn.execute(
+            "SELECT status FROM products WHERE sku=?",
+            ("sg-M00001",),
+        ).fetchone()
+        self.assertEqual(row["status"], "COMPLETED")
+
+        old = sm.conn.execute(
+            "SELECT status FROM render_artifacts WHERE artifact_key LIKE 'old_source%'"
+        ).fetchone()
+        self.assertEqual(
+            old["status"],
+            "UPLOAD_FAILED",
+            "Historical recipe evidence must remain unchanged for audit/recovery",
+        )
+
     def test_state_manager_creates_db(self):
         sm = StateManager(db_path=self.db_path)
         
