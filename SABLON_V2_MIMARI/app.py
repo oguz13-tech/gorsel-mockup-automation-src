@@ -217,36 +217,98 @@ def api_tumunu_beyazlat():
 
 @app.route('/api/auto_detect_corners', methods=['POST'])
 def api_auto_detect_corners():
+    """Return a review-only geometry proposal from the current analyzer.
+
+    This endpoint intentionally does NOT persist or approve geometry. The UI can
+    move the four proposed points and only /api/templates/update_corners can turn
+    a human-confirmed quad into APPROVED geometry.
+    """
     try:
         active_cat = request.headers.get('X-Active-Category', '')
         active_tmpl = request.headers.get('X-Active-Template', '')
-        
-        if active_cat and active_tmpl:
-            img_path = os.path.join(BASE_DIR, "2_SABLON_HAVUZU", active_cat, active_tmpl)
-            if not os.path.exists(img_path):
-                return jsonify({"success": False, "error": "Resim dosyasi bulunamadi"}), 404
-                
-            img_cv = cv2.imdecode(np.fromfile(img_path, dtype=np.uint8), cv2.IMREAD_COLOR)
-            if img_cv is None:
-                return jsonify({"success": False, "error": "Resim okunamadi"}), 500
-                
-            corners = detect_document_corners(img_cv)
-            if corners is not None:
-                # Eger NumPy array ise listeye cevir, degilse zaten listedir.
-                corners_list = corners.tolist() if hasattr(corners, 'tolist') else corners
-                # Occlusion ve delik tespiti
-                occlusion_data = detect_occlusion_boxes(img_cv, corners_list)
+        if not active_cat or not active_tmpl:
+            return jsonify({"success": False, "error": "Parametre eksik"}), 400
+
+        img_path = _safe_template_path(active_cat, active_tmpl)
+        if not os.path.exists(img_path):
+            return jsonify({"success": False, "error": "Resim dosyasi bulunamadi"}), 404
+
+        img_cv = cv2.imdecode(
+            np.fromfile(img_path, dtype=np.uint8),
+            cv2.IMREAD_COLOR,
+        )
+        if img_cv is None:
+            return jsonify({"success": False, "error": "Resim okunamadi"}), 500
+
+        analyzer = TemplateAnalyzer()
+        analysis = analyzer.analyze(
+            img_path,
+            active_cat,
+            manual_geometry_prior=None,
+        )
+        corners = analysis.get("surface_quad")
+        engine = "template_analyzer"
+
+        # Conservative compatibility fallback: legacy detector may still find a
+        # proposal when every EPIC-3 generator fails. It remains review-only.
+        if corners is None:
+            legacy = detect_document_corners(img_cv)
+            if legacy is not None:
+                corners = (
+                    legacy.tolist()
+                    if hasattr(legacy, "tolist")
+                    else legacy
+                )
+                engine = "legacy_fallback"
+
+        if corners is None:
+            return jsonify({"success": False, "error": "Kose bulunamadi"}), 404
+
+        try:
+            arr = np.asarray(corners, dtype=np.float32)
+            valid, reason = GeometryValidator.is_valid_quad(
+                arr,
+                img_cv.shape[1],
+                img_cv.shape[0],
+            )
+            if not valid:
                 return jsonify({
-                    "success": True, 
-                    "corners": corners_list,
-                    "occlusions": occlusion_data
-                })
-            else:
-                return jsonify({"success": False, "error": "Kose bulunamadi"}), 404
-        return jsonify({"success": False, "error": "Parametre eksik"}), 400
+                    "success": False,
+                    "error": f"Algilanan geometri gecersiz: {reason}",
+                }), 422
+            corners = (
+                GeometryValidator.canonical_sort(arr)
+                .astype(float)
+                .tolist()
+            )
+        except Exception as exc:
+            return jsonify({
+                "success": False,
+                "error": f"Algilanan geometri islenemedi: {exc}",
+            }), 422
+
+        # Lightweight legacy occlusion hints are UI assistance only. Production
+        # object-aware restoration uses the Grounding-DINO/SAM path plus manual
+        # mask corrections.
+        try:
+            occlusion_data = detect_occlusion_boxes(img_cv, corners)
+        except Exception:
+            occlusion_data = []
+
+        return jsonify({
+            "success": True,
+            "corners": corners,
+            "occlusions": occlusion_data,
+            "engine": engine,
+            "confidence": float(analysis.get("confidence_total", 0.0) or 0.0),
+            "component_confidences": analysis.get("component_confidences", {}),
+            "review_status": "REVIEW_REQUIRED",
+            "nominal_aspect": analysis.get("nominal_aspect", "UNKNOWN"),
+        })
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        logger.exception("Otomatik kose onerisi hatasi")
         return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/api/sablon_sil', methods=['POST'])
