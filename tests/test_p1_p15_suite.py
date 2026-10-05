@@ -396,6 +396,67 @@ class TestP1_P15Acceptance(unittest.TestCase):
             new_hash = hashlib.sha256(f.read()).hexdigest()
         self.assertEqual(orig_hash, new_hash, "Calibration/Update endpoint must not modify source file")
 
+    def test_p13a_manual_corner_approval_preserves_known_occlusion(self):
+        from app import app
+        import hashlib
+
+        cat = "02_Cam_Tablo_Dikey"
+        tmpl = "occluded.png"
+        uid = f"{cat}_{tmpl}"
+        img_dir = os.path.join(self.temp_dir, "2_SABLON_HAVUZU", cat)
+        os.makedirs(img_dir, exist_ok=True)
+        img_path = os.path.join(img_dir, tmpl)
+        cv2.imwrite(img_path, np.zeros((120, 100, 3), dtype=np.uint8))
+        with open(img_path, "rb") as handle:
+            source_hash = hashlib.sha256(handle.read()).hexdigest()
+
+        conn = sqlite3.connect(self.db_path)
+        conn.execute(
+            """INSERT INTO template_profiles (
+                   template_uid, category, source_relative_path,
+                   source_asset_sha256, is_active, review_status,
+                   has_occlusion
+               ) VALUES (?, ?, ?, ?, 1, 'REVIEW_REQUIRED', 1)""",
+            (uid, cat, f"{cat}/{tmpl}", source_hash),
+        )
+        conn.execute(
+            "INSERT INTO templates (category_id, filename, data) VALUES (?, ?, ?)",
+            (cat, tmpl, json.dumps({"tip": "perspektif"})),
+        )
+        conn.commit()
+        conn.close()
+
+        target_db_dir = os.path.join(self.temp_dir, "SABLON_V2_MIMARI")
+        os.makedirs(target_db_dir, exist_ok=True)
+        target_db = os.path.join(target_db_dir, "ayarlar.db")
+        shutil.copy2(self.db_path, target_db)
+
+        app.testing = True
+        client = app.test_client()
+        with patch('app.BASE_DIR', self.temp_dir):
+            approved = client.post(
+                '/api/templates/update_corners',
+                json={
+                    "template_uid": uid,
+                    "corners": [[10, 10], [90, 10], [90, 110], [10, 110]],
+                },
+            )
+            self.assertEqual(approved.status_code, 200)
+
+        conn = sqlite3.connect(target_db)
+        try:
+            row = conn.execute(
+                """SELECT has_occlusion, review_status
+                   FROM template_profiles
+                   WHERE template_uid=? AND is_active=1""",
+                (uid,),
+            ).fetchone()
+        finally:
+            conn.close()
+
+        self.assertEqual(row[0], 1)
+        self.assertEqual(row[1], "APPROVED")
+
     def test_p13b_mixed_category_requires_explicit_physical_orientation(self):
         from app import app
         import hashlib
