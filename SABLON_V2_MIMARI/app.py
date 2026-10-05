@@ -536,12 +536,12 @@ def api_sablon_sil_geri_al():
         try:
             shutil.move(source_in_trash, restore_path)
             moved_back = True
-            save_template(cat, tmpl, conf)
 
             # A trash file can be modified outside the application before undo.
-            # Preserve approvals only when they still match the restored bytes;
-            # otherwise mark them stale immediately instead of leaving an active
-            # approval that production will only discover later by hash mismatch.
+            # Preserve approvals only when they still match the restored bytes.
+            # Do this BEFORE recreating the template row: if hash/profile safety
+            # work fails, rollback can return the image to trash without leaving
+            # a committed DB row that points to a missing source.
             restored_hash = _sha256_file(restore_path)
             _invalidate_stale_profiles_for_source(
                 cat,
@@ -549,6 +549,7 @@ def api_sablon_sil_geri_al():
                 os.path.basename(restore_path),
                 restored_hash,
             )
+            save_template(cat, tmpl, conf)
         except Exception:
             if moved_back and os.path.exists(restore_path):
                 try:
