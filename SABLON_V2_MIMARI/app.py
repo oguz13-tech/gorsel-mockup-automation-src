@@ -49,7 +49,12 @@ def api_ayarlar():
                 for cat_name, cat_data in new_data["kategoriler"].items():
                     if "sablonlar" in cat_data:
                         for tmpl_name, tmpl_data in cat_data["sablonlar"].items():
-                            save_template(cat_name, tmpl_name, tmpl_data)
+                            bound_data = _bind_on_plan_source_identity(
+                                cat_name,
+                                tmpl_name,
+                                tmpl_data,
+                            )
+                            save_template(cat_name, tmpl_name, bound_data)
 
             return jsonify({"success": True})
         except Exception as e:
@@ -67,6 +72,7 @@ def api_tekil_sablon_kaydet():
         if not cat or not tmpl or not data:
             return jsonify({"success": False, "error": "Eksik parametre"}), 400
             
+        data = _bind_on_plan_source_identity(cat, tmpl, data)
         save_template(cat, tmpl, data)
         return jsonify({"success": True})
     except Exception as e:
@@ -81,7 +87,32 @@ def api_bulk_save_geometry():
         if not templates_list:
             return jsonify({"success": False, "error": "Boş liste gönderildi"}), 400
             
-        success, result = save_templates_bulk(templates_list)
+        safe_templates = []
+        for item in templates_list:
+            if not isinstance(item, dict):
+                return jsonify({
+                    "success": False,
+                    "error": "Geçersiz template kaydı",
+                }), 400
+            category = item.get("category")
+            filename = item.get("filename")
+            data = item.get("data")
+            if not category or not filename or not isinstance(data, dict):
+                return jsonify({
+                    "success": False,
+                    "error": "Bulk kayıtta category/filename/data eksik",
+                }), 400
+            safe_templates.append({
+                "category": category,
+                "filename": filename,
+                "data": _bind_on_plan_source_identity(
+                    category,
+                    filename,
+                    data,
+                ),
+            })
+
+        success, result = save_templates_bulk(safe_templates)
         if success:
             return jsonify({"success": True, "saved_count": result})
         else:
@@ -653,6 +684,40 @@ def _sha256_file(path: str) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _bind_on_plan_source_identity(
+    category: str,
+    template_name: str,
+    data: dict,
+) -> dict:
+    """Return a copy whose manual occlusion plan is bound to source bytes."""
+    if not isinstance(data, dict):
+        raise ValueError("Sablon verisi nesne olmali")
+
+    result = dict(data)
+    plan = result.get("on_plan")
+    if not plan:
+        result.pop("on_plan_source_sha256", None)
+        return result
+
+    source_path = _safe_template_path(category, template_name)
+    if not os.path.isfile(source_path):
+        # Never invent trust metadata if the exact source cannot be resolved.
+        result.pop("on_plan_source_sha256", None)
+        if isinstance(plan, dict):
+            clean_plan = dict(plan)
+            clean_plan.pop("source_asset_sha256", None)
+            result["on_plan"] = clean_plan
+        return result
+
+    source_hash = _sha256_file(source_path)
+    result["on_plan_source_sha256"] = source_hash
+    if isinstance(plan, dict):
+        bound_plan = dict(plan)
+        bound_plan["source_asset_sha256"] = source_hash
+        result["on_plan"] = bound_plan
+    return result
 
 
 def _load_matching_manual_prior(db_path, uid, img_path):
@@ -1266,6 +1331,7 @@ def api_templates_update_corners():
                     if plan_to_store:
                         plan_to_store["source_asset_sha256"] = source_hash
                     legacy_data["on_plan"] = plan_to_store
+                    legacy_data["on_plan_source_sha256"] = source_hash
                 conn.execute(
                     """UPDATE templates SET data=?
                        WHERE category_id=? AND filename=?""",
