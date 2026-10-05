@@ -1119,7 +1119,8 @@ def api_templates_reject():
         conn = sqlite3.connect(db_path)
         try:
             row = conn.execute(
-                """SELECT id, source_asset_sha256, source_relative_path
+                """SELECT id, source_asset_sha256, source_relative_path,
+                          has_occlusion
                    FROM template_profiles
                    WHERE template_uid=? AND is_active=1""",
                 (uid,),
@@ -1206,6 +1207,7 @@ def api_templates_update_corners():
                 profile_id = int(row["id"])
                 source_hash = row["source_asset_sha256"]
                 relative_path = row["source_relative_path"]
+                existing_has_occlusion = bool(row["has_occlusion"])
                 if not source_hash or not relative_path:
                     return jsonify({
                         "success": False,
@@ -1260,6 +1262,11 @@ def api_templates_update_corners():
                 category_name = req_category
                 template_name = req_template
                 profile_id = None
+                existing_has_occlusion = False
+
+            effective_has_occlusion = bool(
+                existing_has_occlusion or has_manual_occlusion
+            )
 
             image = cv2.imdecode(
                 np.fromfile(source_path, dtype=np.uint8),
@@ -1379,7 +1386,7 @@ def api_templates_update_corners():
                         int(bool(rule.get("has_frame"))),
                         int(bool(rule.get("has_mat"))),
                         int(bool(rule.get("has_reflection"))),
-                        int(has_manual_occlusion),
+                        int(effective_has_occlusion),
                         json.dumps(manual_components),
                     ),
                 )
@@ -1397,7 +1404,7 @@ def api_templates_update_corners():
                         json.dumps(canonical.tolist()),
                         physical_orientation,
                         nominal_aspect,
-                        int(has_manual_occlusion),
+                        int(effective_has_occlusion),
                         json.dumps(manual_components),
                         profile_id,
                     ),
