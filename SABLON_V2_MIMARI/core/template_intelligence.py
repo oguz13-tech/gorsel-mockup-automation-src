@@ -121,10 +121,15 @@ class GeometryValidator:
         if not (all(cp > 0 for cp in cross_prods) or all(cp < 0 for cp in cross_prods)):
              return False, "Self-intersecting segment or invalid ordering (cross product sign flip)"
              
-        # Aspect degeneracy check (max 10:1 ratio)
-        w_top = np.linalg.norm(edges[0])
-        h_left = np.linalg.norm(edges[3])
-        if w_top < 10 or h_left < 10 or w_top/h_left > 10.0 or h_left/w_top > 10.0:
+        # Aspect degeneracy check (max 10:1 ratio). Use both opposite
+        # sides so perspective shortening of one edge does not misclassify an
+        # otherwise valid plane.
+        side_lengths = [float(np.linalg.norm(edge)) for edge in edges]
+        if min(side_lengths) < 10:
+            return False, "Degenerate edge length"
+        avg_w = (side_lengths[0] + side_lengths[2]) * 0.5
+        avg_h = (side_lengths[1] + side_lengths[3]) * 0.5
+        if avg_w / avg_h > 10.0 or avg_h / avg_w > 10.0:
             return False, "Degenerate aspect ratio"
             
         # Homography condition number check (nondegeneracy)
@@ -399,7 +404,7 @@ class CandidateGenerators:
 
 class TemplateAnalyzer:
     def __init__(self):
-        self.version = "v1.7"
+        self.version = "v1.8"
         self.auto_approval_enabled = False
         
     def measure_edge_contrast(self, image_cv: np.ndarray, quad: np.ndarray) -> float:
@@ -567,13 +572,17 @@ class TemplateAnalyzer:
                 # Real candidate agreement
                 candidate_agreement = min(1.0, agreement_count / max(1, len(valid_cands)))
                 
-                # Real orientation score (does it match category expected orientation roughly?)
-                # We calculate aspect ratio of cand1
+                # Real orientation score. Opposite-edge averages are more
+                # stable under perspective than using only top/left edges.
                 w_top = np.linalg.norm(cand1[1] - cand1[0])
+                w_bottom = np.linalg.norm(cand1[2] - cand1[3])
                 h_left = np.linalg.norm(cand1[3] - cand1[0])
+                h_right = np.linalg.norm(cand1[2] - cand1[1])
+                avg_w = (w_top + w_bottom) * 0.5
+                avg_h = (h_left + h_right) * 0.5
                 orient_score = 0.5
-                if w_top > 0 and h_left > 0:
-                    ar = w_top / h_left
+                if avg_w > 0 and avg_h > 0:
+                    ar = avg_w / avg_h
                     cand_orient = "H" if ar > 1.05 else ("V" if ar < 0.95 else "SQUARE")
                     expected = rule.get("expected_orientation", "ANY")
                     if expected == "ANY":
@@ -601,12 +610,17 @@ class TemplateAnalyzer:
         orientation = "UNKNOWN"
         
         if best_quad:
-            pts = np.array(best_quad)
+            pts = np.asarray(best_quad, dtype=np.float32)
             w_top = np.linalg.norm(pts[1] - pts[0])
+            w_bottom = np.linalg.norm(pts[2] - pts[3])
             h_left = np.linalg.norm(pts[3] - pts[0])
-            if w_top > 0 and h_left > 0:
-                ar = w_top / h_left
-                # Only guess orientation, do NOT trust aspect ratio for nominal print ratio
+            h_right = np.linalg.norm(pts[2] - pts[1])
+            avg_w = (w_top + w_bottom) * 0.5
+            avg_h = (h_left + h_right) * 0.5
+            if avg_w > 0 and avg_h > 0:
+                ar = avg_w / avg_h
+                # Only infer orientation. Projected quad ratio is never stored
+                # as the nominal physical print aspect.
                 orientation = "H" if ar > 1.05 else ("V" if ar < 0.95 else "SQUARE")
                 
         if best_quad:
