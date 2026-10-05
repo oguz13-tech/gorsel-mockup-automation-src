@@ -253,6 +253,15 @@ def physical_aspect_for_product(
     return None
 
 
+def cached_foreground_mask_usable(mask: np.ndarray | None, foreground_required: bool) -> bool:
+    """Accept empty masks only when foreground evidence is not mandatory."""
+    if mask is None:
+        return False
+    if foreground_required:
+        return bool(np.any(mask))
+    return True
+
+
 def physical_orientation_verified(component_confidences) -> bool:
     """Return whether physical H/V provenance was explicitly trusted/reviewed."""
     payload = component_confidences
@@ -1533,12 +1542,9 @@ class MockupRenderer:
                 cache_file = MASK_CACHE_DIR / cache_name
 
                 fg_mask = _read_mask(cache_file)
-                cache_has_pixels = bool(
-                    fg_mask is not None and np.any(fg_mask)
-                )
-                cache_loaded = bool(
-                    fg_mask is not None
-                    and (cache_has_pixels or not foreground_required)
+                cache_loaded = cached_foreground_mask_usable(
+                    fg_mask,
+                    foreground_required,
                 )
                 if cache_loaded:
                     foreground_analysis_completed = True
@@ -2411,8 +2417,9 @@ def build_factory_preflight() -> dict:
                                         np.fromfile(str(cache_file), dtype=np.uint8),
                                         cv2.IMREAD_GRAYSCALE,
                                     )
-                                    has_cached_mask = bool(
-                                        cached is not None and np.any(cached)
+                                    has_cached_mask = cached_foreground_mask_usable(
+                                        cached,
+                                        True,
                                     )
                                 except Exception:
                                     has_cached_mask = False
