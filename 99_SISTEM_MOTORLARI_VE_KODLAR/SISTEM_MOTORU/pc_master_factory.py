@@ -1253,7 +1253,7 @@ class MockupRenderer:
             if template_name:
                 stem = Path(template_name).stem
                 safe_cat = category_name if category_name else "default"
-                mask_analyzer_version = "v2_auto_ai"
+                mask_analyzer_version = "v3_auto_ai"
                 cache_name = (
                     f"{safe_cat}_{template_sha}_{mask_analyzer_version}_mask.png"
                     if template_sha
@@ -1286,9 +1286,15 @@ class MockupRenderer:
                 try:
                     from foreground_ai import ForegroundAIEngine
 
+                    ai_cfg = on_plan if isinstance(on_plan, dict) else {}
                     ai_result = ForegroundAIEngine.get_instance().detect_foreground(
                         source_for_mask,
                         dst_pts.astype(float).tolist(),
+                        prompts=ai_cfg.get("ai_prompts"),
+                        box_threshold=float(ai_cfg.get("ai_box_threshold", 0.20)),
+                        text_threshold=float(ai_cfg.get("ai_text_threshold", 0.20)),
+                        min_surface_overlap=float(ai_cfg.get("ai_min_surface_overlap", 0.02)),
+                        feather=float(ai_cfg.get("ai_feather", 1.0)),
                     )
                     if ai_result.get("success") and ai_result.get("mask") is not None:
                         fg_mask = _normalize_mask(ai_result["mask"])
