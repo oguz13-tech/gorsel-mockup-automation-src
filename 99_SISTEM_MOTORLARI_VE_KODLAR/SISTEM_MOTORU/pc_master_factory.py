@@ -833,11 +833,26 @@ class SeoEngine:
                 "aciklama": desc_text
             }
 
-    def generate_title(self, prod_key: str, theme_title: str) -> str:
+    def generate_title(
+        self,
+        prod_key: str,
+        theme_title: str,
+        identity_seed: str = "",
+    ) -> str:
         data = self.cache.get(prod_key, {"keywords": ["Dekoratif", "Modern", "Lüks"]})
-        words = data["keywords"]
+        words = list(data["keywords"])
         prod_def = PRODUCT_CATALOG[prod_key]
-        sample_words = random.sample(words, min(3, len(words)))
+
+        # Product metadata must be idempotent across upload/Excel retries.
+        # Use a local deterministic RNG so the same logical product identity
+        # always receives the same keyword selection without mutating global RNG.
+        seed_material = f"{prod_key}|{theme_title}|{identity_seed}"
+        seed_value = int(
+            hashlib.sha256(seed_material.encode("utf-8")).hexdigest()[:16],
+            16,
+        )
+        rng = random.Random(seed_value)
+        sample_words = rng.sample(words, min(3, len(words)))
         clean_theme = theme_title.replace("_", " ").strip()
         
         # Trendyol için 80-100 karakter dengesi
@@ -3202,7 +3217,11 @@ class PCMasterFactory:
                             )
                             continue
 
-                    seo_title = self.seo.generate_title(prod_key, theme_title)
+                    seo_title = self.seo.generate_title(
+                        prod_key,
+                        theme_title,
+                        identity_seed=sku,
+                    )
                     seo_desc = self.seo.get_description(
                         prod_key, theme_title, style_key
                     )
