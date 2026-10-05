@@ -19,7 +19,6 @@ def _benchmark(valid_counts):
         total += valid
         categories[category] = {
             "attempted": valid,
-            "valid_evaluated": valid,
             "excluded": 0,
             "epic2": {"median_iou": 0.1, "recall_at_50": 0.1},
             "epic3": {"median_iou": 0.2, "recall_at_50": 0.2},
