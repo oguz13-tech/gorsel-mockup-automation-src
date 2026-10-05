@@ -40,6 +40,7 @@ import hashlib
 import logging
 import threading
 import argparse
+import importlib.util
 from pathlib import Path
 from dataclasses import dataclass, field
 from concurrent.futures import ThreadPoolExecutor
@@ -1856,6 +1857,205 @@ class FastExcelManager:
 # ==============================================================================
 # 9. ANA PC FABRİKA ORKESTRASYON MOTORU (Master Factory)
 # ==============================================================================
+def build_factory_preflight() -> dict:
+    """Read-only readiness report for one-button production.
+
+    This function never renders, uploads, mutates the template DB, or consumes
+    sequence numbers. It catches the common "start and fail 10 minutes later"
+    conditions before the factory is launched.
+    """
+    report = {
+        "ready": True,
+        "errors": [],
+        "warnings": [],
+        "manifest": {},
+        "templates": {},
+        "optional_ai": {},
+        "outputs": {},
+    }
+
+    manifest_path = FACTORY_DIR / "manifest.json"
+    items = []
+    if not manifest_path.is_file():
+        report["errors"].append(f"Manifest yok: {manifest_path}")
+    else:
+        try:
+            payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+            items = payload.get("items", []) if isinstance(payload, dict) else []
+            if not isinstance(items, list) or not items:
+                report["errors"].append("Manifest items listesi boş/geçersiz.")
+                items = []
+            report["manifest"]["item_count"] = len(items)
+        except Exception as exc:
+            report["errors"].append(f"Manifest okunamadı: {exc}")
+
+    # Check artwork source availability without changing/rotating source files.
+    missing_sources = []
+    for idx, item in enumerate(items, start=1):
+        if not isinstance(item, dict):
+            missing_sources.append(f"item#{idx}: geçersiz kayıt")
+            continue
+        master_id = item.get("master_id", f"item#{idx}")
+        h_raw = (
+            item.get("horizontal", {}).get("file", "")
+            if isinstance(item.get("horizontal"), dict)
+            else ""
+        ) or item.get("horizontal_path", "")
+        v_raw = (
+            item.get("vertical", {}).get("file", "")
+            if isinstance(item.get("vertical"), dict)
+            else ""
+        ) or item.get("vertical_path", "")
+
+        def _resolve(raw, suffix):
+            candidate = Path(raw) if raw else Path()
+            if raw and not candidate.is_absolute():
+                candidate = (FACTORY_DIR / candidate).resolve()
+            if not raw or not candidate.exists():
+                fallback = FACTORY_DIR / f"{master_id}_{suffix}.png"
+                if fallback.exists():
+                    return fallback
+                return None
+            return candidate
+
+        h_path = _resolve(h_raw, "H")
+        v_path = _resolve(v_raw, "V")
+        if h_path is None:
+            missing_sources.append(f"{master_id}: H master yok")
+        if v_path is None:
+            missing_sources.append(f"{master_id}: V master yok")
+
+    report["manifest"]["missing_sources"] = missing_sources
+    if missing_sources:
+        report["warnings"].append(
+            f"{len(missing_sources)} H/V master kaynağı bulunamadı; ilgili kategoriler atlanabilir."
+        )
+
+    # Approved geometry must still match the exact source bytes.
+    profile_db = USER_WORKSPACE_DIR / "SABLON_V2_MIMARI" / "ayarlar.db"
+    if not profile_db.is_file():
+        report["errors"].append(f"Şablon profil DB yok: {profile_db}")
+    else:
+        try:
+            conn = sqlite3.connect(str(profile_db))
+            conn.row_factory = sqlite3.Row
+            try:
+                for category, product in PRODUCT_CATALOG.items():
+                    rows = conn.execute(
+                        """SELECT template_uid, source_relative_path,
+                                  source_asset_sha256, orientation,
+                                  nominal_aspect, surface_quad
+                           FROM template_profiles
+                           WHERE category=? AND review_status='APPROVED'
+                             AND is_active=1""",
+                        (category,),
+                    ).fetchall()
+
+                    usable = 0
+                    stale = 0
+                    invalid = 0
+                    orientation_mismatch = 0
+                    for row in rows:
+                        rel = row["source_relative_path"]
+                        if not rel:
+                            invalid += 1
+                            continue
+                        path = (SABLON_DIR / rel).resolve()
+                        try:
+                            if SABLON_DIR.resolve() not in path.parents:
+                                invalid += 1
+                                continue
+                        except Exception:
+                            invalid += 1
+                            continue
+                        if not path.is_file() or not row["source_asset_sha256"]:
+                            invalid += 1
+                            continue
+
+                        digest = hashlib.sha256()
+                        try:
+                            with path.open("rb") as handle:
+                                for chunk in iter(
+                                    lambda: handle.read(1024 * 1024), b""
+                                ):
+                                    digest.update(chunk)
+                        except OSError:
+                            invalid += 1
+                            continue
+                        if digest.hexdigest() != row["source_asset_sha256"]:
+                            stale += 1
+                            continue
+
+                        try:
+                            quad = np.asarray(
+                                json.loads(row["surface_quad"]),
+                                dtype=np.float32,
+                            )
+                            if quad.shape != (4, 2) or not np.isfinite(quad).all():
+                                raise ValueError("invalid quad")
+                        except Exception:
+                            invalid += 1
+                            continue
+
+                        orientation = str(
+                            row["orientation"] or "UNKNOWN"
+                        ).upper()
+                        if category == "04_Cam_Dograma":
+                            orient_ok = orientation in ("H", "V")
+                        else:
+                            orient_ok = (
+                                orientation in ("UNKNOWN", product.orientation)
+                            )
+                        if not orient_ok:
+                            orientation_mismatch += 1
+                            continue
+                        usable += 1
+
+                    report["templates"][category] = {
+                        "approved": len(rows),
+                        "usable": usable,
+                        "stale": stale,
+                        "invalid": invalid,
+                        "orientation_mismatch": orientation_mismatch,
+                    }
+                    if usable == 0:
+                        report["errors"].append(
+                            f"{category}: source-valid APPROVED şablon yok."
+                        )
+            finally:
+                conn.close()
+        except Exception as exc:
+            report["errors"].append(f"Şablon profilleri okunamadı: {exc}")
+
+    # Optional occlusion AI does not block normal rendering.
+    for module_name in ("torch", "transformers"):
+        available = importlib.util.find_spec(module_name) is not None
+        report["optional_ai"][module_name] = available
+        if not available:
+            report["warnings"].append(
+                f"Opsiyonel ön-plan AI bağımlılığı yok: {module_name}"
+            )
+
+    for name, directory in {
+        "output": OUTPUT_DIR,
+        "output_multi": OUTPUT_COKLU_DIR,
+        "excel": EXCEL_DIR,
+        "logs": LOG_DIR,
+    }.items():
+        exists = directory.exists()
+        writable = exists and os.access(str(directory), os.W_OK)
+        report["outputs"][name] = {
+            "path": str(directory),
+            "exists": exists,
+            "writable": bool(writable),
+        }
+        if not writable:
+            report["errors"].append(f"Yazılamayan çıktı klasörü: {directory}")
+
+    report["ready"] = len(report["errors"]) == 0
+    return report
+
+
 class PCMasterFactory:
     def __init__(self, mode: str = "dongusel"):
         self.mode = mode   # "dongusel" veya "coklu"
@@ -2442,10 +2642,20 @@ def parse_args():
     p = argparse.ArgumentParser(description="PC Master Mockup & Commerce Factory V5")
     p.add_argument("--mod", choices=["dongusel", "coklu"], default="dongusel",
                    help="Dağıtım modu: 'dongusel' (tek klasör/tek excel) veya 'coklu' (K1..K11 klasörleri)")
+    p.add_argument(
+        "--preflight",
+        action="store_true",
+        help="Üretim yapmadan manifest/profil/çıktı/opsiyonel AI hazırlığını kontrol et.",
+    )
     return p.parse_args()
 
 if __name__ == "__main__":
     args = parse_args()
+    if args.preflight:
+        preflight = build_factory_preflight()
+        print(json.dumps(preflight, ensure_ascii=False, indent=2))
+        raise SystemExit(0 if preflight["ready"] else 2)
+
     bot = PCMasterFactory(mode=args.mod)
     ok = bot.process_all()
     raise SystemExit(0 if ok else 1)
