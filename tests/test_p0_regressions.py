@@ -120,6 +120,22 @@ class TestSQLiteBootstrap(unittest.TestCase):
         )
 
 
+class TestDuplicateProfileIdentityGuard(unittest.TestCase):
+    def test_duplicate_profile_uids_returns_only_repeated_nonempty_ids(self):
+        from SISTEM_MOTORU.pc_master_factory import duplicate_profile_uids
+
+        rows = [
+            {"template_uid": "A"},
+            {"template_uid": "B"},
+            {"template_uid": "A"},
+            {"template_uid": ""},
+            {"template_uid": None},
+            {"template_uid": "C"},
+            {"template_uid": "C"},
+        ]
+        self.assertEqual(duplicate_profile_uids(rows), ["A", "C"])
+
+
 class TestForegroundCacheTrust(unittest.TestCase):
     def test_required_foreground_rejects_empty_cache(self):
         from SISTEM_MOTORU.pc_master_factory import cached_foreground_mask_usable
