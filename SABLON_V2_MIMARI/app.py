@@ -1197,7 +1197,8 @@ def api_templates_update_corners():
         conn.row_factory = sqlite3.Row
         try:
             row = conn.execute(
-                """SELECT id, source_asset_sha256, source_relative_path
+                """SELECT id, source_asset_sha256, source_relative_path,
+                          has_occlusion
                    FROM template_profiles
                    WHERE template_uid=? AND is_active=1""",
                 (uid,),
