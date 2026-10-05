@@ -29,7 +29,7 @@ class CategoryRuleEngine:
             "has_reflection": False,
             "print_policy": "inner_frame",
             "orientation_strict": True,
-            "expected_orientation": "ANY",
+            "expected_orientation": "V",
             "folders": ["03_Ahsap_Tablo"]
         },
         "GLASS_WALL_ART_VERTICAL": {
@@ -69,7 +69,7 @@ class CategoryRuleEngine:
             "has_reflection": False,
             "print_policy": "front_panel",
             "orientation_strict": True,
-            "expected_orientation": "ANY",
+            "expected_orientation": "H",
             "folders": ["01_Wifi_Kutusu"]
         },
         "GLASS_BACKSPLASH": {
@@ -666,12 +666,13 @@ class TemplateAnalyzer:
                     best_quad = cand1.tolist()
                     best_components = comp_conf
                 
-        # Nominal aspect is physical product metadata, never projected-quad
-        # geometry. Orientation is inferred only to select H/V metadata for
-        # categories that legitimately support both directions.
+        # Physical orientation/aspect metadata must never be inferred from
+        # projected image geometry. A perspective quad may look wider than tall
+        # even when the real product is physically vertical.
         nominal_aspect = "UNKNOWN"
         orientation = "UNKNOWN"
-        
+        projected_orientation = "UNKNOWN"
+
         if best_quad:
             pts = np.asarray(best_quad, dtype=np.float32)
             w_top = np.linalg.norm(pts[1] - pts[0])
@@ -682,16 +683,23 @@ class TemplateAnalyzer:
             avg_h = (h_left + h_right) * 0.5
             if avg_w > 0 and avg_h > 0:
                 ar = avg_w / avg_h
-                # Only infer orientation. Projected quad ratio is never stored
-                # as the nominal physical print aspect.
-                orientation = "H" if ar > 1.05 else ("V" if ar < 0.95 else "SQUARE")
+                projected_orientation = (
+                    "H" if ar > 1.05 else ("V" if ar < 0.95 else "SQUARE")
+                )
 
-        metadata_orientation = rule.get("expected_orientation", "ANY")
-        if metadata_orientation not in ("H", "V"):
-            metadata_orientation = orientation
+        expected_orientation = rule.get("expected_orientation", "ANY")
+        if expected_orientation in ("H", "V"):
+            orientation = expected_orientation
+        elif isinstance(manual_geometry_prior, dict):
+            prior_orientation = str(
+                manual_geometry_prior.get("physical_orientation") or ""
+            ).upper()
+            if prior_orientation in ("H", "V"):
+                orientation = prior_orientation
+
         physical_aspect = CategoryRuleEngine.get_nominal_aspect(
             category_folder,
-            metadata_orientation,
+            orientation,
         )
         if physical_aspect is not None:
             nominal_aspect = f"{physical_aspect:.8f}".rstrip("0").rstrip(".")
@@ -718,6 +726,7 @@ class TemplateAnalyzer:
             "review_status": status,
             "rule": rule,
             "orientation": orientation,
+            "projected_orientation": projected_orientation,
             "nominal_aspect": nominal_aspect,
             "analyzer_version": self.version
         }
