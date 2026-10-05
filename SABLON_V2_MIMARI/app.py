@@ -573,6 +573,16 @@ def api_sablon_sil_geri_al():
         logger.exception("Sablon geri alma hatasi")
         return jsonify({"success": False, "error": str(e)}), 500
 
+def _path_within_root(root: str, candidate: str) -> bool:
+    """Return True only when candidate resolves inside root (prefix-safe)."""
+    root_abs = os.path.abspath(str(root))
+    candidate_abs = os.path.abspath(str(candidate))
+    try:
+        return os.path.commonpath([root_abs, candidate_abs]) == root_abs
+    except ValueError:
+        return False
+
+
 @app.route('/preview/<cat>/<tmpl>')
 def serve_preview(cat, tmpl):
     import urllib.parse
@@ -583,7 +593,7 @@ def serve_preview(cat, tmpl):
     safe_preview_base = os.path.abspath(os.path.join(BASE_DIR, "YENI-BOS MOCKUP SABLON HAVUZU"))
     preview_path = os.path.abspath(os.path.join(safe_preview_base, cat, stem + "-beyazlatilmis-onizleme.png"))
     
-    if not preview_path.startswith(safe_preview_base):
+    if not _path_within_root(safe_preview_base, preview_path):
         return "Erisim engellendi", 403
         
     if os.path.exists(preview_path):
@@ -604,7 +614,7 @@ def serve_image(cat, tmpl):
     safe_yedek_base = os.path.abspath(YEDEK_IMG_DIR)
     img_path = os.path.abspath(os.path.join(safe_yedek_base, cat, tmpl))
     
-    if not img_path.startswith(safe_yedek_base):
+    if not _path_within_root(safe_yedek_base, img_path):
         return "Erisim engellendi", 403
         
     if not os.path.exists(img_path):
@@ -612,7 +622,7 @@ def serve_image(cat, tmpl):
         yedek_path = None
         for alt_ext in [".webp", ".jpg", ".jpeg", ".png", ".avif"]:
             cand = os.path.abspath(os.path.join(safe_yedek_base, cat, stem + alt_ext))
-            if cand.startswith(safe_yedek_base) and os.path.exists(cand):
+            if _path_within_root(safe_yedek_base, cand) and os.path.exists(cand):
                 yedek_path = cand
                 break
                 
@@ -621,11 +631,11 @@ def serve_image(cat, tmpl):
         else:
             safe_havuz_base = os.path.abspath(os.path.join(BASE_DIR, "2_SABLON_HAVUZU"))
             cand_png = os.path.abspath(os.path.join(safe_havuz_base, cat, stem + ".png"))
-            if cand_png.startswith(safe_havuz_base) and os.path.exists(cand_png):
+            if _path_within_root(safe_havuz_base, cand_png) and os.path.exists(cand_png):
                 img_path = cand_png
             else:
                 fallback_path = os.path.abspath(os.path.join(safe_havuz_base, cat, tmpl))
-                if fallback_path.startswith(safe_havuz_base):
+                if _path_within_root(safe_havuz_base, fallback_path):
                     img_path = fallback_path
                     
     if os.path.exists(img_path):
