@@ -147,7 +147,7 @@ db_lock = threading.RLock()
 # Render recipe participates in immutable artifact identity. Bump whenever
 # renderer/aspect/occlusion behavior changes so old artifacts are never silently
 # reused under a new visual contract.
-RECIPE_VERSION = "v3_epic3_20261005"
+RECIPE_VERSION = "v3_epic3_20261005_r2"
 
 # ==============================================================================
 # 2. ÜRÜN VE FORMAT SÖZLEŞMESİ (URUN_FORMAT_HARITASI)
