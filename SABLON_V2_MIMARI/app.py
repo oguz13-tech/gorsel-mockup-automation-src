@@ -1554,6 +1554,12 @@ def api_saglik_durumu():
 
 @app.route('/<path:filename>')
 def serve_temp_files(filename):
+    # Legacy compatibility route for temporary visual assets only. Never expose
+    # DB/config/source files through the broad catch-all URL surface.
+    allowed_exts = {".png", ".jpg", ".jpeg", ".webp", ".avif", ".gif"}
+    if Path(filename).suffix.lower() not in allowed_exts:
+        return "Yasak", 403
+
     safe_base = os.path.abspath(BASE_DIR)
     file_path = os.path.abspath(os.path.join(safe_base, filename))
     try:
