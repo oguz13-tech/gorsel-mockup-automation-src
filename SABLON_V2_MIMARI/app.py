@@ -978,11 +978,11 @@ def api_templates_approve():
 
             category_name = str(relative_path).replace("\\", "/").split("/", 1)[0]
             rule = CategoryRuleEngine.get_rule_by_folder(category_name)
-            expected_orientation = str(
-                rule.get("expected_orientation") or "ANY"
+            physical_rule_orientation = str(
+                rule.get("physical_orientation") or "ANY"
             ).upper()
-            if expected_orientation in ("H", "V"):
-                physical_orientation = expected_orientation
+            if physical_rule_orientation in ("H", "V"):
+                physical_orientation = physical_rule_orientation
             else:
                 physical_orientation = str(stored_orientation or "").upper()
                 if physical_orientation not in ("H", "V"):
@@ -1270,9 +1270,9 @@ def api_templates_update_corners():
             )
 
             rule = CategoryRuleEngine.get_rule_by_folder(category_name)
-            expected_orientation = rule.get("expected_orientation", "ANY")
-            if expected_orientation in ("H", "V"):
-                physical_orientation = expected_orientation
+            physical_rule_orientation = rule.get("physical_orientation", "ANY")
+            if physical_rule_orientation in ("H", "V"):
+                physical_orientation = physical_rule_orientation
             else:
                 if req_physical_orientation not in ("H", "V"):
                     return jsonify({
