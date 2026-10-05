@@ -100,6 +100,10 @@ def safe_two_phase_rename(files, prefix):
     if not files:
         return []
 
+    prefix = str(prefix or "")
+    if not prefix or "/" in prefix or "\\" in prefix or prefix in {".", ".."}:
+        raise ValueError("Dosya adı öneki klasör yolu içeremez.")
+
     normalized = [os.path.abspath(path) for path in files]
     folder = os.path.dirname(normalized[0])
     if any(os.path.dirname(path) != folder for path in normalized):
