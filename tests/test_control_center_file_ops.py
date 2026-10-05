@@ -34,6 +34,19 @@ class TestSafeTwoPhaseRename(unittest.TestCase):
             self.assertEqual(Path(results[0]).read_bytes(), b"alpha")
             self.assertEqual(Path(results[1]).read_bytes(), b"beta")
 
+    def test_prefix_cannot_escape_selected_folder(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            first = root / "a.txt"
+            first.write_bytes(b"alpha")
+
+            for prefix in ("../escaped_", "..\\escaped_", "/absolute_"):
+                with self.assertRaises(ValueError):
+                    control.safe_two_phase_rename([str(first)], prefix)
+
+            self.assertTrue(first.is_file())
+            self.assertEqual(first.read_bytes(), b"alpha")
+
     def test_phase_two_failure_restores_all_originals(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
