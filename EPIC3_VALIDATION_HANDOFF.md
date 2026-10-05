@@ -15,15 +15,28 @@ Production safety posture:
 
 ## One-command evidence bundle
 
-Run from the clean source workspace on exactly `feature/epic-3-geometry-accuracy`.
+Run from the dedicated clean validation clone on exactly `feature/epic-3-geometry-accuracy`.
 
-Before running, `git status --short` must show no staged/unstaged tracked changes. The validation bundle refuses the wrong branch or a dirty tracked worktree and verifies that branch + HEAD remain unchanged through the run.
+Do not rely on the shell's current directory. The previous local worker drifted back to a stale checkout, so every Git check must use `git -C` against the dedicated clone and the validation script must be called by absolute path.
+
+Before running, the following checks must agree and `git status --short` must show no staged/unstaged tracked changes:
+
+```powershell
+git -C "C:\AI_WORK\gorsel-mockup-automation-src-epic3-validation" fetch origin
+git -C "C:\AI_WORK\gorsel-mockup-automation-src-epic3-validation" checkout feature/epic-3-geometry-accuracy
+git -C "C:\AI_WORK\gorsel-mockup-automation-src-epic3-validation" pull --ff-only origin feature/epic-3-geometry-accuracy
+git -C "C:\AI_WORK\gorsel-mockup-automation-src-epic3-validation" status --short
+git -C "C:\AI_WORK\gorsel-mockup-automation-src-epic3-validation" rev-parse HEAD
+git -C "C:\AI_WORK\gorsel-mockup-automation-src-epic3-validation" rev-parse origin/feature/epic-3-geometry-accuracy
+```
+
+The two SHA values must be identical. The validation bundle refuses the wrong branch or a dirty tracked worktree and verifies that branch + HEAD remain unchanged through the run.
 
 Keep the real runtime workspace quiescent during validation: do not edit template approvals, source masters, template files, masks, or runtime configuration while the bundle is running. The bundle hashes these read-only runtime inputs before/after preflight and fails integrity if their existence or bytes change.
 
 Source code and mutable production data are intentionally separate:
 
-- clean source checkout: `C:\AI_WORK\gorsel-mockup-automation-src`
+- clean source checkout: `C:\AI_WORK\gorsel-mockup-automation-src-epic3-validation`
 - real runtime workspace: `C:\Users\oguzc\OneDrive\Masaüstü\GörselÜretme-ve-Mockup Otomasyonu`
 - golden dataset: `C:\AI_WORK\epic2_golden_benchmark`
 - evidence output: `C:\AI_WORK\epic3_validation`
@@ -31,7 +44,7 @@ Source code and mutable production data are intentionally separate:
 Do not copy the runtime DB/templates/golden dataset into the source checkout. The bundle injects the runtime workspace only into factory preflight while keeping the code under test bound to the current Git HEAD.
 
 ```powershell
-python scripts/epic3_validation_bundle.py --dataset C:\AI_WORK\epic2_golden_benchmark --output-dir C:\AI_WORK\epic3_validation --runtime-workspace "C:\Users\oguzc\OneDrive\Masaüstü\GörselÜretme-ve-Mockup Otomasyonu"
+python "C:\AI_WORK\gorsel-mockup-automation-src-epic3-validation\scripts\epic3_validation_bundle.py" --dataset "C:\AI_WORK\epic2_golden_benchmark" --output-dir "C:\AI_WORK\epic3_validation" --runtime-workspace "C:\Users\oguzc\OneDrive\Masaüstü\GörselÜretme-ve-Mockup Otomasyonu"
 ```
 
 The command writes these local-only artifacts:
