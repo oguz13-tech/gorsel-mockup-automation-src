@@ -1503,9 +1503,21 @@ class MockupRenderer:
                 cache_file = BASE_DIR / "masks" / cache_name
 
                 fg_mask = _read_mask(cache_file)
-                cache_loaded = fg_mask is not None
+                cache_has_pixels = bool(
+                    fg_mask is not None and np.any(fg_mask)
+                )
+                cache_loaded = bool(
+                    fg_mask is not None
+                    and (cache_has_pixels or not foreground_required)
+                )
                 if cache_loaded:
                     foreground_analysis_completed = True
+                elif fg_mask is not None and foreground_required:
+                    logger.warning(
+                        "[MASK] Occlusion-kritik şablonda boş cache güvenilir "
+                        f"sayılmadı: {cache_file.name}"
+                    )
+                    fg_mask = None
 
                 # Never auto-promote filename-only legacy masks into production.
                 # Those files are not bound to source bytes and can become stale
@@ -1837,7 +1849,8 @@ class MockupRenderer:
             # (food/knife/utensil objects in front of the printable glass).
             # Templates can override this explicitly with auto_foreground.
             foreground_required = bool(
-                config.get("has_occlusion")
+                category_name == "04_Cam_Dograma"
+                or config.get("has_occlusion")
                 or (
                     isinstance(on_plan, list)
                     and len(on_plan) >= 3
@@ -2357,7 +2370,18 @@ def build_factory_preflight() -> dict:
                                     "v3_auto_ai_mask.png"
                                 )
                             )
-                            has_cached_mask = cache_file.is_file()
+                            has_cached_mask = False
+                            if cache_file.is_file():
+                                try:
+                                    cached = cv2.imdecode(
+                                        np.fromfile(str(cache_file), dtype=np.uint8),
+                                        cv2.IMREAD_GRAYSCALE,
+                                    )
+                                    has_cached_mask = bool(
+                                        cached is not None and np.any(cached)
+                                    )
+                                except Exception:
+                                    has_cached_mask = False
 
                             item_name = f"{category}/{template_name}"
                             if has_positive_manual_plan or has_cached_mask:
