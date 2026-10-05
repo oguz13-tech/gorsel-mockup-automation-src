@@ -558,8 +558,9 @@ class TemplateAnalyzer:
                     "manual_prior": 1.0
                 }
                 provenance = "MANUAL_PRIOR"
-        else:
-            # Pipeline: Generators -> Validator -> Scorer
+        if best_quad is None:
+            # Pipeline: Generators -> Validator -> Scorer.
+            # An invalid manual prior must never suppress automatic recovery.
             candidates = []
             candidates.extend(CandidateGenerators.generate_canny_contours(img))
             candidates.extend(CandidateGenerators.generate_hough_lines_quad(img))
