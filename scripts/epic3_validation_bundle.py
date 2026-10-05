@@ -12,6 +12,7 @@ production outputs.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import subprocess
@@ -26,6 +27,22 @@ ENGINE = (
     / "99_SISTEM_MOTORLARI_VE_KODLAR"
     / "SISTEM_MOTORU"
     / "pc_master_factory.py"
+)
+
+REQUIRED_CATEGORIES = (
+    "01_Wifi_Kutusu",
+    "02_Cam_Tablo_Dikey",
+    "02_Cam_Tablo_Yatay",
+    "03_Ahsap_Tablo",
+    "04_Cam_Dograma",
+    "05_Ocak_Arkasi",
+)
+
+SCORER_CATEGORIES = (
+    "02_Cam_Tablo_Dikey",
+    "02_Cam_Tablo_Yatay",
+    "03_Ahsap_Tablo",
+    "05_Ocak_Arkasi",
 )
 
 
@@ -60,6 +77,62 @@ def _git_head() -> str:
     if proc.returncode != 0:
         return "UNKNOWN"
     return proc.stdout.strip()
+
+
+def _git_branch() -> str:
+    proc = subprocess.run(
+        ["git", "branch", "--show-current"],
+        cwd=str(ROOT),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    return proc.stdout.strip() if proc.returncode == 0 else "UNKNOWN"
+
+
+def _tracked_worktree_dirty() -> bool:
+    """Ignore untracked local evidence/helpers; reject modified tracked source."""
+    unstaged = subprocess.run(
+        ["git", "diff", "--quiet"],
+        cwd=str(ROOT),
+    )
+    staged = subprocess.run(
+        ["git", "diff", "--cached", "--quiet"],
+        cwd=str(ROOT),
+    )
+    return unstaged.returncode != 0 or staged.returncode != 0
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _snapshot_dataset(dataset: Path) -> Dict[str, str]:
+    """Hash the local golden dataset so validation cannot silently mutate it."""
+    snapshot: Dict[str, str] = {}
+    for path in sorted(p for p in dataset.rglob("*") if p.is_file()):
+        rel = path.relative_to(dataset).as_posix()
+        snapshot[rel] = _sha256_file(path)
+    return snapshot
+
+
+def _parse_preflight(commands: List[Dict[str, Any]]) -> Dict[str, Any] | None:
+    for item in commands:
+        if item.get("name") != "factory_preflight":
+            continue
+        for line in reversed(str(item.get("stdout") or "").splitlines()):
+            if line.startswith("PREFLIGHT_JSON="):
+                try:
+                    payload = json.loads(line.split("=", 1)[1])
+                except json.JSONDecodeError:
+                    return None
+                return payload if isinstance(payload, dict) else None
+    return None
 
 
 def _load_json(path: Path) -> Dict[str, Any]:
@@ -104,6 +177,24 @@ def _benchmark_summary(bench: Dict[str, Any]) -> Dict[str, Any]:
 
     epic2_iou = float(epic2.get("median_iou", 0.0) or 0.0)
     epic3_iou = float(epic3.get("median_iou", 0.0) or 0.0)
+
+    categories = {}
+    raw_categories = bench.get("categories") or {}
+    for category in REQUIRED_CATEGORIES:
+        row = raw_categories.get(category) or {}
+        old = row.get("epic2") or {}
+        new = row.get("epic3") or {}
+        categories[category] = {
+            "attempted": int(row.get("attempted", 0) or 0),
+            "excluded": int(row.get("excluded", 0) or 0),
+            "epic2_median_iou": float(old.get("median_iou", 0.0) or 0.0),
+            "epic3_median_iou": float(new.get("median_iou", 0.0) or 0.0),
+            "epic2_recall_at_50": float(old.get("recall_at_50", 0.0) or 0.0),
+            "epic3_recall_at_50": float(new.get("recall_at_50", 0.0) or 0.0),
+            "regressed_iou_count": int(row.get("regressed_iou_count", 0) or 0),
+            "improved_iou_count": int(row.get("improved_iou_count", 0) or 0),
+        }
+
     return {
         "attempted": int(bench.get("attempted", 0) or 0),
         "valid_evaluated": int(bench.get("valid_evaluated", 0) or 0),
@@ -114,6 +205,16 @@ def _benchmark_summary(bench: Dict[str, Any]) -> Dict[str, Any]:
         "epic2_recall_at_50": float(epic2.get("recall_at_50", 0.0) or 0.0),
         "epic3_recall_at_50": float(epic3.get("recall_at_50", 0.0) or 0.0),
         "epic3_not_worse_by_median_iou": epic3_iou >= epic2_iou,
+        "global_regressed_iou_count": int(
+            global_data.get("regressed_iou_count", 0) or 0
+        ),
+        "global_improved_iou_count": int(
+            global_data.get("improved_iou_count", 0) or 0
+        ),
+        "categories": categories,
+        "all_required_categories_present": all(
+            category in raw_categories for category in REQUIRED_CATEGORIES
+        ),
     }
 
 
@@ -158,16 +259,22 @@ def main() -> int:
     telemetry_json = out_dir / "scorer_telemetry.json"
     manifest_json = out_dir / "validation_manifest.json"
 
+    dataset_before = _snapshot_dataset(dataset)
+    tracked_dirty_before = _tracked_worktree_dirty()
     commands: List[Dict[str, Any]] = []
 
     if not args.skip_unit_tests:
         commands.append(
             _run(
-                "geometry_diagnostics_unit_tests",
+                "full_regression_suite",
                 [
                     sys.executable,
                     "-m",
                     "unittest",
+                    "tests/test_p0_regressions.py",
+                    "tests/test_p1_p15_suite.py",
+                    "tests/test_t1_client.py",
+                    "tests/test_benchmark_metrics.py",
                     "tests/test_geometry_diagnostics.py",
                     "-v",
                 ],
@@ -252,13 +359,39 @@ def main() -> int:
             }
         )
 
+    dataset_after = _snapshot_dataset(dataset)
+    tracked_dirty_after = _tracked_worktree_dirty()
+    dataset_unchanged = dataset_before == dataset_after
+    preflight = _parse_preflight(commands)
+
     evidence: Dict[str, Any] = {
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "head_sha": _git_head(),
+        "branch": _git_branch(),
         "dataset": str(dataset),
         "output_dir": str(out_dir),
         "commands": commands,
         "all_commands_ok": all(bool(item.get("ok")) for item in commands),
+        "integrity": {
+            "dataset_file_count_before": len(dataset_before),
+            "dataset_file_count_after": len(dataset_after),
+            "dataset_unchanged": dataset_unchanged,
+            "tracked_worktree_dirty_before": tracked_dirty_before,
+            "tracked_worktree_dirty_after": tracked_dirty_after,
+            "validation_created_tracked_changes": (
+                (not tracked_dirty_before) and tracked_dirty_after
+            ),
+        },
+        "preflight": preflight,
+        "manual_evidence_still_required": [
+            "representative real renders from all six categories",
+            "at least one text-containing artwork",
+            "H and V artwork sources",
+            "mixed-orientation cutting-board templates",
+            "at least one real occlusion case",
+            "UI review flow and exact manual-corner persistence",
+            "original production-source hash/byte immutability",
+        ],
         "auto_approval_assertion": (
             "This bundle does not enable or approve autonomous geometry."
         ),
@@ -281,12 +414,51 @@ def main() -> int:
     if telemetry_json.exists():
         try:
             telemetry = _load_json(telemetry_json)
+            telemetry_categories = sorted(
+                (telemetry.get("categories") or {}).keys()
+            )
             evidence["telemetry"] = {
                 "sample_count": int(telemetry.get("sample_count", 0) or 0),
-                "categories": sorted((telemetry.get("categories") or {}).keys()),
+                "categories": telemetry_categories,
+                "expected_scorer_categories": list(SCORER_CATEGORIES),
+                "missing_scorer_categories": [
+                    category
+                    for category in SCORER_CATEGORIES
+                    if category not in telemetry_categories
+                ],
             }
         except Exception as exc:
             evidence["telemetry_error"] = str(exc)
+
+    diagnostic_ok = bool(
+        (evidence.get("diagnostic_invariants") or {}).get(
+            "global_counts_match", False
+        )
+        and (evidence.get("diagnostic_invariants") or {}).get(
+            "all_category_counts_match", False
+        )
+    )
+    benchmark_ok = bool(
+        (evidence.get("benchmark") or {}).get(
+            "all_required_categories_present", False
+        )
+    )
+    integrity_ok = bool(
+        dataset_unchanged
+        and not evidence["integrity"]["validation_created_tracked_changes"]
+    )
+    evidence["bundle_checks"] = {
+        "commands_ok": evidence["all_commands_ok"],
+        "diagnostic_invariants_ok": diagnostic_ok,
+        "required_benchmark_categories_ok": benchmark_ok,
+        "integrity_ok": integrity_ok,
+        "ready_for_human_review": bool(
+            evidence["all_commands_ok"]
+            and diagnostic_ok
+            and benchmark_ok
+            and integrity_ok
+        ),
+    }
 
     manifest_json.write_text(
         json.dumps(evidence, ensure_ascii=False, indent=2),
@@ -304,7 +476,7 @@ def main() -> int:
             f"{bench['epic3_median_iou']:.3f}"
         )
 
-    return 0 if evidence["all_commands_ok"] else 1
+    return 0 if evidence["bundle_checks"]["ready_for_human_review"] else 1
 
 
 if __name__ == "__main__":
