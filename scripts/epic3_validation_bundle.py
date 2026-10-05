@@ -325,6 +325,58 @@ def _command_succeeded(commands: List[Dict[str, Any]], name: str) -> bool:
     return False
 
 
+def _cross_evidence_consistency(evidence: Dict[str, Any]) -> Dict[str, Any]:
+    benchmark = evidence.get("benchmark") or {}
+    diagnostics = evidence.get("diagnostic_invariants") or {}
+    bench_categories = benchmark.get("categories") or {}
+    diag_categories = diagnostics.get("categories") or {}
+
+    global_benchmark_valid = int(benchmark.get("valid_evaluated", 0) or 0)
+    global_diagnostic_valid = int(
+        diagnostics.get("global_valid_evaluated", 0) or 0
+    )
+    per_category = {}
+    for category in REQUIRED_CATEGORIES:
+        bench_valid = int(
+            (bench_categories.get(category) or {}).get(
+                "valid_evaluated",
+                0,
+            )
+            or 0
+        )
+        diag_valid = int(
+            (diag_categories.get(category) or {}).get(
+                "valid_evaluated",
+                0,
+            )
+            or 0
+        )
+        per_category[category] = {
+            "benchmark_valid": bench_valid,
+            "diagnostic_valid": diag_valid,
+            "match": (
+                category in bench_categories
+                and category in diag_categories
+                and bench_valid == diag_valid
+            ),
+        }
+
+    return {
+        "global_benchmark_valid": global_benchmark_valid,
+        "global_diagnostic_valid": global_diagnostic_valid,
+        "global_valid_match": global_benchmark_valid == global_diagnostic_valid,
+        "per_category": per_category,
+        "all_required_category_valid_counts_match": all(
+            item["match"] for item in per_category.values()
+        ),
+        "ok": bool(
+            global_benchmark_valid > 0
+            and global_benchmark_valid == global_diagnostic_valid
+            and all(item["match"] for item in per_category.values())
+        ),
+    }
+
+
 def _review_readiness(
     *,
     commands_ok: bool,
@@ -332,6 +384,8 @@ def _review_readiness(
     diagnostic_ok: bool,
     benchmark_ok: bool,
     golden_coverage_ok: bool,
+    telemetry_ok: bool,
+    cross_evidence_ok: bool,
     integrity_ok: bool,
 ) -> bool:
     """Fail closed unless every release-evidence gate was actually exercised."""
@@ -341,6 +395,8 @@ def _review_readiness(
         and diagnostic_ok
         and benchmark_ok
         and golden_coverage_ok
+        and telemetry_ok
+        and cross_evidence_ok
         and integrity_ok
     )
 
@@ -676,12 +732,14 @@ def main() -> int:
         except Exception as exc:
             evidence["telemetry_error"] = str(exc)
 
+    diagnostic_payload = evidence.get("diagnostic_invariants") or {}
+    diagnostic_categories = diagnostic_payload.get("categories") or {}
     diagnostic_ok = bool(
-        (evidence.get("diagnostic_invariants") or {}).get(
-            "global_counts_match", False
-        )
-        and (evidence.get("diagnostic_invariants") or {}).get(
-            "all_category_counts_match", False
+        diagnostic_payload.get("global_counts_match", False)
+        and diagnostic_payload.get("all_category_counts_match", False)
+        and all(
+            category in diagnostic_categories
+            for category in REQUIRED_CATEGORIES
         )
     )
     benchmark_ok = bool(
@@ -692,6 +750,18 @@ def main() -> int:
     golden_coverage_ok = bool(
         (evidence.get("golden_coverage") or {}).get("ok", False)
     )
+    evidence["cross_evidence_consistency"] = _cross_evidence_consistency(
+        evidence
+    )
+    cross_evidence_ok = bool(
+        evidence["cross_evidence_consistency"].get("ok", False)
+    )
+    telemetry_payload = evidence.get("telemetry") or {}
+    telemetry_ok = bool(
+        int(telemetry_payload.get("sample_count", 0) or 0) > 0
+        and "telemetry_error" not in evidence
+    )
+
     integrity_ok = bool(
         dataset_unchanged
         and branch_before == EXPECTED_BRANCH
@@ -706,6 +776,8 @@ def main() -> int:
         "diagnostic_invariants_ok": diagnostic_ok,
         "required_benchmark_categories_ok": benchmark_ok,
         "golden_coverage_ok": golden_coverage_ok,
+        "telemetry_has_samples": telemetry_ok,
+        "cross_evidence_consistency_ok": cross_evidence_ok,
         "integrity_ok": integrity_ok,
         "ready_for_human_review": _review_readiness(
             commands_ok=evidence["all_commands_ok"],
@@ -713,6 +785,8 @@ def main() -> int:
             diagnostic_ok=diagnostic_ok,
             benchmark_ok=benchmark_ok,
             golden_coverage_ok=golden_coverage_ok,
+            telemetry_ok=telemetry_ok,
+            cross_evidence_ok=cross_evidence_ok,
             integrity_ok=integrity_ok,
         ),
     }
