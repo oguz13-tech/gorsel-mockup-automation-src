@@ -365,11 +365,18 @@ def main() -> int:
         raise SystemExit(
             f"Runtime workspace directory not found: {runtime_workspace}"
         )
-    if runtime_workspace == ROOT:
-        raise SystemExit(
-            "Runtime workspace must be the real mutable production workspace, "
-            "not the clean source checkout."
-        )
+    for label, path in (
+        ("Runtime workspace", runtime_workspace),
+        ("Golden dataset", dataset),
+    ):
+        try:
+            path.relative_to(ROOT)
+        except ValueError:
+            pass
+        else:
+            raise SystemExit(
+                f"{label} must stay outside the clean source checkout: {path}"
+            )
 
     # Keep evidence out of the source repository by default. A caller can still
     # explicitly choose another location, but we refuse accidental in-repo output.
