@@ -221,7 +221,7 @@ def api_anlik_beyazlat():
         active_tmpl = request.headers.get('X-Active-Template', '')
         
         if active_cat and active_tmpl:
-            sm_dir = os.path.join(BASE_DIR, "99_SISTEM_MOTORLARI_VE_KODLAR", "SISTEM_MOTORU")
+            sm_dir = os.path.join(SOURCE_ROOT, "99_SISTEM_MOTORLARI_VE_KODLAR", "SISTEM_MOTORU")
             if sm_dir not in sys.path:
                 sys.path.append(sm_dir)
             from sablon_beyazlatma_motoru import whiten_canvas, imread_unicode, imwrite_unicode
@@ -266,7 +266,7 @@ def api_tumunu_beyazlat():
         
         ayarlar = get_all_ayarlar()
             
-        sm_dir = os.path.join(BASE_DIR, "99_SISTEM_MOTORLARI_VE_KODLAR", "SISTEM_MOTORU")
+        sm_dir = os.path.join(SOURCE_ROOT, "99_SISTEM_MOTORLARI_VE_KODLAR", "SISTEM_MOTORU")
         if sm_dir not in sys.path:
             sys.path.append(sm_dir)
         from sablon_beyazlatma_motoru import whiten_canvas, imread_unicode, imwrite_unicode
