@@ -2259,12 +2259,25 @@ def build_factory_preflight() -> dict:
                         (category,),
                     ).fetchall()
 
+                    uid_counts = {}
+                    for row in rows:
+                        uid = str(row["template_uid"] or "")
+                        uid_counts[uid] = uid_counts.get(uid, 0) + 1
+                    duplicate_approved_uids = sorted(
+                        uid
+                        for uid, count in uid_counts.items()
+                        if uid and count > 1
+                    )
+
                     usable = 0
                     stale = 0
                     invalid = 0
                     orientation_mismatch = 0
                     physical_orientation_unverified = 0
                     for row in rows:
+                        if str(row["template_uid"] or "") in duplicate_approved_uids:
+                            invalid += 1
+                            continue
                         rel = row["source_relative_path"]
                         if not rel:
                             invalid += 1
@@ -2441,7 +2454,14 @@ def build_factory_preflight() -> dict:
                         "invalid": invalid,
                         "orientation_mismatch": orientation_mismatch,
                         "physical_orientation_unverified": physical_orientation_unverified,
+                        "duplicate_approved_uids": duplicate_approved_uids,
                     }
+                    if duplicate_approved_uids:
+                        report["errors"].append(
+                            f"{category}: aynı template_uid için birden fazla "
+                            "aktif APPROVED profil var: "
+                            + ", ".join(duplicate_approved_uids)
+                        )
                     if usable == 0:
                         report["errors"].append(
                             f"{category}: source-valid APPROVED şablon yok."
@@ -2605,7 +2625,23 @@ class PCMasterFactory:
         )
         pool_root = SABLON_DIR.resolve()
 
+        uid_counts = {}
         for row in rows:
+            uid = str(row["template_uid"] or "")
+            uid_counts[uid] = uid_counts.get(uid, 0) + 1
+        duplicate_approved_uids = {
+            uid for uid, count in uid_counts.items() if uid and count > 1
+        }
+        if duplicate_approved_uids:
+            logger.error(
+                f"⏭️ {prod_key}: duplicate active APPROVED profile UID'leri "
+                "güvenlik nedeniyle render dışı bırakıldı: "
+                + ", ".join(sorted(duplicate_approved_uids))
+            )
+
+        for row in rows:
+            if str(row["template_uid"] or "") in duplicate_approved_uids:
+                continue
             relative_path = row["source_relative_path"]
             if not relative_path or not row["surface_quad"]:
                 logger.warning(f"⏭️ Eksik onaylı geometri atlandı: {row['template_uid']}")
