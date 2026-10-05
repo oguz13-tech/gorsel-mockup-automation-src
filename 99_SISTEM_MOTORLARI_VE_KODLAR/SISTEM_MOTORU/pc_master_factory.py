@@ -415,60 +415,137 @@ class StateManager:
 class AsyncCloudUploader:
     def __init__(self):
         cloud_cfg = AYARLAR.get("bulut_ayarlari", {})
-        self.imgbb_keys = cloud_cfg.get("imgbb_keys") or [k for k in os.environ.get("IMGBB_KEYS", "").split(",") if k]
-        self.freeimage_key = cloud_cfg.get("freeimage_key") or os.environ.get("FREEIMAGE_KEY", "")
+        configured_keys = cloud_cfg.get("imgbb_keys") or []
+        env_keys = os.environ.get("IMGBB_KEYS", "").split(",")
+        self.imgbb_keys = [
+            str(key).strip()
+            for key in (configured_keys or env_keys)
+            if str(key).strip()
+        ]
+        self.freeimage_key = str(
+            cloud_cfg.get("freeimage_key")
+            or os.environ.get("FREEIMAGE_KEY", "")
+            or ""
+        ).strip()
         self.active_key_idx = 0
         self.key_lock = threading.Lock()
-        self.freeimage_active = True
+        self.freeimage_active = bool(self.freeimage_key)
+
+    def has_provider(self) -> bool:
+        with self.key_lock:
+            has_imgbb = self.active_key_idx < len(self.imgbb_keys)
+        return has_imgbb or (self.freeimage_active and bool(self.freeimage_key))
+
+    def _get_imgbb_key(self):
+        with self.key_lock:
+            if self.active_key_idx >= len(self.imgbb_keys):
+                return None
+            return self.active_key_idx, self.imgbb_keys[self.active_key_idx]
+
+    def _retire_imgbb_key(self, expected_idx: int, reason: str):
+        with self.key_lock:
+            # Another upload thread may already have advanced the pool. Never
+            # advance twice for the same failed key.
+            if self.active_key_idx == expected_idx:
+                logger.warning(
+                    f"ImgBB Key-{expected_idx + 1} devre dışı: {reason}. "
+                    "Sıradaki anahtara geçiliyor..."
+                )
+                self.active_key_idx += 1
 
     def upload_sync(self, file_path: Path) -> Optional[str]:
         if not file_path.exists():
             return None
 
-        # 1. ImgBB Rotasyonu
-        while self.active_key_idx < len(self.imgbb_keys):
-            key = self.imgbb_keys[self.active_key_idx]
+        # 1. ImgBB rotation. Credentials are never logged.
+        while True:
+            key_info = self._get_imgbb_key()
+            if key_info is None:
+                break
+            key_idx, key = key_info
+
             try:
-                with open(file_path, "rb") as f:
+                with open(file_path, "rb") as handle:
                     res = requests.post(
                         "https://api.imgbb.com/1/upload",
                         data={"key": key},
-                        files={"image": f},
-                        timeout=25
+                        files={"image": handle},
+                        timeout=25,
                     )
-                if res.status_code == 200:
-                    data = res.json()
-                    return data.get("data", {}).get("url")
-                
-                # Rate limit / Kota aşımı
-                if "Rate limit" in res.text or res.status_code == 400:
-                    with self.key_lock:
-                        logger.warning(f"ImgBB Key-{self.active_key_idx+1} kotası doldu. Sıradakine geçiliyor...")
-                        self.active_key_idx += 1
-                        time.sleep(0.5)
-                    continue
-            except Exception as e:
-                logger.warning(f"ImgBB bağlantı hatası: {e}")
-                with self.key_lock:
-                    self.active_key_idx += 1
 
-        # 2. FreeImage Failover
-        if self.freeimage_active:
+                if res.status_code == 200:
+                    try:
+                        data = res.json()
+                    except ValueError:
+                        data = {}
+                    url = data.get("data", {}).get("url")
+                    if url:
+                        return url
+                    self._retire_imgbb_key(key_idx, "geçersiz başarı yanıtı")
+                    continue
+
+                body = (res.text or "").lower()
+                if (
+                    res.status_code in (400, 401, 403, 429)
+                    or "rate limit" in body
+                    or "quota" in body
+                ):
+                    self._retire_imgbb_key(
+                        key_idx,
+                        f"HTTP {res.status_code}",
+                    )
+                    continue
+
+                logger.warning(
+                    f"ImgBB geçici hata HTTP {res.status_code}; "
+                    "aynı anahtar daha sonra tekrar denenebilir."
+                )
+                break
+            except requests.RequestException as exc:
+                logger.warning(f"ImgBB bağlantı hatası: {exc}")
+                # Network failures do not prove the API key is bad; keep it.
+                break
+            except OSError as exc:
+                logger.error(f"Yüklenecek dosya okunamadı: {exc}")
+                return None
+
+        # 2. FreeImage failover. Do not call the service with an empty key.
+        if self.freeimage_active and self.freeimage_key:
             try:
-                with open(file_path, "rb") as f:
+                with open(file_path, "rb") as handle:
                     res = requests.post(
                         "https://freeimage.host/api/1/upload",
-                        data={"key": self.freeimage_key, "action": "upload", "format": "json"},
-                        files={"source": f},
-                        timeout=30
+                        data={
+                            "key": self.freeimage_key,
+                            "action": "upload",
+                            "format": "json",
+                        },
+                        files={"source": handle},
+                        timeout=30,
                     )
                 if res.status_code == 200:
-                    data = res.json()
-                    if "image" in data and "url" in data["image"]:
-                        return data["image"]["url"]
-            except Exception as e:
-                logger.warning(f"FreeImage bağlantı hatası: {e}")
-                self.freeimage_active = False
+                    try:
+                        data = res.json()
+                    except ValueError:
+                        data = {}
+                    url = data.get("image", {}).get("url")
+                    if url:
+                        return url
+
+                if res.status_code in (400, 401, 403):
+                    logger.warning(
+                        f"FreeImage sağlayıcısı devre dışı: HTTP {res.status_code}"
+                    )
+                    self.freeimage_active = False
+                else:
+                    logger.warning(
+                        f"FreeImage geçici hata: HTTP {res.status_code}"
+                    )
+            except requests.RequestException as exc:
+                logger.warning(f"FreeImage bağlantı hatası: {exc}")
+            except OSError as exc:
+                logger.error(f"Yüklenecek dosya okunamadı: {exc}")
+                return None
 
         return None
 
