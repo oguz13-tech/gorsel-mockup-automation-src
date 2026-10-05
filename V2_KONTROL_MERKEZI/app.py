@@ -11,10 +11,20 @@ from PIL import Image
 from flask import Flask, render_template, request, jsonify
 import tkinter as tk
 
-# Base Directory Setup
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SYS_MOTORS_DIR = os.path.join(BASE_DIR, "99_SISTEM_MOTORLARI_VE_KODLAR", "SISTEM_MOTORU")
-TEMPLATE_CENTER_DIR = os.path.join(BASE_DIR, "SABLON_V2_MIMARI")
+# Source code and mutable production data are intentionally separable.
+SOURCE_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_runtime_override = str(os.environ.get("MOCKUP_RUNTIME_WORKSPACE") or "").strip()
+BASE_DIR = os.path.abspath(
+    os.path.expanduser(_runtime_override)
+) if _runtime_override else SOURCE_ROOT
+
+SYS_MOTORS_DIR = os.path.join(
+    SOURCE_ROOT,
+    "99_SISTEM_MOTORLARI_VE_KODLAR",
+    "SISTEM_MOTORU",
+)
+TEMPLATE_CENTER_DIR = os.path.join(SOURCE_ROOT, "SABLON_V2_MIMARI")
+RUNTIME_TEMPLATE_CENTER_DIR = os.path.join(BASE_DIR, "SABLON_V2_MIMARI")
 
 RUNNING_PROCESSES = {}
 PROCESS_LOCK = threading.RLock()
@@ -28,7 +38,7 @@ def load_cloud_settings():
     may supply a FreeImage key without persisting it to disk.
     """
     settings = {}
-    db_path = os.path.join(TEMPLATE_CENTER_DIR, "ayarlar.db")
+    db_path = os.path.join(RUNTIME_TEMPLATE_CENTER_DIR, "ayarlar.db")
     try:
         conn = sqlite3.connect(db_path)
         try:
@@ -307,7 +317,7 @@ def run_script():
 
     specs = {
         "SABLON_DUZELTICI": {
-            "path": os.path.join(BASE_DIR, "SABLON_DUZELTICI.py"),
+            "path": os.path.join(SOURCE_ROOT, "SABLON_DUZELTICI.py"),
             "cwd": BASE_DIR,
             "args": [],
             "display": "Şablon Motoru (Legacy)",
@@ -657,7 +667,7 @@ def seo_generator():
     except (ValueError, TypeError):
         adet = 10
     
-    script_dir = os.path.join(BASE_DIR, "ÜRÜN ADI YAZDIRMA BOTU")
+    script_dir = os.path.join(SOURCE_ROOT, "ÜRÜN ADI YAZDIRMA BOTU")
     script_path = os.path.join(script_dir, "Benzersiz-ürün-adlari-yaz.py")
     
     if not os.path.exists(script_path):
@@ -692,7 +702,7 @@ def ai_enhancer():
     if not kat or not str(kat).isdigit():
         kat = "4"
         
-    script_dir = os.path.join(BASE_DIR, "AI_Kalite_Artirici")
+    script_dir = os.path.join(SOURCE_ROOT, "AI_Kalite_Artirici")
     script_path = os.path.join(script_dir, "kalite_motoru.py")
     
     if not os.path.exists(script_path):
