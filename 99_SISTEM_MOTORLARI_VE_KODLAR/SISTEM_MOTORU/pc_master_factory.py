@@ -2336,10 +2336,6 @@ def build_factory_preflight() -> dict:
                                 report["occlusion"][
                                     "ai_required_templates"
                                 ].append(item_name)
-                            else:
-                                report["occlusion"][
-                                    "ai_required_templates"
-                                ].append(item_name)
 
                     report["templates"][category] = {
                         "approved": len(rows),
