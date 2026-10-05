@@ -836,7 +836,7 @@ def api_templates_foreground_detect():
         quad = GeometryValidator.canonical_sort(quad).astype(float).tolist()
 
         sm_dir = os.path.join(
-            BASE_DIR,
+            SOURCE_ROOT,
             "99_SISTEM_MOTORLARI_VE_KODLAR",
             "SISTEM_MOTORU",
         )
