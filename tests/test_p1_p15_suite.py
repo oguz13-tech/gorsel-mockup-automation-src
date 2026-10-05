@@ -407,7 +407,8 @@ class TestP1_P15Acceptance(unittest.TestCase):
         os.makedirs(img_dir, exist_ok=True)
         img_path = os.path.join(img_dir, tmpl)
         cv2.imwrite(img_path, np.zeros((120, 160, 3), dtype=np.uint8))
-        source_hash = hashlib.sha256(open(img_path, "rb").read()).hexdigest()
+        with open(img_path, "rb") as handle:
+            source_hash = hashlib.sha256(handle.read()).hexdigest()
 
         conn = sqlite3.connect(self.db_path)
         conn.execute(
@@ -455,7 +456,7 @@ class TestP1_P15Acceptance(unittest.TestCase):
         conn = sqlite3.connect(target_db)
         row = conn.execute(
             """SELECT orientation, nominal_aspect, review_status,
-                      manually_verified
+                      manually_verified, component_confidences
                FROM template_profiles
                WHERE template_uid=? AND is_active=1""",
             (uid,),
@@ -465,6 +466,9 @@ class TestP1_P15Acceptance(unittest.TestCase):
         self.assertAlmostEqual(float(row[1]), 3.0 / 4.0, places=6)
         self.assertEqual(row[2], "APPROVED")
         self.assertEqual(row[3], 1)
+        evidence = json.loads(row[4])
+        self.assertEqual(evidence["physical_orientation_verified"], 1.0)
+        self.assertEqual(evidence["physical_orientation_source"], "human_review")
 
     def test_p14_selector_selects_approved_compatible(self):
         from core.template_intelligence import TemplateSelector
