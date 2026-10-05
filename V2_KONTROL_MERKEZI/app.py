@@ -282,6 +282,62 @@ def process_status():
         }
     return jsonify({"status": "success", "processes": status})
 
+
+@app.route('/api/factory_preflight', methods=['GET'])
+def factory_preflight():
+    """Run the factory's read-only readiness gate and return structured data."""
+    script_path = os.path.join(SYS_MOTORS_DIR, "pc_master_factory.py")
+    if not os.path.isfile(script_path):
+        return jsonify({
+            "status": "error",
+            "ready": False,
+            "errors": ["pc_master_factory.py bulunamadı."],
+        }), 404
+
+    try:
+        completed = subprocess.run(
+            [sys.executable, script_path, "--preflight"],
+            cwd=BASE_DIR,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=90,
+        )
+    except subprocess.TimeoutExpired:
+        return jsonify({
+            "status": "error",
+            "ready": False,
+            "errors": ["Preflight 90 saniyede tamamlanamadı."],
+        }), 504
+    except Exception as exc:
+        return jsonify({
+            "status": "error",
+            "ready": False,
+            "errors": [f"Preflight başlatılamadı: {exc}"],
+        }), 500
+
+    payload = None
+    for line in reversed((completed.stdout or "").splitlines()):
+        if line.startswith("PREFLIGHT_JSON="):
+            try:
+                payload = json.loads(line.split("=", 1)[1])
+            except json.JSONDecodeError:
+                payload = None
+            break
+
+    if not isinstance(payload, dict):
+        return jsonify({
+            "status": "error",
+            "ready": False,
+            "errors": ["Preflight çıktısı okunamadı."],
+            "exit_code": completed.returncode,
+        }), 500
+
+    payload["status"] = "success" if payload.get("ready") else "blocked"
+    payload["exit_code"] = completed.returncode
+    return jsonify(payload), (200 if payload.get("ready") else 409)
+
 # --- ARAÇLAR (Tools) APILERI ---
 
 @app.route('/api/tools/format_convert', methods=['POST'])
