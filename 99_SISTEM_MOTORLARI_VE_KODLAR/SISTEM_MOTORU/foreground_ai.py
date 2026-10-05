@@ -18,7 +18,19 @@ if not logger.handlers:
 logger.setLevel(logging.INFO)
 
 ENGINE_DIR = Path(__file__).resolve().parent
-MASKS_DIR = ENGINE_DIR / "masks"
+SOURCE_ROOT = ENGINE_DIR.parent.parent
+_runtime_override = str(os.environ.get("MOCKUP_RUNTIME_WORKSPACE") or "").strip()
+RUNTIME_ROOT = (
+    Path(_runtime_override).expanduser().resolve()
+    if _runtime_override
+    else SOURCE_ROOT.resolve()
+)
+MASKS_DIR = (
+    RUNTIME_ROOT
+    / "99_SISTEM_MOTORLARI_VE_KODLAR"
+    / "SISTEM_MOTORU"
+    / "masks"
+)
 MASKS_DIR.mkdir(parents=True, exist_ok=True)
 
 
