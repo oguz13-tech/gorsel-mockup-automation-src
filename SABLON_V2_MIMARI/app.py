@@ -984,16 +984,14 @@ def api_templates_approve():
             if physical_rule_orientation in ("H", "V"):
                 physical_orientation = physical_rule_orientation
             else:
-                physical_orientation = str(stored_orientation or "").upper()
-                if physical_orientation not in ("H", "V"):
-                    return jsonify({
-                        "success": False,
-                        "error": (
-                            "Bu kategori icin fiziksel yon H/V secilmeden "
-                            "profil onaylanamaz."
-                        ),
-                        "code": "PHYSICAL_ORIENTATION_REQUIRED",
-                    }), 422
+                return jsonify({
+                    "success": False,
+                    "error": (
+                        "Bu kategori icin fiziksel H/V yonu editor uzerinden "
+                        "insan tarafindan secilip koselerle birlikte onaylanmalidir."
+                    ),
+                    "code": "PHYSICAL_ORIENTATION_REVIEW_REQUIRED",
+                }), 422
 
             nominal_value = CategoryRuleEngine.get_nominal_aspect(
                 category_name,
@@ -1304,6 +1302,12 @@ def api_templates_update_corners():
                 "line_score": 1.0,
                 "candidate_agreement": 1.0,
                 "orientation_score": 1.0,
+                "physical_orientation_verified": 1.0,
+                "physical_orientation_source": (
+                    "category_contract"
+                    if physical_rule_orientation in ("H", "V")
+                    else "human_review"
+                ),
             }
 
             if profile_id is None:
