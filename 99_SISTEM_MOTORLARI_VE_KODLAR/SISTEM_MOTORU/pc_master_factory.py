@@ -340,6 +340,15 @@ def physical_orientation_verified(component_confidences) -> bool:
 # ==============================================================================
 import sqlite3
 
+
+def open_sqlite_readonly(path: Path) -> sqlite3.Connection:
+    """Open a SQLite database with an OS-enforced read-only connection."""
+    uri = path.resolve().as_uri() + "?mode=ro"
+    conn = sqlite3.connect(uri, uri=True)
+    conn.execute("PRAGMA query_only = ON")
+    return conn
+
+
 def load_ayarlar() -> dict:
     # SABLON_V2_MIMARI'daki SQLite db'sine baglanti
     db_path = USER_WORKSPACE_DIR / "SABLON_V2_MIMARI" / "ayarlar.db"
@@ -356,7 +365,7 @@ def load_ayarlar() -> dict:
         }
         
     try:
-        conn = sqlite3.connect(str(db_path))
+        conn = open_sqlite_readonly(db_path)
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
         
@@ -2301,7 +2310,7 @@ def build_factory_preflight() -> dict:
         report["errors"].append(f"Şablon profil DB yok: {profile_db}")
     else:
         try:
-            conn = sqlite3.connect(str(profile_db))
+            conn = open_sqlite_readonly(profile_db)
             conn.row_factory = sqlite3.Row
             try:
                 for category, product in PRODUCT_CATALOG.items():
