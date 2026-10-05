@@ -82,6 +82,41 @@ def _dedupe_valid(candidates: List[Dict], w: int, h: int):
     return result
 
 
+def _prepare_runtime_candidates(
+    analyzer: TemplateAnalyzer,
+    image: np.ndarray,
+    candidates: List[Dict],
+) -> List[Dict]:
+    """Mirror TemplateAnalyzer's bounded runtime candidate preparation.
+
+    Telemetry must compare scorers on the same candidate set production can
+    actually select. The production analyzer de-duplicates candidates and, when
+    recall expansion produces more than 180 proposals, keeps the top 180 using
+    only runtime-visible area plausibility + edge evidence. Reproduce that
+    exact bound here instead of evaluating a larger offline-only candidate set.
+    """
+    h, w = image.shape[:2]
+    prepared = list(candidates)
+    max_candidates = 180
+    if len(prepared) <= max_candidates:
+        return prepared
+
+    pre_ranked = []
+    for item in prepared:
+        quad = item["quad"]
+        area = float(abs(cv2.contourArea(quad.astype(np.float32))))
+        area_ratio = min(1.0, area / float(w * h))
+        line_score = analyzer.measure_edge_contrast(image, quad)
+        pre_score = (
+            analyzer.score_area_plausibility(area_ratio) * 0.35
+            + line_score * 0.65
+        )
+        pre_ranked.append((float(pre_score), item))
+
+    pre_ranked.sort(key=lambda pair: pair[0], reverse=True)
+    return [item for _, item in pre_ranked[:max_candidates]]
+
+
 def _components(
     analyzer: TemplateAnalyzer,
     image: np.ndarray,
@@ -97,7 +132,12 @@ def _components(
         np.sqrt(np.sum(diffs * diffs, axis=(1, 2))) / max(float(w), 1.0)
     )
     agreement_count = int(np.count_nonzero(distances < 0.05))
-    agreement = min(1.0, agreement_count / max(1, len(candidates)))
+
+    # Production TemplateAnalyzer uses a local-consensus signal saturated at
+    # four votes (singleton=.25, pair=.50, three=.75, four+=1.0). Using
+    # agreement_count / len(candidates) here previously made telemetry diverge
+    # from the real scorer as multi-scale recall grew.
+    agreement = min(1.0, agreement_count / 4.0)
 
     area = float(abs(cv2.contourArea(quad.astype(np.float32))))
     area_ratio = min(1.0, area / float(w * h))
@@ -174,7 +214,15 @@ def run(dataset: Path, diagnostic_json: Path, output: Path, top_n: int) -> Dict:
         if not gt_ok:
             continue
 
-        candidates = _dedupe_valid(collect_candidates(image), w, h)
+        raw_candidates = _dedupe_valid(collect_candidates(image), w, h)
+        if not raw_candidates:
+            continue
+
+        candidates = _prepare_runtime_candidates(
+            analyzer,
+            image,
+            raw_candidates,
+        )
         if not candidates:
             continue
 
@@ -192,7 +240,8 @@ def run(dataset: Path, diagnostic_json: Path, output: Path, top_n: int) -> Dict:
             {
                 "sample": name,
                 "category": category,
-                "candidate_count": len(evaluated),
+                "candidate_count_raw": len(raw_candidates),
+                "candidate_count_runtime": len(evaluated),
                 "oracle": oracle,
                 "legacy_selected": legacy_selected,
                 "current_selected": current_selected,
