@@ -232,9 +232,26 @@ class ForegroundAIEngine:
         surface_mask = np.zeros((h, w), dtype=np.uint8)
         cv2.fillPoly(surface_mask, [pts], 255)
         surface_area = float(np.count_nonzero(surface_mask))
+        if surface_area <= 0:
+            return {
+                "success": False,
+                "mask": None,
+                "objects": [],
+                "confidence": 0.0,
+                "reason": "Bos surface_polygon"
+            }
 
-        # Yüzey kenarına 30 px genişleme payı (temas eden bıçak, dal, domates kenarı için)
-        surface_dilated = cv2.dilate(surface_mask, cv2.getStructuringElement(cv2.MORPH_RECT, (45, 45)))
+        min_surface_overlap = float(np.clip(min_surface_overlap, 0.0, 1.0))
+
+        # Resolution-relative surface margin catches knives/utensils that just
+        # cross the printable boundary without baking in one pixel size.
+        margin_px = max(9, int(round(min(h, w) * 0.025)))
+        if margin_px % 2 == 0:
+            margin_px += 1
+        surface_dilated = cv2.dilate(
+            surface_mask,
+            cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (margin_px, margin_px)),
+        )
 
         # 2. Text Prompts
         if prompts is None:
@@ -318,12 +335,14 @@ class ForegroundAIEngine:
             
             # Yüzeyle doğrudan veya sınır tamponuyla kesişim
             intersection = cv2.bitwise_and(box_mask, surface_dilated)
-            intersect_px = np.count_nonzero(intersection)
-            if intersect_px < 100:
-                # Yüzeye hiç değmiyor (örn: masanın arkasındaki kase, bıçak tahtadan uzaktaysa vb.)
+            intersect_px = int(np.count_nonzero(intersection))
+            box_area = max(1, bw * bh)
+            box_overlap = intersect_px / float(box_area)
+            min_intersection_px = max(48, int((w * h) * 0.00002))
+            if intersect_px < min_intersection_px or box_overlap < min_surface_overlap:
                 continue
 
-            # Tahtanın kendisini kapsayan dev kutuları eler (> 85% ekran)
+            # Tahtanın/yüzeyin kendisini kapsayan dev kutuları eler.
             if bw > w * 0.88 and bh > h * 0.88:
                 continue
 
@@ -331,7 +350,8 @@ class ForegroundAIEngine:
             candidate_metadata.append({
                 "label": str(l),
                 "score": float(s),
-                "box": [x1, y1, x2, y2]
+                "box": [x1, y1, x2, y2],
+                "box_surface_overlap": round(box_overlap, 4),
             })
 
         if not candidate_boxes:
@@ -365,20 +385,51 @@ class ForegroundAIEngine:
                     continue
 
                 overlap_ratio = inside_px / float(total_px)
+                surface_fraction = inside_px / max(surface_area, 1.0)
+                min_inside_px = max(64, int(surface_area * 0.0005))
+                min_outside_px = max(64, int((w * h) * 0.00002))
 
-                # Kriter: Gerçek fiziksel ön plan nesnesi (domates, sarımsak, bıçak vb.)
-                # Masadan tahtaya taşar; bu yüzden hem içeride (>= 100 px) hem dışarıda (>= 250 px) bulunur.
-                # Tahtanın içine basılmış eski şablon çizimleri (%100 içeride) elenir.
-                is_occluder = (inside_px >= 100 and outside_px >= 250 and overlap_ratio <= 0.94)
+                # Strong case: a physical object crosses the print boundary.
+                crosses_boundary = (
+                    inside_px >= min_inside_px
+                    and outside_px >= min_outside_px
+                    and overlap_ratio >= min_surface_overlap
+                    and total_px <= surface_area * 0.65
+                )
+
+                # Important real-world case: tomato/garlic/etc. can sit entirely
+                # on top of a cutting board. The old rule rejected these because
+                # it required outside pixels. Accept only compact, high-confidence
+                # interior detections to limit printed-art false positives.
+                interior_object = (
+                    inside_px >= min_inside_px
+                    and overlap_ratio >= 0.94
+                    and float(meta["score"]) >= max(0.40, box_threshold + 0.15)
+                    and total_px <= surface_area * 0.30
+                    and surface_fraction <= 0.30
+                )
+
+                is_occluder = crosses_boundary or interior_object
 
                 if is_occluder:
                     selected_masks.append(mask_np)
                     meta["surface_overlap"] = round(overlap_ratio, 3)
+                    meta["surface_fraction"] = round(surface_fraction, 4)
                     meta["mask_area"] = int(total_px)
+                    meta["acceptance_mode"] = (
+                        "cross_boundary" if crosses_boundary else "interior_high_confidence"
+                    )
                     final_objects.append(meta)
-                    logger.info(f"  + KABUL EDILDI: '{meta['label']}' (score: {meta['score']:.2f}, inside: {inside_px}px, outside: {outside_px}px, overlap: {overlap_ratio:.1%})")
+                    logger.info(
+                        f"  + KABUL EDILDI: '{meta['label']}' "
+                        f"(score: {meta['score']:.2f}, in={inside_px}, out={outside_px}, "
+                        f"overlap={overlap_ratio:.1%}, mode={meta['acceptance_mode']})"
+                    )
                 else:
-                    logger.info(f"  - REDDEDILDI: '{meta['label']}' (ic cizim veya kesişim yetersiz: in={inside_px}, out={outside_px}, overlap={overlap_ratio:.1%})")
+                    logger.info(
+                        f"  - REDDEDILDI: '{meta['label']}' "
+                        f"(in={inside_px}, out={outside_px}, overlap={overlap_ratio:.1%})"
+                    )
         except Exception as e:
             logger.error(f"SAM 2.1 segmentasyon hatası: {e}")
 
@@ -404,8 +455,9 @@ class ForegroundAIEngine:
         # Küçük saçak ve pürüzleri temizle
         num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(cleaned)
         final_mask = np.zeros((h, w), dtype=np.uint8)
+        min_component_area = max(50, int((w * h) * 0.00002))
         for i in range(1, num_labels):
-            if stats[i, cv2.CC_STAT_AREA] >= 150: # 150 px altı gürültüleri at
+            if stats[i, cv2.CC_STAT_AREA] >= min_component_area:
                 final_mask[labels == i] = 255
 
         # Feathering (Kenar yumuşatma)
