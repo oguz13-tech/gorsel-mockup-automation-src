@@ -919,14 +919,19 @@ class TemplateSelector:
         best_score = -1.0
         orientation_mismatches = 0
         
+        requested_orientation = str(design_orientation or "").upper()
         for row in rows:
-            tmpl_orient = row["orientation"]
+            tmpl_orient = str(row["orientation"] or "UNKNOWN").upper()
             if rule["orientation_strict"]:
-                if design_orientation != tmpl_orient and tmpl_orient != "UNKNOWN":
+                if (
+                    tmpl_orient not in ("H", "V")
+                    or requested_orientation not in ("H", "V")
+                    or requested_orientation != tmpl_orient
+                ):
                     orientation_mismatches += 1
                     continue
                     
-            score = row["confidence_total"]
+            score = float(row["confidence_total"] or 0.0)
             
             # Reasoned aspect compatibility scoring (penalize if nominal aspect exists and mismatch is large)
             if design_aspect is not None and row["nominal_aspect"] and row["nominal_aspect"] != "UNKNOWN":
