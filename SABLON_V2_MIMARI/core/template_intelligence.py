@@ -10,6 +10,17 @@ from typing import List, Optional, Tuple, Dict
 import sqlite3
 
 class CategoryRuleEngine:
+    # Physical print aspect metadata (width / height). These values come from
+    # product definitions, never from projected image quads.
+    NOMINAL_ASPECTS = {
+        "01_Wifi_Kutusu": {"H": 4.0 / 3.0, "V": 3.0 / 4.0},
+        "02_Cam_Tablo_Dikey": {"V": 5.0 / 7.0},
+        "02_Cam_Tablo_Yatay": {"H": 10.0 / 7.0},
+        "03_Ahsap_Tablo": {"V": 2.0 / 3.0},
+        "04_Cam_Dograma": {"H": 4.0 / 3.0, "V": 3.0 / 4.0},
+        "05_Ocak_Arkasi": {"H": 4.0 / 3.0},
+    }
+
     RULES = {
         "WOOD_FRAMED_ART": {
             "product_class": "Ahşap Tablo",
@@ -84,6 +95,13 @@ class CategoryRuleEngine:
                 resolved["key"] = key
                 return resolved
         raise ValueError(f"UNKNOWN_CATEGORY: {folder_name}")
+
+    @classmethod
+    def get_nominal_aspect(cls, folder_name: str, orientation: str) -> Optional[float]:
+        """Return trusted physical width/height metadata for a category/orientation."""
+        mapping = cls.NOMINAL_ASPECTS.get(folder_name, {})
+        value = mapping.get(str(orientation or "").upper())
+        return float(value) if value is not None else None
 
 class GeometryValidator:
     @staticmethod
@@ -408,7 +426,7 @@ class CandidateGenerators:
 
 class TemplateAnalyzer:
     def __init__(self):
-        self.version = "v2.0"
+        self.version = "v2.1"
         self.auto_approval_enabled = False
         
     def measure_edge_contrast(self, image_cv: np.ndarray, quad: np.ndarray) -> float:
@@ -614,8 +632,9 @@ class TemplateAnalyzer:
                     best_quad = cand1.tolist()
                     best_components = comp_conf
                 
-        # Nominal aspect must NOT be calculated from quad. 
-        # If no metadata, it is UNKNOWN.
+        # Nominal aspect is physical product metadata, never projected-quad
+        # geometry. Orientation is inferred only to select H/V metadata for
+        # categories that legitimately support both directions.
         nominal_aspect = "UNKNOWN"
         orientation = "UNKNOWN"
         
@@ -632,6 +651,16 @@ class TemplateAnalyzer:
                 # Only infer orientation. Projected quad ratio is never stored
                 # as the nominal physical print aspect.
                 orientation = "H" if ar > 1.05 else ("V" if ar < 0.95 else "SQUARE")
+
+        metadata_orientation = rule.get("expected_orientation", "ANY")
+        if metadata_orientation not in ("H", "V"):
+            metadata_orientation = orientation
+        physical_aspect = CategoryRuleEngine.get_nominal_aspect(
+            category_folder,
+            metadata_orientation,
+        )
+        if physical_aspect is not None:
+            nominal_aspect = f"{physical_aspect:.8f}".rstrip("0").rstrip(".")
                 
         if best_quad:
             if provenance == "MANUAL_PRIOR":
@@ -707,12 +736,15 @@ def save_template_profile(db_path: str, profile_data: dict):
                 conn.execute("""
                 UPDATE template_profiles SET
                     analyzer_version=?, surface_quad=?, outer_quad=?, orientation=?,
+                    nominal_aspect=?, print_policy=?,
                     confidence_total=?, component_confidences=?, review_status=?, manually_verified=?,
                     updated_at=CURRENT_TIMESTAMP
                 WHERE id=?
                 """, (
                     profile_data["analyzer_version"], json.dumps(profile_data.get("surface_quad")),
                     json.dumps(profile_data.get("outer_quad")), profile_data["orientation"],
+                    profile_data.get("nominal_aspect", "UNKNOWN"),
+                    profile_data.get("print_policy", "full_bleed"),
                     profile_data.get("confidence_total", 0.0), json.dumps(profile_data.get("component_confidences", {})),
                     profile_data["review_status"], profile_data.get("manually_verified", False), old_id
                 ))
@@ -724,15 +756,16 @@ def save_template_profile(db_path: str, profile_data: dict):
         INSERT INTO template_profiles (
             template_uid, category, source_relative_path, source_asset_sha256,
             profile_version, analyzer_version, product_class, orientation,
-            geometry_type, print_policy, surface_quad, outer_quad, surface_mask_path,
+            nominal_aspect, geometry_type, print_policy, surface_quad, outer_quad, surface_mask_path,
             material, has_frame, has_mat, has_reflection, has_occlusion,
             confidence_total, component_confidences, review_status, manually_verified, is_active
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
         """, (
             profile_data["template_uid"], profile_data["category"], profile_data["source_relative_path"],
             profile_data.get("source_asset_sha256"), profile_data.get("profile_version","v2"), profile_data["analyzer_version"],
-            profile_data.get("product_class","Unknown"), profile_data["orientation"], profile_data.get("geometry_type", "quad"),
-            profile_data.get("print_policy","full_bleed"), json.dumps(profile_data.get("surface_quad")), json.dumps(profile_data.get("outer_quad")),
+            profile_data.get("product_class","Unknown"), profile_data["orientation"], profile_data.get("nominal_aspect", "UNKNOWN"),
+            profile_data.get("geometry_type", "quad"), profile_data.get("print_policy","full_bleed"),
+            json.dumps(profile_data.get("surface_quad")), json.dumps(profile_data.get("outer_quad")),
             profile_data.get("surface_mask_path"), profile_data.get("material", "default"),
             profile_data.get("has_frame", False), profile_data.get("has_mat", False),
             profile_data.get("has_reflection", False), profile_data.get("has_occlusion", False),
