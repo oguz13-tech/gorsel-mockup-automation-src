@@ -91,9 +91,10 @@ def _git_branch() -> str:
     return proc.stdout.strip() if proc.returncode == 0 else "UNKNOWN"
 
 
-def _tracked_worktree_fingerprint() -> str:
-    """Fingerprint staged + unstaged tracked changes, ignoring untracked evidence."""
+def _tracked_worktree_snapshot() -> Dict[str, Any]:
+    """Snapshot staged + unstaged tracked changes, ignoring untracked evidence."""
     digest = hashlib.sha256()
+    dirty = False
     for command in (
         ["git", "diff", "--binary", "--no-ext-diff"],
         ["git", "diff", "--cached", "--binary", "--no-ext-diff"],
@@ -108,9 +109,11 @@ def _tracked_worktree_fingerprint() -> str:
                 f"Unable to snapshot tracked worktree (exit={proc.returncode}): "
                 + proc.stderr.decode("utf-8", errors="replace")
             )
+        if proc.stdout:
+            dirty = True
         digest.update(proc.stdout)
         digest.update(b"\0")
-    return digest.hexdigest()
+    return {"fingerprint": digest.hexdigest(), "dirty": dirty}
 
 
 def _sha256_file(path: Path) -> str:
@@ -269,7 +272,7 @@ def main() -> int:
     manifest_json = out_dir / "validation_manifest.json"
 
     dataset_before = _snapshot_dataset(dataset)
-    tracked_fingerprint_before = _tracked_worktree_fingerprint()
+    tracked_before = _tracked_worktree_snapshot()
     commands: List[Dict[str, Any]] = []
 
     if not args.skip_unit_tests:
@@ -369,10 +372,10 @@ def main() -> int:
         )
 
     dataset_after = _snapshot_dataset(dataset)
-    tracked_fingerprint_after = _tracked_worktree_fingerprint()
+    tracked_after = _tracked_worktree_snapshot()
     dataset_unchanged = dataset_before == dataset_after
     tracked_worktree_unchanged = (
-        tracked_fingerprint_before == tracked_fingerprint_after
+        tracked_before["fingerprint"] == tracked_after["fingerprint"]
     )
     preflight = _parse_preflight(commands)
 
@@ -388,8 +391,11 @@ def main() -> int:
             "dataset_file_count_before": len(dataset_before),
             "dataset_file_count_after": len(dataset_after),
             "dataset_unchanged": dataset_unchanged,
-            "tracked_worktree_fingerprint_before": tracked_fingerprint_before,
-            "tracked_worktree_fingerprint_after": tracked_fingerprint_after,
+            "tracked_worktree_fingerprint_before": tracked_before["fingerprint"],
+            "tracked_worktree_fingerprint_after": tracked_after["fingerprint"],
+            "tracked_worktree_dirty_before": bool(tracked_before["dirty"]),
+            "tracked_worktree_dirty_after": bool(tracked_after["dirty"]),
+            "tracked_worktree_clean_before": not bool(tracked_before["dirty"]),
             "tracked_worktree_unchanged": tracked_worktree_unchanged,
             "validation_created_tracked_changes": not tracked_worktree_unchanged,
         },
@@ -456,6 +462,7 @@ def main() -> int:
     )
     integrity_ok = bool(
         dataset_unchanged
+        and not tracked_before["dirty"]
         and tracked_worktree_unchanged
     )
     evidence["bundle_checks"] = {
