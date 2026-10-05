@@ -407,8 +407,9 @@ class StateManager:
         row = self.get_artifact(artifact_key)
         return row is not None and row.get("status") in ("COMPLETED", "UPLOADED")
 
-    def save_render_artifact(self, data: dict):
-        if not data: return
+    def save_render_artifact(self, data: dict) -> bool:
+        if not data:
+            return False
         with db_lock, self.conn:
             try:
                 self.conn.execute("""
@@ -426,12 +427,15 @@ class StateManager:
                     updated_at=CURRENT_TIMESTAMP
                 """, (
                     data.get("artifact_key", ""), data.get("sku", ""), data.get("source_identity", ""),
-                    data.get("category", ""), data.get("template_identity", ""), 
+                    data.get("category", ""), data.get("template_identity", ""),
                     data.get("local_output_path", ""), data.get("upload_url", ""), data.get("status", "COMPLETED")
                 ))
-            except Exception as e:
-                import logging
-                logging.getLogger("StateDB").error(f"Veritabani yazim hatasi (save_render_artifact): {e}")
+                return True
+            except Exception as exc:
+                logging.getLogger("StateDB").error(
+                    f"Veritabani yazim hatasi (save_render_artifact): {exc}"
+                )
+                return False
 
     def mark_artifacts_completed(self, artifact_keys: List[str]):
         keys = [str(key) for key in artifact_keys if key]
@@ -473,9 +477,9 @@ class StateManager:
                         (sku,),
                     )
 
-    def save_product(self, data: dict):
+    def save_product(self, data: dict) -> bool:
         if not data:
-            return
+            return False
         with db_lock, self.conn:
             try:
                 self.conn.execute("""
@@ -491,14 +495,17 @@ class StateManager:
                     status=excluded.status,
                     updated_at=CURRENT_TIMESTAMP
                 """, (
-                    data.get("sku", ""), data.get("master_id", ""), data.get("kategori_key", ""), 
-                    data.get("barkod", ""), data.get("model_kodu", ""), data.get("urun_adi", ""), 
+                    data.get("sku", ""), data.get("master_id", ""), data.get("kategori_key", ""),
+                    data.get("barkod", ""), data.get("model_kodu", ""), data.get("urun_adi", ""),
                     data.get("aciklama", ""), data.get("ham_baski_dosyasi", ""), data.get("mockup_dosyasi", ""),
                     data.get("magaza_grubu", ""), data.get("resim_linki", ""), data.get("status", "COMPLETED")
                 ))
-            except Exception as e:
-                import logging
-                logging.getLogger("StateDB").error(f"Veritabani yazim hatasi (save_product): {e}")
+                return True
+            except Exception as exc:
+                logging.getLogger("StateDB").error(
+                    f"Veritabani yazim hatasi (save_product): {exc}"
+                )
+                return False
 
     def get_summary(self) -> dict:
         with db_lock, self.conn:
