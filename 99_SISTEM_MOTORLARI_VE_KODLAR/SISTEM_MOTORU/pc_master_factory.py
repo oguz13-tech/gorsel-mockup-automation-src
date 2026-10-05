@@ -2304,6 +2304,7 @@ class PCMasterFactory:
         render_attempted = 0
         render_succeeded = 0
         render_failed = 0
+        upload_resumed = 0
 
         logger.info(f"🚀 PC MASTER FABRİKASI BAŞLATILDI | Toplam Master: {len(items)} | Mod: {self.mode.upper()}")
 
@@ -2408,6 +2409,9 @@ class PCMasterFactory:
                         f"{template_identity}_{recipe_version}"
                     )
 
+                    artifact_state = self.state.get_artifact(
+                        artifact_key
+                    )
                     template_records.append({
                         "name": sablon_name,
                         "path": sablon_path,
@@ -2418,7 +2422,12 @@ class PCMasterFactory:
                         "source_path": source_info["path"],
                         "source_identity": source_info["identity"],
                         "source_orientation": source_orientation,
-                        "completed": self.state.is_artifact_completed(artifact_key),
+                        "artifact_state": artifact_state,
+                        "completed": (
+                            artifact_state is not None
+                            and artifact_state.get("status")
+                            in ("COMPLETED", "UPLOADED")
+                        ),
                     })
 
                 if not template_records:
@@ -2523,48 +2532,80 @@ class PCMasterFactory:
 
                     out_path = out_dir / out_filename
 
-                    logger.info(
-                        f"  🖌️ Render ({record['source_orientation']}): "
-                        f"{artifact_key} -> {sku}"
+                    prior_artifact = record.get("artifact_state") or {}
+                    prior_local = Path(
+                        prior_artifact.get("local_output_path") or ""
                     )
-                    render_attempted += 1
-
-                    success = MockupRenderer.process_mockup(
-                        raw_path=target_raw_path,
-                        template_path=sablon_path,
-                        config=sablon_conf,
-                        is_glass=prod_def.is_glass,
-                        output_path=out_path,
-                        source_design_identity=source_design_identity,
-                        template_identity=template_identity,
-                        recipe_version=recipe_version,
-                        template_sha=template_sha
+                    can_resume_upload = (
+                        prior_artifact.get("status")
+                        in ("RENDERED", "UPLOAD_FAILED")
+                        and prior_local.is_file()
                     )
 
-                    if not success:
-                        render_failed += 1
-                        continue
-                    render_succeeded += 1
-
-                    # P0 Fix: Call RealESRGAN Quality Engine
-                    if (
-                        AYARLAR.get("bulut_ayarlari", {}).get(
-                            "use_realesrgan", False
-                        )
-                        and RealESRGANQualityEngine.get_exe_path()
-                    ):
+                    if can_resume_upload:
+                        out_path = prior_local
+                        upload_resumed += 1
                         logger.info(
-                            f"  🔍 Kalite Artırılıyor (4K RealESRGAN): "
-                            f"{out_path.name}"
+                            f"  ♻️ Render tekrar edilmiyor; mevcut artifact "
+                            f"buluta yeniden gönderilecek: {out_path.name}"
                         )
-                        upscaled_path = out_path.with_name(
-                            "4k_" + out_path.name
+                    else:
+                        logger.info(
+                            f"  🖌️ Render ({record['source_orientation']}): "
+                            f"{artifact_key} -> {sku}"
                         )
-                        if RealESRGANQualityEngine.upscale_4k(
-                            out_path, upscaled_path
+                        render_attempted += 1
+
+                        success = MockupRenderer.process_mockup(
+                            raw_path=target_raw_path,
+                            template_path=sablon_path,
+                            config=sablon_conf,
+                            is_glass=prod_def.is_glass,
+                            output_path=out_path,
+                            source_design_identity=source_design_identity,
+                            template_identity=template_identity,
+                            recipe_version=recipe_version,
+                            template_sha=template_sha
+                        )
+
+                        if not success:
+                            render_failed += 1
+                            continue
+                        render_succeeded += 1
+
+                        # P0 Fix: Call RealESRGAN Quality Engine
+                        if (
+                            AYARLAR.get("bulut_ayarlari", {}).get(
+                                "use_realesrgan", False
+                            )
+                            and RealESRGANQualityEngine.get_exe_path()
                         ):
-                            import shutil
-                            shutil.move(str(upscaled_path), str(out_path))
+                            logger.info(
+                                f"  🔍 Kalite Artırılıyor (4K RealESRGAN): "
+                                f"{out_path.name}"
+                            )
+                            upscaled_path = out_path.with_name(
+                                "4k_" + out_path.name
+                            )
+                            if RealESRGANQualityEngine.upscale_4k(
+                                out_path, upscaled_path
+                            ):
+                                import shutil
+                                shutil.move(str(upscaled_path), str(out_path))
+
+                        # Persist the local artifact before any network work.
+                        # A crash or provider outage can then resume upload
+                        # without re-rendering the image.
+                        self.state.save_render_artifact({
+                            "artifact_key": artifact_key,
+                            "sku": sku,
+                            "source_identity": source_design_identity,
+                            "category": prod_key,
+                            "template_identity": template_identity,
+                            "local_output_path": str(out_path),
+                            "upload_url": "",
+                            "status": "RENDERED",
+                        })
 
                     seo_title = self.seo.generate_title(prod_key, theme_title)
                     seo_desc = self.seo.get_description(
@@ -2584,7 +2625,7 @@ class PCMasterFactory:
                         "urun_adi": seo_title,
                         "aciklama": seo_desc,
                         "ham_baski_dosyasi": target_raw_path.name,
-                        "mockup_dosyasi": out_filename,
+                        "mockup_dosyasi": out_path.name,
                         "magaza_grubu": magaza_grubu,
                         "resim_linki": "",
                         "status": "RENDERED"
@@ -2607,6 +2648,7 @@ class PCMasterFactory:
             f"render_attempted={render_attempted} "
             f"render_succeeded={render_succeeded} "
             f"render_failed={render_failed} "
+            f"upload_resumed={upload_resumed} "
             f"upload_failed={self.upload_failures}"
         )
         logger.info(f"📊 Durum Özeti: {self.state.get_summary()}")
@@ -2618,10 +2660,6 @@ class PCMasterFactory:
                 "Önce Şablon İnceleme Merkezi'nde geometriyi doğrulayın."
             )
             return False
-
-        if render_attempted == 0 and completed_artifact_count > 0:
-            logger.info("✅ Yeni render gerekmiyor; uygun artifact'ların tamamı zaten mevcut.")
-            return True
 
         if render_attempted > 0 and render_succeeded == 0:
             logger.error("❌ Tüm render denemeleri başarısız oldu.")
@@ -2637,10 +2675,21 @@ class PCMasterFactory:
         if self.upload_failures > 0:
             logger.error(
                 f"⚠️ Render tamamlandı ancak {self.upload_failures} artifact "
-                "buluta yüklenemedi. Yeniden çalıştırmada durum kaydından "
-                "güvenli şekilde devam edilebilir."
+                "buluta yüklenemedi. Yeniden çalıştırmada mevcut yerel "
+                "artifact yeniden render edilmeden yüklenecek."
             )
             return False
+
+        if (
+            render_attempted == 0
+            and upload_resumed == 0
+            and completed_artifact_count > 0
+        ):
+            logger.info(
+                "✅ Yeni render/yükleme gerekmiyor; uygun artifact'ların "
+                "tamamı zaten mevcut."
+            )
+            return True
 
         logger.info("\n🎉 TÜM UYGUN RENDER İŞLEMLERİ BAŞARIYLA TAMAMLANDI!")
         return True
