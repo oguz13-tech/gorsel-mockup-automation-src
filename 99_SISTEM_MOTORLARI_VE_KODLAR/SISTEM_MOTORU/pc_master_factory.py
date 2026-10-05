@@ -565,7 +565,11 @@ class StateManager:
                 )
                 return False
 
-    def mark_artifacts_completed(self, artifact_keys: List[str]):
+    def mark_artifacts_completed(
+        self,
+        artifact_keys: List[str],
+        recipe_version: Optional[str] = None,
+    ):
         keys = [str(key) for key in artifact_keys if key]
         if not keys:
             return
@@ -584,18 +588,31 @@ class StateManager:
                 [(key,) for key in keys],
             )
 
-            # The legacy products row is one logical master/category product.
-            # Mark it COMPLETED only when every known artifact for that SKU is
-            # safely through upload + Excel.
+            # The products row represents the current logical master/category
+            # run. Historical recipe artifacts remain for audit/recovery but
+            # must not permanently block a newer recipe from completing.
+            recipe_suffix = (
+                f"_{recipe_version}" if recipe_version else None
+            )
             for row in sku_rows:
                 sku = row["sku"]
-                pending = self.conn.execute(
-                    """SELECT COUNT(*) AS c
-                       FROM render_artifacts
-                       WHERE sku=?
-                         AND status <> 'COMPLETED'""",
-                    (sku,),
-                ).fetchone()["c"]
+                if recipe_suffix:
+                    pending = self.conn.execute(
+                        """SELECT COUNT(*) AS c
+                           FROM render_artifacts
+                           WHERE sku=?
+                             AND status <> 'COMPLETED'
+                             AND substr(artifact_key, ?) = ?""",
+                        (sku, -len(recipe_suffix), recipe_suffix),
+                    ).fetchone()["c"]
+                else:
+                    pending = self.conn.execute(
+                        """SELECT COUNT(*) AS c
+                           FROM render_artifacts
+                           WHERE sku=?
+                             AND status <> 'COMPLETED'""",
+                        (sku,),
+                    ).fetchone()["c"]
                 if int(pending) == 0:
                     self.conn.execute(
                         """UPDATE products
@@ -3280,7 +3297,10 @@ class PCMasterFactory:
         if excel_flush_ok:
             with self.pending_excel_lock:
                 completed_keys = list(dict.fromkeys(self.pending_excel_artifacts))
-            self.state.mark_artifacts_completed(completed_keys)
+            self.state.mark_artifacts_completed(
+                completed_keys,
+                recipe_version=RECIPE_VERSION,
+            )
         else:
             logger.error(
                 "❌ Excel flush başarısız; yüklenen artifact'lar COMPLETED "
