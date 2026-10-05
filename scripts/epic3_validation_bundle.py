@@ -29,6 +29,19 @@ ENGINE = (
     / "pc_master_factory.py"
 )
 
+SYNTAX_CHECK_FILES = (
+    ROOT / "SABLON_V2_MIMARI" / "core" / "template_intelligence.py",
+    ROOT / "SABLON_V2_MIMARI" / "app.py",
+    ROOT / "V2_KONTROL_MERKEZI" / "app.py",
+    ROOT / "99_SISTEM_MOTORLARI_VE_KODLAR" / "SISTEM_MOTORU" / "foreground_ai.py",
+    ENGINE,
+    ROOT / "scripts" / "epic3_benchmark.py",
+    ROOT / "scripts" / "geometry_diagnostics.py",
+    ROOT / "scripts" / "scorer_telemetry.py",
+    ROOT / "scripts" / "migrate_legacy_geometry_profiles.py",
+    ROOT / "scripts" / "epic3_validation_bundle.py",
+)
+
 REQUIRED_CATEGORIES = (
     "01_Wifi_Kutusu",
     "02_Cam_Tablo_Dikey",
@@ -291,6 +304,31 @@ def main() -> int:
 
     dataset_before = _snapshot_dataset(dataset)
     commands: List[Dict[str, Any]] = []
+
+    missing_syntax_files = [
+        str(path) for path in SYNTAX_CHECK_FILES if not path.is_file()
+    ]
+    if missing_syntax_files:
+        commands.append({
+            "name": "python_syntax_gate",
+            "command": [],
+            "exit_code": None,
+            "stdout": "",
+            "stderr": "Missing syntax-check files: " + ", ".join(missing_syntax_files),
+            "ok": False,
+        })
+    else:
+        commands.append(
+            _run(
+                "python_syntax_gate",
+                [
+                    sys.executable,
+                    "-m",
+                    "py_compile",
+                    *[str(path) for path in SYNTAX_CHECK_FILES],
+                ],
+            )
+        )
 
     if not args.skip_unit_tests:
         commands.append(
