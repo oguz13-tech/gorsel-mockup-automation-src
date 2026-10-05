@@ -32,6 +32,13 @@ class TestP1_P15Acceptance(unittest.TestCase):
                 nominal_aspect TEXT
             )
         ''')
+        conn.execute('''
+            CREATE TABLE templates (
+                category_id TEXT,
+                filename TEXT,
+                data TEXT
+            )
+        ''')
         conn.commit()
         conn.close()
 
@@ -206,6 +213,58 @@ class TestP1_P15Acceptance(unittest.TestCase):
             auto_quad.tolist(),
         )
 
+    def test_p8c_fixed_category_uses_physical_orientation_not_projected_quad(self):
+        from core.template_intelligence import TemplateAnalyzer
+
+        img_path = os.path.join(self.temp_dir, "fixed_orientation.png")
+        cv2.imwrite(img_path, np.zeros((220, 320, 3), dtype=np.uint8))
+
+        # Deliberately wide projected quad for a physically vertical product.
+        prior = {
+            "surface_quad": [[20, 80], [300, 80], [280, 160], [40, 160]]
+        }
+        res = TemplateAnalyzer().analyze(
+            img_path,
+            "02_Cam_Tablo_Dikey",
+            manual_geometry_prior=prior,
+        )
+
+        self.assertEqual(res["orientation"], "V")
+        self.assertEqual(res["projected_orientation"], "H")
+        self.assertAlmostEqual(float(res["nominal_aspect"]), 5.0 / 7.0, places=6)
+
+    def test_p8d_mixed_category_does_not_infer_physical_orientation_from_quad(self):
+        from core.template_intelligence import TemplateAnalyzer
+
+        img_path = os.path.join(self.temp_dir, "mixed_orientation.png")
+        cv2.imwrite(img_path, np.zeros((220, 320, 3), dtype=np.uint8))
+        surface = [[20, 80], [300, 80], [280, 160], [40, 160]]
+
+        without_physical = TemplateAnalyzer().analyze(
+            img_path,
+            "04_Cam_Dograma",
+            manual_geometry_prior={"surface_quad": surface},
+        )
+        self.assertEqual(without_physical["orientation"], "UNKNOWN")
+        self.assertEqual(without_physical["projected_orientation"], "H")
+        self.assertEqual(without_physical["nominal_aspect"], "UNKNOWN")
+
+        with_physical = TemplateAnalyzer().analyze(
+            img_path,
+            "04_Cam_Dograma",
+            manual_geometry_prior={
+                "surface_quad": surface,
+                "physical_orientation": "V",
+            },
+        )
+        self.assertEqual(with_physical["orientation"], "V")
+        self.assertEqual(with_physical["projected_orientation"], "H")
+        self.assertAlmostEqual(
+            float(with_physical["nominal_aspect"]),
+            3.0 / 4.0,
+            places=6,
+        )
+
     def test_p9_glass_wall_art_print_policy_full_bleed(self):
         from core.template_intelligence import CategoryRuleEngine
         rule = CategoryRuleEngine.get_rule_by_folder("02_Cam_Tablo_Dikey")
@@ -278,33 +337,134 @@ class TestP1_P15Acceptance(unittest.TestCase):
 
     def test_p13_review_overlay_does_not_modify_source(self):
         from app import app
-        img_dir = os.path.join(self.temp_dir, "2_SABLON_HAVUZU", "cat3")
+        import hashlib
+
+        cat = "02_Cam_Tablo_Dikey"
+        tmpl = "tmpl3.png"
+        uid = f"{cat}_{tmpl}"
+        img_dir = os.path.join(self.temp_dir, "2_SABLON_HAVUZU", cat)
         os.makedirs(img_dir, exist_ok=True)
-        img_path = os.path.join(img_dir, "tmpl3.png")
+        img_path = os.path.join(img_dir, tmpl)
         cv2.imwrite(img_path, np.zeros((100, 100, 3), dtype=np.uint8))
         with open(img_path, "rb") as f:
             orig = f.read()
-        import hashlib
         orig_hash = hashlib.sha256(orig).hexdigest()
-        
-        # Insert active profile
+
+        # Insert a realistic source-hash-bound active proposal.
         conn = sqlite3.connect(self.db_path)
-        conn.execute("INSERT INTO template_profiles (template_uid, is_active, review_status) VALUES ('cat3_tmpl3.png', 1, 'REVIEW_REQUIRED')")
+        conn.execute(
+            """INSERT INTO template_profiles (
+                   template_uid, category, source_relative_path,
+                   source_asset_sha256, orientation, nominal_aspect,
+                   is_active, review_status
+               ) VALUES (?, ?, ?, ?, ?, ?, 1, 'REVIEW_REQUIRED')""",
+            (
+                uid,
+                cat,
+                f"{cat}/{tmpl}",
+                orig_hash,
+                "V",
+                str(5.0 / 7.0),
+            ),
+        )
+        conn.execute(
+            "INSERT INTO templates (category_id, filename, data) VALUES (?, ?, ?)",
+            (cat, tmpl, json.dumps({"tip": "perspektif"})),
+        )
         conn.commit()
         conn.close()
-        
+
         app.testing = True
         client = app.test_client()
         with patch('app.BASE_DIR', self.temp_dir):
             os.makedirs(os.path.join(self.temp_dir, "SABLON_V2_MIMARI"), exist_ok=True)
-            shutil.copy2(self.db_path, os.path.join(self.temp_dir, "SABLON_V2_MIMARI", "ayarlar.db"))
-            
-            resp = client.post('/api/templates/update_corners', json={"template_uid": "cat3_tmpl3.png", "corners": [[10,10],[90,10],[90,90],[10,90]]})
+            shutil.copy2(
+                self.db_path,
+                os.path.join(self.temp_dir, "SABLON_V2_MIMARI", "ayarlar.db"),
+            )
+
+            resp = client.post(
+                '/api/templates/update_corners',
+                json={
+                    "template_uid": uid,
+                    "corners": [[10,10],[90,10],[90,90],[10,90]],
+                },
+            )
             self.assertEqual(resp.status_code, 200)
         
         with open(img_path, "rb") as f:
             new_hash = hashlib.sha256(f.read()).hexdigest()
         self.assertEqual(orig_hash, new_hash, "Calibration/Update endpoint must not modify source file")
+
+    def test_p13b_mixed_category_requires_explicit_physical_orientation(self):
+        from app import app
+        import hashlib
+
+        cat = "04_Cam_Dograma"
+        tmpl = "mixed.png"
+        uid = f"{cat}_{tmpl}"
+        img_dir = os.path.join(self.temp_dir, "2_SABLON_HAVUZU", cat)
+        os.makedirs(img_dir, exist_ok=True)
+        img_path = os.path.join(img_dir, tmpl)
+        cv2.imwrite(img_path, np.zeros((120, 160, 3), dtype=np.uint8))
+        source_hash = hashlib.sha256(open(img_path, "rb").read()).hexdigest()
+
+        conn = sqlite3.connect(self.db_path)
+        conn.execute(
+            """INSERT INTO template_profiles (
+                   template_uid, category, source_relative_path,
+                   source_asset_sha256, is_active, review_status
+               ) VALUES (?, ?, ?, ?, 1, 'REVIEW_REQUIRED')""",
+            (uid, cat, f"{cat}/{tmpl}", source_hash),
+        )
+        conn.execute(
+            "INSERT INTO templates (category_id, filename, data) VALUES (?, ?, ?)",
+            (cat, tmpl, json.dumps({"tip": "perspektif"})),
+        )
+        conn.commit()
+        conn.close()
+
+        target_db_dir = os.path.join(self.temp_dir, "SABLON_V2_MIMARI")
+        os.makedirs(target_db_dir, exist_ok=True)
+        target_db = os.path.join(target_db_dir, "ayarlar.db")
+        shutil.copy2(self.db_path, target_db)
+
+        app.testing = True
+        client = app.test_client()
+        payload = {
+            "template_uid": uid,
+            "category": cat,
+            "template": tmpl,
+            "corners": [[15, 40], [145, 40], [140, 90], [20, 90]],
+        }
+        with patch('app.BASE_DIR', self.temp_dir):
+            missing = client.post('/api/templates/update_corners', json=payload)
+            self.assertEqual(missing.status_code, 422)
+            self.assertEqual(
+                missing.get_json().get("code"),
+                "PHYSICAL_ORIENTATION_REQUIRED",
+            )
+
+            payload["physical_orientation"] = "V"
+            approved = client.post('/api/templates/update_corners', json=payload)
+            self.assertEqual(approved.status_code, 200)
+            body = approved.get_json()
+            self.assertEqual(body["orientation"], "V")
+            self.assertEqual(body["projected_orientation"], "H")
+
+        conn = sqlite3.connect(target_db)
+        row = conn.execute(
+            """SELECT orientation, nominal_aspect, review_status,
+                      manually_verified
+               FROM template_profiles
+               WHERE template_uid=? AND is_active=1""",
+            (uid,),
+        ).fetchone()
+        conn.close()
+        self.assertEqual(row[0], "V")
+        self.assertAlmostEqual(float(row[1]), 3.0 / 4.0, places=6)
+        self.assertEqual(row[2], "APPROVED")
+        self.assertEqual(row[3], 1)
 
     def test_p14_selector_selects_approved_compatible(self):
         from core.template_intelligence import TemplateSelector
