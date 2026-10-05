@@ -25,7 +25,6 @@ sys.path.insert(0, str(ROOT))
 
 from core.template_intelligence import (
     CategoryRuleEngine,
-    GeometryValidator,
     TemplateAnalyzer,
 )
 from scripts.geometry_diagnostics import (
