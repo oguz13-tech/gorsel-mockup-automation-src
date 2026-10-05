@@ -379,9 +379,39 @@
         }
 
         async function runAutomaticFactory() {
+            // Production is never started blindly. The read-only preflight
+            // verifies manifest/master sources, approved source hashes,
+            // orientations and writable outputs first.
+            let preflight;
+            try {
+                const preflightResponse = await fetch('/api/factory_preflight');
+                preflight = await preflightResponse.json();
+                if (!preflightResponse.ok || !preflight.ready) {
+                    const errors = Array.isArray(preflight.errors)
+                        ? preflight.errors.join('\n• ')
+                        : 'Bilinmeyen hazırlık hatası';
+                    const warnings = Array.isArray(preflight.warnings) && preflight.warnings.length
+                        ? '\n\nUyarılar:\n• ' + preflight.warnings.join('\n• ')
+                        : '';
+                    alert(
+                        'Üretim başlatılmadı. Ön kontrol düzeltme istiyor:\n\n• '
+                        + errors + warnings
+                    );
+                    return;
+                }
+            } catch (err) {
+                alert('Ön kontrol çalıştırılamadı: ' + err.message);
+                return;
+            }
+
+            const warnings = Array.isArray(preflight.warnings) && preflight.warnings.length
+                ? '\n\nUyarılar:\n• ' + preflight.warnings.join('\n• ')
+                : '';
+
             const mode = confirm(
+                'Ön kontrol BAŞARILI.\n\n' +
                 'ÇOKLU modda tüm uygun onaylı şablonlar üretilsin mi?\n\n' +
-                'Tamam = Çoklu\nİptal = Döngüsel (tek şablon)'
+                'Tamam = Çoklu\nİptal = Döngüsel (tek şablon)' + warnings
             ) ? 'coklu' : 'dongusel';
 
             if (!confirm(
