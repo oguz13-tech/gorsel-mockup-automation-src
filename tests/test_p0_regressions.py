@@ -459,6 +459,15 @@ class TestNextRunRetryAcceptance(unittest.TestCase):
     def test_factory_next_run_retry(self):
         from SISTEM_MOTORU.pc_master_factory import PCMasterFactory, StateManager
         
+        def approved_pool(prod_key):
+            if prod_key != "01_Wifi_Kutusu":
+                return []
+            return [(
+                "tmpl1.png",
+                self.sablon_dir / "01_Wifi_Kutusu" / "tmpl1.png",
+                {"profile_orientation": "H", "nominal_aspect": 4.0 / 3.0},
+            )]
+
         with patch("SISTEM_MOTORU.pc_master_factory.FACTORY_DIR", new=self.factory_dir), \
              patch("SISTEM_MOTORU.pc_master_factory.SABLON_DIR", new=self.sablon_dir), \
              patch("SISTEM_MOTORU.pc_master_factory.OUTPUT_DIR", new=self.out_dir), \
@@ -469,11 +478,7 @@ class TestNextRunRetryAcceptance(unittest.TestCase):
              patch.object(
                  PCMasterFactory,
                  "get_template_pool",
-                 return_value=[(
-                     "tmpl1.png",
-                     self.sablon_dir / "01_Wifi_Kutusu" / "tmpl1.png",
-                     {"profile_orientation": "H", "nominal_aspect": 4.0 / 3.0},
-                 )],
+                 side_effect=approved_pool,
              ):
              
             def fake_submit(fn, *args, **kwargs):
