@@ -456,6 +456,28 @@ class TestNextRunRetryAcceptance(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
+    def test_seo_title_is_stable_for_same_product_identity(self):
+        from SISTEM_MOTORU.pc_master_factory import SeoEngine
+
+        seo = SeoEngine()
+        first = seo.generate_title(
+            "01_Wifi_Kutusu",
+            "Tema_A",
+            identity_seed="sg-M00001",
+        )
+
+        # Disturb global randomness to prove title generation is independent.
+        import random
+        for _ in range(10):
+            random.random()
+
+        second = seo.generate_title(
+            "01_Wifi_Kutusu",
+            "Tema_A",
+            identity_seed="sg-M00001",
+        )
+        self.assertEqual(first, second)
+
     def test_factory_next_run_retry(self):
         from SISTEM_MOTORU.pc_master_factory import PCMasterFactory, StateManager
         
