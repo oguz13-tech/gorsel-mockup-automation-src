@@ -2654,6 +2654,11 @@ if __name__ == "__main__":
     if args.preflight:
         preflight = build_factory_preflight()
         print(json.dumps(preflight, ensure_ascii=False, indent=2))
+        # Stable final-line protocol for the local control center.
+        print(
+            "PREFLIGHT_JSON="
+            + json.dumps(preflight, ensure_ascii=False, separators=(",", ":"))
+        )
         raise SystemExit(0 if preflight["ready"] else 2)
 
     bot = PCMasterFactory(mode=args.mod)
