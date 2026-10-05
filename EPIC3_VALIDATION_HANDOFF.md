@@ -15,7 +15,9 @@ Production safety posture:
 
 ## One-command evidence bundle
 
-Run from the clean source workspace:
+Run from the clean source workspace on exactly `feature/epic-3-geometry-accuracy`.
+
+Before running, `git status --short` must show no staged/unstaged tracked changes. The validation bundle refuses the wrong branch or a dirty tracked worktree and verifies that branch + HEAD remain unchanged through the run.
 
 ```powershell
 python scripts/epic3_validation_bundle.py --dataset C:\AI_WORK\epic2_golden_benchmark --output-dir C:\AI_WORK\epic3_validation
@@ -64,7 +66,11 @@ Required checks:
     - analyze remains REVIEW_REQUIRED;
     - manual corner approval persists exact canonical geometry;
     - source hash change makes old approval stale;
-    - foreground AI suggestions remain review-only.
+    - foreground AI suggestions remain review-only;
+    - physical H/V metadata is never inferred from projected quad geometry;
+    - fixed-orientation categories use the category physical contract;
+    - mixed `04_Cam_Dograma` approval requires an explicit reviewed H/V selection;
+    - projected orientation is diagnostic only and may differ from physical orientation.
 
 ## Release decisions
 
