@@ -2465,8 +2465,7 @@ def build_factory_preflight() -> dict:
                                 )
 
                             cache_file = (
-                                BASE_DIR
-                                / "masks"
+                                MASK_CACHE_DIR
                                 / (
                                     f"{category}_{row['source_asset_sha256']}_"
                                     "v3_auto_ai_mask.png"
