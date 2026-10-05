@@ -885,5 +885,109 @@ class TestP1_P15Acceptance(unittest.TestCase):
         self.assertNotEqual(rows[1][2], "APPROVED")
 
 
+    def test_legacy_profile_schema_without_id_supports_review_flow(self):
+        import hashlib
+        from app import app
+        from core.template_intelligence import save_template_profile
+
+        runtime_root = os.path.join(self.temp_dir, 'legacy_runtime_no_id')
+        db_dir = os.path.join(runtime_root, 'SABLON_V2_MIMARI')
+        category = '02_Cam_Tablo_Dikey'
+        filename = 'legacy_profile.png'
+        uid = category + '_' + filename
+        img_dir = os.path.join(runtime_root, '2_SABLON_HAVUZU', category)
+        os.makedirs(db_dir, exist_ok=True)
+        os.makedirs(img_dir, exist_ok=True)
+        img_path = os.path.join(img_dir, filename)
+        cv2.imwrite(img_path, np.zeros((120, 100, 3), dtype=np.uint8))
+        with open(img_path, 'rb') as handle:
+            source_hash = hashlib.sha256(handle.read()).hexdigest()
+
+        legacy_db = os.path.join(db_dir, 'ayarlar.db')
+        conn = sqlite3.connect(legacy_db)
+        conn.execute('''CREATE TABLE templates (
+            category_id TEXT, filename TEXT, data TEXT,
+            PRIMARY KEY (category_id, filename)
+        )''')
+        conn.execute('''CREATE TABLE template_profiles (
+            template_uid TEXT, category TEXT, source_relative_path TEXT,
+            source_asset_sha256 TEXT, profile_version TEXT, analyzer_version TEXT,
+            product_class TEXT, orientation TEXT, geometry_type TEXT,
+            print_policy TEXT, surface_quad TEXT, outer_quad TEXT,
+            surface_mask_path TEXT, material TEXT, has_frame INTEGER,
+            has_mat INTEGER, has_reflection INTEGER, has_occlusion INTEGER,
+            confidence_total REAL, component_confidences TEXT, review_status TEXT,
+            manually_verified INTEGER, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            nominal_aspect TEXT, is_active INTEGER DEFAULT 1
+        )''')
+        conn.execute(
+            'INSERT INTO templates (category_id, filename, data) VALUES (?, ?, ?)',
+            (category, filename, json.dumps({
+                'tip': 'perspektif',
+                'koseler': [[10, 10], [90, 10], [90, 110], [10, 110]],
+            })),
+        )
+        conn.commit()
+        columns = [row[1] for row in conn.execute(
+            'PRAGMA table_info(template_profiles)'
+        ).fetchall()]
+        conn.close()
+        self.assertNotIn('id', columns)
+
+        app.testing = True
+        client = app.test_client()
+        payload = {
+            'template_uid': uid,
+            'category': category,
+            'template': filename,
+            'corners': [[10, 10], [90, 10], [90, 110], [10, 110]],
+            'physical_orientation': '',
+            'on_plan': {},
+        }
+        with patch('app.BASE_DIR', runtime_root):
+            approved = client.post('/api/templates/update_corners', json=payload)
+            self.assertEqual(approved.status_code, 200, approved.get_json())
+
+            reapproved = client.post(
+                '/api/templates/approve',
+                json={'template_uid': uid},
+            )
+            self.assertEqual(reapproved.status_code, 200, reapproved.get_json())
+
+            rejected = client.post(
+                '/api/templates/reject',
+                json={'template_uid': uid},
+            )
+            self.assertEqual(rejected.status_code, 200, rejected.get_json())
+
+        # Exercise save_template_profile's existing-row path against the
+        # same legacy schema: row identity must use SQLite rowid, not id.
+        save_template_profile(legacy_db, {
+            'template_uid': uid,
+            'category': category,
+            'source_relative_path': category + '/' + filename,
+            'source_asset_sha256': 'new-hash-for-rowid-regression',
+            'analyzer_version': 'legacy-rowid-test',
+            'orientation': 'V',
+            'nominal_aspect': str(5.0 / 7.0),
+            'surface_quad': [[10, 10], [90, 10], [90, 110], [10, 110]],
+            'review_status': 'REVIEW_REQUIRED',
+            'manually_verified': False,
+        })
+
+        conn = sqlite3.connect(legacy_db)
+        rows = conn.execute('''SELECT source_asset_sha256, review_status, is_active
+                               FROM template_profiles
+                               WHERE template_uid=?
+                               ORDER BY rowid''', (uid,)).fetchall()
+        conn.close()
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0][1], 'STALE_SOURCE_CHANGED')
+        self.assertEqual(rows[0][2], 0)
+        self.assertEqual(rows[1][0], 'new-hash-for-rowid-regression')
+        self.assertEqual(rows[1][1], 'REVIEW_REQUIRED')
+        self.assertEqual(rows[1][2], 1)
+
+
 if __name__ == "__main__":
     unittest.main()
