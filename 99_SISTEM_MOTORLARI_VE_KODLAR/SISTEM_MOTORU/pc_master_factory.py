@@ -495,7 +495,8 @@ class StateManager:
                     status=excluded.status,
                     updated_at=CURRENT_TIMESTAMP
                 """, (
-                    data.get("sku", ""), data.get("master_id", ""), data.get("kategori_key", ""),
+                    data.get("sku", ""), data.get("master_id", ""),
+                    data.get("kategori_key") or data.get("category", ""),
                     data.get("barkod", ""), data.get("model_kodu", ""), data.get("urun_adi", ""),
                     data.get("aciklama", ""), data.get("ham_baski_dosyasi", ""), data.get("mockup_dosyasi", ""),
                     data.get("magaza_grubu", ""), data.get("resim_linki", ""), data.get("status", "COMPLETED")
