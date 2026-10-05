@@ -976,7 +976,7 @@ def api_templates_approve():
         conn = sqlite3.connect(db_path)
         try:
             row = conn.execute(
-                """SELECT id, surface_quad, source_asset_sha256, source_relative_path,
+                """SELECT rowid AS profile_rowid, surface_quad, source_asset_sha256, source_relative_path,
                           orientation, nominal_aspect
                    FROM template_profiles
                    WHERE template_uid=? AND is_active=1""",
@@ -1057,7 +1057,7 @@ def api_templates_approve():
                    SET review_status='APPROVED', manually_verified=1,
                        orientation=?, nominal_aspect=?,
                        updated_at=CURRENT_TIMESTAMP
-                   WHERE id=?""",
+                   WHERE rowid=?""",
                 (physical_orientation, nominal_aspect, profile_id),
             )
             conn.commit()
@@ -1129,8 +1129,7 @@ def api_templates_reject():
         conn = sqlite3.connect(db_path)
         try:
             row = conn.execute(
-                """SELECT id, source_asset_sha256, source_relative_path,
-                          has_occlusion
+                """SELECT rowid AS profile_rowid, source_asset_sha256, source_relative_path
                    FROM template_profiles
                    WHERE template_uid=? AND is_active=1""",
                 (uid,),
@@ -1154,7 +1153,7 @@ def api_templates_reject():
                 """UPDATE template_profiles
                    SET review_status='REJECTED', manually_verified=1,
                        updated_at=CURRENT_TIMESTAMP
-                   WHERE id=?""",
+                   WHERE rowid=?""",
                 (profile_id,),
             )
             conn.commit()
@@ -1207,7 +1206,7 @@ def api_templates_update_corners():
         conn.row_factory = sqlite3.Row
         try:
             row = conn.execute(
-                """SELECT id, source_asset_sha256, source_relative_path,
+                """SELECT rowid AS profile_rowid, source_asset_sha256, source_relative_path,
                           has_occlusion
                    FROM template_profiles
                    WHERE template_uid=? AND is_active=1""",
@@ -1215,7 +1214,7 @@ def api_templates_update_corners():
             ).fetchone()
 
             if row:
-                profile_id = int(row["id"])
+                profile_id = int(row["profile_rowid"])
                 source_hash = row["source_asset_sha256"]
                 relative_path = row["source_relative_path"]
                 existing_has_occlusion = bool(row["has_occlusion"])
@@ -1410,7 +1409,7 @@ def api_templates_update_corners():
                            confidence_total=1.0, component_confidences=?,
                            review_status='APPROVED', manually_verified=1,
                            updated_at=CURRENT_TIMESTAMP
-                       WHERE id=?""",
+                       WHERE rowid=?""",
                     (
                         json.dumps(canonical.tolist()),
                         physical_orientation,
