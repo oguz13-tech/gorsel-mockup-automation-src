@@ -2606,19 +2606,31 @@ class PCMasterFactory:
                     prior_local = Path(
                         prior_artifact.get("local_output_path") or ""
                     )
-                    can_resume_upload = (
-                        prior_artifact.get("status")
-                        in ("RENDERED", "UPLOAD_FAILED")
+                    prior_status = prior_artifact.get("status")
+                    pending_excel_only = (
+                        prior_status == "UPLOADED_PENDING_EXCEL"
+                        and prior_local.is_file()
+                        and bool(prior_artifact.get("upload_url"))
+                    )
+                    can_resume_local = (
+                        prior_status
+                        in ("RENDERED", "UPLOAD_FAILED", "UPLOADED_PENDING_EXCEL")
                         and prior_local.is_file()
                     )
 
-                    if can_resume_upload:
+                    if can_resume_local:
                         out_path = prior_local
                         upload_resumed += 1
-                        logger.info(
-                            f"  ♻️ Render tekrar edilmiyor; mevcut artifact "
-                            f"buluta yeniden gönderilecek: {out_path.name}"
-                        )
+                        if pending_excel_only:
+                            logger.info(
+                                f"  ♻️ Render/yükleme tekrar edilmiyor; "
+                                f"Excel kaydı tamamlanacak: {out_path.name}"
+                            )
+                        else:
+                            logger.info(
+                                f"  ♻️ Render tekrar edilmiyor; mevcut artifact "
+                                f"buluta yeniden gönderilecek: {out_path.name}"
+                            )
                     else:
                         logger.info(
                             f"  🖌️ Render ({record['source_orientation']}): "
@@ -2697,8 +2709,16 @@ class PCMasterFactory:
                         "ham_baski_dosyasi": target_raw_path.name,
                         "mockup_dosyasi": out_path.name,
                         "magaza_grubu": magaza_grubu,
-                        "resim_linki": "",
-                        "status": "RENDERED"
+                        "resim_linki": (
+                            str(prior_artifact.get("upload_url") or "")
+                            if pending_excel_only
+                            else ""
+                        ),
+                        "status": (
+                            "UPLOADED_PENDING_EXCEL"
+                            if pending_excel_only
+                            else "RENDERED"
+                        )
                     }
 
                     self.thread_pool.submit(
@@ -2778,26 +2798,44 @@ class PCMasterFactory:
         return True
 
     def _async_upload_and_excel(self, mockup_path: Path, prod_record: dict):
-        url = None
-        for attempt in range(3):
-            url = self.uploader.upload_sync(mockup_path)
-            if url: break
-            # Her deneme arasi ufak bekleme
-            time.sleep(2)
-            
-        if url:
-            prod_record["resim_linki"] = url
-            prod_record["upload_url"] = url
-            prod_record["status"] = "UPLOADED"
-            logger.info(f"    ☁️ Bulut Yüklendi: {prod_record['sku']} -> {url}")
-        else:
+        # If upload already succeeded in an earlier interrupted run, resume at
+        # Excel only. This avoids duplicate cloud copies.
+        url = str(prod_record.get("resim_linki") or "").strip() or None
+
+        if not url:
+            for attempt in range(3):
+                url = self.uploader.upload_sync(mockup_path)
+                if url:
+                    break
+                # Her deneme arasi ufak bekleme
+                time.sleep(2)
+
+        if not url:
+            prod_record["resim_linki"] = ""
+            prod_record["upload_url"] = ""
             prod_record["status"] = "UPLOAD_FAILED"
             with self.metrics_lock:
                 self.upload_failures += 1
-            logger.error(f"    ❌ BULUT YÜKLEME BAŞARISIZ (3 deneme): {prod_record['sku']}")
+            logger.error(
+                f"    ❌ BULUT YÜKLEME BAŞARISIZ (3 deneme): "
+                f"{prod_record['sku']}"
+            )
+            self.state.save_render_artifact(prod_record)
+            self.state.save_product(prod_record)
+            # Marketplace Excel must never contain a row with a missing image
+            # link. The row is emitted only after upload succeeds.
+            return
 
+        prod_record["resim_linki"] = url
+        prod_record["upload_url"] = url
+        prod_record["status"] = "UPLOADED_PENDING_EXCEL"
+        logger.info(
+            f"    ☁️ Bulut hazır: {prod_record['sku']} -> {url}"
+        )
+
+        # Persist upload success before Excel. If the process stops here, the
+        # next run resumes at Excel and does not upload or render again.
         self.state.save_render_artifact(prod_record)
-        # Sadece backward-compatibility icin products'a update
         self.state.save_product(prod_record)
 
         excel_row = {
@@ -2810,10 +2848,20 @@ class PCMasterFactory:
             "Ürün Adı": prod_record["urun_adi"],
             "Açıklama": prod_record["aciklama"],
             "Mockup Dosya Adı": prod_record["mockup_dosyasi"],
-            "Resim Linki": prod_record.get("resim_linki", ""),
+            "Resim Linki": prod_record["resim_linki"],
             "Eklenme Zamanı": time.strftime("%d.%m.%Y %H:%M:%S")
         }
-        self.excel.append_row(excel_row)
+        queued = self.excel.append_row(excel_row)
+        if queued:
+            with self.pending_excel_lock:
+                self.pending_excel_artifacts.append(
+                    prod_record["artifact_key"]
+                )
+        else:
+            logger.error(
+                f"    ❌ Excel kuyruğu yazılamadı: "
+                f"{prod_record['artifact_key']}"
+            )
 
 # ==============================================================================
 # 10. CLI VE İNTERAKTİF GİRİŞ NOKTASI
