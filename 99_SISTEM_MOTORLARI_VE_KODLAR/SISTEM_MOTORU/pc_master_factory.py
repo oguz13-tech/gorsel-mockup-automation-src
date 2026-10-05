@@ -2149,9 +2149,10 @@ def build_factory_preflight() -> dict:
                         if category == "04_Cam_Dograma":
                             orient_ok = orientation in ("H", "V")
                         else:
-                            orient_ok = (
-                                orientation in ("UNKNOWN", product.orientation)
-                            )
+                            # Must match the same physical-orientation contract
+                            # enforced by process_mockup; UNKNOWN would pass this
+                            # preflight and then be rejected during rendering.
+                            orient_ok = orientation == product.orientation
                         if not orient_ok:
                             orientation_mismatch += 1
                             continue
