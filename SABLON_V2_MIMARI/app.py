@@ -616,7 +616,6 @@ def _invalidate_stale_profiles_for_source(
     try:
         placeholders = ",".join("?" for _ in relative_candidates)
         params = [
-            current_hash,
             uid,
             *sorted(relative_candidates),
             current_hash,
