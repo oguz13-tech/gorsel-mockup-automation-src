@@ -307,33 +307,59 @@ class TestP1_P15Acceptance(unittest.TestCase):
             self.assertNotEqual(row[0], "APPROVED")
 
     def test_p12_explicit_approve_endpoint_persists(self):
+        import hashlib
         import sys
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "SABLON_V2_MIMARI"))
         from app import app
         from core.template_intelligence import save_template_profile
-        
-        # Save UNANALYZED
+
+        category = "02_Cam_Tablo_Dikey"
+        filename = "tmpl2.png"
+        uid = f"{category}_{filename}"
+
+        # Approval is source-hash-bound and requires real, valid geometry.
+        img_dir = os.path.join(self.temp_dir, "2_SABLON_HAVUZU", category)
+        os.makedirs(img_dir, exist_ok=True)
+        img_path = os.path.join(img_dir, filename)
+        cv2.imwrite(img_path, np.zeros((120, 100, 3), dtype=np.uint8))
+        with open(img_path, "rb") as handle:
+            source_hash = hashlib.sha256(handle.read()).hexdigest()
+
         profile_data = {
-            "template_uid": "test_uid2", "category": "cat2", "source_relative_path": "cat2/tmpl2.png",
-            "source_asset_sha256": "hash2", "analyzer_version": "v1.3", "orientation": "V",
+            "template_uid": uid,
+            "category": category,
+            "source_relative_path": f"{category}/{filename}",
+            "source_asset_sha256": source_hash,
+            "analyzer_version": "v2.3",
+            "orientation": "V",
+            "nominal_aspect": "0.71428571",
+            "surface_quad": [[10, 10], [90, 10], [90, 110], [10, 110]],
             "review_status": "REVIEW_REQUIRED",
         }
         save_template_profile(self.db_path, profile_data)
-        
+
         app.testing = True
         client = app.test_client()
-        # Mock BASE_DIR inside app so it uses our temp db
+        # Mock BASE_DIR inside app so approval resolves the exact test source.
         with patch('app.BASE_DIR', self.temp_dir):
             os.makedirs(os.path.join(self.temp_dir, "SABLON_V2_MIMARI"), exist_ok=True)
-            shutil.copy2(self.db_path, os.path.join(self.temp_dir, "SABLON_V2_MIMARI", "ayarlar.db"))
-            resp = client.post('/api/templates/approve', json={"template_uid": "test_uid2"})
+            shutil.copy2(
+                self.db_path,
+                os.path.join(self.temp_dir, "SABLON_V2_MIMARI", "ayarlar.db"),
+            )
+            resp = client.post('/api/templates/approve', json={"template_uid": uid})
             self.assertEqual(resp.status_code, 200)
-            
+
             # Check db
             conn = sqlite3.connect(os.path.join(self.temp_dir, "SABLON_V2_MIMARI", "ayarlar.db"))
-            row = conn.execute("SELECT review_status, manually_verified FROM template_profiles WHERE template_uid='test_uid2' AND is_active=1").fetchone()
+            row = conn.execute(
+                "SELECT review_status, manually_verified, orientation "
+                "FROM template_profiles WHERE template_uid=? AND is_active=1",
+                (uid,),
+            ).fetchone()
             self.assertEqual(row[0], "APPROVED")
             self.assertEqual(row[1], 1)
+            self.assertEqual(row[2], "V")
 
     def test_p13_review_overlay_does_not_modify_source(self):
         from app import app
