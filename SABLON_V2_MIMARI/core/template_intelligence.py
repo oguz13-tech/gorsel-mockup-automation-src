@@ -77,8 +77,12 @@ class CategoryRuleEngine:
     def get_rule_by_folder(cls, folder_name: str) -> dict:
         for key, rule in cls.RULES.items():
             if folder_name in rule["folders"]:
-                rule["key"] = key
-                return rule
+                # Never mutate the class-level rule table while answering a
+                # request. A copy keeps concurrent analyses deterministic.
+                resolved = dict(rule)
+                resolved["folders"] = list(rule.get("folders", []))
+                resolved["key"] = key
+                return resolved
         raise ValueError(f"UNKNOWN_CATEGORY: {folder_name}")
 
 class GeometryValidator:
@@ -404,7 +408,7 @@ class CandidateGenerators:
 
 class TemplateAnalyzer:
     def __init__(self):
-        self.version = "v1.8"
+        self.version = "v1.9"
         self.auto_approval_enabled = False
         
     def measure_edge_contrast(self, image_cv: np.ndarray, quad: np.ndarray) -> float:
@@ -649,10 +653,24 @@ class TemplateAnalyzer:
             "analyzer_version": self.version
         }
         
-        # Never fabricate frame geometry. Preserve an outer quad only when it comes
-        # from trusted/manual geometry supplied to the analyzer.
+        # Never fabricate frame geometry. Preserve an outer quad only when
+        # trusted/manual geometry is itself a valid quad for these exact image
+        # dimensions.
         if isinstance(manual_geometry_prior, dict) and manual_geometry_prior.get("outer_quad") is not None:
-            res["outer_quad"] = manual_geometry_prior["outer_quad"]
+            try:
+                outer = np.asarray(
+                    manual_geometry_prior["outer_quad"],
+                    dtype=np.float32,
+                )
+                outer_valid, _ = GeometryValidator.is_valid_quad(outer, w, h)
+                if outer_valid:
+                    res["outer_quad"] = (
+                        GeometryValidator.canonical_sort(outer)
+                        .astype(float)
+                        .tolist()
+                    )
+            except (TypeError, ValueError):
+                pass
             
         return res
 
