@@ -492,6 +492,7 @@ def main() -> int:
                     "tests/test_epic3_validation_bundle.py",
                     "tests/test_epic3_benchmark.py",
                     "tests/test_control_center_file_ops.py",
+                    "tests/test_runtime_workspace_routing.py",
                     "-v",
                 ],
                 env=source_env,
