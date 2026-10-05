@@ -29,8 +29,8 @@ ARCH = ROOT / "SABLON_V2_MIMARI"
 sys.path.insert(0, str(ARCH))
 sys.path.insert(0, str(ROOT))
 
-from core.template_intelligence import GeometryValidator, TemplateAnalyzer
-from scripts.benchmark import CATEGORIES, calculate_corner_error, calculate_iou, validate_gt_quad
+from core.template_intelligence import TemplateAnalyzer
+from scripts.benchmark import CATEGORIES, calculate_corner_error, calculate_iou
 
 EPIC2_BASELINE_SHA = "97cd5cbad562ffff8904d13b28516f4390430d8b"
 IOU_TARGET = 0.50
@@ -65,8 +65,42 @@ def _load_analyzer_from_git(commit_sha: str):
         raise
 
 
-def _valid_prediction(quad, width: int, height: int):
-    if quad is None:
+def _canonical_eval_quad(quad: np.ndarray) -> np.ndarray:
+    """Benchmark-owned deterministic TL/TR/BR/BL ordering.
+
+    Release evidence must not change merely because production geometry helpers
+    evolve. Keep evaluator ordering local and version-stable.
+    """
+    arr = np.asarray(quad, dtype=np.float64)
+    center = np.mean(arr, axis=0)
+    angles = np.arctan2(arr[:, 1] - center[1], arr[:, 0] - center[0])
+    cycle = arr[np.argsort(angles)]
+
+    signed_twice_area = float(
+        np.sum(
+            cycle[:, 0] * np.roll(cycle[:, 1], -1)
+            - np.roll(cycle[:, 0], -1) * cycle[:, 1]
+        )
+    )
+    if signed_twice_area < 0:
+        cycle = cycle[::-1]
+
+    sums = cycle[:, 0] + cycle[:, 1]
+    min_sum = float(np.min(sums))
+    tied = np.flatnonzero(np.isclose(sums, min_sum, rtol=0.0, atol=1e-6))
+    if len(tied) == 1:
+        start = int(tied[0])
+    else:
+        start = min(
+            (int(i) for i in tied),
+            key=lambda i: (cycle[i, 1], cycle[i, 0]),
+        )
+    return np.roll(cycle, -start, axis=0).astype(np.float32)
+
+
+def _evaluate_quad(quad, width: int, height: int, *, gt: bool = False):
+    """Frozen evaluator contract shared by EPIC-2 and EPIC-3 predictions."""
+    if quad is None or width <= 0 or height <= 0:
         return None
     try:
         arr = np.asarray(quad, dtype=np.float32)
@@ -74,10 +108,71 @@ def _valid_prediction(quad, width: int, height: int):
         return None
     if arr.shape != (4, 2) or not np.isfinite(arr).all():
         return None
-    valid, _ = GeometryValidator.is_valid_quad(arr, width, height)
-    if not valid:
+
+    if gt:
+        tol = 0.5
+        if (
+            np.any(arr[:, 0] < -tol)
+            or np.any(arr[:, 0] > (width - 1) + tol)
+            or np.any(arr[:, 1] < -tol)
+            or np.any(arr[:, 1] > (height - 1) + tol)
+        ):
+            return None
+    else:
+        if (
+            np.any(arr[:, 0] < -width * 0.5)
+            or np.any(arr[:, 0] > width * 1.5)
+            or np.any(arr[:, 1] < -height * 0.5)
+            or np.any(arr[:, 1] > height * 1.5)
+        ):
+            return None
+
+    canonical = _canonical_eval_quad(arr)
+    area = float(abs(cv2.contourArea(canonical)))
+    if gt:
+        if area <= 1.0:
+            return None
+    elif area < float(width * height) * 0.05:
         return None
-    return GeometryValidator.canonical_sort(arr).astype(float).tolist()
+
+    if not cv2.isContourConvex(canonical.astype(np.int32)):
+        return None
+
+    edges = [
+        float(np.linalg.norm(canonical[(i + 1) % 4] - canonical[i]))
+        for i in range(4)
+    ]
+    minimum_edge = 1.0 if gt else 10.0
+    if min(edges) <= minimum_edge:
+        return None
+
+    if not gt:
+        avg_w = (edges[0] + edges[2]) * 0.5
+        avg_h = (edges[1] + edges[3]) * 0.5
+        if avg_w <= 0 or avg_h <= 0:
+            return None
+        if avg_w / avg_h > 10.0 or avg_h / avg_w > 10.0:
+            return None
+        target = np.array(
+            [[0, 0], [100, 0], [100, 100], [0, 100]],
+            dtype=np.float32,
+        )
+        matrix, _ = cv2.findHomography(canonical, target)
+        if matrix is None or np.linalg.cond(matrix) > 1e6:
+            return None
+
+    return canonical.astype(float).tolist()
+
+
+def _valid_prediction(quad, width: int, height: int):
+    return _evaluate_quad(quad, width, height, gt=False)
+
+
+def _valid_gt(quad, width: int, height: int):
+    normalized = _evaluate_quad(quad, width, height, gt=True)
+    if normalized is None:
+        return False, "GT quad failed frozen benchmark validation", None
+    return True, "Valid", normalized
 
 
 def _summarize(records: List[Dict], prefix: str) -> Dict:
@@ -161,7 +256,7 @@ def run(dataset_path: Path, output_path: Path) -> Dict:
                     raise ValueError(f"Unreadable sample: {image_path}")
                 h, w = image.shape[:2]
 
-                gt_ok, gt_reason, gt_quad = validate_gt_quad(
+                gt_ok, gt_reason, gt_quad = _valid_gt(
                     dataset[name].get("quad"), w, h
                 )
                 if not gt_ok:
