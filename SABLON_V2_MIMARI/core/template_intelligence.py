@@ -465,7 +465,7 @@ class CandidateGenerators:
 
 class TemplateAnalyzer:
     def __init__(self):
-        self.version = "v2.2"
+        self.version = "v2.3"
         self.auto_approval_enabled = False
         
     def measure_edge_contrast(self, image_cv: np.ndarray, quad: np.ndarray) -> float:
