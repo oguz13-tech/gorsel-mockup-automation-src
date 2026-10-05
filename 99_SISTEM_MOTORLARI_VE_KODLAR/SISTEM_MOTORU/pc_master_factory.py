@@ -1682,11 +1682,17 @@ class PCMasterFactory:
 
         return pool
 
-    def process_all(self):
+    def process_all(self) -> bool:
         items = self.load_manifest()
         if not items:
-            logger.warning("İşlenecek manifest öğesi bulunamadı.")
-            return
+            logger.error("İşlenecek manifest öğesi bulunamadı.")
+            return False
+
+        eligible_template_count = 0
+        completed_artifact_count = 0
+        render_attempted = 0
+        render_succeeded = 0
+        render_failed = 0
 
         logger.info(f"🚀 PC MASTER FABRİKASI BAŞLATILDI | Toplam Master: {len(items)} | Mod: {self.mode.upper()}")
 
@@ -1725,6 +1731,7 @@ class PCMasterFactory:
                 if not template_pool:
                     logger.warning(f"  ⚠️ Onaylı şablon havuzu boş: {prod_key}")
                     continue
+                eligible_template_count += len(template_pool)
 
                 recipe_version = "v2_epic3"
 
@@ -1808,6 +1815,10 @@ class PCMasterFactory:
                         f"  ⚠️ Uyumlu kaynak/şablon eşleşmesi yok: {prod_key}"
                     )
                     continue
+
+                completed_artifact_count += sum(
+                    1 for record in template_records if record["completed"]
+                )
 
                 if all(record["completed"] for record in template_records):
                     for record in template_records:
@@ -1905,6 +1916,7 @@ class PCMasterFactory:
                         f"  🖌️ Render ({record['source_orientation']}): "
                         f"{artifact_key} -> {sku}"
                     )
+                    render_attempted += 1
 
                     success = MockupRenderer.process_mockup(
                         raw_path=target_raw_path,
@@ -1919,7 +1931,9 @@ class PCMasterFactory:
                     )
 
                     if not success:
+                        render_failed += 1
                         continue
+                    render_succeeded += 1
 
                     # P0 Fix: Call RealESRGAN Quality Engine
                     if (
@@ -1971,13 +1985,45 @@ class PCMasterFactory:
                         prod_record,
                     )
 
-        logger.info("\n⏳ Tüm mockuplar çizildi, arkaplandaki bulut yüklemeleri tamamlanıyor...")
+        logger.info("\n⏳ Render aşaması bitti, arkaplandaki bulut yüklemeleri tamamlanıyor...")
         self.thread_pool.shutdown(wait=True)
         self.excel.flush()
 
-        logger.info("\n🎉 TÜM İŞLEMLER BAŞARIYLA TAMAMLANDI!")
+        logger.info(
+            "📊 Çalışma özeti | "
+            f"approved_templates={eligible_template_count} "
+            f"already_completed={completed_artifact_count} "
+            f"render_attempted={render_attempted} "
+            f"render_succeeded={render_succeeded} "
+            f"render_failed={render_failed}"
+        )
         logger.info(f"📊 Durum Özeti: {self.state.get_summary()}")
         logger.info(f"📁 Çıktı Excel: {self.excel.file_path}")
+
+        if eligible_template_count == 0:
+            logger.error(
+                "❌ Üretim yapılamadı: source-valid APPROVED şablon bulunamadı. "
+                "Önce Şablon İnceleme Merkezi'nde geometriyi doğrulayın."
+            )
+            return False
+
+        if render_attempted == 0 and completed_artifact_count > 0:
+            logger.info("✅ Yeni render gerekmiyor; uygun artifact'ların tamamı zaten mevcut.")
+            return True
+
+        if render_attempted > 0 and render_succeeded == 0:
+            logger.error("❌ Tüm render denemeleri başarısız oldu.")
+            return False
+
+        if render_failed > 0:
+            logger.error(
+                f"⚠️ Üretim kısmi tamamlandı: {render_succeeded} başarılı, "
+                f"{render_failed} başarısız."
+            )
+            return False
+
+        logger.info("\n🎉 TÜM UYGUN RENDER İŞLEMLERİ BAŞARIYLA TAMAMLANDI!")
+        return True
 
     def _async_upload_and_excel(self, mockup_path: Path, prod_record: dict):
         url = None
@@ -2027,4 +2073,5 @@ def parse_args():
 if __name__ == "__main__":
     args = parse_args()
     bot = PCMasterFactory(mode=args.mod)
-    bot.process_all()
+    ok = bot.process_all()
+    raise SystemExit(0 if ok else 1)
