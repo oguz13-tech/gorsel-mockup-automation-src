@@ -1623,17 +1623,30 @@ class PCMasterFactory:
                 continue
 
             profile_orientation = (row["orientation"] or "UNKNOWN").upper()
-            if profile_orientation in ("H", "V") and profile_orientation != prod_def.orientation:
-                logger.info(
-                    f"⏭️ Orientation uyumsuz onaylı şablon atlandı: "
-                    f"{template_path.name} ({profile_orientation}!={prod_def.orientation})"
-                )
-                continue
-            if profile_orientation == "SQUARE" and prod_def.orientation in ("H", "V"):
-                logger.info(
-                    f"⏭️ Kare şablon ürün yönüyle uyumsuz: {template_path.name}"
-                )
-                continue
+            mixed_orientation_category = (prod_key == "04_Cam_Dograma")
+
+            if mixed_orientation_category:
+                # Cutting-board templates legitimately exist in both H and V.
+                # The renderer will pair each approved template with the
+                # corresponding H/V master instead of rotating artwork.
+                if profile_orientation not in ("H", "V"):
+                    logger.info(
+                        f"⏭️ Karma yön kategorisinde yönü belirsiz şablon atlandı: "
+                        f"{template_path.name} ({profile_orientation})"
+                    )
+                    continue
+            else:
+                if profile_orientation in ("H", "V") and profile_orientation != prod_def.orientation:
+                    logger.info(
+                        f"⏭️ Orientation uyumsuz onaylı şablon atlandı: "
+                        f"{template_path.name} ({profile_orientation}!={prod_def.orientation})"
+                    )
+                    continue
+                if profile_orientation == "SQUARE" and prod_def.orientation in ("H", "V"):
+                    logger.info(
+                        f"⏭️ Kare şablon ürün yönüyle uyumsuz: {template_path.name}"
+                    )
+                    continue
 
             # Preserve non-geometric legacy extras by exact name, then stem.
             template_name = template_path.name
@@ -1706,67 +1719,181 @@ class PCMasterFactory:
             logger.info(f"🎨 MASTER [{m_idx}/{len(items)}]: {master_id} - {theme_title}")
             logger.info("========================================================")
 
-            # 1 Master -> 5 Ürün Genişletmesi
+            # 1 Master -> ürün kategorileri genişletmesi
             for prod_key, prod_def in PRODUCT_CATALOG.items():
-                # YATAY-DİKEY GARANTİSİ
-                target_raw_path = h_path if prod_def.orientation == "H" else v_path
-                if not target_raw_path.exists():
-                    logger.warning(f"  ⚠️ Ham görsel bulunamadı ({prod_def.orientation}): {target_raw_path.name}")
-                    continue
-
                 template_pool = self.get_template_pool(prod_key)
                 if not template_pool:
-                    logger.warning(f"  ⚠️ Şablon havuzu boş: {prod_key}")
+                    logger.warning(f"  ⚠️ Onaylı şablon havuzu boş: {prod_key}")
                     continue
 
-                # Stable identities
-                import hashlib
-                recipe_version = "v1"
-                with open(target_raw_path, 'rb') as f:
-                    source_sha = hashlib.sha256(f.read()).hexdigest()
-                source_design_identity = f"{target_raw_path.name}_{source_sha}"
-                
-                # Check if there are any incomplete templates to determine if we need to run
-                templates_to_run = []
-                for sablon_name, sablon_path, sablon_conf in template_pool:
-                    with open(sablon_path, 'rb') as f:
-                        template_sha = hashlib.sha256(f.read()).hexdigest()
-                    template_identity = f"{sablon_name}_{template_sha}"
-                    artifact_key = f"{source_design_identity}_{prod_key}_{template_identity}_{recipe_version}"
-                    
-                    if not self.state.is_artifact_completed(artifact_key):
-                        templates_to_run.append((sablon_name, sablon_path, sablon_conf, artifact_key, template_identity, source_design_identity, recipe_version, template_sha))
+                recipe_version = "v2_epic3"
+
+                # Hash/source identity cache. Mixed-orientation categories can
+                # use both master variants in the same product without rotating
+                # either source artwork.
+                source_cache = {}
+
+                def _source_for_orientation(orientation: str):
+                    orient = (orientation or "").upper()
+                    if orient == "H":
+                        path = h_path
+                    elif orient == "V":
+                        path = v_path
                     else:
-                        logger.info(f"  ⏭️ Atlandı (Artifact Zaten Tamam): {artifact_key}")
-                
-                if not templates_to_run:
+                        return None
+
+                    if not path.exists():
+                        return None
+
+                    cache_key = str(path.resolve())
+                    if cache_key not in source_cache:
+                        digest = hashlib.sha256()
+                        with open(path, "rb") as handle:
+                            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                                digest.update(chunk)
+                        sha = digest.hexdigest()
+                        source_cache[cache_key] = {
+                            "path": path,
+                            "sha": sha,
+                            "identity": f"{path.name}_{sha}",
+                        }
+                    return source_cache[cache_key]
+
+                # Resolve every approved template to its compatible source
+                # orientation, then construct immutable artifact identities.
+                template_records = []
+                for sablon_name, sablon_path, sablon_conf in template_pool:
+                    profile_orientation = (
+                        str(sablon_conf.get("profile_orientation") or "").upper()
+                    )
+                    source_orientation = (
+                        profile_orientation
+                        if profile_orientation in ("H", "V")
+                        else prod_def.orientation
+                    )
+                    source_info = _source_for_orientation(source_orientation)
+                    if source_info is None:
+                        logger.warning(
+                            f"  ⚠️ Ham görsel bulunamadı ({source_orientation}) "
+                            f"{master_id}/{prod_key}/{sablon_name}"
+                        )
+                        continue
+
+                    digest = hashlib.sha256()
+                    with open(sablon_path, "rb") as handle:
+                        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                            digest.update(chunk)
+                    template_sha = digest.hexdigest()
+                    template_identity = f"{sablon_name}_{template_sha}"
+                    artifact_key = (
+                        f"{source_info['identity']}_{prod_key}_"
+                        f"{template_identity}_{recipe_version}"
+                    )
+
+                    template_records.append({
+                        "name": sablon_name,
+                        "path": sablon_path,
+                        "config": sablon_conf,
+                        "artifact_key": artifact_key,
+                        "template_identity": template_identity,
+                        "template_sha": template_sha,
+                        "source_path": source_info["path"],
+                        "source_identity": source_info["identity"],
+                        "source_orientation": source_orientation,
+                        "completed": self.state.is_artifact_completed(artifact_key),
+                    })
+
+                if not template_records:
+                    logger.warning(
+                        f"  ⚠️ Uyumlu kaynak/şablon eşleşmesi yok: {prod_key}"
+                    )
                     continue
 
-                # Get SKU consistently for this source_identity if needed
-                sku_key = f"sku_{source_design_identity}_{prod_key}"
+                if all(record["completed"] for record in template_records):
+                    for record in template_records:
+                        logger.info(
+                            f"  ⏭️ Atlandı (Artifact Zaten Tamam): "
+                            f"{record['artifact_key']}"
+                        )
+                    continue
+
+                # Product/SKU identity belongs to master+category, not to H/V
+                # source files. This keeps one logical product while individual
+                # image artifacts may use different orientation masters.
+                sku_key = f"sku_v2_{master_id}_{prod_key}"
                 with db_lock, self.state.conn:
-                    row = self.state.conn.execute("SELECT value FROM system_meta WHERE key = ?", (sku_key,)).fetchone()
+                    row = self.state.conn.execute(
+                        "SELECT value FROM system_meta WHERE key = ?",
+                        (sku_key,),
+                    ).fetchone()
+
                     if row:
                         seq = int(row["value"])
                     else:
-                        seq = self.state.get_next_sequence(prod_def.barkod_prefix)
-                        self.state.conn.execute("INSERT INTO system_meta (key, value) VALUES (?, ?)", (sku_key, str(seq)))
-                
+                        # Backward-compatible adoption of the old source-bound
+                        # SKU key if this master/category was already processed.
+                        seq = None
+                        for source_info in source_cache.values():
+                            legacy_key = (
+                                f"sku_{source_info['identity']}_{prod_key}"
+                            )
+                            legacy_row = self.state.conn.execute(
+                                "SELECT value FROM system_meta WHERE key = ?",
+                                (legacy_key,),
+                            ).fetchone()
+                            if legacy_row:
+                                seq = int(legacy_row["value"])
+                                break
+
+                        if seq is None:
+                            seq = self.state.get_next_sequence(
+                                prod_def.barkod_prefix
+                            )
+
+                        self.state.conn.execute(
+                            """INSERT INTO system_meta (key, value, updated_at)
+                               VALUES (?, ?, CURRENT_TIMESTAMP)
+                               ON CONFLICT(key) DO UPDATE SET
+                                   value=excluded.value,
+                                   updated_at=CURRENT_TIMESTAMP""",
+                            (sku_key, str(seq)),
+                        )
+
                 barkod = f"{prod_def.barkod_prefix}{seq:05d}"
                 sku = barkod
                 model_kodu = f"{prod_def.model_prefix}{seq:05d}"
 
                 if self.mode == "coklu":
-                    secilen_sablonlar = templates_to_run
+                    selected_records = [
+                        record
+                        for record in template_records
+                        if not record["completed"]
+                    ]
                 else:
-                    t_idx = (seq - 1) % len(template_pool)
-                    target_tmpl = template_pool[t_idx]
-                    secilen_sablonlar = [t for t in templates_to_run if t[0] == target_tmpl[0]]
+                    # Stable round-robin selection operates on all compatible
+                    # approved templates, independent of which source H/V each
+                    # template needs.
+                    target_index = (seq - 1) % len(template_records)
+                    target_record = template_records[target_index]
+                    selected_records = (
+                        []
+                        if target_record["completed"]
+                        else [target_record]
+                    )
 
-                for sablon_name, sablon_path, sablon_conf, artifact_key, template_identity, source_design_identity, recipe_version, template_sha in secilen_sablonlar:
+                for record in selected_records:
+                    sablon_name = record["name"]
+                    sablon_path = record["path"]
+                    sablon_conf = record["config"]
+                    artifact_key = record["artifact_key"]
+                    template_identity = record["template_identity"]
+                    template_sha = record["template_sha"]
+                    target_raw_path = record["source_path"]
+                    source_design_identity = record["source_identity"]
+
                     magaza_grubu = sablon_path.stem
                     out_filename = f"{sku}_{sablon_path.stem}.jpg"
-                    
+
                     if self.mode == "coklu":
                         out_dir = OUTPUT_COKLU_DIR / prod_key / magaza_grubu
                     else:
@@ -1774,7 +1901,10 @@ class PCMasterFactory:
 
                     out_path = out_dir / out_filename
 
-                    logger.info(f"  🖌️ Render: {artifact_key} -> {sku}")
+                    logger.info(
+                        f"  🖌️ Render ({record['source_orientation']}): "
+                        f"{artifact_key} -> {sku}"
+                    )
 
                     success = MockupRenderer.process_mockup(
                         raw_path=target_raw_path,
@@ -1790,20 +1920,31 @@ class PCMasterFactory:
 
                     if not success:
                         continue
-                        
+
                     # P0 Fix: Call RealESRGAN Quality Engine
-                    # We check if 4K engine is active/available
-                    if AYARLAR.get("bulut_ayarlari", {}).get("use_realesrgan", False) and RealESRGANQualityEngine.get_exe_path():
-                        logger.info(f"  🔍 Kalite Artırılıyor (4K RealESRGAN): {out_path.name}")
-                        upscaled_path = out_path.with_name("4k_" + out_path.name)
-                        if RealESRGANQualityEngine.upscale_4k(out_path, upscaled_path):
-                            # Replace original with upscaled
+                    if (
+                        AYARLAR.get("bulut_ayarlari", {}).get(
+                            "use_realesrgan", False
+                        )
+                        and RealESRGANQualityEngine.get_exe_path()
+                    ):
+                        logger.info(
+                            f"  🔍 Kalite Artırılıyor (4K RealESRGAN): "
+                            f"{out_path.name}"
+                        )
+                        upscaled_path = out_path.with_name(
+                            "4k_" + out_path.name
+                        )
+                        if RealESRGANQualityEngine.upscale_4k(
+                            out_path, upscaled_path
+                        ):
                             import shutil
                             shutil.move(str(upscaled_path), str(out_path))
 
-                    # SEO Başlık ve Açıklama
                     seo_title = self.seo.generate_title(prod_key, theme_title)
-                    seo_desc = self.seo.get_description(prod_key, theme_title, style_key)
+                    seo_desc = self.seo.get_description(
+                        prod_key, theme_title, style_key
+                    )
 
                     prod_record = {
                         "artifact_key": artifact_key,
@@ -1824,8 +1965,11 @@ class PCMasterFactory:
                         "status": "RENDERED"
                     }
 
-                    # Arka Planda Yükle ve Excel'e Yaz (Non-blocking)
-                    self.thread_pool.submit(self._async_upload_and_excel, out_path, prod_record)
+                    self.thread_pool.submit(
+                        self._async_upload_and_excel,
+                        out_path,
+                        prod_record,
+                    )
 
         logger.info("\n⏳ Tüm mockuplar çizildi, arkaplandaki bulut yüklemeleri tamamlanıyor...")
         self.thread_pool.shutdown(wait=True)
