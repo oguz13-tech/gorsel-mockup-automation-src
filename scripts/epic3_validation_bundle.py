@@ -73,7 +73,12 @@ MIN_GOLDEN_VALID_COUNTS = {
 EXPECTED_BRANCH = "feature/epic-3-geometry-accuracy"
 
 
-def _run(name: str, command: List[str], cwd: Path = ROOT) -> Dict[str, Any]:
+def _run(
+    name: str,
+    command: List[str],
+    cwd: Path = ROOT,
+    env: Dict[str, str] | None = None,
+) -> Dict[str, Any]:
     proc = subprocess.run(
         command,
         cwd=str(cwd),
@@ -81,6 +86,7 @@ def _run(name: str, command: List[str], cwd: Path = ROOT) -> Dict[str, Any]:
         text=True,
         encoding="utf-8",
         errors="replace",
+        env=env,
     )
     return {
         "name": name,
@@ -328,6 +334,15 @@ def main() -> int:
     parser.add_argument("--dataset", required=True, type=Path)
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument(
+        "--runtime-workspace",
+        required=True,
+        type=Path,
+        help=(
+            "Real mutable production workspace. Source code remains in this "
+            "clean checkout; manifest/templates/DB/outputs are validated here."
+        ),
+    )
+    parser.add_argument(
         "--skip-unit-tests",
         action="store_true",
         help="Collect benchmark/preflight evidence without running unittest.",
@@ -342,9 +357,19 @@ def main() -> int:
 
     dataset = args.dataset.resolve()
     out_dir = args.output_dir.resolve()
+    runtime_workspace = args.runtime_workspace.resolve()
 
     if not dataset.is_dir():
         raise SystemExit(f"Dataset directory not found: {dataset}")
+    if not runtime_workspace.is_dir():
+        raise SystemExit(
+            f"Runtime workspace directory not found: {runtime_workspace}"
+        )
+    if runtime_workspace == ROOT:
+        raise SystemExit(
+            "Runtime workspace must be the real mutable production workspace, "
+            "not the clean source checkout."
+        )
 
     # Keep evidence out of the source repository by default. A caller can still
     # explicitly choose another location, but we refuse accidental in-repo output.
@@ -489,10 +514,13 @@ def main() -> int:
         )
 
     if ENGINE.exists():
+        preflight_env = os.environ.copy()
+        preflight_env["MOCKUP_RUNTIME_WORKSPACE"] = str(runtime_workspace)
         commands.append(
             _run(
                 "factory_preflight",
                 [sys.executable, str(ENGINE), "--preflight"],
+                env=preflight_env,
             )
         )
     else:
@@ -526,6 +554,7 @@ def main() -> int:
         "branch": branch_before,
         "dataset": str(dataset),
         "output_dir": str(out_dir),
+        "runtime_workspace": str(runtime_workspace),
         "commands": commands,
         "all_commands_ok": all(bool(item.get("ok")) for item in commands),
         "integrity": {
