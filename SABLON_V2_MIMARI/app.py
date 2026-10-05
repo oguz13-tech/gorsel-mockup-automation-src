@@ -91,35 +91,90 @@ def api_bulk_save_geometry():
 
 @app.route('/api/orijinal_yukle', methods=['POST'])
 def api_orijinal_yukle():
+    """Restore a template working image from the immutable original backup.
+
+    The replacement is atomic. Any APPROVED profile bound to different source
+    bytes is immediately marked stale, so the UI and production gate agree.
+    """
     try:
         active_cat = request.headers.get('X-Active-Category', '')
         active_tmpl = request.headers.get('X-Active-Template', '')
-        
-        if active_cat and active_tmpl:
-            stem = Path(active_tmpl).stem
-            src_path = None
-            for _ext in ['.jpg', '.jpeg', '.webp', '.png', '.avif']:
-                _cand = os.path.join(YEDEK_IMG_DIR, active_cat, stem + _ext)
-                if os.path.exists(_cand):
-                    src_path = _cand
-                    break
-            
-            dest_path = os.path.join(BASE_DIR, "2_SABLON_HAVUZU", active_cat, stem + ".png")
-            
-            if src_path and os.path.exists(src_path):
-                img_raw = cv2.imdecode(np.fromfile(src_path, dtype=np.uint8), cv2.IMREAD_COLOR)
-                if img_raw is not None:
-                    _, buf = cv2.imencode('.png', img_raw)
-                    with open(dest_path, 'wb') as _f:
-                        _f.write(buf.tobytes())
-                else:
-                    shutil.copy2(src_path, dest_path)
-                return jsonify({"success": True})
-            else:
-                return jsonify({"success": False, "error": "Orijinal yedek bulunamadi."}), 404
-        return jsonify({"success": False, "error": "Kategori eksik"}), 400
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        if not active_cat or not active_tmpl:
+            return jsonify({"success": False, "error": "Kategori/sablon eksik"}), 400
+
+        stem = Path(active_tmpl).stem
+        backup_root = os.path.abspath(YEDEK_IMG_DIR)
+        src_path = None
+        for ext in ('.jpg', '.jpeg', '.webp', '.png', '.avif'):
+            candidate = _safe_under_root(
+                backup_root,
+                active_cat,
+                stem + ext,
+                label="orijinal yedek",
+            )
+            if os.path.isfile(candidate):
+                src_path = candidate
+                break
+        if src_path is None:
+            return jsonify({
+                "success": False,
+                "error": "Orijinal yedek bulunamadi.",
+            }), 404
+
+        # Working template pool is normalized to PNG; never overwrite another
+        # template or write outside the pool.
+        dest_path = _safe_template_path(active_cat, stem + ".png")
+        os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+
+        img_raw = cv2.imdecode(
+            np.fromfile(src_path, dtype=np.uint8),
+            cv2.IMREAD_COLOR,
+        )
+        if img_raw is None:
+            return jsonify({
+                "success": False,
+                "error": "Orijinal yedek görsel okunamadı.",
+            }), 422
+
+        ok, encoded = cv2.imencode(".png", img_raw)
+        if not ok:
+            return jsonify({
+                "success": False,
+                "error": "Orijinal görsel PNG olarak kodlanamadı.",
+            }), 500
+
+        tmp_path = dest_path + f".restore_{uuid.uuid4().hex}.tmp"
+        try:
+            with open(tmp_path, "wb") as handle:
+                handle.write(encoded.tobytes())
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(tmp_path, dest_path)
+        finally:
+            if os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+
+        current_hash = _sha256_file(dest_path)
+        _invalidate_stale_profiles_for_source(
+            active_cat,
+            active_tmpl,
+            stem + ".png",
+            current_hash,
+        )
+        return jsonify({
+            "success": True,
+            "source_sha256": current_hash,
+            "profiles_revalidation_required": True,
+        })
+    except ValueError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 400
+    except Exception as exc:
+        logger.exception("Orijinal sablon geri yukleme hatasi")
+        return jsonify({"success": False, "error": str(exc)}), 500
+
 
 @app.route('/api/anlik_beyazlat', methods=['POST'])
 def api_anlik_beyazlat():
@@ -413,10 +468,14 @@ def api_sablon_sil_geri_al():
         if not cat or not tmpl:
             return jsonify({"success": False, "error": "Çöp meta verisi bozuk"}), 422
 
-        source_in_trash = os.path.join(trash_dir, trash_image_name)
-        restore_dir = os.path.join(BASE_DIR, "2_SABLON_HAVUZU", cat)
+        source_in_trash = _safe_under_root(
+            trash_dir,
+            trash_image_name,
+            label="cop kutusu",
+        )
+        restore_path = _safe_template_path(cat, tmpl)
+        restore_dir = os.path.dirname(restore_path)
         os.makedirs(restore_dir, exist_ok=True)
-        restore_path = os.path.join(restore_dir, tmpl)
 
         if os.path.exists(restore_path):
             return jsonify({
@@ -516,16 +575,66 @@ def serve_image(cat, tmpl):
 
 # ==========================================
 
+def _safe_under_root(root: str, *parts, label: str = "dosya") -> str:
+    root_abs = os.path.abspath(str(root))
+    candidate = os.path.abspath(
+        os.path.join(root_abs, *(str(part) for part in parts))
+    )
+    try:
+        if os.path.commonpath([root_abs, candidate]) != root_abs:
+            raise ValueError(f"Gecersiz {label} yolu")
+    except ValueError as exc:
+        raise ValueError(f"Gecersiz {label} yolu") from exc
+    return candidate
+
+
 def _safe_template_path(category: str, template_name: str) -> str:
     """Resolve a template source path without allowing traversal outside the pool."""
     pool_root = os.path.abspath(os.path.join(BASE_DIR, "2_SABLON_HAVUZU"))
-    candidate = os.path.abspath(os.path.join(pool_root, str(category), str(template_name)))
+    return _safe_under_root(
+        pool_root,
+        category,
+        template_name,
+        label="sablon",
+    )
+
+
+def _invalidate_stale_profiles_for_source(
+    category: str,
+    requested_template: str,
+    actual_filename: str,
+    current_hash: str,
+) -> int:
+    """Mark approvals stale immediately after source bytes are replaced."""
+    db_path = os.path.join(BASE_DIR, "SABLON_V2_MIMARI", "ayarlar.db")
+    uid = f"{category}_{requested_template}"
+    relative_candidates = {
+        f"{category}/{requested_template}".replace("\\", "/"),
+        f"{category}/{actual_filename}".replace("\\", "/"),
+    }
+    conn = sqlite3.connect(db_path, timeout=30)
     try:
-        if os.path.commonpath([pool_root, candidate]) != pool_root:
-            raise ValueError("Gecersiz sablon yolu")
-    except ValueError as exc:
-        raise ValueError("Gecersiz sablon yolu") from exc
-    return candidate
+        placeholders = ",".join("?" for _ in relative_candidates)
+        params = [
+            current_hash,
+            uid,
+            *sorted(relative_candidates),
+            current_hash,
+        ]
+        cur = conn.execute(
+            f"""UPDATE template_profiles
+                SET review_status='STALE_SOURCE_CHANGED',
+                    manually_verified=0,
+                    updated_at=CURRENT_TIMESTAMP
+                WHERE is_active=1
+                  AND (template_uid=? OR source_relative_path IN ({placeholders}))
+                  AND (source_asset_sha256 IS NULL OR source_asset_sha256<>?)""",
+            params,
+        )
+        conn.commit()
+        return int(cur.rowcount or 0)
+    finally:
+        conn.close()
 
 
 def _safe_profile_relative_path(relative_path: str) -> str:
