@@ -412,6 +412,18 @@ class StateManager:
                 import logging
                 logging.getLogger("StateDB").error(f"Veritabani yazim hatasi (save_render_artifact): {e}")
 
+    def mark_artifacts_completed(self, artifact_keys: List[str]):
+        keys = [str(key) for key in artifact_keys if key]
+        if not keys:
+            return
+        with db_lock, self.conn:
+            self.conn.executemany(
+                """UPDATE render_artifacts
+                   SET status='COMPLETED', updated_at=CURRENT_TIMESTAMP
+                   WHERE artifact_key=?""",
+                [(key,) for key in keys],
+            )
+
     def save_product(self, data: dict):
         if not data:
             return
@@ -2170,6 +2182,8 @@ class PCMasterFactory:
         self.thread_pool = ThreadPoolExecutor(max_workers=3)
         self.metrics_lock = threading.Lock()
         self.upload_failures = 0
+        self.pending_excel_lock = threading.Lock()
+        self.pending_excel_artifacts = []
 
     def load_manifest(self) -> List[dict]:
         m_path = FACTORY_DIR / "manifest.json"
@@ -2695,7 +2709,17 @@ class PCMasterFactory:
 
         logger.info("\n⏳ Render aşaması bitti, arkaplandaki bulut yüklemeleri tamamlanıyor...")
         self.thread_pool.shutdown(wait=True)
-        self.excel.flush()
+        excel_flush_ok = self.excel.flush()
+        if excel_flush_ok:
+            with self.pending_excel_lock:
+                completed_keys = list(dict.fromkeys(self.pending_excel_artifacts))
+            self.state.mark_artifacts_completed(completed_keys)
+        else:
+            logger.error(
+                "❌ Excel flush başarısız; yüklenen artifact'lar COMPLETED "
+                "olarak işaretlenmedi ve sonraki çalışmada Excel adımı "
+                "yeniden denenecek."
+            )
 
         logger.info(
             "📊 Çalışma özeti | "
@@ -2734,6 +2758,9 @@ class PCMasterFactory:
                 "buluta yüklenemedi. Yeniden çalıştırmada mevcut yerel "
                 "artifact yeniden render edilmeden yüklenecek."
             )
+            return False
+
+        if not excel_flush_ok:
             return False
 
         if (
