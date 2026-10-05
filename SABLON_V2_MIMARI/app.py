@@ -727,7 +727,7 @@ def _load_matching_manual_prior(db_path, uid, img_path):
     conn = sqlite3.connect(db_path)
     try:
         row = conn.execute(
-            """SELECT surface_quad, outer_quad, source_asset_sha256
+            """SELECT surface_quad, outer_quad, source_asset_sha256, orientation
                FROM template_profiles
                WHERE template_uid=? AND is_active=1
                  AND manually_verified=1 AND review_status='APPROVED'""",
@@ -743,6 +743,9 @@ def _load_matching_manual_prior(db_path, uid, img_path):
         prior = {"surface_quad": json.loads(row[0])}
         if row[1]:
             prior["outer_quad"] = json.loads(row[1])
+        physical_orientation = str(row[3] or "").upper()
+        if physical_orientation in ("H", "V"):
+            prior["physical_orientation"] = physical_orientation
         return prior
     except (TypeError, ValueError, json.JSONDecodeError):
         return None
@@ -1094,6 +1097,9 @@ def api_templates_update_corners():
         corners = req.get("corners")
         req_category = str(req.get("category") or "").strip()
         req_template = str(req.get("template") or "").strip()
+        req_physical_orientation = str(
+            req.get("physical_orientation") or ""
+        ).strip().upper()
         req_on_plan = req.get("on_plan")
         if req_on_plan is not None and not isinstance(req_on_plan, dict):
             return jsonify({
@@ -1220,18 +1226,30 @@ def api_templates_update_corners():
             avg_w = max(1e-6, float((top + bottom) * 0.5))
             avg_h = max(1e-6, float((left + right) * 0.5))
             aspect = avg_w / avg_h
-            orientation = (
+            projected_orientation = (
                 "H" if aspect > 1.05
                 else ("V" if aspect < 0.95 else "SQUARE")
             )
 
             rule = CategoryRuleEngine.get_rule_by_folder(category_name)
-            metadata_orientation = rule.get("expected_orientation", "ANY")
-            if metadata_orientation not in ("H", "V"):
-                metadata_orientation = orientation
+            expected_orientation = rule.get("expected_orientation", "ANY")
+            if expected_orientation in ("H", "V"):
+                physical_orientation = expected_orientation
+            else:
+                if req_physical_orientation not in ("H", "V"):
+                    return jsonify({
+                        "success": False,
+                        "error": (
+                            "Bu kategori birden fazla fiziksel yon destekliyor. "
+                            "Onaydan once Yatay (H) veya Dikey (V) secin."
+                        ),
+                        "code": "PHYSICAL_ORIENTATION_REQUIRED",
+                    }), 422
+                physical_orientation = req_physical_orientation
+
             nominal_value = CategoryRuleEngine.get_nominal_aspect(
                 category_name,
-                metadata_orientation,
+                physical_orientation,
             )
             nominal_aspect = (
                 f"{nominal_value:.8f}".rstrip("0").rstrip(".")
@@ -1273,7 +1291,7 @@ def api_templates_update_corners():
                         relative_path,
                         source_hash,
                         rule.get("product_class", "Bilinmeyen"),
-                        orientation,
+                        physical_orientation,
                         nominal_aspect,
                         rule.get("print_policy", "full_bleed"),
                         json.dumps(canonical.tolist()),
@@ -1296,7 +1314,7 @@ def api_templates_update_corners():
                        WHERE id=?""",
                     (
                         json.dumps(canonical.tolist()),
-                        orientation,
+                        physical_orientation,
                         nominal_aspect,
                         int(has_manual_occlusion),
                         json.dumps(manual_components),
@@ -1321,6 +1339,7 @@ def api_templates_update_corners():
                     legacy_data = {}
                 legacy_data["tip"] = "perspektif"
                 legacy_data["koseler"] = canonical.tolist()
+                legacy_data["physical_orientation"] = physical_orientation
                 if isinstance(req_on_plan, dict):
                     # Bind reviewed occlusion/mask instructions to the exact
                     # template bytes they were edited against. Production can
@@ -1350,7 +1369,8 @@ def api_templates_update_corners():
             "success": True,
             "profile_id": profile_id,
             "corners": canonical.tolist(),
-            "orientation": orientation,
+            "orientation": physical_orientation,
+            "projected_orientation": projected_orientation,
             "nominal_aspect": nominal_aspect,
         })
     except ValueError as e:
