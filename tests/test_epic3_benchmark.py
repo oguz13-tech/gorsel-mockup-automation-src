@@ -4,7 +4,7 @@ from unittest.mock import patch
 import numpy as np
 
 from scripts import epic3_benchmark
-from SABLON_V2_MIMARI.core import template_intelligence
+from core import template_intelligence
 
 
 class TestEpic3FrozenEvaluator(unittest.TestCase):
