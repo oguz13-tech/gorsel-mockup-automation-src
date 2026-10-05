@@ -163,6 +163,33 @@ class TestEpic3ValidationGoldenCoverage(unittest.TestCase):
             result["per_category"]["04_Cam_Dograma"]["match"]
         )
 
+    def test_runtime_readonly_snapshot_detects_byte_and_path_changes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            runtime = Path(tmp)
+            template_dir = runtime / "2_SABLON_HAVUZU" / "01_Wifi_Kutusu"
+            template_dir.mkdir(parents=True)
+            template = template_dir / "sample.png"
+            template.write_bytes(b"original")
+
+            before = bundle._snapshot_runtime_readonly_inputs(runtime)
+            template.write_bytes(b"changed")
+            after = bundle._snapshot_runtime_readonly_inputs(runtime)
+            self.assertNotEqual(before, after)
+
+            template.write_bytes(b"original")
+            restored = bundle._snapshot_runtime_readonly_inputs(runtime)
+            self.assertEqual(before, restored)
+
+            mask_dir = (
+                runtime
+                / "99_SISTEM_MOTORLARI_VE_KODLAR"
+                / "SISTEM_MOTORU"
+                / "masks"
+            )
+            mask_dir.mkdir(parents=True)
+            directory_created = bundle._snapshot_runtime_readonly_inputs(runtime)
+            self.assertNotEqual(before, directory_created)
+
     def test_review_readiness_requires_telemetry_and_cross_evidence(self):
         common = {
             "commands_ok": True,
