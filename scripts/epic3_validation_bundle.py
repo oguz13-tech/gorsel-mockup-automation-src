@@ -303,6 +303,26 @@ def _golden_coverage_check(benchmark: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _review_readiness(
+    *,
+    commands_ok: bool,
+    unit_tests_executed: bool,
+    diagnostic_ok: bool,
+    benchmark_ok: bool,
+    golden_coverage_ok: bool,
+    integrity_ok: bool,
+) -> bool:
+    """Fail closed unless every release-evidence gate was actually exercised."""
+    return bool(
+        commands_ok
+        and unit_tests_executed
+        and diagnostic_ok
+        and benchmark_ok
+        and golden_coverage_ok
+        and integrity_ok
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset", required=True, type=Path)
@@ -606,13 +626,13 @@ def main() -> int:
         "required_benchmark_categories_ok": benchmark_ok,
         "golden_coverage_ok": golden_coverage_ok,
         "integrity_ok": integrity_ok,
-        "ready_for_human_review": bool(
-            evidence["all_commands_ok"]
-            and unit_tests_executed
-            and diagnostic_ok
-            and benchmark_ok
-            and golden_coverage_ok
-            and integrity_ok
+        "ready_for_human_review": _review_readiness(
+            commands_ok=evidence["all_commands_ok"],
+            unit_tests_executed=unit_tests_executed,
+            diagnostic_ok=diagnostic_ok,
+            benchmark_ok=benchmark_ok,
+            golden_coverage_ok=golden_coverage_ok,
+            integrity_ok=integrity_ok,
         ),
     }
 
