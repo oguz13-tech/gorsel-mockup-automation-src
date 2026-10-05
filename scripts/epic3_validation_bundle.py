@@ -223,10 +223,12 @@ def _benchmark_summary(bench: Dict[str, Any]) -> Dict[str, Any]:
         row = raw_categories.get(category) or {}
         old = row.get("epic2") or {}
         new = row.get("epic3") or {}
+        attempted = int(row.get("attempted", 0) or 0)
+        excluded = int(row.get("excluded", 0) or 0)
         categories[category] = {
-            "attempted": int(row.get("attempted", 0) or 0),
-            "valid_evaluated": int(row.get("valid_evaluated", 0) or 0),
-            "excluded": int(row.get("excluded", 0) or 0),
+            "attempted": attempted,
+            "valid_evaluated": max(0, attempted - excluded),
+            "excluded": excluded,
             "epic2_median_iou": float(old.get("median_iou", 0.0) or 0.0),
             "epic3_median_iou": float(new.get("median_iou", 0.0) or 0.0),
             "epic2_recall_at_50": float(old.get("recall_at_50", 0.0) or 0.0),
@@ -264,8 +266,9 @@ def _golden_coverage_check(benchmark: Dict[str, Any]) -> Dict[str, Any]:
     per_category: Dict[str, Any] = {}
     for category, minimum in MIN_GOLDEN_VALID_COUNTS.items():
         summary = categories.get(category) or {}
-        actual = int(summary.get("valid_evaluated", 0) or 0)
         attempted = int(summary.get("attempted", 0) or 0)
+        excluded = int(summary.get("excluded", 0) or 0)
+        actual = max(0, attempted - excluded)
         per_category[category] = {
             "minimum_valid": minimum,
             "actual_valid": actual,
@@ -276,7 +279,11 @@ def _golden_coverage_check(benchmark: Dict[str, Any]) -> Dict[str, Any]:
     required_total = sum(MIN_GOLDEN_VALID_COUNTS.values())
     reported_global_valid = int(benchmark.get("valid_evaluated", 0) or 0)
     category_valid_total = sum(
-        int((categories.get(category) or {}).get("valid_evaluated", 0) or 0)
+        max(
+            0,
+            int((categories.get(category) or {}).get("attempted", 0) or 0)
+            - int((categories.get(category) or {}).get("excluded", 0) or 0),
+        )
         for category in MIN_GOLDEN_VALID_COUNTS
     )
     return {
