@@ -70,12 +70,20 @@
             <h3 style="margin: 0 0 5px 0; font-size: 15px; color: #fff; text-align: center; border-bottom: 1px solid #444; padding-bottom: 10px;">Photoshop Araçları</h3>
             
             <button type="button" id="btnCorner" onclick="setEditorTool('corner')" style="outline: 3px solid #00aaff; width: 100%; text-align: left; padding: 12px 10px;" aria-label="4 Kose Modu">🔴 4 Köşe</button>
-            <button type="button" id="btnAutoCorner" onclick="autoDetectCorners()" style="background: linear-gradient(135deg, #00c853, #00bfa5); box-shadow: 0 2px 6px rgba(0,200,83,0.4); width: 100%; text-align: left; padding: 12px 10px; font-weight: bold;" title="Görseldeki baskı alanının 4 köşesini otomatik olarak tespit eder (SIFT/ORB + Contour). Elle ayar gerekmez!" aria-label="Otomatik Kose Algila">🟢 Otomatik Köşe Algıla</button>
-            
-            <div style="height: 1px; background: #444; margin: 15px 0;"></div>
+            <button type="button" id="btnAutoCorner" onclick="autoDetectCorners()" style="background: linear-gradient(135deg, #00c853, #00bfa5); box-shadow: 0 2px 6px rgba(0,200,83,0.4); width: 100%; text-align: left; padding: 12px 10px; font-weight: bold;" title="Görseldeki baskı alanının 4 köşesini otomatik olarak tespit eder. Sonuç yine insan onayından geçer." aria-label="Otomatik Kose Algila">🟢 Otomatik Köşe Algıla</button>
 
-            
-            
+            <div style="height: 1px; background: #444; margin: 15px 0;"></div>
+            <h3 style="margin: 0 0 5px 0; font-size: 15px; color: #fff; text-align: center; border-bottom: 1px solid #444; padding-bottom: 10px;">Ön Plan / Maske</h3>
+            <button type="button" id="btnObject" onclick="setEditorTool('object')" style="background:#0d6efd; width:100%; text-align:left; padding:10px;" title="Ön plandaki nesnenin çevresine kutu çizin. Render sırasında GrabCut ile nesne ayrıştırılır.">🪄 Nesne Seç</button>
+            <button type="button" id="btnAdd" onclick="setEditorTool('add')" style="background:#198754; width:100%; text-align:left; padding:10px;" title="Maskeye elle alan eklemek için fırça kullanın.">➕ Maske Ekle</button>
+            <button type="button" id="btnSubtract" onclick="setEditorTool('subtract')" style="background:#b02a37; width:100%; text-align:left; padding:10px;" title="Yanlış maskelenen alanları çıkarmak için fırça kullanın.">➖ Maske Çıkar</button>
+            <label for="maskBrushSize" style="font-size:12px; color:#ddd; margin-top:4px;">Fırça boyutu: <span id="maskBrushValue">20</span> px</label>
+            <input id="maskBrushSize" type="range" min="3" max="120" step="1" value="20" oninput="updateBrushSize(this.value)" style="width:100%;" aria-label="Maske firca boyutu">
+            <div style="display:flex; gap:6px;">
+                <button type="button" onclick="undoMaskAction()" style="background:#6c757d; flex:1; padding:9px;" title="Son maske değişikliğini geri al.">↶ Geri Al</button>
+                <button type="button" onclick="clearForegroundMask()" style="background:#343a40; flex:1; padding:9px;" title="Bu şablondaki tüm nesne kutularını ve fırça düzeltmelerini temizle.">🧹 Temizle</button>
+            </div>
+
             <div style="height: 1px; background: #444; margin: 15px 0;"></div>
             <h3 style="margin: 0 0 5px 0; font-size: 15px; color: #fff; text-align: center; border-bottom: 1px solid #444; padding-bottom: 10px;">Yapay Zeka Onay</h3>
             <button type="button" onclick="toggleReviewOverlay()" style="background: #17a2b8; width: 100%; padding: 12px 10px; margin-top: 5px; font-weight: bold;" title="Kalibrasyon Onizleme">👁️ Overlay Onizleme</button>
