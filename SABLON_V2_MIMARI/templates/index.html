@@ -74,6 +74,7 @@
 
             <div style="height: 1px; background: #444; margin: 15px 0;"></div>
             <h3 style="margin: 0 0 5px 0; font-size: 15px; color: #fff; text-align: center; border-bottom: 1px solid #444; padding-bottom: 10px;">Ön Plan / Maske</h3>
+            <button type="button" id="btnAutoForeground" onclick="autoDetectForeground()" style="background:linear-gradient(135deg,#6f42c1,#0d6efd); width:100%; text-align:left; padding:10px; font-weight:bold;" title="Grounding-DINO + SAM ile baskının önündeki nesneleri bulur ve düzenlenebilir seçim kutuları oluşturur.">🤖 AI Ön Plan Bul</button>
             <button type="button" id="btnObject" onclick="setEditorTool('object')" style="background:#0d6efd; width:100%; text-align:left; padding:10px;" title="Ön plandaki nesnenin çevresine kutu çizin. Render sırasında GrabCut ile nesne ayrıştırılır.">🪄 Nesne Seç</button>
             <button type="button" id="btnAdd" onclick="setEditorTool('add')" style="background:#198754; width:100%; text-align:left; padding:10px;" title="Maskeye elle alan eklemek için fırça kullanın.">➕ Maske Ekle</button>
             <button type="button" id="btnSubtract" onclick="setEditorTool('subtract')" style="background:#b02a37; width:100%; text-align:left; padding:10px;" title="Yanlış maskelenen alanları çıkarmak için fırça kullanın.">➖ Maske Çıkar</button>
