@@ -1568,4 +1568,5 @@ def serve_temp_files(filename):
 if __name__ == '__main__':
     print("SABLON_V2_MIMARI (Flask MVC) Baslatiliyor... http://127.0.0.1:8080")
     threading.Timer(1.25, lambda: webbrowser.open('http://127.0.0.1:8080/')).start()
-    app.run(host='127.0.0.1', port=8080, debug=True, use_reloader=False)
+    debug_enabled = str(os.environ.get("MOCKUP_FLASK_DEBUG", "")).strip().lower() in {"1", "true", "yes", "on"}
+    app.run(host='127.0.0.1', port=8080, debug=debug_enabled, use_reloader=False)
