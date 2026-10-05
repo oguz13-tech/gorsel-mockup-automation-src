@@ -186,6 +186,33 @@ PRODUCT_CATALOG: Dict[str, ProductDefinition] = {
     )
 }
 
+
+def physical_aspect_for_product(
+    product: ProductDefinition,
+    orientation: str,
+) -> Optional[float]:
+    """Return trusted physical width/height from product size metadata.
+
+    boyut_cm stores the two physical side lengths. Orientation decides which
+    side is width. No projected template geometry is used.
+    """
+    try:
+        raw = str(product.boyut_cm).lower().replace("cm", "").strip()
+        first, second = [float(part.strip()) for part in raw.split("x", 1)]
+        short_side = min(first, second)
+        long_side = max(first, second)
+        if short_side <= 0:
+            return None
+        orient = str(orientation or "").upper()
+        if orient == "H":
+            return long_side / short_side
+        if orient == "V":
+            return short_side / long_side
+    except (TypeError, ValueError):
+        return None
+    return None
+
+
 # ==============================================================================
 # 3. AYARLAR.JSON YÜKLEYİCİ VE ŞABLON YÖNETİCİSİ
 # ==============================================================================
@@ -1451,6 +1478,80 @@ class MockupRenderer:
         return final
 
     @staticmethod
+    def prepare_artwork_for_nominal_aspect(
+        image_cv: np.ndarray,
+        nominal_aspect,
+        max_extension_fraction: float = 0.35,
+    ) -> np.ndarray:
+        """Pad artwork to physical print aspect without crop or stretch.
+
+        Perspective projection is geometrically correct only when the source
+        artwork plane has the same physical width/height ratio as the product.
+        We therefore preserve every source pixel and extend only the short
+        dimension with replicated edge pixels. Large mismatches are rejected
+        instead of silently distorting marketplace artwork.
+        """
+        if image_cv is None or image_cv.size == 0:
+            raise ValueError("Artwork is empty")
+
+        try:
+            target_ratio = float(nominal_aspect)
+        except (TypeError, ValueError):
+            return image_cv
+        if not np.isfinite(target_ratio) or target_ratio <= 0:
+            return image_cv
+
+        h, w = image_cv.shape[:2]
+        if h <= 0 or w <= 0:
+            raise ValueError("Artwork dimensions are invalid")
+
+        source_ratio = w / float(h)
+        relative_error = abs(source_ratio - target_ratio) / target_ratio
+        if relative_error <= 0.005:
+            return image_cv
+
+        if source_ratio > target_ratio:
+            # Source is too wide: extend height, never crop width.
+            target_h = int(round(w / target_ratio))
+            added = max(0, target_h - h)
+            extension_fraction = added / float(max(h, 1))
+            if extension_fraction > max_extension_fraction:
+                raise ValueError(
+                    f"Artwork aspect mismatch too large: {source_ratio:.4f} "
+                    f"vs physical {target_ratio:.4f}"
+                )
+            top = added // 2
+            bottom = added - top
+            return cv2.copyMakeBorder(
+                image_cv,
+                top,
+                bottom,
+                0,
+                0,
+                borderType=cv2.BORDER_REPLICATE,
+            )
+
+        # Source is too tall/narrow: extend width, never crop height.
+        target_w = int(round(h * target_ratio))
+        added = max(0, target_w - w)
+        extension_fraction = added / float(max(w, 1))
+        if extension_fraction > max_extension_fraction:
+            raise ValueError(
+                f"Artwork aspect mismatch too large: {source_ratio:.4f} "
+                f"vs physical {target_ratio:.4f}"
+            )
+        left = added // 2
+        right = added - left
+        return cv2.copyMakeBorder(
+            image_cv,
+            0,
+            0,
+            left,
+            right,
+            borderType=cv2.BORDER_REPLICATE,
+        )
+
+    @staticmethod
     def prepare_marketplace_canvas(
         image_cv: np.ndarray,
         target_width: int = 1200,
@@ -1610,6 +1711,29 @@ class MockupRenderer:
                     f"{raw_path.name} -> {template_path.name}"
                 )
                 return False
+
+            # Preserve content and physical proportions. This is deliberately
+            # done after the orientation gate: H/V intent is never changed.
+            nominal_aspect = config.get("nominal_aspect", "UNKNOWN")
+            try:
+                prepared_art = cls.prepare_artwork_for_nominal_aspect(
+                    art_cv,
+                    nominal_aspect,
+                )
+            except ValueError as exc:
+                logger.warning(
+                    f"⏭️ Fiziksel en-boy uyumsuzluğu nedeniyle render atlandı: "
+                    f"{raw_path.name} -> {template_path.name}: {exc}"
+                )
+                return False
+            if prepared_art.shape[:2] != art_cv.shape[:2]:
+                logger.info(
+                    f"  ↔️ Artwork fiziksel orana içerik kaybetmeden uyarlandı: "
+                    f"{art_cv.shape[1]}x{art_cv.shape[0]} -> "
+                    f"{prepared_art.shape[1]}x{prepared_art.shape[0]} "
+                    f"(nominal={nominal_aspect})"
+                )
+            art_cv = prepared_art
 
             # Orijinal yedek görseli yükle (True Shadow Mapping için)
             orig_path = USER_WORKSPACE_DIR / "2_SABLON_HAVUZU_ORIJINAL_YEDEK" / template_path.parent.name / template_path.name
@@ -1893,7 +2017,19 @@ class PCMasterFactory:
                 "profile_uid": row["template_uid"],
                 "profile_orientation": profile_orientation,
                 "profile_confidence": float(row["confidence_total"] or 0.0),
-                "nominal_aspect": row["nominal_aspect"] or "UNKNOWN",
+                "nominal_aspect": (
+                    row["nominal_aspect"]
+                    if row["nominal_aspect"] not in (None, "", "UNKNOWN")
+                    else (
+                        physical_aspect_for_product(
+                            prod_def,
+                            profile_orientation
+                            if profile_orientation in ("H", "V")
+                            else prod_def.orientation,
+                        )
+                        or "UNKNOWN"
+                    )
+                ),
                 "print_policy": row["print_policy"] or "full_bleed",
                 "surface_mask_path": row["surface_mask_path"],
                 "has_occlusion": bool(row["has_occlusion"]),
