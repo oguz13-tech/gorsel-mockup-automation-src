@@ -422,6 +422,7 @@ def main() -> int:
                     "tests/test_benchmark_metrics.py",
                     "tests/test_geometry_diagnostics.py",
                     "tests/test_epic3_validation_bundle.py",
+                    "tests/test_epic3_benchmark.py",
                     "tests/test_control_center_file_ops.py",
                     "-v",
                 ],
