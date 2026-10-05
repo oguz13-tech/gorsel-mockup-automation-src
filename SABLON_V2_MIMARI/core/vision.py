@@ -14,8 +14,18 @@ import sys
 import threading
 from pathlib import Path
 
+SOURCE_ROOT = Path(__file__).resolve().parents[2]
+_runtime_override = str(os.environ.get("MOCKUP_RUNTIME_WORKSPACE") or "").strip()
+RUNTIME_ROOT = (
+    Path(_runtime_override).expanduser().resolve()
+    if _runtime_override
+    else SOURCE_ROOT.resolve()
+)
+
 # ======================== LOGGING SETUP ========================
-LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+LOG_DIR = os.fspath(
+    RUNTIME_ROOT / "SABLON_V2_MIMARI" / "core" / "logs"
+)
 os.makedirs(LOG_DIR, exist_ok=True)
 logger = logging.getLogger('sablon_duzeltici')
 logger.setLevel(logging.DEBUG)
@@ -30,10 +40,18 @@ logger.addHandler(_fh)
 logger.addHandler(_ch)
 
 PORT = 8999
-# DINAMIK YOL: Sistemin baska bilgisayarlarda/klasorlerde cokmemesi icin dinamiklestirildi
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-AYARLAR_PATH = os.path.join(BASE_DIR, "99_SISTEM_MOTORLARI_VE_KODLAR", "SISTEM_MOTORU", "ayarlar.json")
-YEDEK_IMG_DIR = os.path.join(BASE_DIR, "2_SABLON_HAVUZU_ORIJINAL_YEDEK")
+# Mutable assets come from the explicit runtime workspace when configured.
+BASE_DIR = os.fspath(RUNTIME_ROOT)
+AYARLAR_PATH = os.path.join(
+    BASE_DIR,
+    "99_SISTEM_MOTORLARI_VE_KODLAR",
+    "SISTEM_MOTORU",
+    "ayarlar.json",
+)
+YEDEK_IMG_DIR = os.path.join(
+    BASE_DIR,
+    "2_SABLON_HAVUZU_ORIJINAL_YEDEK",
+)
 
 AYARLAR_LOCK = threading.Lock()
 import contextlib
