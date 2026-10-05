@@ -1,6 +1,13 @@
 import unittest
 
-from scripts.geometry_diagnostics import IOU_TARGET, _summarize, classify_sample
+import numpy as np
+
+from scripts.geometry_diagnostics import (
+    IOU_TARGET,
+    _summarize,
+    classify_sample,
+    prepare_runtime_candidates,
+)
 
 
 class GeometryDiagnosticUnitTests(unittest.TestCase):
@@ -51,6 +58,38 @@ class GeometryDiagnosticUnitTests(unittest.TestCase):
         self.assertEqual(summary["classification_counts"]["GOOD_SELECTED"], 1)
         self.assertEqual(summary["oracle_generator_wins"]["canny"], 1)
         self.assertEqual(summary["oracle_generator_wins"]["color_region"], 1)
+
+    def test_runtime_candidate_preparation_enforces_production_cap(self):
+        class FakeAnalyzer:
+            @staticmethod
+            def score_area_plausibility(area_ratio):
+                return float(area_ratio)
+
+            @staticmethod
+            def measure_edge_contrast(image, quad):
+                return float(quad[0][0]) / 1000.0
+
+        image = np.zeros((1000, 1000, 3), dtype=np.uint8)
+        candidates = []
+        for idx in range(181):
+            x = float(idx)
+            candidates.append({
+                "quad": [
+                    [x, 10.0],
+                    [x + 100.0, 10.0],
+                    [x + 100.0, 110.0],
+                    [x, 110.0],
+                ],
+                "sources": ["synthetic"],
+            })
+
+        prepared = prepare_runtime_candidates(
+            FakeAnalyzer(),
+            image,
+            candidates,
+        )
+
+        self.assertEqual(len(prepared), 180)
 
     def test_iou_target_is_review_quality_diagnostic_not_auto_approval(self):
         self.assertEqual(IOU_TARGET, 0.50)
