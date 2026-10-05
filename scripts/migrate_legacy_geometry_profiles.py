@@ -183,6 +183,15 @@ def migrate(legacy_json: Path, apply: bool = False) -> Dict[str, int]:
                 source_hash = sha256_file(source_path)
                 uid = f"{category}_{filename}"
                 orientation = derive_orientation(canonical)
+                nominal_aspect = CategoryRuleEngine.get_nominal_aspect(
+                    category,
+                    orientation,
+                )
+                nominal_aspect_text = (
+                    f"{nominal_aspect:.8f}".rstrip("0").rstrip(".")
+                    if nominal_aspect is not None
+                    else "UNKNOWN"
+                )
                 outer_quad = valid_optional_outer(
                     template_data.get("outer_quad")
                     or template_data.get("dis_koseler"),
@@ -237,6 +246,7 @@ def migrate(legacy_json: Path, apply: bool = False) -> Dict[str, int]:
                     "analyzer_version": "legacy_manual_v1",
                     "product_class": rule.get("product_class", "Unknown"),
                     "orientation": orientation,
+                    "nominal_aspect": nominal_aspect_text,
                     "geometry_type": "quad",
                     "print_policy": rule.get("print_policy", "full_bleed"),
                     "surface_quad": json.dumps(
@@ -274,7 +284,7 @@ def migrate(legacy_json: Path, apply: bool = False) -> Dict[str, int]:
                                 category=?, source_relative_path=?,
                                 source_asset_sha256=?, profile_version=?,
                                 analyzer_version=?, product_class=?,
-                                orientation=?, geometry_type=?, print_policy=?,
+                                orientation=?, nominal_aspect=?, geometry_type=?, print_policy=?,
                                 surface_quad=?, outer_quad=?, material=?,
                                 has_frame=?, has_mat=?, has_reflection=?,
                                 has_occlusion=?, confidence_total=?,
@@ -291,6 +301,7 @@ def migrate(legacy_json: Path, apply: bool = False) -> Dict[str, int]:
                                 profile_values["analyzer_version"],
                                 profile_values["product_class"],
                                 profile_values["orientation"],
+                                profile_values["nominal_aspect"],
                                 profile_values["geometry_type"],
                                 profile_values["print_policy"],
                                 profile_values["surface_quad"],
@@ -335,13 +346,13 @@ def migrate(legacy_json: Path, apply: bool = False) -> Dict[str, int]:
                                 template_uid, category, source_relative_path,
                                 source_asset_sha256, profile_version,
                                 analyzer_version, product_class, orientation,
-                                geometry_type, print_policy, surface_quad,
+                                nominal_aspect, geometry_type, print_policy, surface_quad,
                                 outer_quad, material, has_frame, has_mat,
                                 has_reflection, has_occlusion, confidence_total,
                                 component_confidences, review_status,
                                 manually_verified, is_active
                             ) VALUES (
-                                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
                                 ?, ?, ?, ?, 'APPROVED', 1, 1
                             )""",
                             (
@@ -353,6 +364,7 @@ def migrate(legacy_json: Path, apply: bool = False) -> Dict[str, int]:
                                 profile_values["analyzer_version"],
                                 profile_values["product_class"],
                                 profile_values["orientation"],
+                                profile_values["nominal_aspect"],
                                 profile_values["geometry_type"],
                                 profile_values["print_policy"],
                                 profile_values["surface_quad"],
