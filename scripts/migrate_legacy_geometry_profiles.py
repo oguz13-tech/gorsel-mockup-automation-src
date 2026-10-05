@@ -324,6 +324,12 @@ def migrate(legacy_json: Path, apply: bool = False) -> Dict[str, int]:
                     "orientation_score": 1.0,
                     "candidate_agreement": 1.0,
                     "line_score": 1.0,
+                    "physical_orientation_verified": 1.0,
+                    "physical_orientation_source": (
+                        "category_contract"
+                        if physical_rule_orientation in ("H", "V")
+                        else "legacy_explicit_metadata"
+                    ),
                 }
                 profile_values = {
                     "template_uid": uid,
