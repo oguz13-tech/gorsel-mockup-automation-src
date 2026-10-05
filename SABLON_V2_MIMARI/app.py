@@ -22,7 +22,7 @@ from core.vision import (
 )
 
 from core.db import get_all_ayarlar, save_settings_node, save_category, save_template, delete_template, save_templates_bulk
-from core.template_intelligence import TemplateAnalyzer, save_template_profile, TemplateSelector
+from core.template_intelligence import TemplateAnalyzer, save_template_profile, TemplateSelector, GeometryValidator
 import hashlib
 import uuid
 
@@ -385,10 +385,40 @@ def serve_image(cat, tmpl):
 
 # ==========================================
 
+def _safe_template_path(category: str, template_name: str) -> str:
+    """Resolve a template source path without allowing traversal outside the pool."""
+    pool_root = os.path.abspath(os.path.join(BASE_DIR, "2_SABLON_HAVUZU"))
+    candidate = os.path.abspath(os.path.join(pool_root, str(category), str(template_name)))
+    try:
+        if os.path.commonpath([pool_root, candidate]) != pool_root:
+            raise ValueError("Gecersiz sablon yolu")
+    except ValueError as exc:
+        raise ValueError("Gecersiz sablon yolu") from exc
+    return candidate
+
+
+def _safe_profile_relative_path(relative_path: str) -> str:
+    pool_root = os.path.abspath(os.path.join(BASE_DIR, "2_SABLON_HAVUZU"))
+    candidate = os.path.abspath(os.path.join(pool_root, str(relative_path)))
+    try:
+        if os.path.commonpath([pool_root, candidate]) != pool_root:
+            raise ValueError("Gecersiz profil kaynak yolu")
+    except ValueError as exc:
+        raise ValueError("Gecersiz profil kaynak yolu") from exc
+    return candidate
+
+
+def _sha256_file(path: str) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def _load_matching_manual_prior(db_path, uid, img_path):
     """Load trusted manual geometry only when it belongs to the current source bytes."""
-    with open(img_path, "rb") as source_file:
-        current_hash = hashlib.sha256(source_file.read()).hexdigest()
+    current_hash = _sha256_file(img_path)
 
     conn = sqlite3.connect(db_path)
     try:
@@ -421,7 +451,7 @@ def api_templates_analyze():
         if not active_cat or not active_tmpl:
             return jsonify({"success": False, "error": "Kategori/Sablon eksik"}), 400
             
-        img_path = os.path.join(BASE_DIR, "2_SABLON_HAVUZU", active_cat, active_tmpl)
+        img_path = _safe_template_path(active_cat, active_tmpl)
         if not os.path.exists(img_path):
             return jsonify({"success": False, "error": "Görsel bulunamadı"}), 404
             
@@ -472,19 +502,72 @@ def api_templates_analyze():
 
 @app.route('/api/templates/approve', methods=['POST'])
 def api_templates_approve():
+    """Approve only geometry that still belongs to the exact current source bytes."""
     try:
-        req = request.json
+        req = request.get_json(silent=True) or {}
         uid = req.get("template_uid")
         if not uid:
             return jsonify({"success": False, "error": "Eksik parametre"}), 400
-            
+
         db_path = os.path.join(BASE_DIR, "SABLON_V2_MIMARI", "ayarlar.db")
         conn = sqlite3.connect(db_path)
-        conn.execute("UPDATE template_profiles SET review_status='APPROVED', manually_verified=1 WHERE template_uid=? AND is_active=1", (uid,))
-        conn.commit()
-        conn.close()
-        
+        try:
+            row = conn.execute(
+                """SELECT id, surface_quad, source_asset_sha256, source_relative_path
+                   FROM template_profiles
+                   WHERE template_uid=? AND is_active=1""",
+                (uid,),
+            ).fetchone()
+            if not row:
+                return jsonify({"success": False, "error": "Aktif profil bulunamadi"}), 404
+
+            profile_id, surface_quad_json, source_hash, relative_path = row
+            if not surface_quad_json or not source_hash or not relative_path:
+                return jsonify({"success": False, "error": "Profil geometrisi/kaynak kimligi eksik"}), 409
+
+            source_path = _safe_profile_relative_path(relative_path)
+            if not os.path.exists(source_path):
+                return jsonify({"success": False, "error": "Profil kaynak gorseli bulunamadi"}), 409
+
+            current_hash = _sha256_file(source_path)
+            if current_hash != source_hash:
+                return jsonify({
+                    "success": False,
+                    "error": "Kaynak gorsel degismis. Onaydan once yeniden analiz gerekli.",
+                    "code": "STALE_SOURCE_CHANGED",
+                }), 409
+
+            image = cv2.imdecode(np.fromfile(source_path, dtype=np.uint8), cv2.IMREAD_COLOR)
+            if image is None:
+                return jsonify({"success": False, "error": "Kaynak gorsel okunamadi"}), 422
+
+            try:
+                quad = np.asarray(json.loads(surface_quad_json), dtype=np.float32)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                return jsonify({"success": False, "error": "Kayitli geometri gecersiz"}), 422
+
+            h, w = image.shape[:2]
+            valid, reason = GeometryValidator.is_valid_quad(quad, w, h)
+            if not valid:
+                return jsonify({
+                    "success": False,
+                    "error": f"Geometri onaylanamaz: {reason}",
+                }), 422
+
+            conn.execute(
+                """UPDATE template_profiles
+                   SET review_status='APPROVED', manually_verified=1,
+                       updated_at=CURRENT_TIMESTAMP
+                   WHERE id=?""",
+                (profile_id,),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
         return jsonify({"success": True})
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
@@ -505,7 +588,7 @@ def api_templates_batch_analyze():
         
         results = []
         for tmpl in sablonlar.keys():
-            img_path = os.path.join(BASE_DIR, "2_SABLON_HAVUZU", category, tmpl)
+            img_path = _safe_template_path(category, tmpl)
             if os.path.exists(img_path):
                 uid = f"{category}_{tmpl}"
                 manual_prior = _load_matching_manual_prior(db_path, uid, img_path)
@@ -550,19 +633,101 @@ def api_templates_reject():
 
 @app.route('/api/templates/update_corners', methods=['POST'])
 def api_templates_update_corners():
+    """Validate, canonicalize and approve a human-corrected quad atomically."""
     try:
-        req = request.json
+        req = request.get_json(silent=True) or {}
         uid = req.get("template_uid")
         corners = req.get("corners")
-        if not uid or not corners:
+        if not uid or corners is None:
             return jsonify({"success": False, "error": "Eksik parametre"}), 400
-            
+
         db_path = os.path.join(BASE_DIR, "SABLON_V2_MIMARI", "ayarlar.db")
         conn = sqlite3.connect(db_path)
-        conn.execute("UPDATE template_profiles SET surface_quad=?, review_status='APPROVED', manually_verified=1 WHERE template_uid=? AND is_active=1", (json.dumps(corners), uid))
-        conn.commit()
-        conn.close()
-        return jsonify({"success": True})
+        try:
+            row = conn.execute(
+                """SELECT id, source_asset_sha256, source_relative_path
+                   FROM template_profiles
+                   WHERE template_uid=? AND is_active=1""",
+                (uid,),
+            ).fetchone()
+            if not row:
+                return jsonify({"success": False, "error": "Aktif profil bulunamadi"}), 404
+
+            profile_id, source_hash, relative_path = row
+            if not source_hash or not relative_path:
+                return jsonify({"success": False, "error": "Profil kaynak kimligi eksik"}), 409
+
+            source_path = _safe_profile_relative_path(relative_path)
+            if not os.path.exists(source_path):
+                return jsonify({"success": False, "error": "Profil kaynak gorseli bulunamadi"}), 409
+
+            current_hash = _sha256_file(source_path)
+            if current_hash != source_hash:
+                return jsonify({
+                    "success": False,
+                    "error": "Kaynak gorsel degismis. Koseleri kaydetmeden once yeniden analiz gerekli.",
+                    "code": "STALE_SOURCE_CHANGED",
+                }), 409
+
+            image = cv2.imdecode(np.fromfile(source_path, dtype=np.uint8), cv2.IMREAD_COLOR)
+            if image is None:
+                return jsonify({"success": False, "error": "Kaynak gorsel okunamadi"}), 422
+            h, w = image.shape[:2]
+
+            try:
+                quad = np.asarray(corners, dtype=np.float32)
+            except (TypeError, ValueError):
+                return jsonify({"success": False, "error": "Kose koordinatlari sayisal olmali"}), 422
+
+            if quad.shape != (4, 2) or not np.isfinite(quad).all():
+                return jsonify({"success": False, "error": "Tam olarak 4 adet gecerli 2D kose gerekli"}), 422
+
+            valid, reason = GeometryValidator.is_valid_quad(quad, w, h)
+            if not valid:
+                return jsonify({"success": False, "error": f"Gecersiz geometri: {reason}"}), 422
+
+            canonical = GeometryValidator.canonical_sort(quad).astype(float)
+            top = np.linalg.norm(canonical[1] - canonical[0])
+            bottom = np.linalg.norm(canonical[2] - canonical[3])
+            left = np.linalg.norm(canonical[3] - canonical[0])
+            right = np.linalg.norm(canonical[2] - canonical[1])
+            avg_w = max(1e-6, float((top + bottom) * 0.5))
+            avg_h = max(1e-6, float((left + right) * 0.5))
+            aspect = avg_w / avg_h
+            orientation = "H" if aspect > 1.05 else ("V" if aspect < 0.95 else "SQUARE")
+
+            manual_components = {
+                "manual_prior": 1.0,
+                "area_ratio": float(abs(cv2.contourArea(canonical.astype(np.float32))) / float(w * h)),
+                "line_score": 1.0,
+                "candidate_agreement": 1.0,
+                "orientation_score": 1.0,
+            }
+
+            conn.execute(
+                """UPDATE template_profiles
+                   SET surface_quad=?, orientation=?, confidence_total=1.0,
+                       component_confidences=?, review_status='APPROVED',
+                       manually_verified=1, updated_at=CURRENT_TIMESTAMP
+                   WHERE id=?""",
+                (
+                    json.dumps(canonical.tolist()),
+                    orientation,
+                    json.dumps(manual_components),
+                    profile_id,
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        return jsonify({
+            "success": True,
+            "corners": canonical.tolist(),
+            "orientation": orientation,
+        })
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
