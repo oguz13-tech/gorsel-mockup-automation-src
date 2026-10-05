@@ -1466,26 +1466,16 @@ class MockupRenderer:
                 )
                 cache_file = BASE_DIR / "masks" / cache_name
 
-                legacy_cache = BASE_DIR / "masks" / f"{stem}_foreground_mask.png"
-                legacy_cache_cat = BASE_DIR / "masks" / f"{safe_cat}_{stem}_foreground_mask.png"
-
                 fg_mask = _read_mask(cache_file)
                 cache_loaded = fg_mask is not None
                 if cache_loaded:
                     foreground_analysis_completed = True
 
-                if not cache_loaded:
-                    for legacy_path in (legacy_cache_cat, legacy_cache):
-                        legacy_mask = _read_mask(legacy_path)
-                        if legacy_mask is not None:
-                            fg_mask = legacy_mask
-                            cache_loaded = True
-                            foreground_analysis_completed = True
-                            _save_mask_atomic(cache_file, fg_mask)
-                            logger.info(
-                                f"[MASK] Legacy ön plan maskesi yeni cache adına taşındı: {cache_file.name}"
-                            )
-                            break
+                # Never auto-promote filename-only legacy masks into production.
+                # Those files are not bound to source bytes and can become stale
+                # when a template image is replaced under the same filename.
+                # Production accepts only the source-hash cache name above,
+                # a current hash-bound manual plan, or a fresh AI result.
 
             # Fully automatic object-aware occlusion discovery. The heavy AI
             # dependencies are imported lazily so normal categories/startup do
