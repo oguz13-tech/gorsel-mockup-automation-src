@@ -374,10 +374,17 @@ class StateManager:
             row = self.conn.execute("SELECT status FROM products WHERE sku = ?", (sku,)).fetchone()
             return row is not None and row["status"] == "COMPLETED"
 
-    def is_artifact_completed(self, artifact_key: str) -> bool:
+    def get_artifact(self, artifact_key: str) -> Optional[dict]:
         with db_lock, self.conn:
-            row = self.conn.execute("SELECT status FROM render_artifacts WHERE artifact_key = ?", (artifact_key,)).fetchone()
-            return row is not None and row["status"] in ("COMPLETED", "UPLOADED")
+            row = self.conn.execute(
+                "SELECT * FROM render_artifacts WHERE artifact_key = ?",
+                (artifact_key,),
+            ).fetchone()
+            return dict(row) if row is not None else None
+
+    def is_artifact_completed(self, artifact_key: str) -> bool:
+        row = self.get_artifact(artifact_key)
+        return row is not None and row.get("status") in ("COMPLETED", "UPLOADED")
 
     def save_render_artifact(self, data: dict):
         if not data: return
@@ -388,6 +395,11 @@ class StateManager:
                                               template_identity, local_output_path, upload_url, status, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                 ON CONFLICT(artifact_key) DO UPDATE SET
+                    sku=excluded.sku,
+                    source_identity=excluded.source_identity,
+                    category=excluded.category,
+                    template_identity=excluded.template_identity,
+                    local_output_path=excluded.local_output_path,
                     upload_url=excluded.upload_url,
                     status=excluded.status,
                     updated_at=CURRENT_TIMESTAMP
