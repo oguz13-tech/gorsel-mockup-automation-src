@@ -2651,7 +2651,7 @@ class PCMasterFactory:
             return pool
 
         try:
-            conn = sqlite3.connect(str(db_path))
+            conn = open_sqlite_readonly(db_path)
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 """SELECT template_uid, source_relative_path, source_asset_sha256,
