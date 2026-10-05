@@ -2130,7 +2130,7 @@ def build_factory_preflight() -> dict:
                 for category, product in PRODUCT_CATALOG.items():
                     rows = conn.execute(
                         """SELECT template_uid, source_relative_path,
-                                  source_asset_sha256, orientation,
+                                  source_asset_sha256, analyzer_version, orientation,
                                   nominal_aspect, surface_quad, has_occlusion
                            FROM template_profiles
                            WHERE category=? AND review_status='APPROVED'
@@ -2169,7 +2169,8 @@ def build_factory_preflight() -> dict:
                         except OSError:
                             invalid += 1
                             continue
-                        if digest.hexdigest() != row["source_asset_sha256"]:
+                        current_sha = digest.hexdigest()
+                        if current_sha != row["source_asset_sha256"]:
                             stale += 1
                             continue
 
@@ -2200,35 +2201,59 @@ def build_factory_preflight() -> dict:
                         usable += 1
 
                         # Object-aware foreground restoration is quality-critical
-                        # for cutting-board templates and any profile explicitly
-                        # marked with occlusion. Preflight distinguishes templates
-                        # already covered by a manual plan/cache from templates
-                        # that still require Grounding-DINO + SAM at runtime.
-                        requires_occlusion = (
+                        # for cutting-board templates, explicit occlusion
+                        # profiles, and any legacy plan. Manual plans are usable
+                        # only when bound to these exact source bytes. The sole
+                        # compatibility exception is legacy_manual_v1: that
+                        # migration created the APPROVED profile and read the
+                        # plan from the same exact legacy record/source in one
+                        # source-hash-bound pass.
+                        template_name = Path(rel).name
+                        legacy_templates = (
+                            AYARLAR.get("kategoriler", {})
+                            .get(category, {})
+                            .get("sablonlar", {})
+                        )
+                        legacy_cfg = legacy_templates.get(template_name)
+                        if legacy_cfg is None:
+                            for legacy_name, candidate_cfg in legacy_templates.items():
+                                if Path(legacy_name).stem == Path(template_name).stem:
+                                    legacy_cfg = candidate_cfg
+                                    break
+                        legacy_cfg = (
+                            legacy_cfg if isinstance(legacy_cfg, dict) else {}
+                        )
+                        plan = legacy_cfg.get("on_plan")
+                        legacy_migration_trusted = (
+                            str(row["analyzer_version"] or "")
+                            == "legacy_manual_v1"
+                        )
+                        plan_source_hash = (
+                            str(plan.get("source_asset_sha256") or "").strip()
+                            if isinstance(plan, dict)
+                            else ""
+                        )
+                        plan_trusted = bool(
+                            plan
+                            and (
+                                legacy_migration_trusted
+                                or (
+                                    plan_source_hash
+                                    and plan_source_hash == current_sha
+                                )
+                            )
+                        )
+
+                        requires_occlusion = bool(
                             category == "04_Cam_Dograma"
                             or bool(row["has_occlusion"])
+                            or bool(plan)
                         )
                         if requires_occlusion:
-                            template_name = Path(rel).name
-                            legacy_templates = (
-                                AYARLAR.get("kategoriler", {})
-                                .get(category, {})
-                                .get("sablonlar", {})
-                            )
-                            legacy_cfg = legacy_templates.get(template_name)
-                            if legacy_cfg is None:
-                                for legacy_name, candidate_cfg in legacy_templates.items():
-                                    if Path(legacy_name).stem == Path(template_name).stem:
-                                        legacy_cfg = candidate_cfg
-                                        break
-                            legacy_cfg = (
-                                legacy_cfg if isinstance(legacy_cfg, dict) else {}
-                            )
-                            plan = legacy_cfg.get("on_plan")
                             has_positive_manual_plan = False
-                            if isinstance(plan, list):
+                            if plan_trusted and isinstance(plan, list):
                                 has_positive_manual_plan = len(plan) >= 3
-                            elif isinstance(plan, dict):
+                            elif plan_trusted and isinstance(plan, dict):
                                 has_positive_manual_plan = bool(
                                     plan.get("object_boxes")
                                     or plan.get("add_brush")
@@ -2248,6 +2273,10 @@ def build_factory_preflight() -> dict:
                             if has_positive_manual_plan or has_cached_mask:
                                 report["occlusion"][
                                     "manual_or_cached_templates"
+                                ].append(item_name)
+                            else:
+                                report["occlusion"][
+                                    "ai_required_templates"
                                 ].append(item_name)
                             else:
                                 report["occlusion"][
@@ -2396,7 +2425,8 @@ class PCMasterFactory:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
                 """SELECT template_uid, source_relative_path, source_asset_sha256,
-                          orientation, nominal_aspect, surface_quad, outer_quad,
+                          analyzer_version, orientation, nominal_aspect,
+                          surface_quad, outer_quad,
                           confidence_total, component_confidences, print_policy,
                           surface_mask_path, has_occlusion
                    FROM template_profiles
@@ -2500,6 +2530,32 @@ class PCMasterFactory:
                         legacy_cfg = candidate_cfg
                         break
             config = dict(legacy_cfg or {})
+            raw_on_plan = config.get("on_plan")
+            legacy_requires_occlusion = bool(raw_on_plan)
+            legacy_migration_trusted = (
+                str(row["analyzer_version"] or "") == "legacy_manual_v1"
+            )
+            plan_source_hash = (
+                str(raw_on_plan.get("source_asset_sha256") or "").strip()
+                if isinstance(raw_on_plan, dict)
+                else ""
+            )
+            plan_trusted = bool(
+                raw_on_plan
+                and (
+                    legacy_migration_trusted
+                    or (plan_source_hash and plan_source_hash == current_sha)
+                )
+            )
+            if raw_on_plan and not plan_trusted:
+                # Keep the fact that this template needs occlusion handling,
+                # but never reuse stale/unbound coordinates. AI or a current
+                # source-hash-bound cache must regenerate the mask.
+                config.pop("on_plan", None)
+                logger.warning(
+                    f"⏭️ Kaynağa bağlı olmayan/stale on_plan yok sayıldı: "
+                    f"{row['template_uid']}"
+                )
 
             # Geometry-critical fields are exclusively sourced from the
             # review-approved immutable-source profile.
@@ -2524,7 +2580,9 @@ class PCMasterFactory:
                 ),
                 "print_policy": row["print_policy"] or "full_bleed",
                 "surface_mask_path": row["surface_mask_path"],
-                "has_occlusion": bool(row["has_occlusion"]),
+                "has_occlusion": (
+                    bool(row["has_occlusion"]) or legacy_requires_occlusion
+                ),
             })
 
             pool.append((template_name, template_path, config))
