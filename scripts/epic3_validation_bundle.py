@@ -818,6 +818,7 @@ def main() -> int:
     telemetry_payload = evidence.get("telemetry") or {}
     telemetry_ok = bool(
         int(telemetry_payload.get("sample_count", 0) or 0) > 0
+        and not telemetry_payload.get("missing_scorer_categories")
         and "telemetry_error" not in evidence
     )
 
