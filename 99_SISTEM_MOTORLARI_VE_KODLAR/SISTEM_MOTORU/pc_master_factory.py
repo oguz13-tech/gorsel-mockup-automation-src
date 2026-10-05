@@ -110,6 +110,11 @@ logger = logging.getLogger("Factory")
 excel_lock = threading.RLock()
 db_lock = threading.RLock()
 
+# Render recipe participates in immutable artifact identity. Bump whenever
+# renderer/aspect/occlusion behavior changes so old artifacts are never silently
+# reused under a new visual contract.
+RECIPE_VERSION = "v3_epic3_20261005"
+
 # ==============================================================================
 # 2. ÜRÜN VE FORMAT SÖZLEŞMESİ (URUN_FORMAT_HARITASI)
 # ==============================================================================
@@ -2459,7 +2464,7 @@ class PCMasterFactory:
                     continue
                 eligible_template_count += len(template_pool)
 
-                recipe_version = "v2_epic3"
+                recipe_version = RECIPE_VERSION
 
                 # Hash/source identity cache. Mixed-orientation categories can
                 # use both master variants in the same product without rotating
