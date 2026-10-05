@@ -598,14 +598,17 @@ def main() -> int:
         and not tracked_before["dirty"]
         and tracked_worktree_unchanged
     )
+    unit_tests_executed = not bool(args.skip_unit_tests)
     evidence["bundle_checks"] = {
         "commands_ok": evidence["all_commands_ok"],
+        "unit_tests_executed": unit_tests_executed,
         "diagnostic_invariants_ok": diagnostic_ok,
         "required_benchmark_categories_ok": benchmark_ok,
         "golden_coverage_ok": golden_coverage_ok,
         "integrity_ok": integrity_ok,
         "ready_for_human_review": bool(
             evidence["all_commands_ok"]
+            and unit_tests_executed
             and diagnostic_ok
             and benchmark_ok
             and golden_coverage_ok
