@@ -5,9 +5,10 @@ benchmark dataset to answer one question:
 
     Is low IoU caused primarily by candidate generation, or by scoring/selection?
 
-For each sample it evaluates every valid candidate emitted by the current
-generators against trusted ground truth, then compares the oracle-best candidate
-with the candidate selected by TemplateAnalyzer.
+For each sample it evaluates the same bounded candidate set that current
+TemplateAnalyzer can actually select (including production de-duplication and
+the 180-candidate runtime pre-rank), then compares the oracle-best runtime
+candidate with the candidate selected by TemplateAnalyzer.
 """
 
 import argparse
@@ -77,7 +78,11 @@ def collect_candidates(image: np.ndarray) -> List[Dict]:
             canonical = _canonical_candidate(raw, w, h)
             if canonical is None:
                 continue
-            key = tuple(round(float(value), 4) for point in canonical for value in point)
+            key = tuple(
+                int(round(float(value)))
+                for point in canonical
+                for value in point
+            )
             if key not in by_key:
                 by_key[key] = {
                     "quad": canonical,
@@ -88,6 +93,34 @@ def collect_candidates(image: np.ndarray) -> List[Dict]:
                 by_key[key]["sources"].append(source)
 
     return list(by_key.values())
+
+
+def prepare_runtime_candidates(
+    analyzer: TemplateAnalyzer,
+    image: np.ndarray,
+    candidates: List[Dict],
+    max_candidates: int = 180,
+) -> List[Dict]:
+    """Mirror TemplateAnalyzer's runtime pre-rank/candidate cap exactly."""
+    prepared = [item for item in candidates if item.get("quad") is not None]
+    if len(prepared) <= max_candidates:
+        return prepared
+
+    h, w = image.shape[:2]
+    ranked = []
+    for item in prepared:
+        quad = np.asarray(item["quad"], dtype=np.float32)
+        area = float(abs(cv2.contourArea(quad)))
+        area_ratio = min(1.0, area / float(w * h))
+        line_score = analyzer.measure_edge_contrast(image, quad)
+        pre_score = (
+            analyzer.score_area_plausibility(area_ratio) * 0.35
+            + line_score * 0.65
+        )
+        ranked.append((float(pre_score), item))
+
+    ranked.sort(key=lambda pair: pair[0], reverse=True)
+    return [item for _, item in ranked[:max_candidates]]
 
 
 def classify_sample(candidate_count: int, selected_iou: float, oracle_iou: float) -> str:
@@ -193,10 +226,19 @@ def diagnose_dataset(dataset_path: str, output_json: str) -> Dict:
                 continue
 
             candidates = collect_candidates(image)
-            valid_candidates = [c for c in candidates if c.get("quad") is not None]
+            valid_candidates = [
+                candidate
+                for candidate in candidates
+                if candidate.get("quad") is not None
+            ]
+            runtime_candidates = prepare_runtime_candidates(
+                analyzer,
+                image,
+                valid_candidates,
+            )
 
             evaluated_candidates = []
-            for candidate in valid_candidates:
+            for candidate in runtime_candidates:
                 iou = calculate_iou(candidate["quad"], gt_quad, w, h)
                 evaluated_candidates.append(
                     {
@@ -233,6 +275,8 @@ def diagnose_dataset(dataset_path: str, output_json: str) -> Dict:
             record = {
                 "sample": sample_name,
                 "category": category,
+                "candidate_count_raw": len(valid_candidates),
+                "candidate_count_runtime": candidate_count,
                 "candidate_count": candidate_count,
                 "selected_iou": float(selected_iou),
                 "oracle_iou": float(oracle_iou),
