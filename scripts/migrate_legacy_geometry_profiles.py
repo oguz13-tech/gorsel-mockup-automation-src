@@ -102,6 +102,80 @@ def backup_database(db_path: Path) -> Path:
     return backup_path
 
 
+def _ensure_profile_schema_for_dry_run(conn: sqlite3.Connection) -> None:
+    """Prepare only the in-memory dry-run copy; never mutate the real DB."""
+    conn.execute(
+        """CREATE TABLE IF NOT EXISTS template_profiles (
+               id INTEGER PRIMARY KEY AUTOINCREMENT,
+               template_uid TEXT,
+               category TEXT,
+               source_relative_path TEXT,
+               source_asset_sha256 TEXT,
+               profile_version TEXT,
+               analyzer_version TEXT,
+               product_class TEXT,
+               orientation TEXT,
+               nominal_aspect TEXT,
+               geometry_type TEXT,
+               print_policy TEXT,
+               surface_quad TEXT,
+               outer_quad TEXT,
+               surface_mask_path TEXT,
+               material TEXT,
+               has_frame INTEGER,
+               has_mat INTEGER,
+               has_reflection INTEGER,
+               has_occlusion INTEGER,
+               confidence_total REAL,
+               component_confidences TEXT,
+               review_status TEXT,
+               manually_verified INTEGER,
+               is_active INTEGER DEFAULT 1,
+               updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+           )"""
+    )
+    columns = {
+        str(row[1])
+        for row in conn.execute("PRAGMA table_info(template_profiles)").fetchall()
+    }
+    if "nominal_aspect" not in columns:
+        conn.execute("ALTER TABLE template_profiles ADD COLUMN nominal_aspect TEXT")
+    if "is_active" not in columns:
+        conn.execute(
+            "ALTER TABLE template_profiles ADD COLUMN is_active INTEGER DEFAULT 1"
+        )
+
+
+def _open_migration_connection(
+    apply: bool,
+) -> Tuple[sqlite3.Connection, Optional[Path]]:
+    """Open the target DB safely.
+
+    APPLY backs up existing bytes before *any* schema/data mutation. DRY-RUN
+    works on an in-memory copy, including schema upgrades, so its promise of
+    leaving the user's real ayarlar.db untouched is literal.
+    """
+    if apply:
+        backup_path = backup_database(DB_PATH) if DB_PATH.exists() else None
+        if backup_path is not None:
+            print(f"DB BACKUP: {backup_path}")
+        init_db()
+        conn = sqlite3.connect(str(DB_PATH))
+        conn.row_factory = sqlite3.Row
+        return conn, backup_path
+
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    if DB_PATH.exists():
+        source = sqlite3.connect(str(DB_PATH))
+        try:
+            source.backup(conn)
+        finally:
+            source.close()
+    _ensure_profile_schema_for_dry_run(conn)
+    return conn, None
+
+
 def migrate(legacy_json: Path, apply: bool = False) -> Dict[str, int]:
     if not legacy_json.exists():
         raise FileNotFoundError(f"Legacy JSON not found: {legacy_json}")
@@ -112,8 +186,6 @@ def migrate(legacy_json: Path, apply: bool = False) -> Dict[str, int]:
     categories = payload.get("kategoriler")
     if not isinstance(categories, dict):
         raise ValueError("Legacy JSON has no valid 'kategoriler' object")
-
-    init_db()
 
     summary = {
         "seen": 0,
@@ -126,9 +198,7 @@ def migrate(legacy_json: Path, apply: bool = False) -> Dict[str, int]:
         "unknown_category": 0,
     }
 
-    conn = sqlite3.connect(str(DB_PATH))
-    conn.row_factory = sqlite3.Row
-    backup_path = None
+    conn, backup_path = _open_migration_connection(apply)
 
     try:
         for category, category_data in categories.items():
@@ -275,10 +345,6 @@ def migrate(legacy_json: Path, apply: bool = False) -> Dict[str, int]:
                 if same_source is not None:
                     summary["would_update"] += 1
                     if apply:
-                        if backup_path is None:
-                            conn.commit()
-                            backup_path = backup_database(DB_PATH)
-                            print(f"DB BACKUP: {backup_path}")
                         conn.execute(
                             """UPDATE template_profiles SET
                                 category=?, source_relative_path=?,
@@ -325,10 +391,6 @@ def migrate(legacy_json: Path, apply: bool = False) -> Dict[str, int]:
                 else:
                     summary["would_insert"] += 1
                     if apply:
-                        if backup_path is None:
-                            conn.commit()
-                            backup_path = backup_database(DB_PATH)
-                            print(f"DB BACKUP: {backup_path}")
                         conn.execute(
                             """UPDATE template_profiles
                                SET is_active=0,
