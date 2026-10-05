@@ -209,6 +209,77 @@ def open_folder():
         return jsonify({"status": "success", "message": "Klasör açıldı."})
     return jsonify({"status": "error", "message": "Klasör bulunamadı."}), 404
 
+def _factory_preflight_payload():
+    """Run the read-only production readiness gate.
+
+    This helper is used both by the UI preflight endpoint and by the actual
+    OTOMATIK_URETIM launch path so a direct API call cannot bypass safety.
+    """
+    script_path = os.path.join(SYS_MOTORS_DIR, "pc_master_factory.py")
+    if not os.path.isfile(script_path):
+        return {
+            "status": "error",
+            "ready": False,
+            "errors": ["pc_master_factory.py bulunamadı."],
+            "exit_code": None,
+        }, 404
+
+    try:
+        completed = subprocess.run(
+            [sys.executable, script_path, "--preflight"],
+            cwd=BASE_DIR,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=90,
+        )
+    except subprocess.TimeoutExpired:
+        return {
+            "status": "error",
+            "ready": False,
+            "errors": ["Preflight 90 saniyede tamamlanamadı."],
+            "exit_code": None,
+        }, 504
+    except Exception as exc:
+        return {
+            "status": "error",
+            "ready": False,
+            "errors": [f"Preflight başlatılamadı: {exc}"],
+            "exit_code": None,
+        }, 500
+
+    payload = None
+    for line in reversed((completed.stdout or "").splitlines()):
+        if line.startswith("PREFLIGHT_JSON="):
+            try:
+                payload = json.loads(line.split("=", 1)[1])
+            except json.JSONDecodeError:
+                payload = None
+            break
+
+    if not isinstance(payload, dict):
+        return {
+            "status": "error",
+            "ready": False,
+            "errors": ["Preflight çıktısı okunamadı."],
+            "exit_code": completed.returncode,
+            "stderr": (completed.stderr or "")[-4000:],
+        }, 500
+
+    payload["status"] = "success" if payload.get("ready") else "blocked"
+    payload["exit_code"] = completed.returncode
+
+    # The factory process itself returns non-zero when a hard preflight error is
+    # present. Treat either signal as blocking; never launch on disagreement.
+    if completed.returncode != 0 or not payload.get("ready"):
+        payload["ready"] = False
+        payload["status"] = "blocked"
+        return payload, 409
+
+    return payload, 200
+
+
 @app.route('/api/run_script', methods=['POST'])
 def run_script():
     """Start only explicitly-whitelisted local tools.
@@ -260,6 +331,15 @@ def run_script():
             "status": "error",
             "message": "Bilinmeyen veya izin verilmeyen script kimliği.",
         }), 400
+
+    if script_id == "OTOMATIK_URETIM":
+        preflight, preflight_status = _factory_preflight_payload()
+        if preflight_status != 200 or not preflight.get("ready"):
+            return jsonify({
+                "status": "blocked",
+                "message": "Otomatik üretim preflight nedeniyle başlatılmadı.",
+                "preflight": preflight,
+            }), preflight_status
 
     script_path = spec["path"]
     if not os.path.exists(script_path):
@@ -344,58 +424,9 @@ def process_status():
 
 @app.route('/api/factory_preflight', methods=['GET'])
 def factory_preflight():
-    """Run the factory's read-only readiness gate and return structured data."""
-    script_path = os.path.join(SYS_MOTORS_DIR, "pc_master_factory.py")
-    if not os.path.isfile(script_path):
-        return jsonify({
-            "status": "error",
-            "ready": False,
-            "errors": ["pc_master_factory.py bulunamadı."],
-        }), 404
-
-    try:
-        completed = subprocess.run(
-            [sys.executable, script_path, "--preflight"],
-            cwd=BASE_DIR,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=90,
-        )
-    except subprocess.TimeoutExpired:
-        return jsonify({
-            "status": "error",
-            "ready": False,
-            "errors": ["Preflight 90 saniyede tamamlanamadı."],
-        }), 504
-    except Exception as exc:
-        return jsonify({
-            "status": "error",
-            "ready": False,
-            "errors": [f"Preflight başlatılamadı: {exc}"],
-        }), 500
-
-    payload = None
-    for line in reversed((completed.stdout or "").splitlines()):
-        if line.startswith("PREFLIGHT_JSON="):
-            try:
-                payload = json.loads(line.split("=", 1)[1])
-            except json.JSONDecodeError:
-                payload = None
-            break
-
-    if not isinstance(payload, dict):
-        return jsonify({
-            "status": "error",
-            "ready": False,
-            "errors": ["Preflight çıktısı okunamadı."],
-            "exit_code": completed.returncode,
-        }), 500
-
-    payload["status"] = "success" if payload.get("ready") else "blocked"
-    payload["exit_code"] = completed.returncode
-    return jsonify(payload), (200 if payload.get("ready") else 409)
+    """Expose the same server-side readiness gate used by production launch."""
+    payload, status_code = _factory_preflight_payload()
+    return jsonify(payload), status_code
 
 # --- ARAÇLAR (Tools) APILERI ---
 
