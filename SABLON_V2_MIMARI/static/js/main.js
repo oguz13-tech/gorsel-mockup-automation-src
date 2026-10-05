@@ -1598,7 +1598,8 @@ async function approveTemplate() {
                 template_uid: uid,
                 category: currentCat,
                 template: currentTmpl,
-                corners: canonicalCorners
+                corners: canonicalCorners,
+                on_plan: cloneForegroundMask()
             })
         });
         let data = await res.json();
