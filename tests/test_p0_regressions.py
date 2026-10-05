@@ -120,6 +120,33 @@ class TestSQLiteBootstrap(unittest.TestCase):
         )
 
 
+class TestForegroundCacheTrust(unittest.TestCase):
+    def test_required_foreground_rejects_empty_cache(self):
+        from SISTEM_MOTORU.pc_master_factory import cached_foreground_mask_usable
+        import numpy as np
+
+        self.assertFalse(
+            cached_foreground_mask_usable(
+                np.zeros((10, 10), dtype=np.uint8),
+                True,
+            )
+        )
+        mask = np.zeros((10, 10), dtype=np.uint8)
+        mask[3:6, 3:6] = 255
+        self.assertTrue(cached_foreground_mask_usable(mask, True))
+
+    def test_optional_foreground_allows_empty_cache(self):
+        from SISTEM_MOTORU.pc_master_factory import cached_foreground_mask_usable
+        import numpy as np
+
+        self.assertTrue(
+            cached_foreground_mask_usable(
+                np.zeros((10, 10), dtype=np.uint8),
+                False,
+            )
+        )
+
+
 class TestRuntimeWorkspaceSeparation(unittest.TestCase):
     def test_runtime_workspace_override_is_explicit_and_resolved(self):
         from SISTEM_MOTORU.pc_master_factory import resolve_runtime_workspace
