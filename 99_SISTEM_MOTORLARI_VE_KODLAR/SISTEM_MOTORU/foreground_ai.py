@@ -5,6 +5,7 @@ import logging
 import cv2
 import numpy as np
 from pathlib import Path
+from contextlib import nullcontext
 from PIL import Image
 
 import torch
@@ -16,8 +17,8 @@ if not logger.handlers:
     logger.addHandler(handler)
 logger.setLevel(logging.INFO)
 
-BASE_DIR = Path(r"C:\Users\oguzc\OneDrive\Masaüstü\GörselÜretme-ve-Mockup Otomasyonu")
-MASKS_DIR = BASE_DIR / "99_SISTEM_MOTORLARI_VE_KODLAR" / "SISTEM_MOTORU" / "masks"
+ENGINE_DIR = Path(__file__).resolve().parent
+MASKS_DIR = ENGINE_DIR / "masks"
 MASKS_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -48,6 +49,12 @@ class ForegroundAIEngine:
             "food. fruit. vegetable. tomato. garlic. knife. utensil. "
             "hand. plant. flower. decoration. kitchen object. accessory. lemon. herb."
         )
+
+    def _autocast_context(self):
+        """CUDA'da fp16 autocast, CPU'da güvenli no-op context döndür."""
+        if self.device == "cuda":
+            return torch.autocast(device_type="cuda", dtype=self.dtype)
+        return nullcontext()
 
     def _ensure_models_loaded(self):
         """Lazy loading: Modeller yalnızca ilk ihtiyaç duyulduğunda GPU/RAM'e yüklenir."""
@@ -133,7 +140,7 @@ class ForegroundAIEngine:
         ).to(self.device)
 
         try:
-            with torch.inference_mode(), torch.autocast("cuda", dtype=self.dtype):
+            with torch.inference_mode(), self._autocast_context():
                 outputs = self.sam_model(**inputs)
 
             iou_scores = outputs.iou_scores[0, 0].cpu().numpy()
@@ -172,7 +179,7 @@ class ForegroundAIEngine:
         ).to(self.device)
 
         try:
-            with torch.inference_mode(), torch.autocast("cuda", dtype=self.dtype):
+            with torch.inference_mode(), self._autocast_context():
                 outputs = self.sam_model(**inputs)
 
             iou_scores = outputs.iou_scores[0, 0].cpu().numpy()
@@ -259,7 +266,7 @@ class ForegroundAIEngine:
                 return_tensors="pt"
             ).to(self.device)
 
-            with torch.inference_mode(), torch.autocast("cuda", dtype=self.dtype):
+            with torch.inference_mode(), self._autocast_context():
                 dino_outputs = self.dino_model(**dino_inputs)
 
             dino_results = self.dino_proc.post_process_grounded_object_detection(
