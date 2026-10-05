@@ -394,6 +394,7 @@ def main() -> int:
                     "tests/test_t1_client.py",
                     "tests/test_benchmark_metrics.py",
                     "tests/test_geometry_diagnostics.py",
+                    "tests/test_epic3_validation_bundle.py",
                     "-v",
                 ],
             )
