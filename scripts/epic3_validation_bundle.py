@@ -415,6 +415,13 @@ def main() -> int:
     dataset_before = _snapshot_dataset(dataset)
     commands: List[Dict[str, Any]] = []
 
+    # Never let a globally configured runtime override leak into source-only
+    # validation subprocesses. Unit tests/benchmarks must exercise the checked-
+    # out branch in isolation; only factory_preflight below may inspect real
+    # mutable production data.
+    source_env = os.environ.copy()
+    source_env.pop("MOCKUP_RUNTIME_WORKSPACE", None)
+
     missing_syntax_files = [
         str(path) for path in SYNTAX_CHECK_FILES if not path.is_file()
     ]
@@ -437,6 +444,7 @@ def main() -> int:
                     "py_compile",
                     *[str(path) for path in SYNTAX_CHECK_FILES],
                 ],
+                env=source_env,
             )
         )
 
@@ -458,6 +466,7 @@ def main() -> int:
                     "tests/test_control_center_file_ops.py",
                     "-v",
                 ],
+                env=source_env,
             )
         )
 
@@ -472,6 +481,7 @@ def main() -> int:
                 "--output",
                 str(benchmark_json),
             ],
+            env=source_env,
         )
     )
     commands.append(
@@ -485,6 +495,7 @@ def main() -> int:
                 "--output",
                 str(diagnostic_json),
             ],
+            env=source_env,
         )
     )
 
@@ -506,6 +517,7 @@ def main() -> int:
                     "--top-n",
                     str(max(1, args.top_n)),
                 ],
+                env=source_env,
             )
         )
     else:
