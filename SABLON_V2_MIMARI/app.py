@@ -22,7 +22,7 @@ from core.vision import (
 )
 
 from core.db import init_db, get_all_ayarlar, save_settings_node, save_category, save_template, delete_template, save_templates_bulk
-from core.template_intelligence import TemplateAnalyzer, save_template_profile, TemplateSelector, GeometryValidator
+from core.template_intelligence import TemplateAnalyzer, save_template_profile, TemplateSelector, GeometryValidator, CategoryRuleEngine
 import hashlib
 import uuid
 
@@ -429,7 +429,8 @@ def _load_matching_manual_prior(db_path, uid, img_path):
         row = conn.execute(
             """SELECT surface_quad, outer_quad, source_asset_sha256
                FROM template_profiles
-               WHERE template_uid=? AND is_active=1 AND manually_verified=1""",
+               WHERE template_uid=? AND is_active=1
+                 AND manually_verified=1 AND review_status='APPROVED'""",
             (uid,)
         ).fetchone()
     finally:
@@ -489,6 +490,7 @@ def api_templates_analyze():
             "analyzer_version": result.get("analyzer_version"),
             "product_class": result.get("rule", {}).get("product_class", "Bilinmeyen"),
             "orientation": result.get("orientation", "UNKNOWN"),
+            "nominal_aspect": result.get("nominal_aspect", "UNKNOWN"),
             "print_policy": result.get("rule", {}).get("print_policy", "full_bleed"),
             "surface_quad": result.get("surface_quad"),
             "outer_quad": result.get("outer_quad"),
@@ -602,8 +604,12 @@ def api_templates_batch_analyze():
                     "category": category,
                     "source_relative_path": f"{category}/{tmpl}",
                     "source_asset_sha256": res.get("source_asset_sha256"),
+                    "profile_version": "v2",
                     "analyzer_version": res.get("analyzer_version"),
+                    "product_class": res.get("rule", {}).get("product_class", "Bilinmeyen"),
                     "orientation": res.get("orientation", "UNKNOWN"),
+                    "nominal_aspect": res.get("nominal_aspect", "UNKNOWN"),
+                    "print_policy": res.get("rule", {}).get("print_policy", "full_bleed"),
                     "surface_quad": res.get("surface_quad"),
                     "outer_quad": res.get("outer_quad"),
                     "confidence_total": res.get("confidence_total", 0.0),
@@ -732,6 +738,24 @@ def api_templates_update_corners():
             aspect = avg_w / avg_h
             orientation = "H" if aspect > 1.05 else ("V" if aspect < 0.95 else "SQUARE")
 
+            try:
+                category_name = str(relative_path).replace("\\", "/").split("/", 1)[0]
+                rule = CategoryRuleEngine.get_rule_by_folder(category_name)
+                metadata_orientation = rule.get("expected_orientation", "ANY")
+                if metadata_orientation not in ("H", "V"):
+                    metadata_orientation = orientation
+                nominal_value = CategoryRuleEngine.get_nominal_aspect(
+                    category_name,
+                    metadata_orientation,
+                )
+                nominal_aspect = (
+                    f"{nominal_value:.8f}".rstrip("0").rstrip(".")
+                    if nominal_value is not None
+                    else "UNKNOWN"
+                )
+            except Exception:
+                nominal_aspect = "UNKNOWN"
+
             manual_components = {
                 "manual_prior": 1.0,
                 "area_ratio": float(abs(cv2.contourArea(canonical.astype(np.float32))) / float(w * h)),
@@ -742,13 +766,15 @@ def api_templates_update_corners():
 
             conn.execute(
                 """UPDATE template_profiles
-                   SET surface_quad=?, orientation=?, confidence_total=1.0,
-                       component_confidences=?, review_status='APPROVED',
+                   SET surface_quad=?, orientation=?, nominal_aspect=?,
+                       confidence_total=1.0, component_confidences=?,
+                       review_status='APPROVED',
                        manually_verified=1, updated_at=CURRENT_TIMESTAMP
                    WHERE id=?""",
                 (
                     json.dumps(canonical.tolist()),
                     orientation,
+                    nominal_aspect,
                     json.dumps(manual_components),
                     profile_id,
                 ),
@@ -761,6 +787,7 @@ def api_templates_update_corners():
             "success": True,
             "corners": canonical.tolist(),
             "orientation": orientation,
+            "nominal_aspect": nominal_aspect,
         })
     except ValueError as e:
         return jsonify({"success": False, "error": str(e)}), 400
