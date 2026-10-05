@@ -2287,24 +2287,19 @@ def build_factory_preflight() -> dict:
                             legacy_cfg if isinstance(legacy_cfg, dict) else {}
                         )
                         plan = legacy_cfg.get("on_plan")
-                        legacy_migration_trusted = (
-                            str(row["analyzer_version"] or "")
-                            == "legacy_manual_v1"
-                        )
-                        plan_source_hash = (
-                            str(plan.get("source_asset_sha256") or "").strip()
-                            if isinstance(plan, dict)
-                            else ""
-                        )
+                        plan_source_hash = str(
+                            legacy_cfg.get("on_plan_source_sha256")
+                            or (
+                                plan.get("source_asset_sha256")
+                                if isinstance(plan, dict)
+                                else ""
+                            )
+                            or ""
+                        ).strip()
                         plan_trusted = bool(
                             plan
-                            and (
-                                legacy_migration_trusted
-                                or (
-                                    plan_source_hash
-                                    and plan_source_hash == current_sha
-                                )
-                            )
+                            and plan_source_hash
+                            and plan_source_hash == current_sha
                         )
 
                         requires_occlusion = bool(
@@ -2613,20 +2608,19 @@ class PCMasterFactory:
             config = dict(legacy_cfg or {})
             raw_on_plan = config.get("on_plan")
             legacy_requires_occlusion = bool(raw_on_plan)
-            legacy_migration_trusted = (
-                str(row["analyzer_version"] or "") == "legacy_manual_v1"
-            )
-            plan_source_hash = (
-                str(raw_on_plan.get("source_asset_sha256") or "").strip()
-                if isinstance(raw_on_plan, dict)
-                else ""
-            )
+            plan_source_hash = str(
+                config.get("on_plan_source_sha256")
+                or (
+                    raw_on_plan.get("source_asset_sha256")
+                    if isinstance(raw_on_plan, dict)
+                    else ""
+                )
+                or ""
+            ).strip()
             plan_trusted = bool(
                 raw_on_plan
-                and (
-                    legacy_migration_trusted
-                    or (plan_source_hash and plan_source_hash == current_sha)
-                )
+                and plan_source_hash
+                and plan_source_hash == current_sha
             )
             if raw_on_plan and not plan_trusted:
                 # Keep the fact that this template needs occlusion handling,
