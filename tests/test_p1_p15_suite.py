@@ -481,6 +481,24 @@ class TestP1_P15Acceptance(unittest.TestCase):
         res = selector.select_template('V', '02_Cam_Tablo_Dikey')
         self.assertEqual(res['status'], 'SELECTED')
         
+    def test_p14b_strict_category_rejects_unknown_template_orientation(self):
+        from core.template_intelligence import TemplateSelector
+        conn = sqlite3.connect(self.db_path)
+        conn.execute(
+            """INSERT INTO template_profiles (
+                   category, orientation, review_status, is_active,
+                   confidence_total
+               ) VALUES (
+                   '02_Cam_Tablo_Dikey', 'UNKNOWN', 'APPROVED', 1, 0.99
+               )"""
+        )
+        conn.commit()
+        conn.close()
+
+        selector = TemplateSelector(db_path=self.db_path)
+        res = selector.select_template('V', '02_Cam_Tablo_Dikey')
+        self.assertEqual(res['status'], 'SKIPPED_ORIENTATION_MISMATCH')
+
     def test_p15_no_compatible_approved_template(self):
         from core.template_intelligence import TemplateSelector
         conn = sqlite3.connect(self.db_path)
