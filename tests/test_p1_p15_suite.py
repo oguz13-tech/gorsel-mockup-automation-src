@@ -162,6 +162,48 @@ class TestP1_P15Acceptance(unittest.TestCase):
         self.assertEqual(res["outer_quad"], manual_prior["outer_quad"])
         self.assertNotEqual(res["surface_quad"], res["outer_quad"])
 
+    def test_p8b_invalid_manual_prior_falls_back_to_auto_candidates(self):
+        from core.template_intelligence import CandidateGenerators, TemplateAnalyzer
+
+        img_path = os.path.join(self.temp_dir, "invalid_prior_fallback.png")
+        img = np.zeros((200, 200, 3), dtype=np.uint8)
+        cv2.imwrite(img_path, img)
+
+        auto_quad = np.array(
+            [[40, 40], [160, 40], [160, 160], [40, 160]],
+            dtype=np.float32,
+        )
+        invalid_prior = {
+            "surface_quad": [[10, 10], [10, 10], [20, 20], [30, 30]]
+        }
+
+        with patch.object(
+            CandidateGenerators,
+            "generate_canny_contours",
+            return_value=[auto_quad],
+        ), patch.object(
+            CandidateGenerators,
+            "generate_hough_lines_quad",
+            return_value=[],
+        ), patch.object(
+            CandidateGenerators,
+            "generate_color_region_quad",
+            return_value=[],
+        ):
+            res = TemplateAnalyzer().analyze(
+                img_path,
+                "02_Cam_Tablo_Dikey",
+                manual_geometry_prior=invalid_prior,
+            )
+
+        self.assertEqual(res["provenance"], "AUTO")
+        self.assertEqual(res["review_status"], "REVIEW_REQUIRED")
+        self.assertIsNotNone(res["surface_quad"])
+        self.assertEqual(
+            np.asarray(res["surface_quad"], dtype=np.float32).tolist(),
+            auto_quad.tolist(),
+        )
+
     def test_p9_glass_wall_art_print_policy_full_bleed(self):
         from core.template_intelligence import CategoryRuleEngine
         rule = CategoryRuleEngine.get_rule_by_folder("02_Cam_Tablo_Dikey")
