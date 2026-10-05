@@ -1249,6 +1249,7 @@ class MockupRenderer:
         recipe_version: str = None,
         template_sha: str = None,
         auto_foreground: bool = False,
+        foreground_required: bool = False,
     ) -> np.ndarray:
         h_bg, w_bg = bg_cv.shape[:2]
         h_art, w_art = art_cv.shape[:2]
@@ -1514,16 +1515,42 @@ class MockupRenderer:
                         feather=float(ai_cfg.get("ai_feather", 1.0)),
                     )
                     if ai_result.get("success") and ai_result.get("mask") is not None:
-                        fg_mask = _normalize_mask(ai_result["mask"])
-                        cache_loaded = True
-                        foreground_analysis_completed = True
-                        if cache_file is not None:
-                            _save_mask_atomic(cache_file, fg_mask)
-                        logger.info(
-                            "[MASK_AI] Otomatik ön plan analizi tamamlandı: "
-                            f"{len(ai_result.get('objects', []))} nesne, "
-                            f"confidence={ai_result.get('confidence', 0.0)}"
+                        proposed_mask = _normalize_mask(ai_result["mask"])
+                        detected_objects = ai_result.get("objects") or []
+                        has_foreground_pixels = bool(
+                            proposed_mask is not None
+                            and np.any(proposed_mask)
                         )
+
+                        # A profile explicitly marked as occluded is trusted
+                        # evidence that foreground exists. If zero-shot AI says
+                        # "nothing found", do not turn that false-negative into
+                        # a permanent empty cache and silently paint over the
+                        # known object. A reviewed manual plan can still satisfy
+                        # the requirement below.
+                        if (
+                            foreground_required
+                            and not detected_objects
+                            and not has_foreground_pixels
+                        ):
+                            foreground_failure_reason = (
+                                "known occlusion but AI detected no foreground"
+                            )
+                            logger.warning(
+                                "[MASK_AI] Bilinen occlusion için nesne bulunamadı; "
+                                "boş maske production cache'e yazılmadı."
+                            )
+                        else:
+                            fg_mask = proposed_mask
+                            cache_loaded = True
+                            foreground_analysis_completed = True
+                            if cache_file is not None:
+                                _save_mask_atomic(cache_file, fg_mask)
+                            logger.info(
+                                "[MASK_AI] Otomatik ön plan analizi tamamlandı: "
+                                f"{len(detected_objects)} nesne, "
+                                f"confidence={ai_result.get('confidence', 0.0)}"
+                            )
                     else:
                         foreground_failure_reason = str(
                             ai_result.get("reason", "unknown")
@@ -1793,12 +1820,26 @@ class MockupRenderer:
             # Cutting-board templates are the highest-occlusion category
             # (food/knife/utensil objects in front of the printable glass).
             # Templates can override this explicitly with auto_foreground.
+            foreground_required = bool(
+                config.get("has_occlusion")
+                or (
+                    isinstance(on_plan, list)
+                    and len(on_plan) >= 3
+                )
+                or (
+                    isinstance(on_plan, dict)
+                    and (
+                        on_plan.get("object_boxes")
+                        or on_plan.get("add_brush")
+                    )
+                )
+            )
             auto_foreground = bool(
                 config.get(
                     "auto_foreground",
                     (
                         category_name == "04_Cam_Dograma"
-                        or bool(config.get("has_occlusion"))
+                        or foreground_required
                         or bool(on_plan)
                     ),
                 )
@@ -1895,7 +1936,8 @@ class MockupRenderer:
                 template_identity=template_identity,
                 recipe_version=recipe_version,
                 template_sha=template_sha,
-                auto_foreground=auto_foreground
+                auto_foreground=auto_foreground,
+                foreground_required=foreground_required,
             )
 
             # Kalite Kontrol Denetimi (Quality Inspector)
