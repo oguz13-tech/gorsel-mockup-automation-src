@@ -190,6 +190,29 @@ class TestEpic3ValidationGoldenCoverage(unittest.TestCase):
             directory_created = bundle._snapshot_runtime_readonly_inputs(runtime)
             self.assertNotEqual(before, directory_created)
 
+    def test_telemetry_gate_requires_all_scorer_categories(self):
+        complete = {
+            "sample_count": 40,
+            "categories": list(bundle.SCORER_CATEGORIES),
+            "expected_scorer_categories": list(bundle.SCORER_CATEGORIES),
+            "missing_scorer_categories": [],
+        }
+        self.assertTrue(bundle._telemetry_evidence_ok(complete))
+
+        partial = dict(complete)
+        partial["missing_scorer_categories"] = ["05_Ocak_Arkasi"]
+        self.assertFalse(bundle._telemetry_evidence_ok(partial))
+
+        no_samples = dict(complete)
+        no_samples["sample_count"] = 0
+        self.assertFalse(bundle._telemetry_evidence_ok(no_samples))
+        self.assertFalse(
+            bundle._telemetry_evidence_ok(
+                complete,
+                telemetry_error=True,
+            )
+        )
+
     def test_review_readiness_requires_telemetry_and_cross_evidence(self):
         common = {
             "commands_ok": True,
