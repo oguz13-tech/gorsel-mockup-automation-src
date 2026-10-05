@@ -408,7 +408,7 @@ class CandidateGenerators:
 
 class TemplateAnalyzer:
     def __init__(self):
-        self.version = "v1.9"
+        self.version = "v2.0"
         self.auto_approval_enabled = False
         
     def measure_edge_contrast(self, image_cv: np.ndarray, quad: np.ndarray) -> float:
@@ -573,8 +573,14 @@ class TemplateAnalyzer:
                 
                 line_score = self.measure_edge_contrast(img, cand1)
                 
-                # Real candidate agreement
-                candidate_agreement = min(1.0, agreement_count / max(1, len(valid_cands)))
+                # Consensus is a LOCAL signal, not "fraction of every proposal".
+                # Multi-scale generators can legitimately emit 100+ distinct
+                # candidates; dividing by that global count would collapse even
+                # a strong 3-4 candidate cluster to ~0.02 and make agreement
+                # meaningless. A four-vote saturation keeps the signal stable
+                # as generator recall grows: singleton=.25, pair=.50, 3=.75,
+                # 4+=1.0. The candidate itself is one of those votes.
+                candidate_agreement = min(1.0, agreement_count / 4.0)
                 
                 # Real orientation score. Opposite-edge averages are more
                 # stable under perspective than using only top/left edges.
