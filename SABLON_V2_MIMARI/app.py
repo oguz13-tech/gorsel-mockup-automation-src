@@ -12,10 +12,16 @@ from flask import Flask, render_template, request, jsonify, send_file
 import threading
 import webbrowser
 
-# Parent klasörü sys.path'e ekle
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if BASE_DIR not in sys.path:
-    sys.path.append(BASE_DIR)
+# Code comes from the checked-out source tree; mutable templates/DB/assets
+# may live in a separate production workspace.
+SOURCE_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_runtime_override = str(os.environ.get("MOCKUP_RUNTIME_WORKSPACE") or "").strip()
+BASE_DIR = os.path.abspath(
+    os.path.expanduser(_runtime_override)
+) if _runtime_override else SOURCE_ROOT
+
+if SOURCE_ROOT not in sys.path:
+    sys.path.append(SOURCE_ROOT)
 
 from core.vision import (
     YEDEK_IMG_DIR, detect_document_corners, detect_occlusion_boxes, logger
