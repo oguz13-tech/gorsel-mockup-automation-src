@@ -3069,6 +3069,17 @@ if __name__ == "__main__":
         )
         raise SystemExit(0 if preflight["ready"] else 2)
 
+    # Defense in depth: production CLI execution must not depend on the caller
+    # remembering to run --preflight first. The control center and launcher
+    # already preflight, but direct script execution now enforces the same
+    # read-only readiness gate before any production mutation can begin.
+    preflight = build_factory_preflight()
+    if not preflight["ready"]:
+        logger.error("❌ Üretim preflight başarısız; fabrika başlatılmadı.")
+        for error in preflight.get("errors", []):
+            logger.error(f"  - {error}")
+        raise SystemExit(2)
+
     bot = PCMasterFactory(mode=args.mod)
     ok = bot.process_all()
     raise SystemExit(0 if ok else 1)
