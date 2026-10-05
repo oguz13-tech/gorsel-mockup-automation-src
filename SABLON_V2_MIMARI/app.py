@@ -932,6 +932,7 @@ def api_templates_update_corners():
             has_manual_occlusion = bool(
                 req_on_plan.get("object_boxes")
                 or req_on_plan.get("add_brush")
+                or req_on_plan.get("subtract_brush")
             )
         if not uid or corners is None:
             return jsonify({"success": False, "error": "Eksik parametre"}), 400
