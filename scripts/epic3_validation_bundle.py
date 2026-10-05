@@ -45,6 +45,8 @@ SCORER_CATEGORIES = (
     "05_Ocak_Arkasi",
 )
 
+EXPECTED_BRANCH = "feature/epic-3-geometry-accuracy"
+
 
 def _run(name: str, command: List[str], cwd: Path = ROOT) -> Dict[str, Any]:
     proc = subprocess.run(
@@ -271,8 +273,23 @@ def main() -> int:
     telemetry_json = out_dir / "scorer_telemetry.json"
     manifest_json = out_dir / "validation_manifest.json"
 
-    dataset_before = _snapshot_dataset(dataset)
+    head_before = _git_head()
+    branch_before = _git_branch()
+    if branch_before != EXPECTED_BRANCH:
+        raise SystemExit(
+            f"Refusing EPIC-3 validation on branch {branch_before!r}; "
+            f"expected {EXPECTED_BRANCH!r}."
+        )
+
     tracked_before = _tracked_worktree_snapshot()
+    if tracked_before["dirty"]:
+        raise SystemExit(
+            "Refusing EPIC-3 validation with staged/unstaged tracked changes. "
+            "Commit or revert tracked source changes first so evidence is bound "
+            "to the reported HEAD SHA."
+        )
+
+    dataset_before = _snapshot_dataset(dataset)
     commands: List[Dict[str, Any]] = []
 
     if not args.skip_unit_tests:
@@ -373,16 +390,21 @@ def main() -> int:
 
     dataset_after = _snapshot_dataset(dataset)
     tracked_after = _tracked_worktree_snapshot()
+    head_after = _git_head()
+    branch_after = _git_branch()
     dataset_unchanged = dataset_before == dataset_after
     tracked_worktree_unchanged = (
         tracked_before["fingerprint"] == tracked_after["fingerprint"]
+    )
+    git_revision_unchanged = (
+        head_before == head_after and branch_before == branch_after
     )
     preflight = _parse_preflight(commands)
 
     evidence: Dict[str, Any] = {
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
-        "head_sha": _git_head(),
-        "branch": _git_branch(),
+        "head_sha": head_before,
+        "branch": branch_before,
         "dataset": str(dataset),
         "output_dir": str(out_dir),
         "commands": commands,
@@ -391,6 +413,12 @@ def main() -> int:
             "dataset_file_count_before": len(dataset_before),
             "dataset_file_count_after": len(dataset_after),
             "dataset_unchanged": dataset_unchanged,
+            "expected_branch": EXPECTED_BRANCH,
+            "branch_before": branch_before,
+            "branch_after": branch_after,
+            "head_sha_before": head_before,
+            "head_sha_after": head_after,
+            "git_revision_unchanged": git_revision_unchanged,
             "tracked_worktree_fingerprint_before": tracked_before["fingerprint"],
             "tracked_worktree_fingerprint_after": tracked_after["fingerprint"],
             "tracked_worktree_dirty_before": bool(tracked_before["dirty"]),
@@ -462,6 +490,8 @@ def main() -> int:
     )
     integrity_ok = bool(
         dataset_unchanged
+        and branch_before == EXPECTED_BRANCH
+        and git_revision_unchanged
         and not tracked_before["dirty"]
         and tracked_worktree_unchanged
     )
