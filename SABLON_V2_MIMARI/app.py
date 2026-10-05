@@ -927,7 +927,8 @@ def api_templates_approve():
         conn = sqlite3.connect(db_path)
         try:
             row = conn.execute(
-                """SELECT id, surface_quad, source_asset_sha256, source_relative_path
+                """SELECT id, surface_quad, source_asset_sha256, source_relative_path,
+                          orientation, nominal_aspect
                    FROM template_profiles
                    WHERE template_uid=? AND is_active=1""",
                 (uid,),
@@ -935,7 +936,14 @@ def api_templates_approve():
             if not row:
                 return jsonify({"success": False, "error": "Aktif profil bulunamadi"}), 404
 
-            profile_id, surface_quad_json, source_hash, relative_path = row
+            (
+                profile_id,
+                surface_quad_json,
+                source_hash,
+                relative_path,
+                stored_orientation,
+                stored_nominal_aspect,
+            ) = row
             if not surface_quad_json or not source_hash or not relative_path:
                 return jsonify({"success": False, "error": "Profil geometrisi/kaynak kimligi eksik"}), 409
 
@@ -968,12 +976,42 @@ def api_templates_approve():
                     "error": f"Geometri onaylanamaz: {reason}",
                 }), 422
 
+            category_name = str(relative_path).replace("\\", "/").split("/", 1)[0]
+            rule = CategoryRuleEngine.get_rule_by_folder(category_name)
+            expected_orientation = str(
+                rule.get("expected_orientation") or "ANY"
+            ).upper()
+            if expected_orientation in ("H", "V"):
+                physical_orientation = expected_orientation
+            else:
+                physical_orientation = str(stored_orientation or "").upper()
+                if physical_orientation not in ("H", "V"):
+                    return jsonify({
+                        "success": False,
+                        "error": (
+                            "Bu kategori icin fiziksel yon H/V secilmeden "
+                            "profil onaylanamaz."
+                        ),
+                        "code": "PHYSICAL_ORIENTATION_REQUIRED",
+                    }), 422
+
+            nominal_value = CategoryRuleEngine.get_nominal_aspect(
+                category_name,
+                physical_orientation,
+            )
+            nominal_aspect = (
+                f"{nominal_value:.8f}".rstrip("0").rstrip(".")
+                if nominal_value is not None
+                else str(stored_nominal_aspect or "UNKNOWN")
+            )
+
             conn.execute(
                 """UPDATE template_profiles
                    SET review_status='APPROVED', manually_verified=1,
+                       orientation=?, nominal_aspect=?,
                        updated_at=CURRENT_TIMESTAMP
                    WHERE id=?""",
-                (profile_id,),
+                (physical_orientation, nominal_aspect, profile_id),
             )
             conn.commit()
         finally:
