@@ -19,6 +19,8 @@ Run from the clean source workspace on exactly `feature/epic-3-geometry-accuracy
 
 Before running, `git status --short` must show no staged/unstaged tracked changes. The validation bundle refuses the wrong branch or a dirty tracked worktree and verifies that branch + HEAD remain unchanged through the run.
 
+Keep the real runtime workspace quiescent during validation: do not edit template approvals, source masters, template files, masks, or runtime configuration while the bundle is running. The bundle hashes these read-only runtime inputs before/after preflight and fails integrity if their existence or bytes change.
+
 Source code and mutable production data are intentionally separate:
 
 - clean source checkout: `C:\AI_WORK\gorsel-mockup-automation-src`
@@ -68,8 +70,12 @@ Required checks:
    - mixed-orientation cutting-board templates;
    - at least one real occlusion case.
 9. Source immutability:
-   - original artwork bytes/hash unchanged;
+   - golden dataset bytes/hash unchanged;
+   - runtime masters/manifest bytes/hash unchanged;
    - approved template source bytes/hash unchanged;
+   - original-template backup bytes/hash unchanged;
+   - occlusion-mask cache and runtime configuration bytes/hash unchanged during preflight;
+   - template-profile SQLite DB bytes/hash unchanged during preflight;
    - legacy `koseler` not overwritten/reordered/rematched.
 10. UI/API review flow:
     - analyze remains REVIEW_REQUIRED;
