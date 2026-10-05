@@ -15,6 +15,7 @@ import argparse
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -311,13 +312,22 @@ def _golden_coverage_check(benchmark: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _clear_evidence_artifacts(paths: List[Path]) -> None:
-    """Delete only bundle-owned evidence files from earlier/interrupted runs."""
-    for artifact in paths:
-        try:
-            artifact.unlink()
-        except FileNotFoundError:
-            pass
+def _archive_evidence_artifacts(
+    paths: List[Path],
+    archive_root: Path,
+) -> str | None:
+    """Move prior bundle-owned evidence aside so it is preserved but never reused."""
+    existing = [artifact for artifact in paths if artifact.is_file()]
+    if not existing:
+        return None
+
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S_%fZ")
+    archive_dir = archive_root / "previous_runs" / stamp
+    archive_dir.mkdir(parents=True, exist_ok=False)
+
+    for artifact in existing:
+        shutil.move(str(artifact), str(archive_dir / artifact.name))
+    return str(archive_dir)
 
 
 def _command_succeeded(commands: List[Dict[str, Any]], name: str) -> bool:
@@ -470,16 +480,18 @@ def main() -> int:
     telemetry_json = out_dir / "scorer_telemetry.json"
     manifest_json = out_dir / "validation_manifest.json"
 
-    # Every run owns these exact evidence filenames. Remove leftovers from an
+    # Every run owns these exact evidence filenames. Archive leftovers from an
     # interrupted/older run before collecting new evidence so file existence can
-    # never be mistaken for success in the current run.
-    _clear_evidence_artifacts(
+    # never be mistaken for success in the current run, while failure evidence
+    # remains available for diagnosis.
+    archived_previous_evidence = _archive_evidence_artifacts(
         [
             benchmark_json,
             diagnostic_json,
             telemetry_json,
             manifest_json,
-        ]
+        ],
+        out_dir,
     )
 
     head_before = _git_head()
@@ -664,6 +676,7 @@ def main() -> int:
         "dataset": str(dataset),
         "output_dir": str(out_dir),
         "runtime_workspace": str(runtime_workspace),
+        "archived_previous_evidence": archived_previous_evidence,
         "commands": commands,
         "all_commands_ok": all(bool(item.get("ok")) for item in commands),
         "integrity": {
