@@ -725,7 +725,11 @@ class TemplateAnalyzer:
         # Never fabricate frame geometry. Preserve an outer quad only when
         # trusted/manual geometry is itself a valid quad for these exact image
         # dimensions.
-        if isinstance(manual_geometry_prior, dict) and manual_geometry_prior.get("outer_quad") is not None:
+        if (
+            provenance == "MANUAL_PRIOR"
+            and isinstance(manual_geometry_prior, dict)
+            and manual_geometry_prior.get("outer_quad") is not None
+        ):
             try:
                 outer = np.asarray(
                     manual_geometry_prior["outer_quad"],
