@@ -91,17 +91,26 @@ def _git_branch() -> str:
     return proc.stdout.strip() if proc.returncode == 0 else "UNKNOWN"
 
 
-def _tracked_worktree_dirty() -> bool:
-    """Ignore untracked local evidence/helpers; reject modified tracked source."""
-    unstaged = subprocess.run(
-        ["git", "diff", "--quiet"],
-        cwd=str(ROOT),
-    )
-    staged = subprocess.run(
-        ["git", "diff", "--cached", "--quiet"],
-        cwd=str(ROOT),
-    )
-    return unstaged.returncode != 0 or staged.returncode != 0
+def _tracked_worktree_fingerprint() -> str:
+    """Fingerprint staged + unstaged tracked changes, ignoring untracked evidence."""
+    digest = hashlib.sha256()
+    for command in (
+        ["git", "diff", "--binary", "--no-ext-diff"],
+        ["git", "diff", "--cached", "--binary", "--no-ext-diff"],
+    ):
+        proc = subprocess.run(
+            command,
+            cwd=str(ROOT),
+            capture_output=True,
+        )
+        if proc.returncode != 0:
+            raise RuntimeError(
+                f"Unable to snapshot tracked worktree (exit={proc.returncode}): "
+                + proc.stderr.decode("utf-8", errors="replace")
+            )
+        digest.update(proc.stdout)
+        digest.update(b"\0")
+    return digest.hexdigest()
 
 
 def _sha256_file(path: Path) -> str:
@@ -260,7 +269,7 @@ def main() -> int:
     manifest_json = out_dir / "validation_manifest.json"
 
     dataset_before = _snapshot_dataset(dataset)
-    tracked_dirty_before = _tracked_worktree_dirty()
+    tracked_fingerprint_before = _tracked_worktree_fingerprint()
     commands: List[Dict[str, Any]] = []
 
     if not args.skip_unit_tests:
@@ -360,8 +369,11 @@ def main() -> int:
         )
 
     dataset_after = _snapshot_dataset(dataset)
-    tracked_dirty_after = _tracked_worktree_dirty()
+    tracked_fingerprint_after = _tracked_worktree_fingerprint()
     dataset_unchanged = dataset_before == dataset_after
+    tracked_worktree_unchanged = (
+        tracked_fingerprint_before == tracked_fingerprint_after
+    )
     preflight = _parse_preflight(commands)
 
     evidence: Dict[str, Any] = {
@@ -376,11 +388,10 @@ def main() -> int:
             "dataset_file_count_before": len(dataset_before),
             "dataset_file_count_after": len(dataset_after),
             "dataset_unchanged": dataset_unchanged,
-            "tracked_worktree_dirty_before": tracked_dirty_before,
-            "tracked_worktree_dirty_after": tracked_dirty_after,
-            "validation_created_tracked_changes": (
-                (not tracked_dirty_before) and tracked_dirty_after
-            ),
+            "tracked_worktree_fingerprint_before": tracked_fingerprint_before,
+            "tracked_worktree_fingerprint_after": tracked_fingerprint_after,
+            "tracked_worktree_unchanged": tracked_worktree_unchanged,
+            "validation_created_tracked_changes": not tracked_worktree_unchanged,
         },
         "preflight": preflight,
         "manual_evidence_still_required": [
@@ -445,7 +456,7 @@ def main() -> int:
     )
     integrity_ok = bool(
         dataset_unchanged
-        and not evidence["integrity"]["validation_created_tracked_changes"]
+        and tracked_worktree_unchanged
     )
     evidence["bundle_checks"] = {
         "commands_ok": evidence["all_commands_ok"],
