@@ -658,8 +658,8 @@ class MockupRenderer:
                     mask = cv2.GaussianBlur(mask, (0, 0), 1.2)
                     return mask
                 except Exception:
-                    return empty_mask
-            return empty_mask
+                    return working_base
+            return working_base
 
         object_boxes = on_plan.get("object_boxes", [])
         add_brush = on_plan.get("add_brush", [])
