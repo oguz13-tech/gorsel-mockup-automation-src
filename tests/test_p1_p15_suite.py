@@ -523,6 +523,83 @@ class TestP1_P15Acceptance(unittest.TestCase):
         saved_quad = json.loads(row[1])
         self.assertEqual(saved_quad, [[1,1], [9,1], [9,9], [1,9]])
 
+    def test_p16b_duplicate_active_profiles_are_normalized_safely(self):
+        from core.template_intelligence import save_template_profile
+
+        conn = sqlite3.connect(self.db_path)
+        conn.execute(
+            """INSERT INTO template_profiles (
+                   template_uid, category, source_relative_path,
+                   source_asset_sha256, analyzer_version, orientation,
+                   review_status, manually_verified, is_active,
+                   confidence_total, updated_at
+               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, CURRENT_TIMESTAMP)""",
+            (
+                "dup_uid",
+                "cat1",
+                "cat1/tmpl.png",
+                "same_hash",
+                "manual-v1",
+                "V",
+                "APPROVED",
+                1,
+                1.0,
+            ),
+        )
+        conn.execute(
+            """INSERT INTO template_profiles (
+                   template_uid, category, source_relative_path,
+                   source_asset_sha256, analyzer_version, orientation,
+                   review_status, manually_verified, is_active,
+                   confidence_total, updated_at
+               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, CURRENT_TIMESTAMP)""",
+            (
+                "dup_uid",
+                "cat1",
+                "cat1/tmpl.png",
+                "old_hash",
+                "v1.3",
+                "H",
+                "REVIEW_REQUIRED",
+                0,
+                0.5,
+            ),
+        )
+        conn.commit()
+        conn.close()
+
+        save_template_profile(
+            self.db_path,
+            {
+                "template_uid": "dup_uid",
+                "category": "cat1",
+                "source_relative_path": "cat1/tmpl.png",
+                "source_asset_sha256": "same_hash",
+                "analyzer_version": "v1.3",
+                "orientation": "V",
+                "review_status": "REVIEW_REQUIRED",
+                "manually_verified": False,
+                "surface_quad": [[1, 1], [9, 1], [9, 9], [1, 9]],
+            },
+        )
+
+        conn = sqlite3.connect(self.db_path)
+        rows = conn.execute(
+            """SELECT source_asset_sha256, review_status,
+                      manually_verified, is_active
+               FROM template_profiles
+               WHERE template_uid=?
+               ORDER BY id""",
+            ("dup_uid",),
+        ).fetchall()
+        conn.close()
+
+        active = [row for row in rows if row[3] == 1]
+        self.assertEqual(len(active), 1)
+        self.assertEqual(active[0][0], "same_hash")
+        self.assertEqual(active[0][1], "APPROVED")
+        self.assertEqual(active[0][2], 1)
+
     def test_p17_endpoint_uses_matching_persisted_manual_prior_without_overwrite(self):
         from app import app
         from core.template_intelligence import save_template_profile
