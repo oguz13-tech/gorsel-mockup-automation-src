@@ -1029,7 +1029,22 @@ class MockupRenderer:
         return image_cv + (noise * noise_mask_3c)
 
     @staticmethod
-    def render_cv2_optik(art_cv: np.ndarray, bg_cv: np.ndarray, koseler: list, is_glass: bool, on_plan=None, template_name: str = None, category_name: str = None, orig_bg_cv: np.ndarray = None, alpha_mask: np.ndarray = None, source_design_identity: str = None, template_identity: str = None, recipe_version: str = None, template_sha: str = None) -> np.ndarray:
+    def render_cv2_optik(
+        art_cv: np.ndarray,
+        bg_cv: np.ndarray,
+        koseler: list,
+        is_glass: bool,
+        on_plan=None,
+        template_name: str = None,
+        category_name: str = None,
+        orig_bg_cv: np.ndarray = None,
+        alpha_mask: np.ndarray = None,
+        source_design_identity: str = None,
+        template_identity: str = None,
+        recipe_version: str = None,
+        template_sha: str = None,
+        auto_foreground: bool = False,
+    ) -> np.ndarray:
         h_bg, w_bg = bg_cv.shape[:2]
         h_art, w_art = art_cv.shape[:2]
         p = np.float32(koseler)  # [TL, TR, BR, BL]
@@ -1189,42 +1204,130 @@ class MockupRenderer:
         final = np.clip(final, 0, 255).astype(np.uint8)
 
         # ---------------------------------------------------------
-        # FOREGROUND / OCCLUSION RESTORE (AI Cache + Manual on_plan)
+        # FOREGROUND / OCCLUSION RESTORE
+        # Automatic Grounding-DINO + SAM cache, then manual refinement.
+        # AI is lazy-loaded only when a template has no usable cached mask.
         # ---------------------------------------------------------
         fg_mask = None
+        cache_file = None
+        cache_loaded = False
         try:
+            source_for_mask = orig_bg_cv if orig_bg_cv is not None else bg_cv
+            h_mask, w_mask = source_for_mask.shape[:2]
+
+            def _normalize_mask(mask):
+                if mask is None:
+                    return None
+                if mask.ndim == 3:
+                    mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
+                if mask.shape[:2] != (h_mask, w_mask):
+                    mask = cv2.resize(mask, (w_mask, h_mask), interpolation=cv2.INTER_NEAREST)
+                return np.clip(mask, 0, 255).astype(np.uint8)
+
+            def _read_mask(mask_path: Path):
+                if not mask_path or not mask_path.exists():
+                    return None
+                try:
+                    decoded = cv2.imdecode(
+                        np.fromfile(str(mask_path), dtype=np.uint8),
+                        cv2.IMREAD_GRAYSCALE,
+                    )
+                    return _normalize_mask(decoded)
+                except Exception as exc:
+                    logger.warning(f"[MASK] Cache okunamadı {mask_path.name}: {exc}")
+                    return None
+
+            def _save_mask_atomic(mask_path: Path, mask):
+                normalized = _normalize_mask(mask)
+                if normalized is None:
+                    return False
+                mask_path.parent.mkdir(parents=True, exist_ok=True)
+                ok, encoded = cv2.imencode(".png", normalized)
+                if not ok:
+                    return False
+                tmp_path = mask_path.with_name(mask_path.name + ".tmp")
+                encoded.tofile(str(tmp_path))
+                os.replace(tmp_path, mask_path)
+                return True
+
             if template_name:
                 stem = Path(template_name).stem
                 safe_cat = category_name if category_name else "default"
-                mask_analyzer_version = "v1"
-                cache_name = f"{safe_cat}_{template_sha}_{mask_analyzer_version}_mask.png" if template_sha else f"{safe_cat}_{stem}_foreground_mask.png"
+                mask_analyzer_version = "v2_auto_ai"
+                cache_name = (
+                    f"{safe_cat}_{template_sha}_{mask_analyzer_version}_mask.png"
+                    if template_sha
+                    else f"{safe_cat}_{stem}_{mask_analyzer_version}_mask.png"
+                )
                 cache_file = BASE_DIR / "masks" / cache_name
-                
-                # Backward compatibility for old cache mask naming
+
                 legacy_cache = BASE_DIR / "masks" / f"{stem}_foreground_mask.png"
                 legacy_cache_cat = BASE_DIR / "masks" / f"{safe_cat}_{stem}_foreground_mask.png"
-                
-                if cache_file.exists():
-                    fg_mask = cv2.imdecode(np.fromfile(str(cache_file), dtype=np.uint8), cv2.IMREAD_GRAYSCALE)
-                elif legacy_cache_cat.exists():
-                    fg_mask = cv2.imdecode(np.fromfile(str(legacy_cache_cat), dtype=np.uint8), cv2.IMREAD_GRAYSCALE)
-                    cv2.imencode('.png', fg_mask)[1].tofile(str(cache_file))
-                elif legacy_cache.exists():
-                    fg_mask = cv2.imdecode(np.fromfile(str(legacy_cache), dtype=np.uint8), cv2.IMREAD_GRAYSCALE)
-                    cv2.imencode('.png', fg_mask)[1].tofile(str(cache_file))
-                    
-            source_for_mask = orig_bg_cv if orig_bg_cv is not None else bg_cv
+
+                fg_mask = _read_mask(cache_file)
+                cache_loaded = fg_mask is not None
+
+                if not cache_loaded:
+                    for legacy_path in (legacy_cache_cat, legacy_cache):
+                        legacy_mask = _read_mask(legacy_path)
+                        if legacy_mask is not None:
+                            fg_mask = legacy_mask
+                            cache_loaded = True
+                            _save_mask_atomic(cache_file, fg_mask)
+                            logger.info(
+                                f"[MASK] Legacy ön plan maskesi yeni cache adına taşındı: {cache_file.name}"
+                            )
+                            break
+
+            # Fully automatic object-aware occlusion discovery. The heavy AI
+            # dependencies are imported lazily so normal categories/startup do
+            # not pay the model cost.
+            if auto_foreground and not cache_loaded:
+                try:
+                    from foreground_ai import ForegroundAIEngine
+
+                    ai_result = ForegroundAIEngine.get_instance().detect_foreground(
+                        source_for_mask,
+                        dst_pts.astype(float).tolist(),
+                    )
+                    if ai_result.get("success") and ai_result.get("mask") is not None:
+                        fg_mask = _normalize_mask(ai_result["mask"])
+                        cache_loaded = True
+                        if cache_file is not None:
+                            _save_mask_atomic(cache_file, fg_mask)
+                        logger.info(
+                            "[MASK_AI] Otomatik ön plan analizi tamamlandı: "
+                            f"{len(ai_result.get('objects', []))} nesne, "
+                            f"confidence={ai_result.get('confidence', 0.0)}"
+                        )
+                    else:
+                        logger.warning(
+                            "[MASK_AI] Otomatik ön plan analizi sonuç vermedi: "
+                            f"{ai_result.get('reason', 'unknown')}"
+                        )
+                except Exception as exc:
+                    # Occlusion AI is enhancement, never a reason to destroy a
+                    # valid render. Manual/cache path remains available.
+                    logger.warning(f"[MASK_AI] Otomatik maskeleme kullanılamadı: {exc}")
+
+            # Manual Object Selection / brush corrections are additive to the
+            # automatic mask. Subtract brush remains handled inside on_plan.
             if on_plan:
                 manual_mask = MockupRenderer.build_foreground_mask(source_for_mask, on_plan)
+                manual_mask = _normalize_mask(manual_mask)
                 if manual_mask is not None and np.any(manual_mask):
-                    if fg_mask is not None:
-                        fg_mask = cv2.bitwise_or(fg_mask, manual_mask)
-                    else:
-                        fg_mask = manual_mask
+                    fg_mask = (
+                        cv2.bitwise_or(fg_mask, manual_mask)
+                        if fg_mask is not None
+                        else manual_mask
+                    )
 
             if fg_mask is not None and np.any(fg_mask):
-                source_for_restore = orig_bg_cv if orig_bg_cv is not None else bg_cv
-                final = MockupRenderer.restore_foreground(final, source_for_restore, fg_mask)
+                final = MockupRenderer.restore_foreground(
+                    final,
+                    source_for_mask,
+                    fg_mask,
+                )
         except Exception as e:
             logger.warning(f"[FOREGROUND_RESTORE] Ön plan geri yükleme hatası: {e}")
 
@@ -1260,6 +1363,15 @@ class MockupRenderer:
             tip = config.get("tip", "duz")
             on_plan = config.get("on_plan", None)
             category_name = template_path.parent.name
+            # Cutting-board templates are the highest-occlusion category
+            # (food/knife/utensil objects in front of the printable glass).
+            # Templates can override this explicitly with auto_foreground.
+            auto_foreground = bool(
+                config.get(
+                    "auto_foreground",
+                    category_name == "04_Cam_Dograma",
+                )
+            )
 
             # Perspektif Giydirme
             if tip == "perspektif" and "koseler" in config:
@@ -1300,7 +1412,8 @@ class MockupRenderer:
                 source_design_identity=source_design_identity,
                 template_identity=template_identity,
                 recipe_version=recipe_version,
-                template_sha=template_sha
+                template_sha=template_sha,
+                auto_foreground=auto_foreground
             )
 
             # Kalite Kontrol Denetimi (Quality Inspector)
