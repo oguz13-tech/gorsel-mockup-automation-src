@@ -45,6 +45,17 @@ class TestP1_P15Acceptance(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
+    def test_path_within_root_rejects_prefix_collision(self):
+        import app
+
+        root = os.path.join(self.temp_dir, "safe")
+        inside = os.path.join(root, "cat", "image.png")
+        prefix_collision = os.path.join(self.temp_dir, "safe_evil", "image.png")
+
+        self.assertTrue(app._path_within_root(root, inside))
+        self.assertFalse(app._path_within_root(root, prefix_collision))
+        self.assertFalse(app._path_within_root(root, os.path.join(root, "..", "escape.png")))
+
     def test_p1_source_file_bytes_hash_unchanged_after_profile_analyze(self):
         from core.template_intelligence import TemplateAnalyzer
         img_path = os.path.join(self.temp_dir, "test.png")
