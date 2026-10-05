@@ -120,6 +120,39 @@ class TestSQLiteBootstrap(unittest.TestCase):
         )
 
 
+class TestRuntimeWorkspaceSeparation(unittest.TestCase):
+    def test_runtime_workspace_override_is_explicit_and_resolved(self):
+        from SISTEM_MOTORU.pc_master_factory import resolve_runtime_workspace
+
+        with tempfile.TemporaryDirectory() as source_tmp, tempfile.TemporaryDirectory() as runtime_tmp:
+            source = Path(source_tmp)
+            runtime = Path(runtime_tmp)
+            with patch.dict(
+                os.environ,
+                {"MOCKUP_RUNTIME_WORKSPACE": str(runtime)},
+                clear=False,
+            ):
+                resolved = resolve_runtime_workspace(source)
+
+            self.assertEqual(resolved, runtime.resolve())
+            self.assertNotEqual(resolved, source.resolve())
+
+    def test_runtime_workspace_defaults_to_source_for_backward_compatibility(self):
+        from SISTEM_MOTORU.pc_master_factory import resolve_runtime_workspace
+
+        with tempfile.TemporaryDirectory() as source_tmp:
+            source = Path(source_tmp)
+            with patch.dict(
+                os.environ,
+                {"MOCKUP_RUNTIME_WORKSPACE": ""},
+                clear=False,
+            ):
+                self.assertEqual(
+                    resolve_runtime_workspace(source),
+                    source.resolve(),
+                )
+
+
 class TestENVFallbackBehavior(unittest.TestCase):
     """Test that AsyncCloudUploader config values correctly fall through to ENV."""
 
