@@ -616,6 +616,7 @@ class MockupRenderer:
     def build_foreground_mask(
         bg_cv: np.ndarray,
         on_plan: dict | list | None,
+        base_mask: np.ndarray | None = None,
     ) -> np.ndarray:
         """
         Photoshop benzeri Object Selection & Brush mantığı.
@@ -632,15 +633,25 @@ class MockupRenderer:
         h, w = bg_cv.shape[:2]
         empty_mask = np.zeros((h, w), dtype=np.uint8)
 
+        if base_mask is not None:
+            base = np.asarray(base_mask)
+            if base.ndim == 3:
+                base = cv2.cvtColor(base.astype(np.uint8), cv2.COLOR_BGR2GRAY)
+            if base.shape[:2] != (h, w):
+                base = cv2.resize(base, (w, h), interpolation=cv2.INTER_NEAREST)
+            working_base = np.clip(base, 0, 255).astype(np.uint8)
+        else:
+            working_base = empty_mask.copy()
+
         if not on_plan:
-            return empty_mask
+            return working_base
 
         # Eski polygon formatı geldiyse kırılmasın
         if isinstance(on_plan, list):
             if len(on_plan) >= 3:
                 try:
                     pts = np.asarray(on_plan, dtype=np.int32)
-                    mask = np.zeros((h, w), dtype=np.uint8)
+                    mask = working_base.copy()
                     pts[:, 0] = np.clip(pts[:, 0], 0, w - 1)
                     pts[:, 1] = np.clip(pts[:, 1], 0, h - 1)
                     cv2.fillPoly(mask, [pts], 255)
@@ -656,7 +667,7 @@ class MockupRenderer:
         feather = float(on_plan.get("feather", 1.2))
         iterations = int(on_plan.get("grabcut_iterations", 5))
 
-        final_mask = np.zeros((h, w), dtype=np.uint8)
+        final_mask = working_base.copy()
 
         # 1. OBJECT SELECTION (Her kutu ayrı GrabCut'tan geçirilir)
         for box in object_boxes:
@@ -1313,14 +1324,15 @@ class MockupRenderer:
             # Manual Object Selection / brush corrections are additive to the
             # automatic mask. Subtract brush remains handled inside on_plan.
             if on_plan:
-                manual_mask = MockupRenderer.build_foreground_mask(source_for_mask, on_plan)
-                manual_mask = _normalize_mask(manual_mask)
-                if manual_mask is not None and np.any(manual_mask):
-                    fg_mask = (
-                        cv2.bitwise_or(fg_mask, manual_mask)
-                        if fg_mask is not None
-                        else manual_mask
-                    )
+                # Apply Object Selection + add/subtract brushes on top of the
+                # AI/cache mask so the subtract brush can genuinely correct a
+                # false-positive automatic region.
+                fg_mask = MockupRenderer.build_foreground_mask(
+                    source_for_mask,
+                    on_plan,
+                    base_mask=fg_mask,
+                )
+                fg_mask = _normalize_mask(fg_mask)
 
             if fg_mask is not None and np.any(fg_mask):
                 final = MockupRenderer.restore_foreground(
