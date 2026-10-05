@@ -38,7 +38,7 @@ Report the exact branch HEAD SHA and literal values from `validation_manifest.js
 
 Required checks:
 
-1. All command exit codes.
+1. All command exit codes, including the mandatory `python_syntax_gate` (`py_compile`) before runtime/data checks.
 2. Attempted / valid / excluded golden-sample counts.
 3. EPIC-2 vs EPIC-3 global median IoU and Recall@0.50.
 4. Per-category EPIC-2 vs EPIC-3 metrics for:
@@ -70,6 +70,7 @@ Required checks:
     - physical H/V metadata is never inferred from projected quad geometry;
     - fixed-orientation categories use the category physical contract;
     - mixed `04_Cam_Dograma` approval requires an explicit reviewed H/V selection;
+    - mixed-category APPROVED profiles without `physical_orientation_verified` evidence are rejected by preflight/render loading and must be re-reviewed;
     - projected orientation is diagnostic only and may differ from physical orientation.
 
 ## Release decisions
