@@ -2655,7 +2655,13 @@ class PCMasterFactory:
                     source_design_identity = record["source_identity"]
 
                     magaza_grubu = sablon_path.stem
-                    out_filename = f"{sku}_{sablon_path.stem}.jpg"
+                    # Artifact identity includes the render recipe, so the
+                    # physical output path must also be recipe-versioned.
+                    # Otherwise a new renderer recipe could overwrite a file
+                    # still referenced by an older immutable artifact record.
+                    out_filename = (
+                        f"{sku}_{sablon_path.stem}_{recipe_version}.jpg"
+                    )
 
                     if self.mode == "coklu":
                         out_dir = OUTPUT_COKLU_DIR / prod_key / magaza_grubu
