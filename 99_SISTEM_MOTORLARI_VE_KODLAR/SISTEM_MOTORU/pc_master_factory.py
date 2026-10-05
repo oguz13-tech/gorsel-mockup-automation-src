@@ -2096,7 +2096,11 @@ class FastExcelManager:
             if key:
                 self._known_keys.add(key)
             if len(self._buffer) >= 50:
-                return self.flush()
+                # The row is already durably represented in the in-memory
+                # buffer. A threshold flush failure must not make the caller
+                # forget this artifact; the final run-level flush is the
+                # authoritative success gate and will retry the retained buffer.
+                self.flush()
             return True
 
     def flush(self) -> bool:
