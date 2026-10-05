@@ -1826,7 +1826,9 @@ class FastExcelManager:
     def __init__(self, file_path: Path):
         self.file_path = file_path
         self._buffer = []
+        self._known_keys = set()
         self._init_file()
+        self._load_known_keys()
 
     def _init_file(self):
         if not self.file_path.exists():
@@ -1847,18 +1849,70 @@ class FastExcelManager:
             wb.save(self.file_path)
             wb.close()
 
-    def append_row(self, row_dict: dict):
+    @staticmethod
+    def _row_key_from_values(stock_code, mockup_name):
+        stock = str(stock_code or "").strip()
+        mockup = str(mockup_name or "").strip()
+        return (stock, mockup) if stock and mockup else None
+
+    def _load_known_keys(self):
+        """Index existing output rows so resume cannot duplicate Excel entries."""
+        if not self.file_path.exists():
+            return
+        try:
+            wb = openpyxl.load_workbook(
+                self.file_path,
+                read_only=True,
+                data_only=True,
+            )
+            try:
+                ws = wb.active
+                header = {
+                    str(cell.value): idx
+                    for idx, cell in enumerate(ws[1], start=1)
+                    if cell.value is not None
+                }
+                stock_col = header.get("Stok Kodu")
+                mockup_col = header.get("Mockup Dosya Adı")
+                if not stock_col or not mockup_col:
+                    return
+                for row in ws.iter_rows(min_row=2, values_only=True):
+                    key = self._row_key_from_values(
+                        row[stock_col - 1] if len(row) >= stock_col else None,
+                        row[mockup_col - 1] if len(row) >= mockup_col else None,
+                    )
+                    if key:
+                        self._known_keys.add(key)
+            finally:
+                wb.close()
+        except Exception as exc:
+            logger.warning(f"Excel mevcut satır indeksi okunamadı: {exc}")
+
+    def append_row(self, row_dict: dict) -> bool:
         row_dict = row_dict or {}
+        key = self._row_key_from_values(
+            row_dict.get("Stok Kodu"),
+            row_dict.get("Mockup Dosya Adı"),
+        )
         with excel_lock:
+            if key and key in self._known_keys:
+                logger.info(
+                    f"    ⏭️ Excel satırı zaten var: {key[0]} / {key[1]}"
+                )
+                return True
+
             row = [row_dict.get(h, "") for h in self.HEADERS]
             self._buffer.append(row)
+            if key:
+                self._known_keys.add(key)
             if len(self._buffer) >= 50:
-                self.flush()
+                return self.flush()
+            return True
 
-    def flush(self):
+    def flush(self) -> bool:
         with excel_lock:
             if not self._buffer:
-                return
+                return True
             try:
                 wb = openpyxl.load_workbook(self.file_path)
                 ws = wb.active
@@ -1867,8 +1921,10 @@ class FastExcelManager:
                 wb.save(self.file_path)
                 wb.close()
                 self._buffer.clear()
+                return True
             except Exception as e:
                 logger.error(f"Excel yazım hatası (flush): {e}")
+                return False
 
 # ==============================================================================
 # 9. ANA PC FABRİKA ORKESTRASYON MOTORU (Master Factory)
