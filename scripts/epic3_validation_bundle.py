@@ -83,6 +83,8 @@ RUNTIME_READONLY_INPUTS = (
     Path("99_SISTEM_MOTORLARI_VE_KODLAR") / "SISTEM_MOTORU" / "ayarlar.json",
     Path("99_SISTEM_MOTORLARI_VE_KODLAR") / "SISTEM_MOTORU" / "masks",
     Path("SABLON_V2_MIMARI") / "ayarlar.db",
+    Path("SABLON_V2_MIMARI") / "ayarlar.db-wal",
+    Path("SABLON_V2_MIMARI") / "ayarlar.db-shm",
 )
 
 EXPECTED_BRANCH = "feature/epic-3-geometry-accuracy"
