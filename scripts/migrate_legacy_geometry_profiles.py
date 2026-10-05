@@ -250,11 +250,11 @@ def migrate(legacy_json: Path, apply: bool = False) -> Dict[str, int]:
                     print(f"SKIP {category}/{filename}: {reason}")
                     continue
 
-                expected_orientation = str(
-                    rule.get("expected_orientation") or "ANY"
+                physical_rule_orientation = str(
+                    rule.get("physical_orientation") or "ANY"
                 ).upper()
-                if expected_orientation in ("H", "V"):
-                    orientation = expected_orientation
+                if physical_rule_orientation in ("H", "V"):
+                    orientation = physical_rule_orientation
                 else:
                     explicit_orientation = str(
                         template_data.get("physical_orientation") or ""
