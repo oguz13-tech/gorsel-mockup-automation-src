@@ -510,6 +510,111 @@ def _load_matching_manual_prior(db_path, uid, img_path):
         return None
 
 
+@app.route('/api/templates/foreground_detect', methods=['POST'])
+def api_templates_foreground_detect():
+    """Suggest object-selection boxes using Grounding-DINO + SAM evidence.
+
+    The endpoint is review assistance only: it does not alter template files,
+    settings, profiles, or approval state. Returned boxes are copied into the
+    browser mask editor only after the user sees the result.
+    """
+    try:
+        req = request.get_json(silent=True) or {}
+        category = str(req.get("category") or request.headers.get(
+            'X-Active-Category', ''
+        )).strip()
+        template = str(req.get("template") or request.headers.get(
+            'X-Active-Template', ''
+        )).strip()
+        corners = req.get("corners")
+
+        if not category or not template or corners is None:
+            return jsonify({
+                "success": False,
+                "error": "Kategori, sablon ve 4 kose gerekli.",
+            }), 400
+
+        img_path = _safe_template_path(category, template)
+        image = cv2.imdecode(
+            np.fromfile(img_path, dtype=np.uint8),
+            cv2.IMREAD_COLOR,
+        )
+        if image is None:
+            return jsonify({"success": False, "error": "Gorsel okunamadi."}), 422
+
+        try:
+            quad = np.asarray(corners, dtype=np.float32)
+        except (TypeError, ValueError):
+            return jsonify({"success": False, "error": "Kose verisi gecersiz."}), 422
+        if quad.shape != (4, 2) or not np.isfinite(quad).all():
+            return jsonify({"success": False, "error": "Tam 4 adet sayisal kose gerekli."}), 422
+
+        h, w = image.shape[:2]
+        valid, reason = GeometryValidator.is_valid_quad(quad, w, h)
+        if not valid:
+            return jsonify({
+                "success": False,
+                "error": f"Maske analizi icin geometri gecersiz: {reason}",
+            }), 422
+        quad = GeometryValidator.canonical_sort(quad).astype(float).tolist()
+
+        sm_dir = os.path.join(
+            BASE_DIR,
+            "99_SISTEM_MOTORLARI_VE_KODLAR",
+            "SISTEM_MOTORU",
+        )
+        if sm_dir not in sys.path:
+            sys.path.append(sm_dir)
+
+        try:
+            from foreground_ai import ForegroundAIEngine
+        except Exception as exc:
+            return jsonify({
+                "success": False,
+                "error": f"On plan AI kullanilamiyor: {exc}",
+                "code": "FOREGROUND_AI_UNAVAILABLE",
+            }), 503
+
+        result = ForegroundAIEngine.get_instance().detect_foreground(
+            image,
+            quad,
+            prompts=req.get("prompts"),
+            box_threshold=float(req.get("box_threshold", 0.20)),
+            text_threshold=float(req.get("text_threshold", 0.20)),
+            min_surface_overlap=float(req.get("min_surface_overlap", 0.02)),
+            feather=float(req.get("feather", 1.0)),
+        )
+        if not result.get("success"):
+            return jsonify({
+                "success": False,
+                "error": result.get("reason", "On plan analizi basarisiz."),
+                "code": "FOREGROUND_AI_FAILED",
+            }), 422
+
+        objects = result.get("objects") or []
+        boxes = [
+            obj.get("box")
+            for obj in objects
+            if isinstance(obj, dict)
+            and isinstance(obj.get("box"), list)
+            and len(obj.get("box")) == 4
+        ]
+
+        return jsonify({
+            "success": True,
+            "boxes": boxes,
+            "objects": objects,
+            "confidence": float(result.get("confidence", 0.0) or 0.0),
+            "reason": result.get("reason", "ok"),
+            "review_only": True,
+        })
+    except ValueError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 400
+    except Exception as exc:
+        logger.exception("On plan AI review analizi hatasi")
+        return jsonify({"success": False, "error": str(exc)}), 500
+
+
 @app.route('/api/templates/analyze', methods=['POST'])
 def api_templates_analyze():
     try:
