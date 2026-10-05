@@ -1102,11 +1102,8 @@ class MockupRenderer:
         Parlak ve karanlık alanlarda az, orta tonlarda çok kumlanma yapar.
         """
         h, w = image_cv.shape[:2]
-        if seed is not None:
-            np.random.seed(seed)
-        noise = np.random.normal(0, intensity, (h, w, 3)).astype(np.float32)
-        if seed is not None:
-            np.random.seed(None)
+        rng = np.random.default_rng(seed)
+        noise = rng.normal(0, intensity, (h, w, 3)).astype(np.float32)
         
         lum = cv2.cvtColor(np.clip(image_cv, 0, 255).astype(np.uint8), cv2.COLOR_BGR2GRAY).astype(np.float32) / 255.0
         # 4*x*(1-x) parabolü ile orta tonları (0.5) maksimize eder, 0 ve 1'i minimize eder
@@ -1167,12 +1164,28 @@ class MockupRenderer:
             borderValue=(0, 0, 0)
         )
 
-        # 2x Supersampled Sub-pixel Kenar Yumuşatma Maskesi
+        # 2x supersampled approved-quad mask is always the hard spatial
+        # safety boundary. A transparent passepartout may further restrict the
+        # printable hole, but it can never expand artwork outside the quad.
+        quad_mask_f = MockupRenderer.create_subpixel_antialiased_mask(
+            h_bg,
+            w_bg,
+            dst_pts,
+            feather_px=1.8,
+        )
         if alpha_mask is not None:
-            # Şeffaf Delik (Passepartout) Maskesi
-            mask_f = 1.0 - (alpha_mask.astype(np.float32) / 255.0)
+            if alpha_mask.shape[:2] != (h_bg, w_bg):
+                alpha_mask = cv2.resize(
+                    alpha_mask,
+                    (w_bg, h_bg),
+                    interpolation=cv2.INTER_LINEAR,
+                )
+            transparent_hole = 1.0 - (
+                alpha_mask.astype(np.float32) / 255.0
+            )
+            mask_f = np.clip(transparent_hole * quad_mask_f, 0.0, 1.0)
         else:
-            mask_f = MockupRenderer.create_subpixel_antialiased_mask(h_bg, w_bg, dst_pts, feather_px=1.8)
+            mask_f = quad_mask_f
         mask_3c = np.stack([mask_f] * 3, axis=-1)
 
         # -------------------------------------------------------------
@@ -1215,11 +1228,19 @@ class MockupRenderer:
         is_cam_dograma = (category_name == "04_Cam_Dograma")
         is_wood_or_wifi = (category_name in ["03_Ahsap_Tablo", "01_Wifi_Kutusu"])
 
-        gw, gh = int(target_w), int(target_h)
+        # Optical overlays are generated in the same source coordinate
+        # system as the artwork because they use the artwork homography.
+        # Generating them at projected-quad dimensions and reusing this matrix
+        # would apply the wrong coordinate transform.
+        effect_w, effect_h = fw, fh
 
         if is_cam_dograma:
             # A) CAM DOĞRAMA / KESME TAHTASI: Mutfak Tezgahı & Dolap Altı Spot Işık Yansıması + Rodaj Kenar
-            spot_sheen = MockupRenderer.generate_kitchen_countertop_sheen(gw, gh, intensity=0.25)
+            spot_sheen = MockupRenderer.generate_kitchen_countertop_sheen(
+                effect_w,
+                effect_h,
+                intensity=0.25,
+            )
             spot_warped = cv2.warpPerspective(
                 spot_sheen, matrix, (w_bg, h_bg),
                 flags=cv2.INTER_LINEAR,
@@ -1248,7 +1269,11 @@ class MockupRenderer:
             shadow_outside = total_shadow * (1.0 - mask_f)
             bg_shadowed = bg_cv.astype(np.float32) * (1.0 - np.stack([shadow_outside] * 3, axis=-1))
 
-            refl_local = MockupRenderer.generate_window_reflection(gw, gh, intensity=0.48)
+            refl_local = MockupRenderer.generate_window_reflection(
+                effect_w,
+                effect_h,
+                intensity=0.48,
+            )
             refl_warped = cv2.warpPerspective(
                 refl_local, matrix, (w_bg, h_bg),
                 flags=cv2.INTER_LINEAR,
