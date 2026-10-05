@@ -193,6 +193,46 @@ class TestExcelFlushNoDeadlock(unittest.TestCase):
         wb2.close()
 
 
+    def test_transient_threshold_flush_keeps_rows_for_final_retry(self):
+        manager = FastExcelManager(file_path=Path(self.tmp))
+
+        def row_data(i):
+            return {
+                "Stok Kodu": f"SKU-{i:04d}",
+                "Barkod": f"BRK-{i}",
+                "Model Kodu": "MODEL1",
+                "Kategori": "TestKategori",
+                "Ham Baskı Dosyası": "a.jpg",
+                "Mağaza Grubu": "GRUP",
+                "Ürün Adı": "Urun",
+                "Açıklama": "Aciklama",
+                "Mockup Dosya Adı": f"m-{i}.jpg",
+                "Resim Linki": "http://x",
+                "Eklenme Zamanı": "now",
+            }
+
+        for i in range(49):
+            self.assertTrue(manager.append_row(row_data(i)))
+
+        with patch.object(manager, "flush", return_value=False):
+            accepted = manager.append_row(row_data(49))
+
+        self.assertTrue(
+            accepted,
+            "A row already queued in memory must remain pending even if the "
+            "threshold flush is transiently unsuccessful",
+        )
+        self.assertEqual(len(manager._buffer), 50)
+
+        self.assertTrue(manager.flush(), "Final run-level flush should retry buffer")
+        import openpyxl
+        wb = openpyxl.load_workbook(self.tmp)
+        try:
+            self.assertEqual(wb.active.max_row, 51)
+        finally:
+            wb.close()
+
+
 class TestQAFailStopsProduction(unittest.TestCase):
     """Verify QA failure returns False (quarantine), not just a warning."""
     
