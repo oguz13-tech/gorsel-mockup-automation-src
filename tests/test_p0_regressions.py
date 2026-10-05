@@ -94,6 +94,13 @@ class TestSQLiteBootstrap(unittest.TestCase):
         sm = StateManager(db_path=self.db_path)
         with sm.conn:
             sm.conn.execute(
+                """INSERT INTO masters (
+                       master_id, theme_id, theme_title, style_key,
+                       horizontal_path, vertical_path
+                   ) VALUES (?, ?, ?, ?, ?, ?)""",
+                ("M00001", 1, "Tema", "style", "H.png", "V.png"),
+            )
+            sm.conn.execute(
                 """INSERT INTO products (
                        sku, master_id, kategori_key, barkod, model_kodu, status
                    ) VALUES (?, ?, ?, ?, ?, ?)""",
