@@ -18,6 +18,9 @@ BASE_DIR = os.path.abspath(
     os.path.expanduser(_runtime_override)
 ) if _runtime_override else SOURCE_ROOT
 
+# Propagate the resolved runtime root to imported helpers and child processes.
+os.environ["MOCKUP_RUNTIME_WORKSPACE"] = BASE_DIR
+
 SYS_MOTORS_DIR = os.path.join(
     SOURCE_ROOT,
     "99_SISTEM_MOTORLARI_VE_KODLAR",
