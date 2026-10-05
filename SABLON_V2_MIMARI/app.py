@@ -313,70 +313,135 @@ def api_auto_detect_corners():
 
 @app.route('/api/sablon_sil', methods=['POST'])
 def api_sablon_sil():
+    """Move a template to a reversible trash record without risking geometry."""
+    meta_path = None
+    moved_src = None
+    moved_dst = None
     try:
         active_cat = request.headers.get('X-Active-Category', '')
         active_tmpl = request.headers.get('X-Active-Template', '')
-        stem = Path(active_tmpl).stem
-        
+        if not active_cat or not active_tmpl:
+            return jsonify({"success": False, "error": "Kategori/sablon eksik"}), 400
+
         _ayarlar = get_all_ayarlar()
-        if active_cat in _ayarlar['kategoriler'] and active_tmpl in _ayarlar['kategoriler'][active_cat]['sablonlar']:
-            removed_conf = _ayarlar['kategoriler'][active_cat]['sablonlar'][active_tmpl]
-            delete_template(active_cat, active_tmpl)
-            
-            trash_dir = os.path.join(BASE_DIR, "SILINEN_SABLONLAR_COP_KUTUSU")
-            os.makedirs(trash_dir, exist_ok=True)
-            trash_json = os.path.join(trash_dir, f"{stem}_meta.json")
-            meta_data = {
-                "kategori": active_cat,
-                "sablon": active_tmpl,
-                "stem": stem,
-                "conf": removed_conf
-            }
-            with open(trash_json, "w", encoding="utf-8") as _tf:
-                json.dump(meta_data, _tf, indent=2)
-            
-            src_img = os.path.join(BASE_DIR, "2_SABLON_HAVUZU", active_cat, active_tmpl)
-            if os.path.exists(src_img):
-                shutil.move(src_img, os.path.join(trash_dir, active_tmpl))
-            
-            return jsonify({"success": True})
-        return jsonify({"success": False, "error": "Sablon bulunamadi"}), 404
+        category_data = _ayarlar.get('kategoriler', {}).get(active_cat, {})
+        templates = category_data.get('sablonlar', {})
+        if active_tmpl not in templates:
+            return jsonify({"success": False, "error": "Sablon bulunamadi"}), 404
+
+        # Resolve through the same path-safety gate used by review operations.
+        src_img = _safe_template_path(active_cat, active_tmpl)
+        removed_conf = templates[active_tmpl]
+
+        trash_dir = os.path.join(BASE_DIR, "SILINEN_SABLONLAR_COP_KUTUSU")
+        os.makedirs(trash_dir, exist_ok=True)
+        stamp = time.strftime("%Y%m%d_%H%M%S")
+        token = uuid.uuid4().hex[:8]
+        safe_stem = Path(active_tmpl).stem
+        trash_image_name = f"{active_cat}__{safe_stem}__{stamp}_{token}{Path(active_tmpl).suffix}"
+        trash_img = os.path.join(trash_dir, trash_image_name)
+        meta_name = f"{active_cat}__{safe_stem}__{stamp}_{token}_meta.json"
+        meta_path = os.path.join(trash_dir, meta_name)
+
+        # Persist recovery metadata atomically BEFORE touching source/DB.
+        meta_data = {
+            "kategori": active_cat,
+            "sablon": active_tmpl,
+            "conf": removed_conf,
+            "trash_image_name": trash_image_name,
+            "deleted_at": stamp,
+        }
+        tmp_meta = meta_path + ".tmp"
+        with open(tmp_meta, "w", encoding="utf-8") as handle:
+            json.dump(meta_data, handle, ensure_ascii=False, indent=2)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp_meta, meta_path)
+
+        if os.path.exists(src_img):
+            shutil.move(src_img, trash_img)
+            moved_src = src_img
+            moved_dst = trash_img
+
+        # Delete the UI row only after recovery material is durable.
+        delete_template(active_cat, active_tmpl)
+        return jsonify({"success": True, "trash_record": meta_name})
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
     except Exception as e:
+        # Best-effort rollback: never knowingly leave a source moved away while
+        # the DB still points to it because the delete operation failed.
+        if moved_dst and moved_src and os.path.exists(moved_dst) and not os.path.exists(moved_src):
+            try:
+                os.makedirs(os.path.dirname(moved_src), exist_ok=True)
+                shutil.move(moved_dst, moved_src)
+            except Exception:
+                logger.exception("Sablon silme rollback gorsel geri tasima basarisiz")
+        if meta_path and os.path.exists(meta_path):
+            try:
+                os.remove(meta_path)
+            except OSError:
+                pass
+        logger.exception("Sablon cop kutusuna tasinamadi")
         return jsonify({"success": False, "error": str(e)}), 500
+
 
 @app.route('/api/sablon_sil_geri_al', methods=['POST'])
 def api_sablon_sil_geri_al():
     try:
         import glob
         trash_dir = os.path.join(BASE_DIR, "SILINEN_SABLONLAR_COP_KUTUSU")
-        metas = sorted(glob.glob(os.path.join(trash_dir, "*_meta.json")), key=os.path.getmtime, reverse=True)
+        metas = sorted(
+            glob.glob(os.path.join(trash_dir, "*_meta.json")),
+            key=os.path.getmtime,
+            reverse=True,
+        )
         if not metas:
-            return jsonify({"success": False, "error": "Çöp kutusunda geri alınacak şablon yok"}), 404
-            
+            return jsonify({
+                "success": False,
+                "error": "Çöp kutusunda geri alınacak şablon yok",
+            }), 404
+
         meta_path = metas[0]
-        with open(meta_path, 'r', encoding='utf-8') as _f:
-            meta = json.load(_f)
-            
+        with open(meta_path, 'r', encoding='utf-8') as handle:
+            meta = json.load(handle)
+
         cat = meta.get('kategori')
         tmpl = meta.get('sablon')
         conf = meta.get('conf', {})
-        
-        # Resmi geri tasi
-        cop_png = os.path.join(trash_dir, tmpl)
+        trash_image_name = meta.get('trash_image_name') or tmpl
+        if not cat or not tmpl:
+            return jsonify({"success": False, "error": "Çöp meta verisi bozuk"}), 422
+
+        source_in_trash = os.path.join(trash_dir, trash_image_name)
         restore_dir = os.path.join(BASE_DIR, "2_SABLON_HAVUZU", cat)
         os.makedirs(restore_dir, exist_ok=True)
         restore_path = os.path.join(restore_dir, tmpl)
-        if os.path.exists(cop_png):
-            shutil.move(cop_png, restore_path)
-            
-        # DB'ye geri yaz
-        save_template(cat, tmpl, conf)
-        
-        # Metayi sil
+
+        if os.path.exists(restore_path):
+            return jsonify({
+                "success": False,
+                "error": "Aynı isimde aktif şablon zaten var; üzerine yazılmadı.",
+            }), 409
+
+        moved_back = False
+        try:
+            if os.path.exists(source_in_trash):
+                shutil.move(source_in_trash, restore_path)
+                moved_back = True
+            save_template(cat, tmpl, conf)
+        except Exception:
+            if moved_back and os.path.exists(restore_path):
+                try:
+                    shutil.move(restore_path, source_in_trash)
+                except Exception:
+                    logger.exception("Sablon geri alma rollback basarisiz")
+            raise
+
         os.remove(meta_path)
-        
         return jsonify({"success": True, "restored_tmpl": tmpl})
     except Exception as e:
+        logger.exception("Sablon geri alma hatasi")
         return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/preview/<cat>/<tmpl>')
