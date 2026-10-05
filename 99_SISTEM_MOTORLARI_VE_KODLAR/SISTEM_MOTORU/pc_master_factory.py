@@ -107,6 +107,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger("Factory")
 
+# Production must validate approved quads with the exact same contract used by
+# the review/analyzer layer. Keeping one validator prevents "approved in UI but
+# interpreted differently by renderer" drift.
+ARCH_DIR = USER_WORKSPACE_DIR / "SABLON_V2_MIMARI"
+if str(ARCH_DIR) not in sys.path:
+    sys.path.insert(0, str(ARCH_DIR))
+from core.template_intelligence import GeometryValidator as ApprovedGeometryValidator
+
 excel_lock = threading.RLock()
 db_lock = threading.RLock()
 
@@ -2177,8 +2185,20 @@ def build_factory_preflight() -> dict:
                                 json.loads(row["surface_quad"]),
                                 dtype=np.float32,
                             )
-                            if quad.shape != (4, 2) or not np.isfinite(quad).all():
-                                raise ValueError("invalid quad")
+                            image = cv2.imdecode(
+                                np.fromfile(str(path), dtype=np.uint8),
+                                cv2.IMREAD_COLOR,
+                            )
+                            if image is None:
+                                raise ValueError("source image unreadable")
+                            h_img, w_img = image.shape[:2]
+                            quad_valid, _ = ApprovedGeometryValidator.is_valid_quad(
+                                quad,
+                                w_img,
+                                h_img,
+                            )
+                            if not quad_valid:
+                                raise ValueError("invalid approved quad")
                         except Exception:
                             invalid += 1
                             continue
@@ -2488,10 +2508,29 @@ class PCMasterFactory:
             try:
                 surface_quad = json.loads(row["surface_quad"])
                 quad_arr = np.asarray(surface_quad, dtype=np.float32)
-                if quad_arr.shape != (4, 2) or not np.isfinite(quad_arr).all():
-                    raise ValueError("invalid quad")
-            except Exception:
-                logger.warning(f"⏭️ Bozuk onaylı quad atlandı: {row['template_uid']}")
+                image = cv2.imdecode(
+                    np.fromfile(str(template_path), dtype=np.uint8),
+                    cv2.IMREAD_COLOR,
+                )
+                if image is None:
+                    raise ValueError("source image unreadable")
+                h_img, w_img = image.shape[:2]
+                quad_valid, quad_reason = ApprovedGeometryValidator.is_valid_quad(
+                    quad_arr,
+                    w_img,
+                    h_img,
+                )
+                if not quad_valid:
+                    raise ValueError(quad_reason)
+                surface_quad = (
+                    ApprovedGeometryValidator.canonical_sort(quad_arr)
+                    .astype(float)
+                    .tolist()
+                )
+            except Exception as exc:
+                logger.warning(
+                    f"⏭️ Bozuk onaylı quad atlandı: {row['template_uid']} ({exc})"
+                )
                 continue
 
             profile_orientation = (row["orientation"] or "UNKNOWN").upper()
@@ -2508,15 +2547,11 @@ class PCMasterFactory:
                     )
                     continue
             else:
-                if profile_orientation in ("H", "V") and profile_orientation != prod_def.orientation:
+                if profile_orientation != prod_def.orientation:
                     logger.info(
-                        f"⏭️ Orientation uyumsuz onaylı şablon atlandı: "
-                        f"{template_path.name} ({profile_orientation}!={prod_def.orientation})"
-                    )
-                    continue
-                if profile_orientation == "SQUARE" and prod_def.orientation in ("H", "V"):
-                    logger.info(
-                        f"⏭️ Kare şablon ürün yönüyle uyumsuz: {template_path.name}"
+                        f"⏭️ Fiziksel orientation uyumsuz/belirsiz onaylı şablon atlandı: "
+                        f"{template_path.name} "
+                        f"({profile_orientation}!={prod_def.orientation})"
                     )
                     continue
 
