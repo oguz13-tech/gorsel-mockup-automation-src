@@ -1,5 +1,6 @@
 import importlib.util
 from pathlib import Path
+import tempfile
 import unittest
 
 
@@ -58,6 +59,37 @@ class TestEpic3ValidationGoldenCoverage(unittest.TestCase):
         result = bundle._golden_coverage_check(bench)
         self.assertFalse(result["ok"])
         self.assertFalse(result["global_matches_category_total"])
+
+    def test_clear_evidence_artifacts_removes_only_named_files(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            owned_a = root / "epic3_benchmark.json"
+            owned_b = root / "validation_manifest.json"
+            unrelated = root / "keep_me.txt"
+            owned_a.write_text("old", encoding="utf-8")
+            owned_b.write_text("old", encoding="utf-8")
+            unrelated.write_text("keep", encoding="utf-8")
+
+            bundle._clear_evidence_artifacts([owned_a, owned_b])
+
+            self.assertFalse(owned_a.exists())
+            self.assertFalse(owned_b.exists())
+            self.assertTrue(unrelated.exists())
+
+    def test_command_succeeded_requires_current_run_success(self):
+        commands = [
+            {"name": "geometry_diagnostics", "ok": False},
+            {"name": "epic3_benchmark", "ok": True},
+        ]
+        self.assertFalse(
+            bundle._command_succeeded(commands, "geometry_diagnostics")
+        )
+        self.assertTrue(
+            bundle._command_succeeded(commands, "epic3_benchmark")
+        )
+        self.assertFalse(
+            bundle._command_succeeded(commands, "scorer_telemetry")
+        )
 
     def test_review_readiness_requires_unit_tests(self):
         common = {
