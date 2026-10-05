@@ -196,6 +196,7 @@ def migrate(legacy_json: Path, apply: bool = False) -> Dict[str, int]:
         "missing_source": 0,
         "invalid_geometry": 0,
         "unknown_category": 0,
+        "missing_physical_orientation": 0,
     }
 
     conn, backup_path = _open_migration_connection(apply)
@@ -249,10 +250,27 @@ def migrate(legacy_json: Path, apply: bool = False) -> Dict[str, int]:
                     print(f"SKIP {category}/{filename}: {reason}")
                     continue
 
+                expected_orientation = str(
+                    rule.get("expected_orientation") or "ANY"
+                ).upper()
+                if expected_orientation in ("H", "V"):
+                    orientation = expected_orientation
+                else:
+                    explicit_orientation = str(
+                        template_data.get("physical_orientation") or ""
+                    ).upper()
+                    if explicit_orientation not in ("H", "V"):
+                        summary["missing_physical_orientation"] += 1
+                        print(
+                            f"SKIP {category}/{filename}: explicit physical_orientation "
+                            "H/V required; projected koseler are not physical metadata"
+                        )
+                        continue
+                    orientation = explicit_orientation
+
                 summary["valid_manual"] += 1
                 source_hash = sha256_file(source_path)
                 uid = f"{category}_{filename}"
-                orientation = derive_orientation(canonical)
                 nominal_aspect = CategoryRuleEngine.get_nominal_aspect(
                     category,
                     orientation,
