@@ -766,16 +766,72 @@ def save_template_profile(db_path: str, profile_data: dict):
     conn = sqlite3.connect(db_path, timeout=30)
     conn.execute("PRAGMA busy_timeout = 30000")
     try:
-        # Check if old active profile exists
-        cur = conn.execute("SELECT id, source_asset_sha256, review_status, manually_verified FROM template_profiles WHERE template_uid = ? AND is_active = 1", (profile_data["template_uid"],))
-        row = cur.fetchone()
-        
+        # Serialize profile replacement so two concurrent analyze/review calls
+        # cannot both observe "no active row" and insert duplicate active
+        # profiles for the same template_uid.
+        conn.execute("BEGIN IMMEDIATE")
+        new_hash = profile_data.get("source_asset_sha256")
+        active_rows = conn.execute(
+            """SELECT id, source_asset_sha256, review_status, manually_verified
+               FROM template_profiles
+               WHERE template_uid=? AND is_active=1
+               ORDER BY updated_at DESC, id DESC""",
+            (profile_data["template_uid"],),
+        ).fetchall()
+
+        row = None
+        if active_rows:
+            # Preserve a source-matching manually-approved row first, otherwise
+            # a source-matching row, otherwise the newest active row.
+            row = next(
+                (
+                    candidate
+                    for candidate in active_rows
+                    if candidate[1] == new_hash
+                    and candidate[2] == "APPROVED"
+                    and int(candidate[3] or 0) == 1
+                ),
+                None,
+            )
+            if row is None:
+                row = next(
+                    (
+                        candidate
+                        for candidate in active_rows
+                        if candidate[1] == new_hash
+                    ),
+                    None,
+                )
+            if row is None:
+                row = active_rows[0]
+
+            keeper_id = int(row[0])
+            duplicate_ids = [
+                int(candidate[0])
+                for candidate in active_rows
+                if int(candidate[0]) != keeper_id
+            ]
+            if duplicate_ids:
+                placeholders = ",".join("?" for _ in duplicate_ids)
+                conn.execute(
+                    f"""UPDATE template_profiles
+                        SET is_active=0,
+                            review_status=CASE
+                                WHEN source_asset_sha256 IS NOT ?
+                                     AND source_asset_sha256<>?
+                                THEN 'STALE_SOURCE_CHANGED'
+                                ELSE review_status
+                            END,
+                            updated_at=CURRENT_TIMESTAMP
+                        WHERE id IN ({placeholders})""",
+                    (new_hash, new_hash, *duplicate_ids),
+                )
+
         if row:
             old_id = row[0]
             old_hash = row[1]
             old_status = row[2]
             old_manual = row[3]
-            new_hash = profile_data.get("source_asset_sha256")
             
             # If hash changed, mark old as inactive/stale and insert new
             if old_hash and new_hash and old_hash != new_hash:
@@ -783,7 +839,10 @@ def save_template_profile(db_path: str, profile_data: dict):
                 # Fallthrough to insert new proposal below
             else:
                 if old_status == "APPROVED" and old_manual:
-                    # Unchanged manually-approved profile must preserve approved geometry/data
+                    # Unchanged manually-approved profile must preserve approved
+                    # geometry/data. Commit any duplicate-active normalization
+                    # performed above before returning.
+                    conn.commit()
                     return
 
                 # Update in place if hash is same
