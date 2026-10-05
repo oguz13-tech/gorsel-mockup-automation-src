@@ -2113,8 +2113,9 @@ def build_factory_preflight() -> dict:
 
     report["manifest"]["missing_sources"] = missing_sources
     if missing_sources:
-        report["warnings"].append(
-            f"{len(missing_sources)} H/V master kaynağı bulunamadı; ilgili kategoriler atlanabilir."
+        report["errors"].append(
+            f"{len(missing_sources)} zorunlu H/V master kaynağı bulunamadı. "
+            "Eksik ürün üretmemek için fabrika başlatılmadı."
         )
 
     # Approved geometry must still match the exact source bytes.
