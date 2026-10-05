@@ -21,12 +21,16 @@ from core.vision import (
     YEDEK_IMG_DIR, detect_document_corners, detect_occlusion_boxes, logger
 )
 
-from core.db import get_all_ayarlar, save_settings_node, save_category, save_template, delete_template, save_templates_bulk
+from core.db import init_db, get_all_ayarlar, save_settings_node, save_category, save_template, delete_template, save_templates_bulk
 from core.template_intelligence import TemplateAnalyzer, save_template_profile, TemplateSelector, GeometryValidator
 import hashlib
 import uuid
 
 app = Flask(__name__)
+
+# The UI and factory share the same SQLite schema. Ensure a clean checkout can
+# start safely without requiring a separate migration command first.
+init_db()
 
 @app.route('/')
 def index():
@@ -617,17 +621,49 @@ def api_templates_batch_analyze():
 @app.route('/api/templates/reject', methods=['POST'])
 def api_templates_reject():
     try:
-        req = request.json
+        req = request.get_json(silent=True) or {}
         uid = req.get("template_uid")
         if not uid:
             return jsonify({"success": False, "error": "Eksik parametre"}), 400
-            
+
         db_path = os.path.join(BASE_DIR, "SABLON_V2_MIMARI", "ayarlar.db")
         conn = sqlite3.connect(db_path)
-        conn.execute("UPDATE template_profiles SET review_status='REJECTED', manually_verified=1 WHERE template_uid=? AND is_active=1", (uid,))
-        conn.commit()
-        conn.close()
+        try:
+            row = conn.execute(
+                """SELECT id, source_asset_sha256, source_relative_path
+                   FROM template_profiles
+                   WHERE template_uid=? AND is_active=1""",
+                (uid,),
+            ).fetchone()
+            if not row:
+                return jsonify({"success": False, "error": "Aktif profil bulunamadi"}), 404
+
+            profile_id, source_hash, relative_path = row
+            if source_hash and relative_path:
+                source_path = _safe_profile_relative_path(relative_path)
+                if os.path.exists(source_path):
+                    current_hash = _sha256_file(source_path)
+                    if current_hash != source_hash:
+                        return jsonify({
+                            "success": False,
+                            "error": "Kaynak gorsel degismis. Eski profil reddedilmeden once yeniden analiz gerekli.",
+                            "code": "STALE_SOURCE_CHANGED",
+                        }), 409
+
+            conn.execute(
+                """UPDATE template_profiles
+                   SET review_status='REJECTED', manually_verified=1,
+                       updated_at=CURRENT_TIMESTAMP
+                   WHERE id=?""",
+                (profile_id,),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
         return jsonify({"success": True})
+    except ValueError as e:
+        return jsonify({"success": False, "error": str(e)}), 400
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
@@ -756,28 +792,43 @@ def serve_kaggle_image(filename):
 
 @app.route('/api/kaggle/onayla', methods=['POST'])
 def api_kaggle_onayla():
-    data = request.json
-    filename = data.get('filename')
-    if not filename:
-        return jsonify({"success": False, "error": "Parametre eksik"}), 400
+    data = request.get_json(silent=True) or {}
+    filename = str(data.get('filename') or '')
+    if not filename or os.path.basename(filename) != filename:
+        return jsonify({"success": False, "error": "Gecersiz dosya adi"}), 400
+
     src = os.path.join(KAGGLE_BEKLEYENLER_DIR, filename)
     dst = os.path.join(KAGGLE_GELENLER_DIR, filename)
     if os.path.exists(src):
         import shutil
+        os.makedirs(KAGGLE_GELENLER_DIR, exist_ok=True)
         shutil.move(src, dst)
         return jsonify({"success": True})
     return jsonify({"success": False, "error": "Dosya bulunamadi"}), 404
 
 @app.route('/api/kaggle/reddet', methods=['POST'])
 def api_kaggle_reddet():
-    data = request.json
-    filename = data.get('filename')
-    if not filename:
-        return jsonify({"success": False, "error": "Parametre eksik"}), 400
+    data = request.get_json(silent=True) or {}
+    filename = str(data.get('filename') or '')
+    if not filename or os.path.basename(filename) != filename:
+        return jsonify({"success": False, "error": "Gecersiz dosya adi"}), 400
+
     src = os.path.join(KAGGLE_BEKLEYENLER_DIR, filename)
     if os.path.exists(src):
-        os.remove(src)
-        return jsonify({"success": True})
+        # Reject is reversible: move to a timestamped recycle area instead of
+        # permanently deleting user-generated artwork.
+        import shutil
+        recycle_dir = os.path.join(BASE_DIR, "_COP_KUTUSU", "KAGGLE_REJECTED")
+        os.makedirs(recycle_dir, exist_ok=True)
+        stem, ext = os.path.splitext(filename)
+        stamp = time.strftime("%Y%m%d_%H%M%S")
+        dst = os.path.join(recycle_dir, f"{stem}__{stamp}{ext}")
+        suffix = 1
+        while os.path.exists(dst):
+            dst = os.path.join(recycle_dir, f"{stem}__{stamp}_{suffix}{ext}")
+            suffix += 1
+        shutil.move(src, dst)
+        return jsonify({"success": True, "recycled_to": os.path.basename(dst)})
     return jsonify({"success": False, "error": "Dosya bulunamadi"}), 404
 
 @app.route('/api/saglik_durumu')
@@ -793,9 +844,12 @@ def api_saglik_durumu():
 def serve_temp_files(filename):
     safe_base = os.path.abspath(BASE_DIR)
     file_path = os.path.abspath(os.path.join(safe_base, filename))
-    if not file_path.startswith(safe_base):
+    try:
+        if os.path.commonpath([safe_base, file_path]) != safe_base:
+            return "Yasak", 403
+    except ValueError:
         return "Yasak", 403
-    if os.path.exists(file_path):
+    if os.path.isfile(file_path):
         return send_file(file_path)
     return "Bulunamadi", 404
 
