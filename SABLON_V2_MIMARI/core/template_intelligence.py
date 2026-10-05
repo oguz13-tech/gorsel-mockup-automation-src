@@ -775,7 +775,7 @@ def save_template_profile(db_path: str, profile_data: dict):
             """SELECT rowid AS profile_rowid, source_asset_sha256, review_status, manually_verified
                FROM template_profiles
                WHERE template_uid=? AND is_active=1
-               ORDER BY updated_at DESC, id DESC""",
+               ORDER BY updated_at DESC, rowid DESC""",
             (profile_data["template_uid"],),
         ).fetchall()
 
