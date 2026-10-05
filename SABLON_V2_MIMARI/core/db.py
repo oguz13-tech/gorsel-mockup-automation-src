@@ -6,8 +6,13 @@ import os
 DB_PATH = os.path.join(os.path.dirname(__file__), "..", "ayarlar.db")
 
 def get_db_connection():
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA busy_timeout = 30000")
+    # WAL lets the review UI write approvals while read-only factory/preflight
+    # queries are active without unnecessary "database is locked" failures.
+    conn.execute("PRAGMA journal_mode = WAL")
     return conn
 
 def migrate_schema(conn):
@@ -90,7 +95,12 @@ def get_all_ayarlar():
     # 1. Genel ayarları çek (bulut_ayarlari vb.)
     c.execute("SELECT key, value FROM settings")
     for row in c.fetchall():
-        result[row["key"]] = json.loads(row["value"])
+        try:
+            result[row["key"]] = json.loads(row["value"])
+        except (TypeError, json.JSONDecodeError):
+            # One malformed optional setting must not make the complete editor
+            # database unreadable.
+            continue
         
     # 2. Kategorileri çek
     c.execute("SELECT id, label FROM categories")
@@ -106,7 +116,12 @@ def get_all_ayarlar():
     for row in c.fetchall():
         cat_id = row["category_id"]
         tmpl = row["filename"]
-        data = json.loads(row["data"])
+        try:
+            data = json.loads(row["data"])
+        except (TypeError, json.JSONDecodeError):
+            continue
+        if not isinstance(data, dict):
+            continue
         
         # Eğer kategori henüz result içinde yoksa güvenli bir şekilde oluştur
         if cat_id not in result["kategoriler"]:
