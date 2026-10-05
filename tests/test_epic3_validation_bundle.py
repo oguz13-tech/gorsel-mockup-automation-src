@@ -60,20 +60,33 @@ class TestEpic3ValidationGoldenCoverage(unittest.TestCase):
         self.assertFalse(result["ok"])
         self.assertFalse(result["global_matches_category_total"])
 
-    def test_clear_evidence_artifacts_removes_only_named_files(self):
+    def test_archive_evidence_artifacts_preserves_prior_run(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             owned_a = root / "epic3_benchmark.json"
             owned_b = root / "validation_manifest.json"
             unrelated = root / "keep_me.txt"
-            owned_a.write_text("old", encoding="utf-8")
-            owned_b.write_text("old", encoding="utf-8")
+            owned_a.write_text("old-benchmark", encoding="utf-8")
+            owned_b.write_text("old-manifest", encoding="utf-8")
             unrelated.write_text("keep", encoding="utf-8")
 
-            bundle._clear_evidence_artifacts([owned_a, owned_b])
+            archive_path = bundle._archive_evidence_artifacts(
+                [owned_a, owned_b],
+                root,
+            )
 
+            self.assertIsNotNone(archive_path)
+            archive = Path(archive_path)
             self.assertFalse(owned_a.exists())
             self.assertFalse(owned_b.exists())
+            self.assertEqual(
+                (archive / owned_a.name).read_text(encoding="utf-8"),
+                "old-benchmark",
+            )
+            self.assertEqual(
+                (archive / owned_b.name).read_text(encoding="utf-8"),
+                "old-manifest",
+            )
             self.assertTrue(unrelated.exists())
 
     def test_command_succeeded_requires_current_run_success(self):
