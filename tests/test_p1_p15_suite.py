@@ -56,6 +56,24 @@ class TestP1_P15Acceptance(unittest.TestCase):
         self.assertFalse(app._path_within_root(root, prefix_collision))
         self.assertFalse(app._path_within_root(root, os.path.join(root, "..", "escape.png")))
 
+    def test_catch_all_route_does_not_serve_config_or_source_files(self):
+        import app
+
+        secret_path = os.path.join(self.temp_dir, "ayarlar.json")
+        image_path = os.path.join(self.temp_dir, "preview.png")
+        with open(secret_path, "w", encoding="utf-8") as handle:
+            handle.write('{"secret": "do-not-serve"}')
+        cv2.imwrite(image_path, np.zeros((8, 8, 3), dtype=np.uint8))
+
+        app.app.config["TESTING"] = True
+        client = app.app.test_client()
+        with patch("app.BASE_DIR", self.temp_dir):
+            blocked = client.get("/ayarlar.json")
+            allowed = client.get("/preview.png")
+
+        self.assertEqual(blocked.status_code, 403)
+        self.assertEqual(allowed.status_code, 200)
+
     def test_p1_source_file_bytes_hash_unchanged_after_profile_analyze(self):
         from core.template_intelligence import TemplateAnalyzer
         img_path = os.path.join(self.temp_dir, "test.png")
