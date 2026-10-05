@@ -109,6 +109,7 @@ class TestEpic3ValidationGoldenCoverage(unittest.TestCase):
             "commands_ok": True,
             "diagnostic_ok": True,
             "benchmark_ok": True,
+            "benchmark_quality_ok": True,
             "golden_coverage_ok": True,
             "telemetry_ok": True,
             "cross_evidence_ok": True,
@@ -123,6 +124,46 @@ class TestEpic3ValidationGoldenCoverage(unittest.TestCase):
         self.assertTrue(
             bundle._review_readiness(
                 unit_tests_executed=True,
+                **common,
+            )
+        )
+
+    def test_benchmark_quality_gate_blocks_global_regression(self):
+        improved = bundle._benchmark_summary(
+            _benchmark(bundle.MIN_GOLDEN_VALID_COUNTS)
+        )
+        self.assertTrue(bundle._benchmark_quality_gate(improved)["ok"])
+
+        regressed_iou = dict(improved)
+        regressed_iou["epic3_median_iou"] = improved["epic2_median_iou"] - 0.01
+        self.assertFalse(bundle._benchmark_quality_gate(regressed_iou)["ok"])
+
+        regressed_recall = dict(improved)
+        regressed_recall["epic3_recall_at_50"] = (
+            improved["epic2_recall_at_50"] - 0.01
+        )
+        self.assertFalse(bundle._benchmark_quality_gate(regressed_recall)["ok"])
+
+    def test_review_readiness_blocks_quality_regression(self):
+        common = {
+            "commands_ok": True,
+            "unit_tests_executed": True,
+            "diagnostic_ok": True,
+            "benchmark_ok": True,
+            "golden_coverage_ok": True,
+            "telemetry_ok": True,
+            "cross_evidence_ok": True,
+            "integrity_ok": True,
+        }
+        self.assertFalse(
+            bundle._review_readiness(
+                benchmark_quality_ok=False,
+                **common,
+            )
+        )
+        self.assertTrue(
+            bundle._review_readiness(
+                benchmark_quality_ok=True,
                 **common,
             )
         )
@@ -219,6 +260,7 @@ class TestEpic3ValidationGoldenCoverage(unittest.TestCase):
             "unit_tests_executed": True,
             "diagnostic_ok": True,
             "benchmark_ok": True,
+            "benchmark_quality_ok": True,
             "golden_coverage_ok": True,
             "integrity_ok": True,
         }
