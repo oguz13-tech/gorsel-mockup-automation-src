@@ -743,7 +743,8 @@ class TemplateAnalyzer:
         return res
 
 def save_template_profile(db_path: str, profile_data: dict):
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, timeout=30)
+    conn.execute("PRAGMA busy_timeout = 30000")
     try:
         # Check if old active profile exists
         cur = conn.execute("SELECT id, source_asset_sha256, review_status, manually_verified FROM template_profiles WHERE template_uid = ? AND is_active = 1", (profile_data["template_uid"],))
