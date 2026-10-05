@@ -417,12 +417,40 @@ class StateManager:
         if not keys:
             return
         with db_lock, self.conn:
+            placeholders = ",".join("?" for _ in keys)
+            sku_rows = self.conn.execute(
+                f"""SELECT DISTINCT sku FROM render_artifacts
+                    WHERE artifact_key IN ({placeholders})""",
+                keys,
+            ).fetchall()
+
             self.conn.executemany(
                 """UPDATE render_artifacts
                    SET status='COMPLETED', updated_at=CURRENT_TIMESTAMP
                    WHERE artifact_key=?""",
                 [(key,) for key in keys],
             )
+
+            # The legacy products row is one logical master/category product.
+            # Mark it COMPLETED only when every known artifact for that SKU is
+            # safely through upload + Excel.
+            for row in sku_rows:
+                sku = row["sku"]
+                pending = self.conn.execute(
+                    """SELECT COUNT(*) AS c
+                       FROM render_artifacts
+                       WHERE sku=?
+                         AND status NOT IN ('COMPLETED', 'UPLOADED')""",
+                    (sku,),
+                ).fetchone()["c"]
+                if int(pending) == 0:
+                    self.conn.execute(
+                        """UPDATE products
+                           SET status='COMPLETED',
+                               updated_at=CURRENT_TIMESTAMP
+                           WHERE sku=?""",
+                        (sku,),
+                    )
 
     def save_product(self, data: dict):
         if not data:
