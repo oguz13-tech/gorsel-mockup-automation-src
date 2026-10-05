@@ -734,4 +734,5 @@ except Exception as e:
 
 if __name__ == '__main__':
     print("\n--- ANA KONTROL MERKEZI BASLATILIYOR (http://127.0.0.1:5000) ---")
-    app.run(host='127.0.0.1', port=5000, debug=True, use_reloader=False)
+    debug_enabled = str(os.environ.get("MOCKUP_FLASK_DEBUG", "")).strip().lower() in {"1", "true", "yes", "on"}
+    app.run(host='127.0.0.1', port=5000, debug=debug_enabled, use_reloader=False)
