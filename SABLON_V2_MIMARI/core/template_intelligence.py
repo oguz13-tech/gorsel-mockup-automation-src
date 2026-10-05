@@ -106,15 +106,48 @@ class CategoryRuleEngine:
 class GeometryValidator:
     @staticmethod
     def canonical_sort(pts: np.ndarray) -> np.ndarray:
-        """Sort 4 points to TL, TR, BR, BL"""
-        pts_f = pts.astype(np.float32)
-        s = pts_f.sum(axis=1)
-        diff = np.diff(pts_f, axis=1)
-        tl = pts[np.argmin(s)]
-        br = pts[np.argmax(s)]
-        tr = pts[np.argmin(diff)]
-        bl = pts[np.argmax(diff)]
-        return np.array([tl, tr, br, bl], dtype=pts.dtype)
+        """Return four vertices in a stable clockwise TL/TR/BR/BL cycle.
+
+        The classic min(x+y)/min(y-x) shortcut can select the same vertex twice
+        on diamond-like or strongly perspective quads because of ties. Sorting
+        around the centroid first guarantees four unique vertices; rotating the
+        cycle to the visually top-left vertex then gives deterministic ordering.
+        """
+        arr = np.asarray(pts)
+        if arr.shape != (4, 2):
+            return arr.copy()
+
+        work = arr.astype(np.float64)
+        center = np.mean(work, axis=0)
+        angles = np.arctan2(work[:, 1] - center[1], work[:, 0] - center[0])
+        order = np.argsort(angles)
+        cycle = work[order]
+
+        # With image coordinates (y grows downward), ascending atan2 normally
+        # yields clockwise order. Enforce one winding explicitly.
+        signed_twice_area = float(
+            np.sum(
+                cycle[:, 0] * np.roll(cycle[:, 1], -1)
+                - np.roll(cycle[:, 0], -1) * cycle[:, 1]
+            )
+        )
+        if signed_twice_area < 0:
+            cycle = cycle[::-1]
+
+        # Choose a deterministic top-left start. min(x+y) is useful when unique;
+        # lexicographic y/x breaks ties without re-selecting a point.
+        sums = cycle[:, 0] + cycle[:, 1]
+        min_sum = float(np.min(sums))
+        tied = np.flatnonzero(np.isclose(sums, min_sum, rtol=0.0, atol=1e-6))
+        if len(tied) == 1:
+            start = int(tied[0])
+        else:
+            start = min(
+                (int(i) for i in tied),
+                key=lambda i: (cycle[i, 1], cycle[i, 0]),
+            )
+        cycle = np.roll(cycle, -start, axis=0)
+        return cycle.astype(arr.dtype, copy=False)
 
     @staticmethod
     def is_valid_quad(pts: np.ndarray, img_w: int, img_h: int) -> Tuple[bool, str]:
@@ -426,7 +459,7 @@ class CandidateGenerators:
 
 class TemplateAnalyzer:
     def __init__(self):
-        self.version = "v2.1"
+        self.version = "v2.2"
         self.auto_approval_enabled = False
         
     def measure_edge_contrast(self, image_cv: np.ndarray, quad: np.ndarray) -> float:
