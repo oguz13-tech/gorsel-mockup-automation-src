@@ -67,6 +67,60 @@ def load_cloud_settings():
     ]
     return settings
 
+
+def collision_safe_path(path):
+    """Return a non-existing sibling path; never overwrite a user file."""
+    candidate = os.fspath(path)
+    if not os.path.exists(candidate):
+        return candidate
+    root, ext = os.path.splitext(candidate)
+    suffix = 1
+    while True:
+        candidate = f"{root}__{suffix}{ext}"
+        if not os.path.exists(candidate):
+            return candidate
+        suffix += 1
+
+
+def safe_two_phase_rename(files, prefix):
+    """Rename a selected set without collisions or partial name swaps."""
+    if not files:
+        return []
+
+    folder = os.path.dirname(files[0])
+    normalized = [os.path.abspath(path) for path in files]
+    if any(os.path.dirname(path) != folder for path in normalized):
+        raise ValueError("Toplu isimlendirme aynı klasördeki dosyalarla yapılmalı.")
+
+    token = f".rename_tmp_{int(time.time() * 1000)}_"
+    staged = []
+    results = []
+    try:
+        # Stage first so target names can overlap original selected names.
+        for idx, source in enumerate(normalized, 1):
+            ext = os.path.splitext(source)[1]
+            temp_path = os.path.join(folder, f"{token}{idx:04d}{ext}")
+            while os.path.exists(temp_path):
+                temp_path += "_"
+            os.rename(source, temp_path)
+            staged.append((source, temp_path, ext))
+
+        for idx, (_, temp_path, ext) in enumerate(staged, 1):
+            requested = os.path.join(folder, f"{prefix}{idx:03d}{ext}")
+            target = collision_safe_path(requested)
+            os.rename(temp_path, target)
+            results.append(target)
+        return results
+    except Exception:
+        # Best-effort rollback for items still in staging.
+        for source, temp_path, _ in reversed(staged):
+            if os.path.exists(temp_path) and not os.path.exists(source):
+                try:
+                    os.rename(temp_path, source)
+                except OSError:
+                    pass
+        raise
+
 def show_colored_popup(task_name, display_name, start_time):
     duration = time.time() - start_time
     prev_time = None
@@ -365,10 +419,16 @@ def format_convert():
                 if target_format == 'JPG' and file.lower().endswith('.png'):
                     img = Image.open(file)
                     rgb_im = img.convert('RGB')
-                    rgb_im.save(file.replace('.png', '.jpg'), quality=95)
+                    target = collision_safe_path(
+                        os.path.splitext(file)[0] + '.jpg'
+                    )
+                    rgb_im.save(target, quality=95)
                 elif target_format == 'PNG' and file.lower().endswith(('.jpg', '.jpeg')):
                     img = Image.open(file)
-                    img.save(file.rsplit('.', 1)[0] + '.png')
+                    target = collision_safe_path(
+                        os.path.splitext(file)[0] + '.png'
+                    )
+                    img.save(target)
             except Exception as e:
                 print(f"Hata: {e}")
                 
@@ -398,16 +458,14 @@ def rename_images():
         
     def process():
         start_time = time.time()
-        # Filtreleme veya klasör bulma
+        # Two-phase rename prevents swaps/collisions and never overwrites
+        # an existing user file.
         folder_path = os.path.dirname(files[0]) if files else ""
-        for idx, file in enumerate(files, 1):
-            ext = os.path.splitext(file)[1]
-            new_name = f"{prefix}{idx:03d}{ext}"
-            new_path = os.path.join(folder_path, new_name)
-            try:
-                os.rename(file, new_path)
-            except Exception as e:
-                print(f"Hata: {e}")
+        try:
+            safe_two_phase_rename(files, prefix)
+        except Exception as e:
+            print(f"Toplu isimlendirme hatası: {e}")
+            return
                 
         # İşlem bitince klasörü aç ve bilgi ver
         if folder_path:
@@ -462,7 +520,9 @@ def watermark():
                 
                 img.paste(wm_resized, position, wm_resized)
                 
-                out_path = os.path.join(out_dir, os.path.basename(file))
+                out_path = collision_safe_path(
+                    os.path.join(out_dir, os.path.basename(file))
+                )
                 if file.lower().endswith(('.jpg', '.jpeg')):
                     img.convert('RGB').save(out_path, quality=100, subsampling=0)
                 else:
