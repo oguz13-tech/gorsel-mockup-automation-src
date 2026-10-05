@@ -254,6 +254,7 @@ window.onerror = function(msg, url, line, col, error) {
         document.getElementById('current-file').textContent = cat + ' / ' + tmpl;
         document.getElementById('template-type').textContent = 'Tip: ' + data.tip;
         updateCounter();
+        syncPhysicalOrientationControl(data);
         
         resetView();
 
@@ -455,10 +456,36 @@ window.onerror = function(msg, url, line, col, error) {
         draw();
     }
 
+    function savePhysicalOrientationSelection() {
+        if (!currentCat || !currentTmpl || !ayarlar || !ayarlar.kategoriler[currentCat]) return;
+        const select = document.getElementById('physicalOrientationSelect');
+        const tmplObj = ayarlar.kategoriler[currentCat].sablonlar[currentTmpl];
+        if (!select || !tmplObj) return;
+        const value = String(select.value || '').toUpperCase();
+        if (value === 'H' || value === 'V') {
+            tmplObj.physical_orientation = value;
+        } else {
+            delete tmplObj.physical_orientation;
+        }
+    }
+
+    function syncPhysicalOrientationControl(data) {
+        const wrap = document.getElementById('physical-orientation-wrap');
+        const select = document.getElementById('physicalOrientationSelect');
+        if (!wrap || !select) return;
+        const mixed = currentCat === '04_Cam_Dograma';
+        wrap.style.display = mixed ? 'block' : 'none';
+        const value = String((data && data.physical_orientation) || '').toUpperCase();
+        select.value = (value === 'H' || value === 'V') ? value : '';
+    }
+
     function saveCurrentTemplateData() {
         if (currentCat && currentTmpl && ayarlar && ayarlar.kategoriler[currentCat]) {
             const tmplObj = ayarlar.kategoriler[currentCat].sablonlar[currentTmpl];
             tmplObj.on_plan = cloneForegroundMask();
+            if (currentCat === '04_Cam_Dograma') {
+                savePhysicalOrientationSelection();
+            }
         }
     }
 
@@ -1589,6 +1616,16 @@ async function approveTemplate() {
     if (!pts || pts.length !== 4) return alert("Geçerli 4 köşe yok!");
     // Convert {x,y} objects to [[x,y],...] canonical format for DB/profile
     let canonicalCorners = pts.map(p => [p.x, p.y]);
+    let physicalOrientation = '';
+    if (currentCat === '04_Cam_Dograma') {
+        const orientationSelect = document.getElementById('physicalOrientationSelect');
+        physicalOrientation = String(
+            orientationSelect ? orientationSelect.value : ''
+        ).toUpperCase();
+        if (physicalOrientation !== 'H' && physicalOrientation !== 'V') {
+            return alert("Cam Doğrama için onaydan önce fiziksel yönü Yatay (H) veya Dikey (V) seçin.");
+        }
+    }
     
     try {
         let res = await fetch('/api/templates/update_corners', {
@@ -1599,11 +1636,17 @@ async function approveTemplate() {
                 category: currentCat,
                 template: currentTmpl,
                 corners: canonicalCorners,
+                physical_orientation: physicalOrientation,
                 on_plan: cloneForegroundMask()
             })
         });
         let data = await res.json();
         if(data.success) {
+            const tmplObj = ayarlar.kategoriler[currentCat].sablonlar[currentTmpl];
+            if (tmplObj && (data.orientation === 'H' || data.orientation === 'V')) {
+                tmplObj.physical_orientation = data.orientation;
+                syncPhysicalOrientationControl(tmplObj);
+            }
             alert("Geometri başarıyla onaylandı (APPROVED).");
         } else {
             alert("Hata: " + data.error);
