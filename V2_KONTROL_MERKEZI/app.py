@@ -6,6 +6,7 @@ import glob
 import json
 import ctypes
 import time
+import sqlite3
 from PIL import Image
 from flask import Flask, render_template, request, jsonify
 import tkinter as tk
@@ -17,6 +18,54 @@ TEMPLATE_CENTER_DIR = os.path.join(BASE_DIR, "SABLON_V2_MIMARI")
 
 RUNNING_PROCESSES = {}
 PROCESS_LOCK = threading.RLock()
+
+
+def load_cloud_settings():
+    """Load cloud upload settings without hard-coding credentials.
+
+    Primary source is the shared SABLON_V2_MIMARI SQLite settings table. Legacy
+    ayarlar.json is read only as a compatibility fallback. Environment variables
+    may supply a FreeImage key without persisting it to disk.
+    """
+    settings = {}
+    db_path = os.path.join(TEMPLATE_CENTER_DIR, "ayarlar.db")
+    try:
+        conn = sqlite3.connect(db_path)
+        try:
+            row = conn.execute(
+                "SELECT value FROM settings WHERE key='bulut_ayarlari'"
+            ).fetchone()
+            if row and row[0]:
+                payload = json.loads(row[0])
+                if isinstance(payload, dict):
+                    settings.update(payload)
+        finally:
+            conn.close()
+    except Exception:
+        pass
+
+    if not settings:
+        legacy_path = os.path.join(BASE_DIR, "ayarlar.json")
+        try:
+            with open(legacy_path, "r", encoding="utf-8") as handle:
+                payload = json.load(handle)
+            legacy = payload.get("bulut_ayarlari", {})
+            if isinstance(legacy, dict):
+                settings.update(legacy)
+        except Exception:
+            pass
+
+    env_freeimage = os.environ.get("FREEIMAGE_KEY")
+    if env_freeimage and not settings.get("freeimage_key"):
+        settings["freeimage_key"] = env_freeimage
+
+    keys = settings.get("imgbb_keys", [])
+    if not isinstance(keys, list):
+        keys = []
+    settings["imgbb_keys"] = [
+        str(key).strip() for key in keys if str(key).strip()
+    ]
+    return settings
 
 def show_colored_popup(task_name, display_name, start_time):
     duration = time.time() - start_time
@@ -388,18 +437,18 @@ def image_to_excel():
         import base64, requests, pandas as pd
         folder_path = os.path.dirname(files[0]) if files else ""
         
-        # Load API keys from ayarlar.json
-        ayarlar_path = os.path.join(BASE_DIR, "ayarlar.json")
-        imgbb_keys = []
-        try:
-            with open(ayarlar_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                imgbb_keys = data.get("bulut_ayarlari", {}).get("imgbb_keys", [])
-        except Exception as e:
-            print(f"Hata: ayarlar.json okunamadı. ({e})")
+        # Use the same cloud settings source as the production factory.
+        # Credential values are never logged or embedded in source.
+        cloud_settings = load_cloud_settings()
+        imgbb_keys = cloud_settings.get("imgbb_keys", [])
             
         if not imgbb_keys:
-            ctypes.windll.user32.MessageBoxW(0, "ayarlar.json dosyasında 'imgbb_keys' (API Anahtarı) bulunamadı! İşlem iptal edildi.", "Anahtar Eksik", 0x10)
+            ctypes.windll.user32.MessageBoxW(
+                0,
+                "Bulut ayarlarında ImgBB anahtarı bulunamadı. İşlem iptal edildi.",
+                "Anahtar Eksik",
+                0x10,
+            )
             return
             
         def upload_to_imgbb(image_path, api_keys):
