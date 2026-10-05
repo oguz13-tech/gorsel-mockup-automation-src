@@ -169,5 +169,126 @@ class TestT1DeleteUndoIntegrity(unittest.TestCase):
         
         conn.close()
 
+    def test_delete_blocks_when_source_image_is_missing(self):
+        os.remove(self.img_path)
+
+        res = self.client.post('/api/sablon_sil', headers={
+            "X-Active-Category": "test_cat",
+            "X-Active-Template": "test_tmpl.png",
+        })
+
+        self.assertEqual(res.status_code, 409)
+        self.assertEqual(res.get_json().get("code"), "SOURCE_IMAGE_MISSING")
+
+        conn = db_core.get_db_connection()
+        try:
+            row = conn.execute(
+                "SELECT data FROM templates WHERE category_id=? AND filename=?",
+                ("test_cat", "test_tmpl.png"),
+            ).fetchone()
+            self.assertIsNotNone(
+                row,
+                "DB row must remain when reversible delete cannot preserve image",
+            )
+        finally:
+            conn.close()
+
+    def test_undo_blocks_when_trash_image_is_missing(self):
+        deleted = self.client.post('/api/sablon_sil', headers={
+            "X-Active-Category": "test_cat",
+            "X-Active-Template": "test_tmpl.png",
+        })
+        self.assertEqual(deleted.status_code, 200)
+        body = deleted.get_json()
+        trash_dir = os.path.join(
+            self.test_dir,
+            "SILINEN_SABLONLAR_COP_KUTUSU",
+        )
+        meta_path = os.path.join(trash_dir, body["trash_record"])
+        with open(meta_path, "r", encoding="utf-8") as handle:
+            recovery = json.load(handle)
+        trash_path = os.path.join(trash_dir, recovery["trash_image_name"])
+        os.remove(trash_path)
+
+        restored = self.client.post('/api/sablon_sil_geri_al')
+        self.assertEqual(restored.status_code, 409)
+        self.assertEqual(
+            restored.get_json().get("code"),
+            "TRASH_IMAGE_MISSING",
+        )
+        self.assertTrue(
+            os.path.isfile(meta_path),
+            "Recovery metadata must remain for investigation/manual recovery",
+        )
+
+        conn = db_core.get_db_connection()
+        try:
+            row = conn.execute(
+                "SELECT data FROM templates WHERE category_id=? AND filename=?",
+                ("test_cat", "test_tmpl.png"),
+            ).fetchone()
+            self.assertIsNone(
+                row,
+                "Undo must not recreate a DB row without its source image",
+            )
+        finally:
+            conn.close()
+
+    def test_undo_marks_old_approval_stale_if_trash_bytes_changed(self):
+        conn = db_core.get_db_connection()
+        try:
+            conn.execute(
+                """INSERT INTO template_profiles (
+                       template_uid, category, source_relative_path,
+                       source_asset_sha256, review_status,
+                       manually_verified, is_active
+                   ) VALUES (?, ?, ?, ?, 'APPROVED', 1, 1)""",
+                (
+                    "test_cat_test_tmpl.png",
+                    "test_cat",
+                    "test_cat/test_tmpl.png",
+                    self.file_sha,
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        deleted = self.client.post('/api/sablon_sil', headers={
+            "X-Active-Category": "test_cat",
+            "X-Active-Template": "test_tmpl.png",
+        })
+        self.assertEqual(deleted.status_code, 200)
+        body = deleted.get_json()
+        trash_dir = os.path.join(
+            self.test_dir,
+            "SILINEN_SABLONLAR_COP_KUTUSU",
+        )
+        meta_path = os.path.join(trash_dir, body["trash_record"])
+        with open(meta_path, "r", encoding="utf-8") as handle:
+            recovery = json.load(handle)
+        trash_path = os.path.join(trash_dir, recovery["trash_image_name"])
+
+        with open(trash_path, "ab") as handle:
+            handle.write(b"-modified-after-delete")
+
+        restored = self.client.post('/api/sablon_sil_geri_al')
+        self.assertEqual(restored.status_code, 200)
+
+        conn = db_core.get_db_connection()
+        try:
+            row = conn.execute(
+                """SELECT review_status, manually_verified
+                   FROM template_profiles
+                   WHERE template_uid=? AND is_active=1""",
+                ("test_cat_test_tmpl.png",),
+            ).fetchone()
+            self.assertIsNotNone(row)
+            self.assertEqual(row["review_status"], "STALE_SOURCE_CHANGED")
+            self.assertEqual(row["manually_verified"], 0)
+        finally:
+            conn.close()
+
+
 if __name__ == "__main__":
     unittest.main()
