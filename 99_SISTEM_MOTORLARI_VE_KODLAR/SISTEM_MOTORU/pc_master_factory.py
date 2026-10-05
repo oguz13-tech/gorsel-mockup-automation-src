@@ -253,6 +253,51 @@ def physical_aspect_for_product(
     return None
 
 
+def foreground_ai_dependency_status() -> dict:
+    """Check import/API availability without loading model weights."""
+    status = {
+        "torch": False,
+        "transformers": False,
+        "transformers_required_symbols": False,
+        "missing": [],
+        "errors": [],
+    }
+
+    if importlib.util.find_spec("torch") is None:
+        status["missing"].append("torch")
+    else:
+        status["torch"] = True
+
+    if importlib.util.find_spec("transformers") is None:
+        status["missing"].append("transformers")
+        return status
+
+    status["transformers"] = True
+    required_symbols = (
+        "AutoProcessor",
+        "AutoModelForZeroShotObjectDetection",
+        "Sam2Processor",
+        "Sam2Model",
+    )
+    try:
+        transformers_mod = importlib.import_module("transformers")
+        missing_symbols = [
+            name
+            for name in required_symbols
+            if not hasattr(transformers_mod, name)
+        ]
+        if missing_symbols:
+            status["missing"].extend(
+                f"transformers.{name}" for name in missing_symbols
+            )
+        else:
+            status["transformers_required_symbols"] = True
+    except Exception as exc:
+        status["errors"].append(f"transformers import: {exc}")
+
+    return status
+
+
 def duplicate_profile_uids(rows) -> list[str]:
     """Return sorted non-empty template UIDs appearing more than once."""
     counts = {}
@@ -2511,23 +2556,21 @@ def build_factory_preflight() -> dict:
     # approved template already has a reviewed manual plan or a source-hash-
     # bound cached mask. Otherwise starting production without the models could
     # silently paint artwork over real foreground objects.
-    missing_ai_modules = []
-    for module_name in ("torch", "transformers"):
-        available = importlib.util.find_spec(module_name) is not None
-        report["optional_ai"][module_name] = available
-        if not available:
-            missing_ai_modules.append(module_name)
+    ai_dependency = foreground_ai_dependency_status()
+    report["optional_ai"].update(ai_dependency)
+    missing_ai_modules = list(ai_dependency.get("missing") or [])
+    missing_ai_modules.extend(ai_dependency.get("errors") or [])
 
     ai_required_templates = report["occlusion"]["ai_required_templates"]
     if ai_required_templates and missing_ai_modules:
         report["errors"].append(
-            "Ön-plan/occlusion AI gerekli fakat bağımlılıklar eksik: "
+            "Ön-plan/occlusion AI gerekli fakat bağımlılık/API eksik: "
             + ", ".join(missing_ai_modules)
         )
     elif missing_ai_modules:
         report["warnings"].append(
-            "Ön-plan AI bağımlılıkları eksik fakat tüm gerekli şablonlar "
-            "manuel/cache maskesiyle kapsanmış: "
+            "Ön-plan AI bağımlılık/API eksikleri var fakat tüm gerekli "
+            "şablonlar manuel/cache maskesiyle kapsanmış: "
             + ", ".join(missing_ai_modules)
         )
 
