@@ -2017,6 +2017,10 @@ def build_factory_preflight() -> dict:
         "manifest": {},
         "templates": {},
         "optional_ai": {},
+        "occlusion": {
+            "ai_required_templates": [],
+            "manual_or_cached_templates": [],
+        },
         "outputs": {},
     }
 
@@ -2090,7 +2094,7 @@ def build_factory_preflight() -> dict:
                     rows = conn.execute(
                         """SELECT template_uid, source_relative_path,
                                   source_asset_sha256, orientation,
-                                  nominal_aspect, surface_quad
+                                  nominal_aspect, surface_quad, has_occlusion
                            FROM template_profiles
                            WHERE category=? AND review_status='APPROVED'
                              AND is_active=1""",
@@ -2158,6 +2162,61 @@ def build_factory_preflight() -> dict:
                             continue
                         usable += 1
 
+                        # Object-aware foreground restoration is quality-critical
+                        # for cutting-board templates and any profile explicitly
+                        # marked with occlusion. Preflight distinguishes templates
+                        # already covered by a manual plan/cache from templates
+                        # that still require Grounding-DINO + SAM at runtime.
+                        requires_occlusion = (
+                            category == "04_Cam_Dograma"
+                            or bool(row["has_occlusion"])
+                        )
+                        if requires_occlusion:
+                            template_name = Path(rel).name
+                            legacy_templates = (
+                                AYARLAR.get("kategoriler", {})
+                                .get(category, {})
+                                .get("sablonlar", {})
+                            )
+                            legacy_cfg = legacy_templates.get(template_name)
+                            if legacy_cfg is None:
+                                for legacy_name, candidate_cfg in legacy_templates.items():
+                                    if Path(legacy_name).stem == Path(template_name).stem:
+                                        legacy_cfg = candidate_cfg
+                                        break
+                            legacy_cfg = (
+                                legacy_cfg if isinstance(legacy_cfg, dict) else {}
+                            )
+                            plan = legacy_cfg.get("on_plan")
+                            has_positive_manual_plan = False
+                            if isinstance(plan, list):
+                                has_positive_manual_plan = len(plan) >= 3
+                            elif isinstance(plan, dict):
+                                has_positive_manual_plan = bool(
+                                    plan.get("object_boxes")
+                                    or plan.get("add_brush")
+                                )
+
+                            cache_file = (
+                                BASE_DIR
+                                / "masks"
+                                / (
+                                    f"{category}_{row['source_asset_sha256']}_"
+                                    "v3_auto_ai_mask.png"
+                                )
+                            )
+                            has_cached_mask = cache_file.is_file()
+
+                            item_name = f"{category}/{template_name}"
+                            if has_positive_manual_plan or has_cached_mask:
+                                report["occlusion"][
+                                    "manual_or_cached_templates"
+                                ].append(item_name)
+                            else:
+                                report["occlusion"][
+                                    "ai_required_templates"
+                                ].append(item_name)
+
                     report["templates"][category] = {
                         "approved": len(rows),
                         "usable": usable,
@@ -2206,14 +2265,29 @@ def build_factory_preflight() -> dict:
             "(ImgBB veya FreeImage anahtarı gerekli)."
         )
 
-    # Optional occlusion AI does not block normal rendering.
+    # Occlusion AI is optional only when every occlusion-sensitive
+    # approved template already has a reviewed manual plan or a source-hash-
+    # bound cached mask. Otherwise starting production without the models could
+    # silently paint artwork over real foreground objects.
+    missing_ai_modules = []
     for module_name in ("torch", "transformers"):
         available = importlib.util.find_spec(module_name) is not None
         report["optional_ai"][module_name] = available
         if not available:
-            report["warnings"].append(
-                f"Opsiyonel ön-plan AI bağımlılığı yok: {module_name}"
-            )
+            missing_ai_modules.append(module_name)
+
+    ai_required_templates = report["occlusion"]["ai_required_templates"]
+    if ai_required_templates and missing_ai_modules:
+        report["errors"].append(
+            "Ön-plan/occlusion AI gerekli fakat bağımlılıklar eksik: "
+            + ", ".join(missing_ai_modules)
+        )
+    elif missing_ai_modules:
+        report["warnings"].append(
+            "Ön-plan AI bağımlılıkları eksik fakat tüm gerekli şablonlar "
+            "manuel/cache maskesiyle kapsanmış: "
+            + ", ".join(missing_ai_modules)
+        )
 
     for name, directory in {
         "output": OUTPUT_DIR,
