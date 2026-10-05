@@ -772,7 +772,7 @@ def save_template_profile(db_path: str, profile_data: dict):
         conn.execute("BEGIN IMMEDIATE")
         new_hash = profile_data.get("source_asset_sha256")
         active_rows = conn.execute(
-            """SELECT id, source_asset_sha256, review_status, manually_verified
+            """SELECT rowid AS profile_rowid, source_asset_sha256, review_status, manually_verified
                FROM template_profiles
                WHERE template_uid=? AND is_active=1
                ORDER BY updated_at DESC, id DESC""",
@@ -823,7 +823,7 @@ def save_template_profile(db_path: str, profile_data: dict):
                                 ELSE review_status
                             END,
                             updated_at=CURRENT_TIMESTAMP
-                        WHERE id IN ({placeholders})""",
+                        WHERE rowid IN ({placeholders})""",
                     (new_hash, new_hash, *duplicate_ids),
                 )
 
@@ -835,7 +835,7 @@ def save_template_profile(db_path: str, profile_data: dict):
             
             # If hash changed, mark old as inactive/stale and insert new
             if old_hash and new_hash and old_hash != new_hash:
-                conn.execute("UPDATE template_profiles SET is_active = 0, review_status = 'STALE_SOURCE_CHANGED' WHERE id = ?", (old_id,))
+                conn.execute("UPDATE template_profiles SET is_active = 0, review_status = 'STALE_SOURCE_CHANGED' WHERE rowid = ?", (old_id,))
                 # Fallthrough to insert new proposal below
             else:
                 if old_status == "APPROVED" and old_manual:
@@ -852,7 +852,7 @@ def save_template_profile(db_path: str, profile_data: dict):
                     nominal_aspect=?, print_policy=?,
                     confidence_total=?, component_confidences=?, review_status=?, manually_verified=?,
                     updated_at=CURRENT_TIMESTAMP
-                WHERE id=?
+                WHERE rowid=?
                 """, (
                     profile_data["analyzer_version"], json.dumps(profile_data.get("surface_quad")),
                     json.dumps(profile_data.get("outer_quad")), profile_data["orientation"],
