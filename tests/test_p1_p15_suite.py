@@ -174,7 +174,8 @@ class TestP1_P15Acceptance(unittest.TestCase):
             dtype=np.float32,
         )
         invalid_prior = {
-            "surface_quad": [[10, 10], [10, 10], [20, 20], [30, 30]]
+            "surface_quad": [[10, 10], [10, 10], [20, 20], [30, 30]],
+            "outer_quad": [[20, 20], [180, 20], [180, 180], [20, 180]],
         }
 
         with patch.object(
@@ -199,6 +200,7 @@ class TestP1_P15Acceptance(unittest.TestCase):
         self.assertEqual(res["provenance"], "AUTO")
         self.assertEqual(res["review_status"], "REVIEW_REQUIRED")
         self.assertIsNotNone(res["surface_quad"])
+        self.assertNotIn("outer_quad", res)
         self.assertEqual(
             np.asarray(res["surface_quad"], dtype=np.float32).tolist(),
             auto_quad.tolist(),
