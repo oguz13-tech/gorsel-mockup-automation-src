@@ -440,12 +440,30 @@ def _telemetry_evidence_ok(
     )
 
 
+def _benchmark_quality_gate(benchmark: Dict[str, Any]) -> Dict[str, Any]:
+    """Block a nominally successful bundle when EPIC-3 globally regresses EPIC-2."""
+    epic2_iou = float(benchmark.get("epic2_median_iou", 0.0) or 0.0)
+    epic3_iou = float(benchmark.get("epic3_median_iou", 0.0) or 0.0)
+    epic2_recall = float(benchmark.get("epic2_recall_at_50", 0.0) or 0.0)
+    epic3_recall = float(benchmark.get("epic3_recall_at_50", 0.0) or 0.0)
+    return {
+        "epic2_median_iou": epic2_iou,
+        "epic3_median_iou": epic3_iou,
+        "epic2_recall_at_50": epic2_recall,
+        "epic3_recall_at_50": epic3_recall,
+        "median_iou_not_regressed": epic3_iou >= epic2_iou,
+        "recall_at_50_not_regressed": epic3_recall >= epic2_recall,
+        "ok": epic3_iou >= epic2_iou and epic3_recall >= epic2_recall,
+    }
+
+
 def _review_readiness(
     *,
     commands_ok: bool,
     unit_tests_executed: bool,
     diagnostic_ok: bool,
     benchmark_ok: bool,
+    benchmark_quality_ok: bool,
     golden_coverage_ok: bool,
     telemetry_ok: bool,
     cross_evidence_ok: bool,
@@ -457,6 +475,7 @@ def _review_readiness(
         and unit_tests_executed
         and diagnostic_ok
         and benchmark_ok
+        and benchmark_quality_ok
         and golden_coverage_ok
         and telemetry_ok
         and cross_evidence_ok
@@ -821,6 +840,12 @@ def main() -> int:
             "all_required_categories_present", False
         )
     )
+    evidence["benchmark_quality_gate"] = _benchmark_quality_gate(
+        evidence.get("benchmark") or {}
+    )
+    benchmark_quality_ok = bool(
+        evidence["benchmark_quality_gate"].get("ok", False)
+    )
     golden_coverage_ok = bool(
         (evidence.get("golden_coverage") or {}).get("ok", False)
     )
@@ -850,6 +875,7 @@ def main() -> int:
         "unit_tests_executed": unit_tests_executed,
         "diagnostic_invariants_ok": diagnostic_ok,
         "required_benchmark_categories_ok": benchmark_ok,
+        "benchmark_quality_not_regressed": benchmark_quality_ok,
         "golden_coverage_ok": golden_coverage_ok,
         "telemetry_has_samples": telemetry_ok,
         "cross_evidence_consistency_ok": cross_evidence_ok,
@@ -859,6 +885,7 @@ def main() -> int:
             unit_tests_executed=unit_tests_executed,
             diagnostic_ok=diagnostic_ok,
             benchmark_ok=benchmark_ok,
+            benchmark_quality_ok=benchmark_quality_ok,
             golden_coverage_ok=golden_coverage_ok,
             telemetry_ok=telemetry_ok,
             cross_evidence_ok=cross_evidence_ok,
