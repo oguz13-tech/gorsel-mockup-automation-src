@@ -120,6 +120,55 @@ class TestSQLiteBootstrap(unittest.TestCase):
         )
 
 
+class TestForegroundAIDependencyPreflight(unittest.TestCase):
+    def test_missing_sam2_symbols_are_reported(self):
+        from types import SimpleNamespace
+        from SISTEM_MOTORU.pc_master_factory import foreground_ai_dependency_status
+
+        fake_transformers = SimpleNamespace(
+            AutoProcessor=object(),
+            AutoModelForZeroShotObjectDetection=object(),
+        )
+
+        with patch(
+            "SISTEM_MOTORU.pc_master_factory.importlib.util.find_spec",
+            return_value=object(),
+        ), patch(
+            "SISTEM_MOTORU.pc_master_factory.importlib.import_module",
+            return_value=fake_transformers,
+        ):
+            status = foreground_ai_dependency_status()
+
+        self.assertTrue(status["torch"])
+        self.assertTrue(status["transformers"])
+        self.assertFalse(status["transformers_required_symbols"])
+        self.assertIn("transformers.Sam2Processor", status["missing"])
+        self.assertIn("transformers.Sam2Model", status["missing"])
+
+    def test_complete_transformers_api_passes_symbol_check(self):
+        from types import SimpleNamespace
+        from SISTEM_MOTORU.pc_master_factory import foreground_ai_dependency_status
+
+        fake_transformers = SimpleNamespace(
+            AutoProcessor=object(),
+            AutoModelForZeroShotObjectDetection=object(),
+            Sam2Processor=object(),
+            Sam2Model=object(),
+        )
+
+        with patch(
+            "SISTEM_MOTORU.pc_master_factory.importlib.util.find_spec",
+            return_value=object(),
+        ), patch(
+            "SISTEM_MOTORU.pc_master_factory.importlib.import_module",
+            return_value=fake_transformers,
+        ):
+            status = foreground_ai_dependency_status()
+
+        self.assertTrue(status["transformers_required_symbols"])
+        self.assertEqual(status["missing"], [])
+
+
 class TestDuplicateProfileIdentityGuard(unittest.TestCase):
     def test_duplicate_profile_uids_returns_only_repeated_nonempty_ids(self):
         from SISTEM_MOTORU.pc_master_factory import duplicate_profile_uids
