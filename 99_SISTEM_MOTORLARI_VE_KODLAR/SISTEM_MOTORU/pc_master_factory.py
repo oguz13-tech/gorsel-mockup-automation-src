@@ -1061,30 +1061,19 @@ class MockupRenderer:
         p = np.float32(koseler)  # [TL, TR, BR, BL]
 
         # -------------------------------------------------------------
-        # 1. SMART-COVER: EN-BOY ORANI KORUMA (SÜNDÜRME & YAYILMA ÖNLEME)
+        # 1. CONTENT-SAFE PERSPECTIVE INPUT
         # -------------------------------------------------------------
+        # The projected quad aspect is NOT the physical print aspect. Cropping
+        # the artwork against that projected ratio can remove text/content and
+        # was explicitly unsafe for marketplace designs. The full source
+        # artwork is therefore preserved and mapped as a single physical plane.
         w_top = np.linalg.norm(p[1] - p[0])
         w_bot = np.linalg.norm(p[2] - p[3])
         h_left = np.linalg.norm(p[3] - p[0])
         h_right = np.linalg.norm(p[2] - p[1])
         target_w = max(1.0, (w_top + w_bot) / 2.0)
         target_h = max(1.0, (h_left + h_right) / 2.0)
-        target_ar = target_w / target_h
-
-        art_ar = w_art / float(h_art)
-
-        if art_ar > target_ar:
-            crop_w = int(round(h_art * target_ar))
-            crop_h = h_art
-            sx = max(0, (w_art - crop_w) // 2)
-            sy = 0
-            art_fitted = art_cv[:, sx:sx + crop_w]
-        else:
-            crop_w = w_art
-            crop_h = int(round(w_art / target_ar))
-            sx = 0
-            sy = max(0, (h_art - crop_h) // 2)
-            art_fitted = art_cv[sy:sy + crop_h, :]
+        art_fitted = art_cv
 
         # -------------------------------------------------------------
         # 2. SUB-PIXEL PERSPEKTİF HOMOGRAFİ & KENAR YUMUŞATMA (ANTI-ALIASING)
@@ -1397,18 +1386,24 @@ class MockupRenderer:
                 ty = config.get("y", int(h_bg * 0.25))
                 koseler = [[tx, ty], [tx + tw, ty], [tx + tw, ty + th], [tx, ty + th]]
 
-            # Akıllı Döndürme (Smart Rotation) - Sıkışmayı Önlemek İçin
-            pts = np.array(koseler)
-            tw_approx = np.linalg.norm(pts[1] - pts[0])
-            th_approx = np.linalg.norm(pts[2] - pts[1])
-            template_is_horiz = tw_approx >= th_approx
-            
+            # Orientation is a compatibility gate, never an automatic
+            # transform. Rotating H<->V can destroy composition/text intent.
+            pts = np.asarray(koseler, dtype=np.float32)
+            top = np.linalg.norm(pts[1] - pts[0])
+            bottom = np.linalg.norm(pts[2] - pts[3])
+            left = np.linalg.norm(pts[3] - pts[0])
+            right = np.linalg.norm(pts[2] - pts[1])
+            template_is_horiz = ((top + bottom) * 0.5) >= ((left + right) * 0.5)
+
             art_h, art_w = art_cv.shape[:2]
             art_is_horiz = art_w >= art_h
-            
+
             if art_is_horiz != template_is_horiz:
-                art_cv = cv2.rotate(art_cv, cv2.ROTATE_90_CLOCKWISE)
-                logger.info(f"🔄 Görsel sıkışmaması için 90 derece döndürüldü: {raw_path.name}")
+                logger.warning(
+                    f"⏭️ Orientation uyumsuzluğu nedeniyle şablon atlandı: "
+                    f"{raw_path.name} -> {template_path.name}"
+                )
+                return False
 
             # Orijinal yedek görseli yükle (True Shadow Mapping için)
             orig_path = USER_WORKSPACE_DIR / "2_SABLON_HAVUZU_ORIJINAL_YEDEK" / template_path.parent.name / template_path.name
@@ -1530,48 +1525,141 @@ class PCMasterFactory:
             return []
 
     def get_template_pool(self, prod_key: str) -> List[Tuple[str, Path, dict]]:
+        """Return only source-valid, review-approved template profiles.
+
+        Production rendering must never fall back to arbitrary folder contents
+        or unreviewed legacy geometry. Legacy template JSON is used only for
+        non-geometry extras (for example manual occlusion plans); approved
+        profile geometry always wins.
         """
-        İlgili ürün için ayarlar.json ve Sablonlar klasöründen şablon havuzunu çeker.
-        """
-        pool = []
+        pool: List[Tuple[str, Path, dict]] = []
         prod_def = PRODUCT_CATALOG[prod_key]
-        
-        # 1. ayarlar.json içindeki kayıtlı şablonlar
-        kat_cfg = AYARLAR.get("kategoriler", {}).get(prod_key, {})
-        sablonlar_cfg = kat_cfg.get("sablonlar", {})
+        db_path = USER_WORKSPACE_DIR / "SABLON_V2_MIMARI" / "ayarlar.db"
 
-        # Klasör taraması (Sablonlar/01_Wifi_Kutusu veya kök Sablonlar/)
-        target_dir = SABLON_DIR / prod_def.folder_name
-        if not target_dir.exists():
-            target_dir = SABLON_DIR
+        if not db_path.exists():
+            logger.warning(
+                f"⏭️ Onaylı şablon profili kullanılamıyor; DB yok: {db_path}"
+            )
+            return pool
 
-        for s_name, s_conf in sablonlar_cfg.items():
-            base_stem = Path(s_name).stem
-            s_path = target_dir / s_name
-            
-            # Şeffaf Sistem (Passepartout): Dosya PNG olarak kaydedilmiş olabilir
-            if not s_path.exists():
-                s_path_png = target_dir / f"{base_stem}.png"
-                if s_path_png.exists():
-                    s_path = s_path_png
-                else:
-                    s_path = SABLON_DIR / s_name
-                    if not s_path.exists():
-                        s_path_png_root = SABLON_DIR / f"{base_stem}.png"
-                        if s_path_png_root.exists():
-                            s_path = s_path_png_root
-                            
-            if s_path.exists():
-                pool.append((s_name, s_path, s_conf))
+        try:
+            conn = sqlite3.connect(str(db_path))
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """SELECT template_uid, source_relative_path, source_asset_sha256,
+                          orientation, nominal_aspect, surface_quad, outer_quad,
+                          confidence_total, component_confidences, print_policy,
+                          surface_mask_path, has_occlusion
+                   FROM template_profiles
+                   WHERE category=? AND review_status='APPROVED' AND is_active=1
+                   ORDER BY confidence_total DESC, updated_at DESC""",
+                (prod_key,),
+            ).fetchall()
+        except Exception as exc:
+            logger.error(f"Onaylı template_profiles okunamadı ({prod_key}): {exc}")
+            return pool
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
-        # Eğer kategoride ayarlar.json boşsa klasördeki dosyaları al (default fallback rect)
-        if not pool and target_dir.exists():
-            for f in target_dir.iterdir():
-                if f.is_file() and f.suffix.lower() in [".jpg", ".jpeg", ".png", ".webp"]:
-                    pool.append((
-                        f.name, f,
-                        {"tip": "duz", "x": int(800*0.2), "y": int(800*0.2), "w": int(800*0.6), "h": int(800*0.6)}
-                    ))
+        legacy_templates = (
+            AYARLAR.get("kategoriler", {})
+            .get(prod_key, {})
+            .get("sablonlar", {})
+        )
+        pool_root = SABLON_DIR.resolve()
+
+        for row in rows:
+            relative_path = row["source_relative_path"]
+            if not relative_path or not row["surface_quad"]:
+                logger.warning(f"⏭️ Eksik onaylı geometri atlandı: {row['template_uid']}")
+                continue
+
+            try:
+                template_path = (SABLON_DIR / relative_path).resolve()
+                if pool_root not in template_path.parents:
+                    logger.warning(f"⏭️ Güvensiz şablon yolu atlandı: {relative_path}")
+                    continue
+            except Exception:
+                continue
+
+            if not template_path.exists():
+                logger.warning(f"⏭️ Onaylı profilin kaynak dosyası yok: {template_path}")
+                continue
+
+            # Approval is bound to exact source bytes. A changed image is stale
+            # even if filename/template_uid stayed the same.
+            try:
+                digest = hashlib.sha256()
+                with open(template_path, "rb") as handle:
+                    for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                        digest.update(chunk)
+                current_sha = digest.hexdigest()
+            except Exception as exc:
+                logger.warning(f"⏭️ Şablon hash okunamadı {template_path.name}: {exc}")
+                continue
+
+            if not row["source_asset_sha256"] or current_sha != row["source_asset_sha256"]:
+                logger.warning(
+                    f"⏭️ STALE_SOURCE_CHANGED: {row['template_uid']} yeniden analiz/onay gerekli"
+                )
+                continue
+
+            try:
+                surface_quad = json.loads(row["surface_quad"])
+                quad_arr = np.asarray(surface_quad, dtype=np.float32)
+                if quad_arr.shape != (4, 2) or not np.isfinite(quad_arr).all():
+                    raise ValueError("invalid quad")
+            except Exception:
+                logger.warning(f"⏭️ Bozuk onaylı quad atlandı: {row['template_uid']}")
+                continue
+
+            profile_orientation = (row["orientation"] or "UNKNOWN").upper()
+            if profile_orientation in ("H", "V") and profile_orientation != prod_def.orientation:
+                logger.info(
+                    f"⏭️ Orientation uyumsuz onaylı şablon atlandı: "
+                    f"{template_path.name} ({profile_orientation}!={prod_def.orientation})"
+                )
+                continue
+            if profile_orientation == "SQUARE" and prod_def.orientation in ("H", "V"):
+                logger.info(
+                    f"⏭️ Kare şablon ürün yönüyle uyumsuz: {template_path.name}"
+                )
+                continue
+
+            # Preserve non-geometric legacy extras by exact name, then stem.
+            template_name = template_path.name
+            legacy_cfg = legacy_templates.get(template_name)
+            if legacy_cfg is None:
+                for legacy_name, candidate_cfg in legacy_templates.items():
+                    if Path(legacy_name).stem == template_path.stem:
+                        legacy_cfg = candidate_cfg
+                        break
+            config = dict(legacy_cfg or {})
+
+            # Geometry-critical fields are exclusively sourced from the
+            # review-approved immutable-source profile.
+            config.update({
+                "tip": "perspektif",
+                "koseler": surface_quad,
+                "profile_uid": row["template_uid"],
+                "profile_orientation": profile_orientation,
+                "profile_confidence": float(row["confidence_total"] or 0.0),
+                "nominal_aspect": row["nominal_aspect"] or "UNKNOWN",
+                "print_policy": row["print_policy"] or "full_bleed",
+                "surface_mask_path": row["surface_mask_path"],
+                "has_occlusion": bool(row["has_occlusion"]),
+            })
+
+            pool.append((template_name, template_path, config))
+
+        if not pool:
+            logger.warning(
+                f"⏭️ {prod_key}: render için source-valid APPROVED şablon yok. "
+                "Unreviewed klasör fallback'i güvenlik nedeniyle kapalı."
+            )
 
         return pool
 
