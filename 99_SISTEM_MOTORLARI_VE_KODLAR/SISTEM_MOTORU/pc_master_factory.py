@@ -1772,26 +1772,39 @@ class MockupRenderer:
                 koseler = [[tx, ty], [tx + tw, ty], [tx + tw, ty + th], [tx, ty + th]]
 
             # Orientation is a compatibility gate, never an automatic
-            # transform. Rotating H<->V can destroy composition/text intent.
-            pts = np.asarray(koseler, dtype=np.float32)
-            top = np.linalg.norm(pts[1] - pts[0])
-            bottom = np.linalg.norm(pts[2] - pts[3])
-            left = np.linalg.norm(pts[3] - pts[0])
-            right = np.linalg.norm(pts[2] - pts[1])
-            template_is_horiz = ((top + bottom) * 0.5) >= ((left + right) * 0.5)
+            # transform. IMPORTANT: physical orientation comes from the
+            # source-hash-bound approved profile, NOT from the projected quad.
+            # Perspective can make a physically vertical product look wider
+            # than tall in image coordinates.
+            profile_orientation = str(
+                config.get("profile_orientation") or ""
+            ).upper()
+            if profile_orientation not in ("H", "V"):
+                logger.warning(
+                    f"⏭️ Onaylı fiziksel yön bilgisi eksik; güvenli şekilde atlandı: "
+                    f"{template_path.name} ({profile_orientation or 'UNKNOWN'})"
+                )
+                return False
 
             art_h, art_w = art_cv.shape[:2]
-            art_is_horiz = art_w >= art_h
+            if art_w > art_h * 1.01:
+                art_orientation = "H"
+            elif art_h > art_w * 1.01:
+                art_orientation = "V"
+            else:
+                art_orientation = "SQUARE"
 
-            if art_is_horiz != template_is_horiz:
+            if art_orientation != profile_orientation:
                 logger.warning(
                     f"⏭️ Orientation uyumsuzluğu nedeniyle şablon atlandı: "
-                    f"{raw_path.name} -> {template_path.name}"
+                    f"{raw_path.name} ({art_orientation}) -> "
+                    f"{template_path.name} ({profile_orientation})"
                 )
                 return False
 
             # Preserve content and physical proportions. This is deliberately
-            # done after the orientation gate: H/V intent is never changed.
+            # done after the physical-orientation gate: H/V intent is never
+            # inferred from perspective geometry or changed by the renderer.
             nominal_aspect = config.get("nominal_aspect", "UNKNOWN")
             try:
                 prepared_art = cls.prepare_artwork_for_nominal_aspect(
