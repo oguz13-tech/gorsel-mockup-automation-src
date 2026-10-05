@@ -13,6 +13,10 @@ import tkinter as tk
 # Base Directory Setup
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SYS_MOTORS_DIR = os.path.join(BASE_DIR, "99_SISTEM_MOTORLARI_VE_KODLAR", "SISTEM_MOTORU")
+TEMPLATE_CENTER_DIR = os.path.join(BASE_DIR, "SABLON_V2_MIMARI")
+
+RUNNING_PROCESSES = {}
+PROCESS_LOCK = threading.RLock()
 
 def show_colored_popup(task_name, display_name, start_time):
     duration = time.time() - start_time
@@ -86,8 +90,11 @@ def open_folder():
     target_path = BASE_DIR
     if folder_name == "SABLON_YUKLE":
         target_path = os.path.join(BASE_DIR, "2_SABLON_HAVUZU")
-    elif folder_name == "TASARIM_YUKLE":
-        target_path = os.path.join(BASE_DIR, "1_TASARIMLAR")
+    elif folder_name in ("TASARIM_YUKLE", "GELEN_MASTER"):
+        # Production factory consumes approved Kaggle H/V masters from here.
+        target_path = os.path.join(BASE_DIR, "1_GELEN_KAGGLE_BASKILARI")
+    elif folder_name == "URETILEN_MOCKUP":
+        target_path = os.path.join(BASE_DIR, "3_URETILEN_MOCKUPLAR")
         
     if os.path.exists(target_path):
         os.startfile(target_path)
@@ -96,33 +103,135 @@ def open_folder():
 
 @app.route('/api/run_script', methods=['POST'])
 def run_script():
-    """İstenilen Python scriptini çalıştırır"""
-    data = request.json
-    script_id = data.get('script_id')
-    
-    script_path = None
-    cwd = BASE_DIR
-    
-    if script_id == "SABLON_DUZELTICI":
-        script_path = os.path.join(BASE_DIR, "SABLON_DUZELTICI.py")
-    elif script_id == "MANUEL_URETIM":
-        script_path = os.path.join(SYS_MOTORS_DIR, "manuel_mockup_motoru.py")
-        cwd = SYS_MOTORS_DIR
-        
-    # TODO: Diğer toollar buraya eklenecek (Watermark, İsimlendirici vs.)
-        
-    if script_path and os.path.exists(script_path):
-        # Scripti arka planda başlat (UI'yi dondurmamak için)
-        def run_proc():
-            start_time = time.time()
-            subprocess.run([sys.executable, script_path], cwd=cwd)
-            display_name = "Şablon Motoru" if script_id == "SABLON_DUZELTICI" else "Manuel Mockup Üretimi"
-            show_colored_popup(script_id, display_name, start_time)
-            
-        threading.Thread(target=run_proc).start()
-        return jsonify({"status": "success", "message": f"{script_id} başlatıldı."})
-        
-    return jsonify({"status": "error", "message": "Script bulunamadı."}), 404
+    """Start only explicitly-whitelisted local tools.
+
+    Long-running Flask/tool processes are tracked so repeated UI clicks cannot
+    accidentally launch duplicate factories or duplicate template servers.
+    """
+    data = request.get_json(silent=True) or {}
+    script_id = str(data.get('script_id') or '').strip()
+    mode = str(data.get('mode') or 'dongusel').strip().lower()
+    if mode not in ('dongusel', 'coklu'):
+        mode = 'dongusel'
+
+    specs = {
+        "SABLON_DUZELTICI": {
+            "path": os.path.join(BASE_DIR, "SABLON_DUZELTICI.py"),
+            "cwd": BASE_DIR,
+            "args": [],
+            "display": "Şablon Motoru (Legacy)",
+            "server": False,
+        },
+        "MANUEL_URETIM": {
+            "path": os.path.join(SYS_MOTORS_DIR, "manuel_mockup_motoru.py"),
+            "cwd": SYS_MOTORS_DIR,
+            "args": [],
+            "display": "Manuel Mockup Üretimi",
+            "server": False,
+        },
+        "SABLON_V2": {
+            "path": os.path.join(TEMPLATE_CENTER_DIR, "app.py"),
+            "cwd": TEMPLATE_CENTER_DIR,
+            "args": [],
+            "display": "Şablon İnceleme Merkezi",
+            "server": True,
+            "url": "http://127.0.0.1:8080/",
+        },
+        "OTOMATIK_URETIM": {
+            "path": os.path.join(SYS_MOTORS_DIR, "pc_master_factory.py"),
+            "cwd": BASE_DIR,
+            "args": ["--mod", mode],
+            "display": "Otomatik Mockup Fabrikası",
+            "server": False,
+        },
+    }
+
+    spec = specs.get(script_id)
+    if spec is None:
+        return jsonify({
+            "status": "error",
+            "message": "Bilinmeyen veya izin verilmeyen script kimliği.",
+        }), 400
+
+    script_path = spec["path"]
+    if not os.path.exists(script_path):
+        return jsonify({
+            "status": "error",
+            "message": f"Script bulunamadı: {os.path.basename(script_path)}",
+        }), 404
+
+    with PROCESS_LOCK:
+        existing = RUNNING_PROCESSES.get(script_id)
+        if existing is not None and existing.poll() is None:
+            response = {
+                "status": "already_running",
+                "message": f"{spec['display']} zaten çalışıyor.",
+            }
+            if spec.get("url"):
+                response["url"] = spec["url"]
+            return jsonify(response)
+
+        command = [sys.executable, script_path] + list(spec.get("args", []))
+
+        if spec.get("server"):
+            # Keep the server process alive independently of the request.
+            proc = subprocess.Popen(
+                command,
+                cwd=spec["cwd"],
+                creationflags=(
+                    subprocess.CREATE_NEW_PROCESS_GROUP
+                    if os.name == "nt"
+                    else 0
+                ),
+            )
+            RUNNING_PROCESSES[script_id] = proc
+            return jsonify({
+                "status": "success",
+                "message": f"{spec['display']} başlatıldı.",
+                "url": spec.get("url"),
+            })
+
+        # One-shot jobs run in a worker thread, but duplicate starts are still
+        # prevented by storing the live Popen handle immediately.
+        proc = subprocess.Popen(command, cwd=spec["cwd"])
+        RUNNING_PROCESSES[script_id] = proc
+
+    def wait_for_job():
+        start_time = time.time()
+        return_code = proc.wait()
+        with PROCESS_LOCK:
+            if RUNNING_PROCESSES.get(script_id) is proc:
+                RUNNING_PROCESSES.pop(script_id, None)
+
+        if return_code == 0:
+            try:
+                show_colored_popup(
+                    script_id,
+                    spec["display"],
+                    start_time,
+                )
+            except Exception as exc:
+                print(f"Tamamlanma bildirimi açılamadı: {exc}")
+        else:
+            print(
+                f"{spec['display']} hata koduyla sonlandı: {return_code}"
+            )
+
+    threading.Thread(target=wait_for_job, daemon=True).start()
+    return jsonify({
+        "status": "success",
+        "message": f"{spec['display']} başlatıldı.",
+    })
+
+
+@app.route('/api/process_status', methods=['GET'])
+def process_status():
+    with PROCESS_LOCK:
+        status = {
+            key: bool(proc is not None and proc.poll() is None)
+            for key, proc in RUNNING_PROCESSES.items()
+        }
+    return jsonify({"status": "success", "processes": status})
 
 # --- ARAÇLAR (Tools) APILERI ---
 
