@@ -425,6 +425,19 @@ def _cross_evidence_consistency(evidence: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _telemetry_evidence_ok(
+    telemetry_payload: Dict[str, Any],
+    *,
+    telemetry_error: bool = False,
+) -> bool:
+    """Require samples from every scorer-focused category, not merely one row."""
+    return bool(
+        int((telemetry_payload or {}).get("sample_count", 0) or 0) > 0
+        and not (telemetry_payload or {}).get("missing_scorer_categories")
+        and not telemetry_error
+    )
+
+
 def _review_readiness(
     *,
     commands_ok: bool,
@@ -816,10 +829,9 @@ def main() -> int:
         evidence["cross_evidence_consistency"].get("ok", False)
     )
     telemetry_payload = evidence.get("telemetry") or {}
-    telemetry_ok = bool(
-        int(telemetry_payload.get("sample_count", 0) or 0) > 0
-        and not telemetry_payload.get("missing_scorer_categories")
-        and "telemetry_error" not in evidence
+    telemetry_ok = _telemetry_evidence_ok(
+        telemetry_payload,
+        telemetry_error="telemetry_error" in evidence,
     )
 
     integrity_ok = bool(
