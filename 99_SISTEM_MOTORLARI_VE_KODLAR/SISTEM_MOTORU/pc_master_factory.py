@@ -1678,7 +1678,11 @@ class MockupRenderer:
             auto_foreground = bool(
                 config.get(
                     "auto_foreground",
-                    category_name == "04_Cam_Dograma",
+                    (
+                        category_name == "04_Cam_Dograma"
+                        or bool(config.get("has_occlusion"))
+                        or bool(on_plan)
+                    ),
                 )
             )
 
