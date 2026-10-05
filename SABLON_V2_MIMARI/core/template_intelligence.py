@@ -332,29 +332,47 @@ class CandidateGenerators:
 
     @staticmethod
     def generate_color_region_quad(image_cv: np.ndarray) -> List[np.ndarray]:
-        """Generate region-based quads from adaptive and global thresholds."""
+        """Generate region quads from luminance and chroma segmentation.
+
+        Grayscale-only thresholding misses surfaces separated mainly by color
+        rather than brightness. Otsu masks over HSV saturation and LAB chroma
+        channels add those cases without introducing model dependencies.
+        """
         gray = cv2.cvtColor(image_cv, cv2.COLOR_BGR2GRAY)
-        blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+        hsv = cv2.cvtColor(image_cv, cv2.COLOR_BGR2HSV)
+        lab = cv2.cvtColor(image_cv, cv2.COLOR_BGR2LAB)
         img_area = float(image_cv.shape[0] * image_cv.shape[1])
 
+        masks = []
+        gray_blurred = cv2.GaussianBlur(gray, (5, 5), 0)
         adaptive = cv2.adaptiveThreshold(
-            blurred,
+            gray_blurred,
             255,
             cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
             cv2.THRESH_BINARY,
             51,
             5,
         )
-        adaptive_inv = cv2.bitwise_not(adaptive)
-        _, otsu = cv2.threshold(
-            blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
+        masks.extend((adaptive, cv2.bitwise_not(adaptive)))
+
+        channels = (
+            gray_blurred,
+            cv2.GaussianBlur(hsv[:, :, 1], (5, 5), 0),
+            cv2.GaussianBlur(lab[:, :, 1], (5, 5), 0),
+            cv2.GaussianBlur(lab[:, :, 2], (5, 5), 0),
         )
-        otsu_inv = cv2.bitwise_not(otsu)
+        for channel in channels:
+            _, otsu = cv2.threshold(
+                channel, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
+            )
+            masks.extend((otsu, cv2.bitwise_not(otsu)))
 
         candidates = []
-        for mask in (adaptive, adaptive_inv, otsu, otsu_inv):
+        for mask in masks:
+            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+            cleaned = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
             contours, _ = cv2.findContours(
-                mask, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE
+                cleaned, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE
             )
             contours = sorted(contours, key=cv2.contourArea, reverse=True)[:40]
 
@@ -381,7 +399,7 @@ class CandidateGenerators:
 
 class TemplateAnalyzer:
     def __init__(self):
-        self.version = "v1.6"
+        self.version = "v1.7"
         self.auto_approval_enabled = False
         
     def measure_edge_contrast(self, image_cv: np.ndarray, quad: np.ndarray) -> float:
