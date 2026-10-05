@@ -1,9 +1,23 @@
 import sqlite3
 import json
 import os
+from pathlib import Path
 
-# DB yolu: SABLON_V2_MIMARI/ayarlar.db
-DB_PATH = os.path.join(os.path.dirname(__file__), "..", "ayarlar.db")
+SOURCE_ROOT = Path(__file__).resolve().parents[2]
+
+
+def resolve_runtime_root(source_root: Path = SOURCE_ROOT) -> Path:
+    override = str(os.environ.get("MOCKUP_RUNTIME_WORKSPACE") or "").strip()
+    return (
+        Path(override).expanduser().resolve()
+        if override
+        else source_root.resolve()
+    )
+
+
+RUNTIME_ROOT = resolve_runtime_root()
+# Mutable DB belongs to the runtime workspace; code stays in the source checkout.
+DB_PATH = os.fspath(RUNTIME_ROOT / "SABLON_V2_MIMARI" / "ayarlar.db")
 
 def get_db_connection():
     conn = sqlite3.connect(DB_PATH, timeout=30)
