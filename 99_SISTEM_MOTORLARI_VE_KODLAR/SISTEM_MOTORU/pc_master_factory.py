@@ -2043,6 +2043,38 @@ def build_factory_preflight() -> dict:
         except Exception as exc:
             report["errors"].append(f"Şablon profilleri okunamadı: {exc}")
 
+    # Cloud upload is part of a marketplace-ready run. Fail before rendering
+    # hundreds of files when no provider credential is configured.
+    cloud_cfg = AYARLAR.get("bulut_ayarlari", {})
+    configured_imgbb = cloud_cfg.get("imgbb_keys") or []
+    if not isinstance(configured_imgbb, list):
+        configured_imgbb = []
+    env_imgbb = [
+        key.strip()
+        for key in os.environ.get("IMGBB_KEYS", "").split(",")
+        if key.strip()
+    ]
+    freeimage_key = str(
+        cloud_cfg.get("freeimage_key")
+        or os.environ.get("FREEIMAGE_KEY", "")
+        or ""
+    ).strip()
+    report["cloud"] = {
+        "imgbb_key_count": len(
+            [key for key in configured_imgbb if str(key).strip()]
+            or env_imgbb
+        ),
+        "freeimage_configured": bool(freeimage_key),
+    }
+    if (
+        report["cloud"]["imgbb_key_count"] == 0
+        and not report["cloud"]["freeimage_configured"]
+    ):
+        report["errors"].append(
+            "Bulut yükleme sağlayıcısı yapılandırılmamış "
+            "(ImgBB veya FreeImage anahtarı gerekli)."
+        )
+
     # Optional occlusion AI does not block normal rendering.
     for module_name in ("torch", "transformers"):
         available = importlib.util.find_spec(module_name) is not None
