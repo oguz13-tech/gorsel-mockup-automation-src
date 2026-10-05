@@ -1594,7 +1594,12 @@ async function approveTemplate() {
         let res = await fetch('/api/templates/update_corners', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ template_uid: uid, corners: canonicalCorners })
+            body: JSON.stringify({
+                template_uid: uid,
+                category: currentCat,
+                template: currentTmpl,
+                corners: canonicalCorners
+            })
         });
         let data = await res.json();
         if(data.success) {
