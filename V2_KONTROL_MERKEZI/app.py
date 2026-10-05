@@ -87,8 +87,8 @@ def safe_two_phase_rename(files, prefix):
     if not files:
         return []
 
-    folder = os.path.dirname(files[0])
     normalized = [os.path.abspath(path) for path in files]
+    folder = os.path.dirname(normalized[0])
     if any(os.path.dirname(path) != folder for path in normalized):
         raise ValueError("Toplu isimlendirme aynı klasördeki dosyalarla yapılmalı.")
 
@@ -139,9 +139,14 @@ def show_colored_popup(task_name, display_name, start_time):
             with open(PERFORMANCE_FILE, "r") as f:
                 data = json.load(f)
         data[task_name] = duration
-        with open(PERFORMANCE_FILE, "w") as f:
-            json.dump(data, f)
-    except: pass
+        tmp_path = PERFORMANCE_FILE + ".tmp"
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, PERFORMANCE_FILE)
+    except Exception:
+        pass
 
     dk = int(duration // 60)
     sn = int(duration % 60)
