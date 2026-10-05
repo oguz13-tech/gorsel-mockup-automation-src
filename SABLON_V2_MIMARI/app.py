@@ -1149,7 +1149,15 @@ def api_templates_update_corners():
                 legacy_data["tip"] = "perspektif"
                 legacy_data["koseler"] = canonical.tolist()
                 if isinstance(req_on_plan, dict):
-                    legacy_data["on_plan"] = req_on_plan
+                    # Bind reviewed occlusion/mask instructions to the exact
+                    # template bytes they were edited against. Production can
+                    # then reject stale brush/object coordinates after a source
+                    # image replacement instead of silently applying them to a
+                    # different image with the same filename.
+                    plan_to_store = dict(req_on_plan)
+                    if plan_to_store:
+                        plan_to_store["source_asset_sha256"] = source_hash
+                    legacy_data["on_plan"] = plan_to_store
                 conn.execute(
                     """UPDATE templates SET data=?
                        WHERE category_id=? AND filename=?""",
