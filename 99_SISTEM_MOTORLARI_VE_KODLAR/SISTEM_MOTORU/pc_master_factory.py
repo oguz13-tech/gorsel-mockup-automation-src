@@ -2382,6 +2382,7 @@ class PCMasterFactory:
         self.thread_pool = ThreadPoolExecutor(max_workers=3)
         self.metrics_lock = threading.Lock()
         self.upload_failures = 0
+        self.persistence_failures = 0
         self.pending_excel_lock = threading.Lock()
         self.pending_excel_artifacts = []
 
@@ -2913,7 +2914,7 @@ class PCMasterFactory:
                         # Persist the local artifact before any network work.
                         # A crash or provider outage can then resume upload
                         # without re-rendering the image.
-                        self.state.save_render_artifact({
+                        saved_local_state = self.state.save_render_artifact({
                             "artifact_key": artifact_key,
                             "sku": sku,
                             "source_identity": source_design_identity,
@@ -2923,6 +2924,15 @@ class PCMasterFactory:
                             "upload_url": "",
                             "status": "RENDERED",
                         })
+                        if not saved_local_state:
+                            with self.metrics_lock:
+                                self.persistence_failures += 1
+                            render_failed += 1
+                            logger.error(
+                                f"  ❌ Render state DB'ye yazılamadı; upload atlandı: "
+                                f"{artifact_key}"
+                            )
+                            continue
 
                     seo_title = self.seo.generate_title(prod_key, theme_title)
                     seo_desc = self.seo.get_description(
@@ -2984,7 +2994,8 @@ class PCMasterFactory:
             f"render_succeeded={render_succeeded} "
             f"render_failed={render_failed} "
             f"upload_resumed={upload_resumed} "
-            f"upload_failed={self.upload_failures}"
+            f"upload_failed={self.upload_failures} "
+            f"persistence_failed={self.persistence_failures}"
         )
         logger.info(f"📊 Durum Özeti: {self.state.get_summary()}")
         logger.info(f"📁 Çıktı Excel: {self.excel.file_path}")
@@ -3012,6 +3023,13 @@ class PCMasterFactory:
                 f"⚠️ Render tamamlandı ancak {self.upload_failures} artifact "
                 "buluta yüklenemedi. Yeniden çalıştırmada mevcut yerel "
                 "artifact yeniden render edilmeden yüklenecek."
+            )
+            return False
+
+        if self.persistence_failures > 0:
+            logger.error(
+                f"❌ {self.persistence_failures} durum kaydı DB'ye güvenli "
+                "şekilde yazılamadı. Koşu tamamlanmış sayılmayacak."
             )
             return False
 
@@ -3055,8 +3073,15 @@ class PCMasterFactory:
                 f"    ❌ BULUT YÜKLEME BAŞARISIZ (3 deneme): "
                 f"{prod_record['sku']}"
             )
-            self.state.save_render_artifact(prod_record)
-            self.state.save_product(prod_record)
+            artifact_saved = self.state.save_render_artifact(prod_record)
+            product_saved = self.state.save_product(prod_record)
+            if not (artifact_saved and product_saved):
+                with self.metrics_lock:
+                    self.persistence_failures += 1
+                logger.error(
+                    f"    ❌ UPLOAD_FAILED durumu DB'ye tam yazılamadı: "
+                    f"{prod_record['artifact_key']}"
+                )
             # Marketplace Excel must never contain a row with a missing image
             # link. The row is emitted only after upload succeeds.
             return
@@ -3070,8 +3095,16 @@ class PCMasterFactory:
 
         # Persist upload success before Excel. If the process stops here, the
         # next run resumes at Excel and does not upload or render again.
-        self.state.save_render_artifact(prod_record)
-        self.state.save_product(prod_record)
+        artifact_saved = self.state.save_render_artifact(prod_record)
+        product_saved = self.state.save_product(prod_record)
+        if not (artifact_saved and product_saved):
+            with self.metrics_lock:
+                self.persistence_failures += 1
+            logger.error(
+                f"    ❌ Upload başarılı fakat DB durumu kalıcılaştırılamadı; "
+                f"Excel kuyruğuna alınmadı: {prod_record['artifact_key']}"
+            )
+            return
 
         excel_row = {
             "Stok Kodu": prod_record["sku"],
