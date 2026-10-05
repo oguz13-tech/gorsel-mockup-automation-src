@@ -82,6 +82,46 @@ print(json.dumps({
                 os.path.normcase(result["source_root"]),
             )
 
+    def test_legacy_migration_routes_mutable_paths_to_runtime(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            runtime = Path(tmp).resolve()
+            result = _run_probe(
+                """
+import importlib.util, json, os
+from pathlib import Path
+root = Path.cwd()
+path = root / "scripts" / "migrate_legacy_geometry_profiles.py"
+spec = importlib.util.spec_from_file_location("migration_runtime_probe", path)
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+print(json.dumps({
+    "source_root": os.path.abspath(str(mod.SOURCE_ROOT)),
+    "runtime_root": os.path.abspath(str(mod.RUNTIME_ROOT)),
+    "db_path": os.path.abspath(str(mod.DB_PATH)),
+    "template_root": os.path.abspath(str(mod.TEMPLATE_ROOT)),
+}))
+""",
+                runtime,
+            )
+            self.assertEqual(
+                os.path.normcase(result["source_root"]),
+                os.path.normcase(str(ROOT)),
+            )
+            self.assertEqual(
+                os.path.normcase(result["runtime_root"]),
+                os.path.normcase(str(runtime)),
+            )
+            self.assertEqual(
+                os.path.normcase(result["db_path"]),
+                os.path.normcase(
+                    str(runtime / "SABLON_V2_MIMARI" / "ayarlar.db")
+                ),
+            )
+            self.assertEqual(
+                os.path.normcase(result["template_root"]),
+                os.path.normcase(str(runtime / "2_SABLON_HAVUZU")),
+            )
+
     def test_control_center_uses_source_scripts_and_runtime_data(self):
         with tempfile.TemporaryDirectory() as tmp:
             runtime = Path(tmp).resolve()
