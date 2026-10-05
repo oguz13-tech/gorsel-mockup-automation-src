@@ -122,6 +122,50 @@ print(json.dumps({
                 os.path.normcase(str(runtime / "2_SABLON_HAVUZU")),
             )
 
+    def test_factory_readonly_sqlite_connection_blocks_writes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            runtime = Path(tmp).resolve()
+            result = _run_probe(
+                """
+import importlib.util, json, os, sqlite3
+from pathlib import Path
+root = Path.cwd()
+factory_path = (
+    root
+    / "99_SISTEM_MOTORLARI_VE_KODLAR"
+    / "SISTEM_MOTORU"
+    / "pc_master_factory.py"
+)
+spec = importlib.util.spec_from_file_location("factory_readonly_probe", factory_path)
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+
+db_path = Path(os.environ["MOCKUP_RUNTIME_WORKSPACE"]) / "readonly_probe.db"
+writer = sqlite3.connect(str(db_path))
+writer.execute("CREATE TABLE sample(value INTEGER)")
+writer.commit()
+writer.close()
+
+reader = mod.open_sqlite_readonly(db_path)
+blocked = False
+try:
+    reader.execute("INSERT INTO sample(value) VALUES (1)")
+    reader.commit()
+except sqlite3.OperationalError:
+    blocked = True
+finally:
+    reader.close()
+
+check = sqlite3.connect(str(db_path))
+count = check.execute("SELECT COUNT(*) FROM sample").fetchone()[0]
+check.close()
+print(json.dumps({"blocked": blocked, "count": count}))
+""",
+                runtime,
+            )
+            self.assertTrue(result["blocked"])
+            self.assertEqual(result["count"], 0)
+
     def test_control_center_uses_source_scripts_and_runtime_data(self):
         with tempfile.TemporaryDirectory() as tmp:
             runtime = Path(tmp).resolve()
