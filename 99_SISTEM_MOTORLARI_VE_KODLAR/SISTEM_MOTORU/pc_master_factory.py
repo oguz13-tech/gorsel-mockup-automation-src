@@ -1515,6 +1515,8 @@ class PCMasterFactory:
         self.seo = SeoEngine()
         self.excel = FastExcelManager(EXCEL_DIR / "Urun_Yukleme_Listesi.xlsx")
         self.thread_pool = ThreadPoolExecutor(max_workers=3)
+        self.metrics_lock = threading.Lock()
+        self.upload_failures = 0
 
     def load_manifest(self) -> List[dict]:
         m_path = FACTORY_DIR / "manifest.json"
@@ -1995,7 +1997,8 @@ class PCMasterFactory:
             f"already_completed={completed_artifact_count} "
             f"render_attempted={render_attempted} "
             f"render_succeeded={render_succeeded} "
-            f"render_failed={render_failed}"
+            f"render_failed={render_failed} "
+            f"upload_failed={self.upload_failures}"
         )
         logger.info(f"📊 Durum Özeti: {self.state.get_summary()}")
         logger.info(f"📁 Çıktı Excel: {self.excel.file_path}")
@@ -2022,6 +2025,14 @@ class PCMasterFactory:
             )
             return False
 
+        if self.upload_failures > 0:
+            logger.error(
+                f"⚠️ Render tamamlandı ancak {self.upload_failures} artifact "
+                "buluta yüklenemedi. Yeniden çalıştırmada durum kaydından "
+                "güvenli şekilde devam edilebilir."
+            )
+            return False
+
         logger.info("\n🎉 TÜM UYGUN RENDER İŞLEMLERİ BAŞARIYLA TAMAMLANDI!")
         return True
 
@@ -2040,6 +2051,8 @@ class PCMasterFactory:
             logger.info(f"    ☁️ Bulut Yüklendi: {prod_record['sku']} -> {url}")
         else:
             prod_record["status"] = "UPLOAD_FAILED"
+            with self.metrics_lock:
+                self.upload_failures += 1
             logger.error(f"    ❌ BULUT YÜKLEME BAŞARISIZ (3 deneme): {prod_record['sku']}")
 
         self.state.save_render_artifact(prod_record)
