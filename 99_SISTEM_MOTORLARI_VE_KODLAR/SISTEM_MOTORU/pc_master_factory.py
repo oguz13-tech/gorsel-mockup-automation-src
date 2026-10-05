@@ -253,6 +253,18 @@ def physical_aspect_for_product(
     return None
 
 
+def duplicate_profile_uids(rows) -> list[str]:
+    """Return sorted non-empty template UIDs appearing more than once."""
+    counts = {}
+    for row in rows:
+        try:
+            uid = str(row["template_uid"] or "")
+        except (TypeError, KeyError, IndexError):
+            uid = str(getattr(row, "template_uid", "") or "")
+        counts[uid] = counts.get(uid, 0) + 1
+    return sorted(uid for uid, count in counts.items() if uid and count > 1)
+
+
 def cached_foreground_mask_usable(mask: np.ndarray | None, foreground_required: bool) -> bool:
     """Accept empty masks only when foreground evidence is not mandatory."""
     if mask is None:
@@ -2259,15 +2271,7 @@ def build_factory_preflight() -> dict:
                         (category,),
                     ).fetchall()
 
-                    uid_counts = {}
-                    for row in rows:
-                        uid = str(row["template_uid"] or "")
-                        uid_counts[uid] = uid_counts.get(uid, 0) + 1
-                    duplicate_approved_uids = sorted(
-                        uid
-                        for uid, count in uid_counts.items()
-                        if uid and count > 1
-                    )
+                    duplicate_approved_uids = duplicate_profile_uids(rows)
 
                     usable = 0
                     stale = 0
@@ -2625,13 +2629,7 @@ class PCMasterFactory:
         )
         pool_root = SABLON_DIR.resolve()
 
-        uid_counts = {}
-        for row in rows:
-            uid = str(row["template_uid"] or "")
-            uid_counts[uid] = uid_counts.get(uid, 0) + 1
-        duplicate_approved_uids = {
-            uid for uid, count in uid_counts.items() if uid and count > 1
-        }
+        duplicate_approved_uids = set(duplicate_profile_uids(rows))
         if duplicate_approved_uids:
             logger.error(
                 f"⏭️ {prod_key}: duplicate active APPROVED profile UID'leri "
