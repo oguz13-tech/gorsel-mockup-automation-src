@@ -907,16 +907,26 @@ def api_templates_reject():
 
 @app.route('/api/templates/update_corners', methods=['POST'])
 def api_templates_update_corners():
-    """Validate, canonicalize and approve a human-corrected quad atomically."""
+    """Validate and atomically approve a human-corrected quad.
+
+    A user may approve directly from the editor even when no analyzer profile
+    exists yet. In that case this endpoint creates a source-hash-bound manual
+    profile instead of forcing an extra "analyze" click. The legacy templates
+    JSON stored in SQLite is updated in the same transaction so re-opening the
+    editor shows the exact approved corners.
+    """
     try:
         req = request.get_json(silent=True) or {}
-        uid = req.get("template_uid")
+        uid = str(req.get("template_uid") or "").strip()
         corners = req.get("corners")
+        req_category = str(req.get("category") or "").strip()
+        req_template = str(req.get("template") or "").strip()
         if not uid or corners is None:
             return jsonify({"success": False, "error": "Eksik parametre"}), 400
 
         db_path = os.path.join(BASE_DIR, "SABLON_V2_MIMARI", "ayarlar.db")
         conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
         try:
             row = conn.execute(
                 """SELECT id, source_asset_sha256, source_relative_path
@@ -924,41 +934,97 @@ def api_templates_update_corners():
                    WHERE template_uid=? AND is_active=1""",
                 (uid,),
             ).fetchone()
-            if not row:
-                return jsonify({"success": False, "error": "Aktif profil bulunamadi"}), 404
 
-            profile_id, source_hash, relative_path = row
-            if not source_hash or not relative_path:
-                return jsonify({"success": False, "error": "Profil kaynak kimligi eksik"}), 409
+            if row:
+                profile_id = int(row["id"])
+                source_hash = row["source_asset_sha256"]
+                relative_path = row["source_relative_path"]
+                if not source_hash or not relative_path:
+                    return jsonify({
+                        "success": False,
+                        "error": "Profil kaynak kimligi eksik",
+                    }), 409
 
-            source_path = _safe_profile_relative_path(relative_path)
-            if not os.path.exists(source_path):
-                return jsonify({"success": False, "error": "Profil kaynak gorseli bulunamadi"}), 409
+                source_path = _safe_profile_relative_path(relative_path)
+                if not os.path.exists(source_path):
+                    return jsonify({
+                        "success": False,
+                        "error": "Profil kaynak gorseli bulunamadi",
+                    }), 409
 
-            current_hash = _sha256_file(source_path)
-            if current_hash != source_hash:
+                current_hash = _sha256_file(source_path)
+                if current_hash != source_hash:
+                    return jsonify({
+                        "success": False,
+                        "error": (
+                            "Kaynak gorsel degismis. Koseleri kaydetmeden once "
+                            "yeniden analiz gerekli."
+                        ),
+                        "code": "STALE_SOURCE_CHANGED",
+                    }), 409
+
+                category_name, template_name = (
+                    str(relative_path).replace("\\", "/").split("/", 1)
+                )
+            else:
+                if not req_category or not req_template:
+                    return jsonify({
+                        "success": False,
+                        "error": (
+                            "Profil yok. Dogrudan onay icin category/template "
+                            "bilgisi gerekli."
+                        ),
+                    }), 409
+                expected_uid = f"{req_category}_{req_template}"
+                if uid != expected_uid:
+                    return jsonify({
+                        "success": False,
+                        "error": "Template kimligi kategori/dosya ile uyusmuyor.",
+                    }), 409
+
+                source_path = _safe_template_path(req_category, req_template)
+                if not os.path.exists(source_path):
+                    return jsonify({
+                        "success": False,
+                        "error": "Kaynak gorsel bulunamadi.",
+                    }), 404
+                source_hash = _sha256_file(source_path)
+                relative_path = f"{req_category}/{req_template}"
+                category_name = req_category
+                template_name = req_template
+                profile_id = None
+
+            image = cv2.imdecode(
+                np.fromfile(source_path, dtype=np.uint8),
+                cv2.IMREAD_COLOR,
+            )
+            if image is None:
                 return jsonify({
                     "success": False,
-                    "error": "Kaynak gorsel degismis. Koseleri kaydetmeden once yeniden analiz gerekli.",
-                    "code": "STALE_SOURCE_CHANGED",
-                }), 409
-
-            image = cv2.imdecode(np.fromfile(source_path, dtype=np.uint8), cv2.IMREAD_COLOR)
-            if image is None:
-                return jsonify({"success": False, "error": "Kaynak gorsel okunamadi"}), 422
+                    "error": "Kaynak gorsel okunamadi",
+                }), 422
             h, w = image.shape[:2]
 
             try:
                 quad = np.asarray(corners, dtype=np.float32)
             except (TypeError, ValueError):
-                return jsonify({"success": False, "error": "Kose koordinatlari sayisal olmali"}), 422
+                return jsonify({
+                    "success": False,
+                    "error": "Kose koordinatlari sayisal olmali",
+                }), 422
 
             if quad.shape != (4, 2) or not np.isfinite(quad).all():
-                return jsonify({"success": False, "error": "Tam olarak 4 adet gecerli 2D kose gerekli"}), 422
+                return jsonify({
+                    "success": False,
+                    "error": "Tam olarak 4 adet gecerli 2D kose gerekli",
+                }), 422
 
             valid, reason = GeometryValidator.is_valid_quad(quad, w, h)
             if not valid:
-                return jsonify({"success": False, "error": f"Gecersiz geometri: {reason}"}), 422
+                return jsonify({
+                    "success": False,
+                    "error": f"Gecersiz geometri: {reason}",
+                }), 422
 
             canonical = GeometryValidator.canonical_sort(quad).astype(float)
             top = np.linalg.norm(canonical[1] - canonical[0])
@@ -968,55 +1034,121 @@ def api_templates_update_corners():
             avg_w = max(1e-6, float((top + bottom) * 0.5))
             avg_h = max(1e-6, float((left + right) * 0.5))
             aspect = avg_w / avg_h
-            orientation = "H" if aspect > 1.05 else ("V" if aspect < 0.95 else "SQUARE")
+            orientation = (
+                "H" if aspect > 1.05
+                else ("V" if aspect < 0.95 else "SQUARE")
+            )
 
-            try:
-                category_name = str(relative_path).replace("\\", "/").split("/", 1)[0]
-                rule = CategoryRuleEngine.get_rule_by_folder(category_name)
-                metadata_orientation = rule.get("expected_orientation", "ANY")
-                if metadata_orientation not in ("H", "V"):
-                    metadata_orientation = orientation
-                nominal_value = CategoryRuleEngine.get_nominal_aspect(
-                    category_name,
-                    metadata_orientation,
-                )
-                nominal_aspect = (
-                    f"{nominal_value:.8f}".rstrip("0").rstrip(".")
-                    if nominal_value is not None
-                    else "UNKNOWN"
-                )
-            except Exception:
-                nominal_aspect = "UNKNOWN"
+            rule = CategoryRuleEngine.get_rule_by_folder(category_name)
+            metadata_orientation = rule.get("expected_orientation", "ANY")
+            if metadata_orientation not in ("H", "V"):
+                metadata_orientation = orientation
+            nominal_value = CategoryRuleEngine.get_nominal_aspect(
+                category_name,
+                metadata_orientation,
+            )
+            nominal_aspect = (
+                f"{nominal_value:.8f}".rstrip("0").rstrip(".")
+                if nominal_value is not None
+                else "UNKNOWN"
+            )
 
             manual_components = {
                 "manual_prior": 1.0,
-                "area_ratio": float(abs(cv2.contourArea(canonical.astype(np.float32))) / float(w * h)),
+                "area_ratio": float(
+                    abs(cv2.contourArea(canonical.astype(np.float32)))
+                    / float(w * h)
+                ),
                 "line_score": 1.0,
                 "candidate_agreement": 1.0,
                 "orientation_score": 1.0,
             }
 
-            conn.execute(
-                """UPDATE template_profiles
-                   SET surface_quad=?, orientation=?, nominal_aspect=?,
-                       confidence_total=1.0, component_confidences=?,
-                       review_status='APPROVED',
-                       manually_verified=1, updated_at=CURRENT_TIMESTAMP
-                   WHERE id=?""",
-                (
-                    json.dumps(canonical.tolist()),
-                    orientation,
-                    nominal_aspect,
-                    json.dumps(manual_components),
-                    profile_id,
-                ),
-            )
+            if profile_id is None:
+                cur = conn.execute(
+                    """INSERT INTO template_profiles (
+                           template_uid, category, source_relative_path,
+                           source_asset_sha256, profile_version,
+                           analyzer_version, product_class, orientation,
+                           nominal_aspect, geometry_type, print_policy,
+                           surface_quad, outer_quad, surface_mask_path,
+                           material, has_frame, has_mat, has_reflection,
+                           has_occlusion, confidence_total,
+                           component_confidences, review_status,
+                           manually_verified, is_active
+                       ) VALUES (
+                           ?, ?, ?, ?, 'v2', 'manual-v1', ?, ?, ?, 'quad', ?,
+                           ?, NULL, NULL, 'default', ?, ?, ?, 0, 1.0, ?,
+                           'APPROVED', 1, 1
+                       )""",
+                    (
+                        uid,
+                        category_name,
+                        relative_path,
+                        source_hash,
+                        rule.get("product_class", "Bilinmeyen"),
+                        orientation,
+                        nominal_aspect,
+                        rule.get("print_policy", "full_bleed"),
+                        json.dumps(canonical.tolist()),
+                        int(bool(rule.get("has_frame"))),
+                        int(bool(rule.get("has_mat"))),
+                        int(bool(rule.get("has_reflection"))),
+                        json.dumps(manual_components),
+                    ),
+                )
+                profile_id = int(cur.lastrowid)
+            else:
+                conn.execute(
+                    """UPDATE template_profiles
+                       SET surface_quad=?, orientation=?, nominal_aspect=?,
+                           confidence_total=1.0, component_confidences=?,
+                           review_status='APPROVED', manually_verified=1,
+                           updated_at=CURRENT_TIMESTAMP
+                       WHERE id=?""",
+                    (
+                        json.dumps(canonical.tolist()),
+                        orientation,
+                        nominal_aspect,
+                        json.dumps(manual_components),
+                        profile_id,
+                    ),
+                )
+
+            # Keep editor state in sync without replacing any on_plan/other
+            # legacy fields. The trusted production geometry remains the
+            # source-hash-bound template_profile above.
+            legacy_row = conn.execute(
+                """SELECT data FROM templates
+                   WHERE category_id=? AND filename=?""",
+                (category_name, template_name),
+            ).fetchone()
+            if legacy_row:
+                try:
+                    legacy_data = json.loads(legacy_row["data"])
+                except (TypeError, json.JSONDecodeError):
+                    legacy_data = {}
+                if not isinstance(legacy_data, dict):
+                    legacy_data = {}
+                legacy_data["tip"] = "perspektif"
+                legacy_data["koseler"] = canonical.tolist()
+                conn.execute(
+                    """UPDATE templates SET data=?
+                       WHERE category_id=? AND filename=?""",
+                    (
+                        json.dumps(legacy_data, ensure_ascii=False),
+                        category_name,
+                        template_name,
+                    ),
+                )
+
             conn.commit()
         finally:
             conn.close()
 
         return jsonify({
             "success": True,
+            "profile_id": profile_id,
             "corners": canonical.tolist(),
             "orientation": orientation,
             "nominal_aspect": nominal_aspect,
@@ -1024,7 +1156,9 @@ def api_templates_update_corners():
     except ValueError as e:
         return jsonify({"success": False, "error": str(e)}), 400
     except Exception as e:
+        logger.exception("Manuel geometri onayi hatasi")
         return jsonify({"success": False, "error": str(e)}), 500
+
 
 # KAGGLE ONAY SİSTEMİ (0_KAGGLE_ONAY_BEKLEYENLER -> 1_GELEN_KAGGLE_BASKILARI)
 # ==========================================
