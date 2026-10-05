@@ -227,6 +227,22 @@ def physical_aspect_for_product(
     return None
 
 
+def physical_orientation_verified(component_confidences) -> bool:
+    """Return whether physical H/V provenance was explicitly trusted/reviewed."""
+    payload = component_confidences
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except (TypeError, json.JSONDecodeError):
+            return False
+    if not isinstance(payload, dict):
+        return False
+    marker = payload.get("physical_orientation_verified")
+    if isinstance(marker, str):
+        return marker.strip().lower() in {"1", "true", "yes"}
+    return bool(marker)
+
+
 # ==============================================================================
 # 3. AYARLAR.JSON YÜKLEYİCİ VE ŞABLON YÖNETİCİSİ
 # ==============================================================================
@@ -2182,7 +2198,8 @@ def build_factory_preflight() -> dict:
                     rows = conn.execute(
                         """SELECT template_uid, source_relative_path,
                                   source_asset_sha256, analyzer_version, orientation,
-                                  nominal_aspect, surface_quad, has_occlusion
+                                  nominal_aspect, surface_quad, has_occlusion,
+                                  component_confidences
                            FROM template_profiles
                            WHERE category=? AND review_status='APPROVED'
                              AND is_active=1""",
@@ -2193,6 +2210,7 @@ def build_factory_preflight() -> dict:
                     stale = 0
                     invalid = 0
                     orientation_mismatch = 0
+                    physical_orientation_unverified = 0
                     for row in rows:
                         rel = row["source_relative_path"]
                         if not rel:
@@ -2261,6 +2279,20 @@ def build_factory_preflight() -> dict:
                         if not orient_ok:
                             orientation_mismatch += 1
                             continue
+
+                        # Mixed-orientation templates previously could inherit
+                        # H/V from projected quad geometry. Reject those legacy
+                        # approvals unless physical direction has explicit
+                        # category/human-review provenance.
+                        if (
+                            category == "04_Cam_Dograma"
+                            and not physical_orientation_verified(
+                                row["component_confidences"]
+                            )
+                        ):
+                            physical_orientation_unverified += 1
+                            continue
+
                         usable += 1
 
                         # Object-aware foreground restoration is quality-critical
@@ -2343,6 +2375,7 @@ def build_factory_preflight() -> dict:
                         "stale": stale,
                         "invalid": invalid,
                         "orientation_mismatch": orientation_mismatch,
+                        "physical_orientation_unverified": physical_orientation_unverified,
                     }
                     if usable == 0:
                         report["errors"].append(
@@ -2582,6 +2615,14 @@ class PCMasterFactory:
                     logger.info(
                         f"⏭️ Karma yön kategorisinde yönü belirsiz şablon atlandı: "
                         f"{template_path.name} ({profile_orientation})"
+                    )
+                    continue
+                if not physical_orientation_verified(
+                    row["component_confidences"]
+                ):
+                    logger.warning(
+                        f"⏭️ Karma yön şablonunun fiziksel H/V doğrulama kanıtı yok; "
+                        f"yeniden insan onayı gerekli: {template_path.name}"
                     )
                     continue
             else:
