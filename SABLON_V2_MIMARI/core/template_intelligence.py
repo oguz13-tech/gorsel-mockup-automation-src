@@ -29,7 +29,8 @@ class CategoryRuleEngine:
             "has_reflection": False,
             "print_policy": "inner_frame",
             "orientation_strict": True,
-            "expected_orientation": "V",
+            "expected_orientation": "ANY",
+            "physical_orientation": "V",
             "folders": ["03_Ahsap_Tablo"]
         },
         "GLASS_WALL_ART_VERTICAL": {
@@ -40,6 +41,7 @@ class CategoryRuleEngine:
             "print_policy": "full_bleed",
             "orientation_strict": True,
             "expected_orientation": "V",
+            "physical_orientation": "V",
             "folders": ["02_Cam_Tablo_Dikey"]
         },
         "GLASS_WALL_ART_HORIZONTAL": {
@@ -50,6 +52,7 @@ class CategoryRuleEngine:
             "print_policy": "full_bleed",
             "orientation_strict": True,
             "expected_orientation": "H",
+            "physical_orientation": "H",
             "folders": ["02_Cam_Tablo_Yatay"]
         },
         "GLASS_CUTTING_BOARD": {
@@ -60,6 +63,7 @@ class CategoryRuleEngine:
             "print_policy": "full_surface",
             "orientation_strict": False,
             "expected_orientation": "ANY",
+            "physical_orientation": "ANY",
             "folders": ["04_Cam_Dograma"]
         },
         "WIFI_COVER_PANEL": {
@@ -69,7 +73,8 @@ class CategoryRuleEngine:
             "has_reflection": False,
             "print_policy": "front_panel",
             "orientation_strict": True,
-            "expected_orientation": "H",
+            "expected_orientation": "ANY",
+            "physical_orientation": "H",
             "folders": ["01_Wifi_Kutusu"]
         },
         "GLASS_BACKSPLASH": {
@@ -80,6 +85,7 @@ class CategoryRuleEngine:
             "print_policy": "full_bleed",
             "orientation_strict": True,
             "expected_orientation": "H",
+            "physical_orientation": "H",
             "folders": ["05_Ocak_Arkasi"]
         }
     }
@@ -687,9 +693,9 @@ class TemplateAnalyzer:
                     "H" if ar > 1.05 else ("V" if ar < 0.95 else "SQUARE")
                 )
 
-        expected_orientation = rule.get("expected_orientation", "ANY")
-        if expected_orientation in ("H", "V"):
-            orientation = expected_orientation
+        physical_rule_orientation = rule.get("physical_orientation", "ANY")
+        if physical_rule_orientation in ("H", "V"):
+            orientation = physical_rule_orientation
         elif isinstance(manual_geometry_prior, dict):
             prior_orientation = str(
                 manual_geometry_prior.get("physical_orientation") or ""
