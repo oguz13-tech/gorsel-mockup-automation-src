@@ -71,46 +71,72 @@ from openpyxl.styles import Font, Alignment, PatternFill
 # 1. DİZİN VE YAPILANDIRMA TANIMLARI
 # ==============================================================================
 BASE_DIR = Path(__file__).resolve().parent
-USER_WORKSPACE_DIR = Path(__file__).resolve().parent.parent.parent
-if USER_WORKSPACE_DIR.exists():
-    FACTORY_DIR = USER_WORKSPACE_DIR / "1_GELEN_KAGGLE_BASKILARI"
-    SABLON_DIR = USER_WORKSPACE_DIR / "2_SABLON_HAVUZU"
-    OUTPUT_DIR = USER_WORKSPACE_DIR / "3_URETILEN_MOCKUPLAR"
-    OUTPUT_COKLU_DIR = USER_WORKSPACE_DIR / "Mockup_Magaza_Klasorleri"
-    EXCEL_DIR = USER_WORKSPACE_DIR / "4_EXCEL_YUKLEME_LISTELERI"
-    AYARLAR_PATH = USER_WORKSPACE_DIR / "99_SISTEM_MOTORLARI_VE_KODLAR" / "SISTEM_MOTORU" / "ayarlar.json"
-    LOG_DIR = USER_WORKSPACE_DIR / "99_SISTEM_MOTORLARI_VE_KODLAR" / "SISTEM_MOTORU" / "logs"
-    DB_PATH = USER_WORKSPACE_DIR / "99_SISTEM_MOTORLARI_VE_KODLAR" / "SISTEM_MOTORU" / "commerce_state.db"
-    SEO_DIR = USER_WORKSPACE_DIR / "99_SISTEM_MOTORLARI_VE_KODLAR" / "SISTEM_MOTORU" / "SEO_Verileri"
-else:
-    FACTORY_DIR = BASE_DIR / "factory_outputs"
-    SABLON_DIR = BASE_DIR / "Sablonlar"
-    OUTPUT_DIR = BASE_DIR / "Mockup_Dongusel_Dagitim"
-    OUTPUT_COKLU_DIR = BASE_DIR / "Mockup_Hazir_Urunler"
-    EXCEL_DIR = BASE_DIR / "Mockup_Dongusel_Dagitim"
-    AYARLAR_PATH = BASE_DIR / "ayarlar.json"
-    LOG_DIR = BASE_DIR / "logs"
-    DB_PATH = BASE_DIR / "commerce_state.db"
-    SEO_DIR = BASE_DIR / "SEO_Verileri"
+SOURCE_ROOT = Path(__file__).resolve().parent.parent.parent
 
-for d in [FACTORY_DIR, SABLON_DIR, SEO_DIR, OUTPUT_DIR, OUTPUT_COKLU_DIR, EXCEL_DIR, LOG_DIR]:
-    d.mkdir(parents=True, exist_ok=True)
 
-# Logging Kurulumu
+def resolve_runtime_workspace(source_root: Path = SOURCE_ROOT) -> Path:
+    """Resolve mutable runtime data separately from the checked-out source tree."""
+    override = str(os.environ.get("MOCKUP_RUNTIME_WORKSPACE") or "").strip()
+    if not override:
+        return source_root.resolve()
+    return Path(override).expanduser().resolve()
+
+
+USER_WORKSPACE_DIR = resolve_runtime_workspace()
+RUNTIME_ENGINE_DIR = (
+    USER_WORKSPACE_DIR
+    / "99_SISTEM_MOTORLARI_VE_KODLAR"
+    / "SISTEM_MOTORU"
+)
+FACTORY_DIR = USER_WORKSPACE_DIR / "1_GELEN_KAGGLE_BASKILARI"
+SABLON_DIR = USER_WORKSPACE_DIR / "2_SABLON_HAVUZU"
+OUTPUT_DIR = USER_WORKSPACE_DIR / "3_URETILEN_MOCKUPLAR"
+OUTPUT_COKLU_DIR = USER_WORKSPACE_DIR / "Mockup_Magaza_Klasorleri"
+EXCEL_DIR = USER_WORKSPACE_DIR / "4_EXCEL_YUKLEME_LISTELERI"
+AYARLAR_PATH = RUNTIME_ENGINE_DIR / "ayarlar.json"
+LOG_DIR = RUNTIME_ENGINE_DIR / "logs"
+DB_PATH = RUNTIME_ENGINE_DIR / "commerce_state.db"
+SEO_DIR = RUNTIME_ENGINE_DIR / "SEO_Verileri"
+MASK_CACHE_DIR = RUNTIME_ENGINE_DIR / "masks"
+
+# Preflight is intentionally read-only. Do not create missing runtime
+# directories or log files before readiness is measured; doing so would make
+# preflight validate side effects it created itself.
+PREFLIGHT_MODE = "--preflight" in sys.argv
+if not PREFLIGHT_MODE:
+    for d in [
+        FACTORY_DIR,
+        SABLON_DIR,
+        SEO_DIR,
+        OUTPUT_DIR,
+        OUTPUT_COKLU_DIR,
+        EXCEL_DIR,
+        LOG_DIR,
+        MASK_CACHE_DIR,
+    ]:
+        d.mkdir(parents=True, exist_ok=True)
+
+# Logging Kurulumu. Preflight logs only to stdout to remain read-only.
+_log_handlers = [logging.StreamHandler(sys.stdout)]
+if not PREFLIGHT_MODE:
+    _log_handlers.insert(
+        0,
+        logging.FileHandler(
+            LOG_DIR / "pc_master_factory.log",
+            encoding="utf-8",
+        ),
+    )
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[
-        logging.FileHandler(LOG_DIR / "pc_master_factory.log", encoding="utf-8"),
-        logging.StreamHandler(sys.stdout)
-    ]
+    handlers=_log_handlers,
 )
 logger = logging.getLogger("Factory")
 
 # Production must validate approved quads with the exact same contract used by
-# the review/analyzer layer. Keeping one validator prevents "approved in UI but
-# interpreted differently by renderer" drift.
-ARCH_DIR = USER_WORKSPACE_DIR / "SABLON_V2_MIMARI"
+# the review/analyzer layer. Code always comes from this checked-out branch,
+# while mutable DB/templates/manifest may live in a separate runtime workspace.
+ARCH_DIR = SOURCE_ROOT / "SABLON_V2_MIMARI"
 if str(ARCH_DIR) not in sys.path:
     sys.path.insert(0, str(ARCH_DIR))
 from core.template_intelligence import GeometryValidator as ApprovedGeometryValidator
@@ -758,8 +784,12 @@ class RealESRGANQualityEngine:
     @staticmethod
     def get_exe_path() -> Optional[Path]:
         candidates = [
-            USER_WORKSPACE_DIR / "AI_Kalite_Artirici" / "realesrgan-ncnn-vulkan.exe",
-            BASE_DIR.parent / "AI_Kalite_Artirici" / "realesrgan-ncnn-vulkan.exe"
+            USER_WORKSPACE_DIR
+            / "AI_Kalite_Artirici"
+            / "realesrgan-ncnn-vulkan.exe",
+            SOURCE_ROOT
+            / "AI_Kalite_Artirici"
+            / "realesrgan-ncnn-vulkan.exe",
         ]
         for c in candidates:
             if c.exists():
@@ -1500,7 +1530,7 @@ class MockupRenderer:
                     if template_sha
                     else f"{safe_cat}_{stem}_{mask_analyzer_version}_mask.png"
                 )
-                cache_file = BASE_DIR / "masks" / cache_name
+                cache_file = MASK_CACHE_DIR / cache_name
 
                 fg_mask = _read_mask(cache_file)
                 cache_has_pixels = bool(
