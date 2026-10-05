@@ -309,6 +309,15 @@ def _golden_coverage_check(benchmark: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _clear_evidence_artifacts(paths: List[Path]) -> None:
+    """Delete only bundle-owned evidence files from earlier/interrupted runs."""
+    for artifact in paths:
+        try:
+            artifact.unlink()
+        except FileNotFoundError:
+            pass
+
+
 def _command_succeeded(commands: List[Dict[str, Any]], name: str) -> bool:
     for item in commands:
         if item.get("name") == name:
@@ -406,16 +415,14 @@ def main() -> int:
     # Every run owns these exact evidence filenames. Remove leftovers from an
     # interrupted/older run before collecting new evidence so file existence can
     # never be mistaken for success in the current run.
-    for artifact in (
-        benchmark_json,
-        diagnostic_json,
-        telemetry_json,
-        manifest_json,
-    ):
-        try:
-            artifact.unlink()
-        except FileNotFoundError:
-            pass
+    _clear_evidence_artifacts(
+        [
+            benchmark_json,
+            diagnostic_json,
+            telemetry_json,
+            manifest_json,
+        ]
+    )
 
     head_before = _git_head()
     branch_before = _git_branch()
