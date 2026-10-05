@@ -30,6 +30,8 @@ ENGINE = (
 )
 
 SYNTAX_CHECK_FILES = (
+    ROOT / "SABLON_V2_MIMARI" / "core" / "db.py",
+    ROOT / "SABLON_V2_MIMARI" / "core" / "vision.py",
     ROOT / "SABLON_V2_MIMARI" / "core" / "template_intelligence.py",
     ROOT / "SABLON_V2_MIMARI" / "app.py",
     ROOT / "V2_KONTROL_MERKEZI" / "app.py",
