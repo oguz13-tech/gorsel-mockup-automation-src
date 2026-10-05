@@ -418,6 +418,15 @@ def api_sablon_sil():
         # Resolve through the same path-safety gate used by review operations.
         src_img = _safe_template_path(active_cat, active_tmpl)
         removed_conf = templates[active_tmpl]
+        if not os.path.isfile(src_img):
+            return jsonify({
+                "success": False,
+                "error": (
+                    "Şablon kaynak görseli bulunamadı; geri alınabilir silme "
+                    "işlemi güvenli şekilde yapılamaz."
+                ),
+                "code": "SOURCE_IMAGE_MISSING",
+            }), 409
 
         trash_dir = os.path.join(BASE_DIR, "SILINEN_SABLONLAR_COP_KUTUSU")
         os.makedirs(trash_dir, exist_ok=True)
@@ -513,13 +522,33 @@ def api_sablon_sil_geri_al():
                 "success": False,
                 "error": "Aynı isimde aktif şablon zaten var; üzerine yazılmadı.",
             }), 409
+        if not os.path.isfile(source_in_trash):
+            return jsonify({
+                "success": False,
+                "error": (
+                    "Çöp kutusu görseli bulunamadı; DB kaydı görselsiz "
+                    "geri yüklenmedi."
+                ),
+                "code": "TRASH_IMAGE_MISSING",
+            }), 409
 
         moved_back = False
         try:
-            if os.path.exists(source_in_trash):
-                shutil.move(source_in_trash, restore_path)
-                moved_back = True
+            shutil.move(source_in_trash, restore_path)
+            moved_back = True
             save_template(cat, tmpl, conf)
+
+            # A trash file can be modified outside the application before undo.
+            # Preserve approvals only when they still match the restored bytes;
+            # otherwise mark them stale immediately instead of leaving an active
+            # approval that production will only discover later by hash mismatch.
+            restored_hash = _sha256_file(restore_path)
+            _invalidate_stale_profiles_for_source(
+                cat,
+                tmpl,
+                os.path.basename(restore_path),
+                restored_hash,
+            )
         except Exception:
             if moved_back and os.path.exists(restore_path):
                 try:
