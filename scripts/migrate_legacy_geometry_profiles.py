@@ -26,11 +26,18 @@ from typing import Dict, Optional, Tuple
 import cv2
 import numpy as np
 
-ROOT_DIR = Path(__file__).resolve().parents[1]
-ARCH_DIR = ROOT_DIR / "SABLON_V2_MIMARI"
-DB_PATH = ARCH_DIR / "ayarlar.db"
-DEFAULT_LEGACY_JSON = ROOT_DIR / "ayarlar.json"
-TEMPLATE_ROOT = ROOT_DIR / "2_SABLON_HAVUZU"
+SOURCE_ROOT = Path(__file__).resolve().parents[1]
+_runtime_override = str(os.environ.get("MOCKUP_RUNTIME_WORKSPACE") or "").strip()
+RUNTIME_ROOT = (
+    Path(_runtime_override).expanduser().resolve()
+    if _runtime_override
+    else SOURCE_ROOT.resolve()
+)
+
+ARCH_DIR = SOURCE_ROOT / "SABLON_V2_MIMARI"
+DB_PATH = RUNTIME_ROOT / "SABLON_V2_MIMARI" / "ayarlar.db"
+DEFAULT_LEGACY_JSON = RUNTIME_ROOT / "ayarlar.json"
+TEMPLATE_ROOT = RUNTIME_ROOT / "2_SABLON_HAVUZU"
 
 sys.path.insert(0, str(ARCH_DIR))
 
