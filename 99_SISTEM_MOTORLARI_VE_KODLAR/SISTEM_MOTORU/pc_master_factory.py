@@ -244,7 +244,12 @@ def load_ayarlar() -> dict:
         # 1. Genel Ayarlar
         c.execute("SELECT key, value FROM settings")
         for row in c.fetchall():
-            result[row["key"]] = json.loads(row["value"])
+            try:
+                result[row["key"]] = json.loads(row["value"])
+            except (TypeError, json.JSONDecodeError) as exc:
+                logger.warning(
+                    f"Geçersiz settings JSON atlandı: {row['key']} ({exc})"
+                )
             
         # 2. Kategoriler
         c.execute("SELECT id, label FROM categories")
@@ -260,7 +265,18 @@ def load_ayarlar() -> dict:
         for row in c.fetchall():
             cat_id = row["category_id"]
             tmpl = row["filename"]
-            data = json.loads(row["data"])
+            try:
+                data = json.loads(row["data"])
+            except (TypeError, json.JSONDecodeError) as exc:
+                logger.warning(
+                    f"Geçersiz şablon JSON atlandı: {cat_id}/{tmpl} ({exc})"
+                )
+                continue
+            if not isinstance(data, dict):
+                logger.warning(
+                    f"Şablon verisi nesne değil, atlandı: {cat_id}/{tmpl}"
+                )
+                continue
             
             if cat_id not in result["kategoriler"]:
                 result["kategoriler"][cat_id] = {"sablonlar": {}}
