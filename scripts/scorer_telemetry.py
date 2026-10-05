@@ -28,7 +28,10 @@ from core.template_intelligence import (
     GeometryValidator,
     TemplateAnalyzer,
 )
-from scripts.geometry_diagnostics import collect_candidates
+from scripts.geometry_diagnostics import (
+    collect_candidates,
+    prepare_runtime_candidates,
+)
 from scripts.benchmark import calculate_iou, validate_gt_quad
 
 SCORER_CATEGORIES = (
@@ -57,66 +60,6 @@ def _orientation_score(quad: np.ndarray, category: str) -> float:
     return 1.0 if orientation == expected else 0.0
 
 
-def _dedupe_valid(candidates: List[Dict], w: int, h: int):
-    result = []
-    seen = set()
-    for item in candidates:
-        quad = item.get("quad")
-        if quad is None:
-            continue
-        arr = np.asarray(quad, dtype=np.float32)
-        valid, _ = GeometryValidator.is_valid_quad(arr, w, h)
-        if not valid:
-            continue
-        canonical = GeometryValidator.canonical_sort(arr).astype(np.float32)
-        key = tuple(int(round(float(v))) for point in canonical for v in point)
-        if key in seen:
-            continue
-        seen.add(key)
-        result.append(
-            {
-                "quad": canonical,
-                "sources": list(item.get("sources") or []),
-            }
-        )
-    return result
-
-
-def _prepare_runtime_candidates(
-    analyzer: TemplateAnalyzer,
-    image: np.ndarray,
-    candidates: List[Dict],
-) -> List[Dict]:
-    """Mirror TemplateAnalyzer's bounded runtime candidate preparation.
-
-    Telemetry must compare scorers on the same candidate set production can
-    actually select. The production analyzer de-duplicates candidates and, when
-    recall expansion produces more than 180 proposals, keeps the top 180 using
-    only runtime-visible area plausibility + edge evidence. Reproduce that
-    exact bound here instead of evaluating a larger offline-only candidate set.
-    """
-    h, w = image.shape[:2]
-    prepared = list(candidates)
-    max_candidates = 180
-    if len(prepared) <= max_candidates:
-        return prepared
-
-    pre_ranked = []
-    for item in prepared:
-        quad = item["quad"]
-        area = float(abs(cv2.contourArea(quad.astype(np.float32))))
-        area_ratio = min(1.0, area / float(w * h))
-        line_score = analyzer.measure_edge_contrast(image, quad)
-        pre_score = (
-            analyzer.score_area_plausibility(area_ratio) * 0.35
-            + line_score * 0.65
-        )
-        pre_ranked.append((float(pre_score), item))
-
-    pre_ranked.sort(key=lambda pair: pair[0], reverse=True)
-    return [item for _, item in pre_ranked[:max_candidates]]
-
-
 def _components(
     analyzer: TemplateAnalyzer,
     image: np.ndarray,
@@ -125,7 +68,7 @@ def _components(
     category: str,
 ):
     h, w = image.shape[:2]
-    quad = candidates[index]["quad"]
+    quad = np.asarray(candidates[index]["quad"], dtype=np.float32)
     stack = np.stack([item["quad"] for item in candidates]).astype(np.float32)
     diffs = stack - quad
     distances = (
@@ -214,11 +157,15 @@ def run(dataset: Path, diagnostic_json: Path, output: Path, top_n: int) -> Dict:
         if not gt_ok:
             continue
 
-        raw_candidates = _dedupe_valid(collect_candidates(image), w, h)
+        raw_candidates = [
+            item
+            for item in collect_candidates(image)
+            if item.get("quad") is not None
+        ]
         if not raw_candidates:
             continue
 
-        candidates = _prepare_runtime_candidates(
+        candidates = prepare_runtime_candidates(
             analyzer,
             image,
             raw_candidates,
