@@ -309,6 +309,13 @@ def _golden_coverage_check(benchmark: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _command_succeeded(commands: List[Dict[str, Any]], name: str) -> bool:
+    for item in commands:
+        if item.get("name") == name:
+            return bool(item.get("ok"))
+    return False
+
+
 def _review_readiness(
     *,
     commands_ok: bool,
@@ -395,6 +402,20 @@ def main() -> int:
     diagnostic_json = out_dir / "geometry_diagnostics.json"
     telemetry_json = out_dir / "scorer_telemetry.json"
     manifest_json = out_dir / "validation_manifest.json"
+
+    # Every run owns these exact evidence filenames. Remove leftovers from an
+    # interrupted/older run before collecting new evidence so file existence can
+    # never be mistaken for success in the current run.
+    for artifact in (
+        benchmark_json,
+        diagnostic_json,
+        telemetry_json,
+        manifest_json,
+    ):
+        try:
+            artifact.unlink()
+        except FileNotFoundError:
+            pass
 
     head_before = _git_head()
     branch_before = _git_branch()
@@ -499,9 +520,12 @@ def main() -> int:
         )
     )
 
-    # Telemetry consumes the just-produced diagnostic file. If diagnostics
-    # failed, record a deterministic blocked command instead of fabricating data.
-    if diagnostic_json.exists():
+    # Telemetry consumes only a diagnostic produced successfully in THIS run.
+    # A leftover file from an interrupted older run must never satisfy this gate.
+    if (
+        _command_succeeded(commands, "geometry_diagnostics")
+        and diagnostic_json.is_file()
+    ):
         commands.append(
             _run(
                 "scorer_telemetry",
@@ -609,7 +633,7 @@ def main() -> int:
         ),
     }
 
-    if benchmark_json.exists():
+    if _command_succeeded(commands, "epic3_benchmark") and benchmark_json.is_file():
         try:
             raw_benchmark = _load_json(benchmark_json)
             evidence["benchmark"] = _benchmark_summary(raw_benchmark)
@@ -617,7 +641,7 @@ def main() -> int:
         except Exception as exc:
             evidence["benchmark_error"] = str(exc)
 
-    if diagnostic_json.exists():
+    if _command_succeeded(commands, "geometry_diagnostics") and diagnostic_json.is_file():
         try:
             evidence["diagnostic_invariants"] = _diagnostic_invariants(
                 _load_json(diagnostic_json)
@@ -625,7 +649,7 @@ def main() -> int:
         except Exception as exc:
             evidence["diagnostic_error"] = str(exc)
 
-    if telemetry_json.exists():
+    if _command_succeeded(commands, "scorer_telemetry") and telemetry_json.is_file():
         try:
             telemetry = _load_json(telemetry_json)
             telemetry_categories = sorted(
