@@ -147,7 +147,7 @@ db_lock = threading.RLock()
 # Render recipe participates in immutable artifact identity. Bump whenever
 # renderer/aspect/occlusion behavior changes so old artifacts are never silently
 # reused under a new visual contract.
-RECIPE_VERSION = "v3_epic3_20261007_r7"
+RECIPE_VERSION = "v3_epic3_20261007_r8"
 
 # ==============================================================================
 # 2. ÜRÜN VE FORMAT SÖZLEŞMESİ (URUN_FORMAT_HARITASI)
@@ -1572,6 +1572,391 @@ class MockupRenderer:
         return result.astype(np.uint8)
 
     @staticmethod
+    def _scene_realism_profile(category_name: str) -> dict:
+        """Category-aware subtle environment realism defaults.
+
+        Values are intentionally conservative. Scene realism should be felt
+        before it is consciously noticed; material-specific reflections remain
+        the responsibility of the glass/wood render branches above.
+        """
+        profiles = {
+            "01_Wifi_Kutusu": {
+                "style": "soft_window",
+                "light": 0.034,
+                "shadow": 0.026,
+                "organic": 0.008,
+                "product_protection": 0.975,
+            },
+            "02_Cam_Tablo_Dikey": {
+                "style": "window_gallery",
+                "light": 0.038,
+                "shadow": 0.028,
+                "organic": 0.006,
+                "product_protection": 0.985,
+            },
+            "02_Cam_Tablo_Yatay": {
+                "style": "window_gallery",
+                "light": 0.038,
+                "shadow": 0.028,
+                "organic": 0.006,
+                "product_protection": 0.985,
+            },
+            "03_Ahsap_Tablo": {
+                "style": "warm_window_leaf",
+                "light": 0.052,
+                "shadow": 0.038,
+                "organic": 0.020,
+                "product_protection": 0.965,
+            },
+            "04_Cam_Dograma": {
+                "style": "countertop_bounce",
+                "light": 0.030,
+                "shadow": 0.018,
+                "organic": 0.000,
+                "product_protection": 0.950,
+            },
+            "05_Ocak_Arkasi": {
+                "style": "kitchen_daylight",
+                "light": 0.026,
+                "shadow": 0.016,
+                "organic": 0.000,
+                "product_protection": 0.985,
+            },
+        }
+        return dict(
+            profiles.get(
+                category_name,
+                {
+                    "style": "soft_window",
+                    "light": 0.030,
+                    "shadow": 0.020,
+                    "organic": 0.004,
+                    "product_protection": 0.980,
+                },
+            )
+        )
+
+    @staticmethod
+    def _scene_realism_product_protection(
+        height: int,
+        width: int,
+        dst_pts: np.ndarray,
+    ) -> np.ndarray:
+        """Return a soft protection mask around the reviewed product surface."""
+        mask = np.zeros((height, width), dtype=np.uint8)
+        quad = np.asarray(dst_pts, dtype=np.float32).reshape(-1, 2)
+        if quad.shape[0] >= 4:
+            cv2.fillConvexPoly(
+                mask,
+                np.round(quad[:4]).astype(np.int32),
+                255,
+                lineType=cv2.LINE_AA,
+            )
+
+        radius = max(3, int(round(min(height, width) * 0.025)))
+        kernel_size = radius * 2 + 1
+        kernel = cv2.getStructuringElement(
+            cv2.MORPH_ELLIPSE,
+            (kernel_size, kernel_size),
+        )
+        expanded = cv2.dilate(mask, kernel, iterations=1)
+        sigma = max(2.0, min(height, width) * 0.010)
+        soft = cv2.GaussianBlur(
+            expanded.astype(np.float32) / 255.0,
+            (0, 0),
+            sigmaX=sigma,
+            sigmaY=sigma,
+        )
+        return np.clip(soft, 0.0, 1.0)
+
+    @staticmethod
+    def _select_scene_realism_anchor(
+        image_cv: np.ndarray,
+        dst_pts: np.ndarray,
+        protection: np.ndarray,
+        deterministic_seed: int,
+    ) -> tuple[float, float, float]:
+        """Pick a quiet scene zone near the product, never a random position.
+
+        Candidate regions are placed around the product corners and scene
+        corners. Low texture, sufficient product clearance and usable luminance
+        increase the score. Seed is used only for deterministic tie-breaking.
+        """
+        h, w = image_cv.shape[:2]
+        quad = np.asarray(dst_pts, dtype=np.float32).reshape(-1, 2)
+        x0 = float(np.min(quad[:, 0]))
+        x1 = float(np.max(quad[:, 0]))
+        y0 = float(np.min(quad[:, 1]))
+        y1 = float(np.max(quad[:, 1]))
+        pw = max(x1 - x0, w * 0.08)
+        ph = max(y1 - y0, h * 0.08)
+
+        raw_candidates = [
+            (x0 - pw * 0.20, y0 + ph * 0.15),
+            (x1 + pw * 0.20, y0 + ph * 0.15),
+            (x0 - pw * 0.16, y1 - ph * 0.10),
+            (x1 + pw * 0.16, y1 - ph * 0.10),
+            (w * 0.16, h * 0.18),
+            (w * 0.84, h * 0.18),
+            (w * 0.16, h * 0.78),
+            (w * 0.84, h * 0.78),
+        ]
+        margin_x = max(2.0, w * 0.06)
+        margin_y = max(2.0, h * 0.06)
+        candidates = [
+            (
+                float(np.clip(cx, margin_x, w - 1 - margin_x)),
+                float(np.clip(cy, margin_y, h - 1 - margin_y)),
+            )
+            for cx, cy in raw_candidates
+        ]
+
+        gray = cv2.cvtColor(
+            np.clip(image_cv, 0, 255).astype(np.uint8),
+            cv2.COLOR_BGR2GRAY,
+        ).astype(np.float32)
+        gx = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3)
+        gy = cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3)
+        gradient = cv2.magnitude(gx, gy)
+
+        patch_rx = max(8, int(round(w * 0.12)))
+        patch_ry = max(8, int(round(h * 0.10)))
+        rng = np.random.default_rng(int(deterministic_seed) & 0xFFFFFFFF)
+
+        scored = []
+        for idx, (cx, cy) in enumerate(candidates):
+            ix = int(round(cx))
+            iy = int(round(cy))
+            xa = max(0, ix - patch_rx)
+            xb = min(w, ix + patch_rx + 1)
+            ya = max(0, iy - patch_ry)
+            yb = min(h, iy + patch_ry + 1)
+            if xb <= xa or yb <= ya:
+                continue
+
+            p_protect = protection[ya:yb, xa:xb]
+            clearance = float(np.mean(1.0 - p_protect))
+            if clearance < 0.55:
+                continue
+
+            p_grad = gradient[ya:yb, xa:xb]
+            texture = float(np.mean(np.clip(p_grad / 45.0, 0.0, 1.0)))
+            p_gray = gray[ya:yb, xa:xb]
+            mean_lum = float(np.mean(p_gray))
+            # Prefer useful mid-tone regions where subtle light/shadow can read.
+            luminance_score = 1.0 - min(abs(mean_lum - 145.0) / 145.0, 1.0)
+            jitter = float(rng.uniform(0.0, 0.012))
+            score = (
+                clearance * 0.50
+                + (1.0 - texture) * 0.34
+                + luminance_score * 0.16
+                + jitter
+            )
+            scored.append((score, idx, cx, cy))
+
+        if not scored:
+            # Conservative fallback: scene corner furthest from product center.
+            product_center = np.mean(quad, axis=0)
+            fallback = [
+                (w * 0.14, h * 0.16),
+                (w * 0.86, h * 0.16),
+                (w * 0.14, h * 0.82),
+                (w * 0.86, h * 0.82),
+            ]
+            cx, cy = max(
+                fallback,
+                key=lambda pt: (
+                    (pt[0] - product_center[0]) ** 2
+                    + (pt[1] - product_center[1]) ** 2
+                ),
+            )
+            return float(cx), float(cy), 0.0
+
+        best = max(scored, key=lambda item: item[0])
+        return float(best[2]), float(best[3]), float(best[0])
+
+    @staticmethod
+    def apply_scene_realism_layer(
+        image_cv: np.ndarray,
+        dst_pts: np.ndarray,
+        category_name: str,
+        deterministic_key: str,
+        return_metadata: bool = False,
+    ):
+        """Apply localized, product-safe environmental realism.
+
+        The effect lives mainly in the surrounding scene: a soft warm daylight
+        pool, faint architectural window shadow and (for suitable room scenes)
+        an extremely subtle organic/leaf shadow. The product receives only a
+        tiny residual amount so its print, reflections and edges stay readable.
+        """
+        if image_cv is None or image_cv.size == 0:
+            metadata = {
+                "applied": False,
+                "reason": "empty_image",
+            }
+            return (image_cv, metadata) if return_metadata else image_cv
+
+        h, w = image_cv.shape[:2]
+        quad = np.asarray(dst_pts, dtype=np.float32).reshape(-1, 2)
+        if quad.shape[0] < 4 or not np.isfinite(quad).all():
+            metadata = {
+                "applied": False,
+                "reason": "invalid_quad",
+            }
+            return (image_cv, metadata) if return_metadata else image_cv
+
+        profile = MockupRenderer._scene_realism_profile(category_name)
+        seed_hex = hashlib.sha256(
+            str(deterministic_key or category_name or "scene").encode("utf-8")
+        ).hexdigest()
+        seed = int(seed_hex[:8], 16)
+
+        protection = MockupRenderer._scene_realism_product_protection(
+            h,
+            w,
+            quad,
+        )
+        cx, cy, anchor_score = MockupRenderer._select_scene_realism_anchor(
+            image_cv,
+            quad,
+            protection,
+            seed,
+        )
+
+        y, x = np.mgrid[0:h, 0:w].astype(np.float32)
+        max_dim = float(max(h, w))
+        rng = np.random.default_rng(seed)
+
+        # Light enters diagonally from the selected quiet zone.
+        angle_deg = float(28.0 + rng.uniform(-9.0, 9.0))
+        if cx > w * 0.5:
+            angle_deg = 180.0 - angle_deg
+        angle = np.radians(angle_deg)
+        ca, sa = np.cos(angle), np.sin(angle)
+        xr = (x - cx) * ca + (y - cy) * sa
+        yr = -(x - cx) * sa + (y - cy) * ca
+
+        envelope = np.exp(
+            -(
+                (xr / max(max_dim * 0.34, 1.0)) ** 2
+                + (yr / max(max_dim * 0.22, 1.0)) ** 2
+            )
+        ).astype(np.float32)
+
+        # Three soft architectural bars + one faint crossbar. This reads as
+        # off-camera window light rather than a filter placed on the product.
+        shadow = np.zeros((h, w), dtype=np.float32)
+        offsets = (-0.12, 0.00, 0.12)
+        bar_sigma = max(max_dim * 0.018, 2.0)
+        for offset in offsets:
+            center = max_dim * offset
+            shadow = np.maximum(
+                shadow,
+                np.exp(-0.5 * ((xr - center) / bar_sigma) ** 2),
+            )
+        cross_sigma = max(max_dim * 0.024, 2.0)
+        cross = np.exp(
+            -0.5 * ((yr - max_dim * 0.025) / cross_sigma) ** 2
+        )
+        shadow = np.clip(
+            (shadow * 0.78 + cross * 0.34) * envelope,
+            0.0,
+            1.0,
+        )
+        shadow = cv2.GaussianBlur(
+            shadow,
+            (0, 0),
+            sigmaX=max(1.5, min(h, w) * 0.004),
+            sigmaY=max(1.5, min(h, w) * 0.004),
+        )
+
+        # Organic/leaf silhouettes are intentionally weak and only enabled in
+        # profiles where a living-space shadow is plausible.
+        organic = np.zeros((h, w), dtype=np.float32)
+        organic_strength = float(profile.get("organic", 0.0))
+        if organic_strength > 0.0:
+            for _ in range(4):
+                ox = cx + float(rng.uniform(-0.15, 0.15)) * max_dim
+                oy = cy + float(rng.uniform(-0.10, 0.12)) * max_dim
+                sx = max(max_dim * float(rng.uniform(0.025, 0.050)), 2.0)
+                sy = max(max_dim * float(rng.uniform(0.012, 0.030)), 2.0)
+                blob = np.exp(
+                    -0.5 * (
+                        ((x - ox) / sx) ** 2
+                        + ((y - oy) / sy) ** 2
+                    )
+                )
+                organic = np.maximum(organic, blob.astype(np.float32))
+            organic = cv2.GaussianBlur(
+                organic * envelope,
+                (0, 0),
+                sigmaX=max(2.0, min(h, w) * 0.006),
+                sigmaY=max(2.0, min(h, w) * 0.006),
+            )
+
+        product_protection = float(
+            profile.get("product_protection", 0.98)
+        )
+        scene_weight = 1.0 - protection * product_protection
+        scene_weight = np.clip(scene_weight, 0.0, 1.0)
+
+        before = np.clip(image_cv, 0, 255).astype(np.uint8)
+        work = before.astype(np.float32)
+
+        shadow_amount = (
+            float(profile.get("shadow", 0.02)) * shadow
+            + organic_strength * organic
+        ) * scene_weight
+        work *= (1.0 - shadow_amount[..., None])
+
+        # Warm local daylight: BGR weights keep the lift photographic and avoid
+        # yellow paint-over. The scene is lifted most in red, least in blue.
+        light_amount = (
+            float(profile.get("light", 0.03))
+            * envelope
+            * scene_weight
+        )
+        warm_weights = np.array([0.42, 0.72, 1.00], dtype=np.float32)
+        work = work + (
+            (255.0 - work)
+            * light_amount[..., None]
+            * warm_weights.reshape(1, 1, 3)
+        )
+
+        result = np.clip(work, 0.0, 255.0).astype(np.uint8)
+        delta = np.mean(
+            np.abs(
+                result.astype(np.float32)
+                - before.astype(np.float32)
+            ),
+            axis=2,
+        )
+        product_pixels = protection > 0.55
+        scene_pixels = protection < 0.15
+        product_delta = (
+            float(np.mean(delta[product_pixels]))
+            if np.any(product_pixels)
+            else 0.0
+        )
+        scene_delta = (
+            float(np.mean(delta[scene_pixels]))
+            if np.any(scene_pixels)
+            else 0.0
+        )
+
+        metadata = {
+            "applied": True,
+            "style": profile.get("style", "soft_window"),
+            "anchor": [round(cx, 2), round(cy, 2)],
+            "anchor_score": round(anchor_score, 4),
+            "angle_deg": round(angle_deg, 2),
+            "product_delta_mean": round(product_delta, 4),
+            "scene_delta_mean": round(scene_delta, 4),
+        }
+        return (result, metadata) if return_metadata else result
+
+    @staticmethod
     def match_color_cast(art_cv: np.ndarray, bg_cv: np.ndarray, poly_mask: np.ndarray) -> np.ndarray:
         """
         Ortam Renk Isısı Harmanlama: Arka planın (odanın) ortalama renk ısısını
@@ -2109,12 +2494,41 @@ class MockupRenderer:
             logger.warning(f"[FOREGROUND_RESTORE] Ön plan geri yükleme hatası: {e}")
 
         # ---------------------------------------------------------
-        # 5. GÜNEŞ & PENCERE GÖLGESİ (Ahşap & Wifi için sıcak güneş, diğerleri için genel günışığı)
+        # 5. r8 SCENE REALISM LAYER
         # ---------------------------------------------------------
-        if is_wood_or_wifi:
-            final = MockupRenderer.generate_sunlight_shadow_for_wood(final, dst_pts, intensity=0.15)
-        else:
-            final = MockupRenderer.apply_architectural_daylight(final, angle=32.0, intensity=0.08)
+        # Environment realism belongs primarily to the scene around the
+        # product, not on top of the artwork. The placement is deterministic
+        # and template-aware: a quiet nearby region is selected automatically,
+        # while the reviewed product quad is strongly protected.
+        realism_key = (
+            f"{source_design_identity or ''}|{template_identity or template_name or ''}|"
+            f"{recipe_version or ''}|{category_name or ''}"
+        )
+        final, realism_meta = MockupRenderer.apply_scene_realism_layer(
+            np.clip(final, 0, 255).astype(np.uint8),
+            dst_pts,
+            category_name or "",
+            realism_key,
+            return_metadata=True,
+        )
+        if realism_meta.get("applied"):
+            logger.info(
+                "  🌤️ Scene Realism | "
+                f"style={realism_meta.get('style')} "
+                f"anchor={realism_meta.get('anchor')} "
+                f"product_delta={realism_meta.get('product_delta_mean'):.2f} "
+                f"scene_delta={realism_meta.get('scene_delta_mean'):.2f}"
+            )
+            if float(realism_meta.get("product_delta_mean", 0.0)) > 4.5:
+                raise RuntimeError(
+                    "Scene Realism safety gate: product surface changed too much "
+                    f"({realism_meta.get('product_delta_mean'):.2f})"
+                )
+            if float(realism_meta.get("scene_delta_mean", 0.0)) > 14.0:
+                raise RuntimeError(
+                    "Scene Realism safety gate: scene effect is too strong "
+                    f"({realism_meta.get('scene_delta_mean'):.2f})"
+                )
 
         return final
 
