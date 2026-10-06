@@ -193,13 +193,31 @@ window.onerror = function(msg, url, line, col, error) {
                 item.className = 'template-item';
                 
                 const hasCorners = itemData.koseler && itemData.koseler.length === 4;
-                if (itemData.supheli) {
-                    item.innerHTML = '⚠️ ' + tmpl;
+                const reviewStatus = String(
+                    itemData._review_status || itemData.review_status || 'UNANALYZED'
+                ).toUpperCase();
+                if (reviewStatus === 'APPROVED') {
+                    item.textContent = '✅ ' + tmpl;
+                    item.title = 'İnsan onaylı ve üretime uygun profil.';
+                } else if (reviewStatus === 'STALE_SOURCE_CHANGED' || reviewStatus === 'AMBIGUOUS_DUPLICATE') {
+                    item.textContent = '⛔ ' + tmpl;
                     item.style.backgroundColor = 'rgba(220, 53, 69, 0.2)';
                     item.style.color = '#ff9999';
-                    item.title = "Otomatik tespit güven puanı düşük! Lütfen köşeleri kontrol edin.";
+                    item.title = 'Onay artık güvenli değil; yeniden analiz/onay gerekli.';
+                } else if (reviewStatus === 'REJECTED') {
+                    item.textContent = '🚫 ' + tmpl;
+                    item.title = 'İnsan incelemesinde reddedildi.';
+                } else if (itemData.supheli) {
+                    item.textContent = '⚠️ ' + tmpl;
+                    item.style.backgroundColor = 'rgba(220, 53, 69, 0.2)';
+                    item.style.color = '#ff9999';
+                    item.title = 'Otomatik tespit şüpheli. İnsan kontrolü gerekli.';
+                } else if (hasCorners) {
+                    item.textContent = '📝 ' + tmpl;
+                    item.title = '4 köşe var fakat henüz APPROVED değil.';
                 } else {
-                    item.textContent = (hasCorners ? '✅ ' : '⏳ ') + tmpl;
+                    item.textContent = '⏳ ' + tmpl;
+                    item.title = 'Henüz incelenmedi.';
                 }
                 
                 item.onclick = () => loadTemplate(cat, tmpl, item);
