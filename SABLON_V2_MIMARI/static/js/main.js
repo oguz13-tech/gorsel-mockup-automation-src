@@ -1827,9 +1827,22 @@ async function approveTemplate() {
         let data = await res.json();
         if(data.success) {
             const tmplObj = ayarlar.kategoriler[currentCat].sablonlar[currentTmpl];
-            if (tmplObj && (data.orientation === 'H' || data.orientation === 'V')) {
-                tmplObj.physical_orientation = data.orientation;
-                syncPhysicalOrientationControl(tmplObj);
+            if (tmplObj) {
+                tmplObj._review_status = 'APPROVED';
+                tmplObj._manually_verified = true;
+                if (data.orientation === 'H' || data.orientation === 'V') {
+                    tmplObj.physical_orientation = data.orientation;
+                    syncPhysicalOrientationControl(tmplObj);
+                }
+            }
+            const currentItem = allTemplates.find(
+                t => t.cat === currentCat && t.tmpl === currentTmpl
+            );
+            if (currentItem && currentItem.elem) {
+                currentItem.elem.textContent = '✅ ' + currentTmpl;
+                currentItem.elem.title = 'İnsan onaylı ve üretime uygun profil.';
+                currentItem.elem.style.backgroundColor = '';
+                currentItem.elem.style.color = '';
             }
             alert("Geometri başarıyla onaylandı (APPROVED).");
         } else {
