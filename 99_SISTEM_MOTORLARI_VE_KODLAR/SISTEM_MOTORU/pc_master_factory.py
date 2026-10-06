@@ -1233,6 +1233,78 @@ class MockupRenderer:
         return np.stack([refl * 1.0, refl * 0.98, refl * 0.96], axis=-1)
 
     @staticmethod
+    def generate_subtle_glass_streak(
+        gw: int,
+        gh: int,
+        intensity: float = 0.075,
+    ) -> np.ndarray:
+        """Small, soft translucent highlight for glass cutting-board realism."""
+        y, x = np.mgrid[0:gh, 0:gw].astype(np.float32)
+        cx = gw * 0.73
+        cy = gh * 0.24
+        angle = np.radians(-18.0)
+        ca, sa = np.cos(angle), np.sin(angle)
+        xr = (x - cx) * ca - (y - cy) * sa
+        yr = (x - cx) * sa + (y - cy) * ca
+
+        streak = np.exp(
+            -((xr / max(gw * 0.24, 1.0)) ** 2)
+            -((yr / max(gh * 0.032, 1.0)) ** 2)
+        )
+        envelope = np.exp(
+            -((xr / max(gw * 0.30, 1.0)) ** 2)
+            -((yr / max(gh * 0.18, 1.0)) ** 2)
+        )
+        streak = cv2.GaussianBlur(
+            streak * envelope,
+            (0, 0),
+            sigmaX=2.2,
+            sigmaY=2.2,
+        )
+        streak = np.clip(streak * float(intensity), 0.0, 0.12)
+        return np.stack(
+            [streak, streak * 0.985, streak * 0.96],
+            axis=-1,
+        )
+
+    @staticmethod
+    def protect_artwork_detail_from_reflection(
+        reflection: np.ndarray,
+        artwork_cv: np.ndarray,
+        surface_mask: np.ndarray,
+        min_reflection_fraction: float = 0.30,
+    ) -> np.ndarray:
+        """Keep reflection while reducing it over dense artwork detail."""
+        art_u8 = np.clip(artwork_cv, 0, 255).astype(np.uint8)
+        gray = cv2.cvtColor(art_u8, cv2.COLOR_BGR2GRAY).astype(np.float32)
+
+        gx = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3)
+        gy = cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3)
+        grad = cv2.magnitude(gx, gy)
+        inside = np.asarray(surface_mask) > 0.08
+
+        if np.any(inside):
+            values = grad[inside]
+            positive = values[values > 0]
+            reference = float(np.percentile(positive, 82.0)) if positive.size else 1.0
+        else:
+            reference = 1.0
+        reference = max(reference, 1.0)
+
+        detail = np.clip(grad / reference, 0.0, 1.0)
+        detail = cv2.GaussianBlur(detail, (0, 0), sigmaX=2.0, sigmaY=2.0)
+        luminance_cue = np.clip((gray - 145.0) / 90.0, 0.0, 1.0)
+        protection = np.clip(
+            np.maximum(detail, luminance_cue) * np.asarray(surface_mask),
+            0.0,
+            1.0,
+        )
+        attenuation = 1.0 - protection * (
+            1.0 - float(min_reflection_fraction)
+        )
+        return reflection * attenuation[..., None]
+
+    @staticmethod
     def generate_glass_bevel(h_bg: int, w_bg: int, dst_pts: np.ndarray):
         """
         4mm Kristal Elmas Rodaj Kenar Pahı ve Cam Kalınlığı Kırılma Işıması.
@@ -1597,11 +1669,27 @@ class MockupRenderer:
                 effect_h,
                 intensity=0.25,
             )
+            subtle_streak = MockupRenderer.generate_subtle_glass_streak(
+                effect_w,
+                effect_h,
+                intensity=0.075,
+            )
+            dog_reflection_local = np.clip(
+                spot_sheen + subtle_streak,
+                0.0,
+                0.32,
+            )
             spot_warped = cv2.warpPerspective(
-                spot_sheen, matrix, (w_bg, h_bg),
+                dog_reflection_local, matrix, (w_bg, h_bg),
                 flags=cv2.INTER_LINEAR,
                 borderMode=cv2.BORDER_CONSTANT,
                 borderValue=(0, 0, 0)
+            )
+            spot_warped = MockupRenderer.protect_artwork_detail_from_reflection(
+                spot_warped,
+                warped_lit,
+                mask_f,
+                min_reflection_fraction=0.38,
             )
             warped_norm = np.clip(warped_lit / 255.0, 0.0, 1.0)
             glass_art_norm = 1.0 - (1.0 - warped_norm) * (1.0 - spot_warped)
@@ -1635,6 +1723,12 @@ class MockupRenderer:
                 flags=cv2.INTER_LINEAR,
                 borderMode=cv2.BORDER_CONSTANT,
                 borderValue=(0, 0, 0)
+            )
+            refl_warped = MockupRenderer.protect_artwork_detail_from_reflection(
+                refl_warped,
+                warped_lit,
+                mask_f,
+                min_reflection_fraction=0.30,
             )
 
             # Screen blend: 1 - (1 - art) * (1 - refl)
