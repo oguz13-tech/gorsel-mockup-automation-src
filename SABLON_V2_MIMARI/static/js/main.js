@@ -1588,24 +1588,178 @@ window.onerror = function(msg, url, line, col, error) {
     }
 
 // --- YZ ONAY SISTEMI ---
+let batchAnalyzeRunning = false;
+
+function ensureBatchAnalyzeProgressModal() {
+    let overlay = document.getElementById('batchAnalyzeProgressOverlay');
+    if (overlay) return overlay;
+
+    overlay = document.createElement('div');
+    overlay.id = 'batchAnalyzeProgressOverlay';
+    overlay.style.cssText = [
+        'position:fixed',
+        'inset:0',
+        'background:rgba(0,0,0,.72)',
+        'display:none',
+        'align-items:center',
+        'justify-content:center',
+        'z-index:10000'
+    ].join(';');
+
+    overlay.innerHTML = `
+        <div style="width:min(560px,92vw);background:#202020;border:1px solid #555;border-radius:12px;padding:22px;box-shadow:0 18px 60px rgba(0,0,0,.45);color:#fff;font-family:Arial,sans-serif;">
+            <div id="batchAnalyzeTitle" style="font-size:20px;font-weight:700;margin-bottom:8px;">Şablonlar analiz ediliyor</div>
+            <div id="batchAnalyzeSummary" style="font-size:14px;color:#ddd;margin-bottom:14px;">Hazırlanıyor...</div>
+            <div style="height:18px;background:#3a3a3a;border-radius:999px;overflow:hidden;border:1px solid #555;">
+                <div id="batchAnalyzeBar" style="height:100%;width:0%;background:#28a745;transition:width .18s ease;"></div>
+            </div>
+            <div style="display:flex;justify-content:space-between;gap:12px;margin-top:8px;font-size:13px;color:#ddd;">
+                <span id="batchAnalyzeCount">0 / 0</span>
+                <span id="batchAnalyzePercent">%0</span>
+            </div>
+            <div id="batchAnalyzeCurrent" style="margin-top:14px;padding:10px;background:#151515;border-radius:7px;font-size:13px;word-break:break-word;color:#eee;">Bekleniyor...</div>
+            <div id="batchAnalyzeErrors" style="display:none;margin-top:12px;padding:10px;background:#3a2020;border-radius:7px;font-size:12px;max-height:120px;overflow:auto;"></div>
+            <button id="batchAnalyzeClose" type="button" style="display:none;width:100%;margin-top:16px;padding:11px;border:0;border-radius:7px;background:#28a745;color:white;font-weight:700;cursor:pointer;">Tamam</button>
+        </div>
+    `;
+
+    document.body.appendChild(overlay);
+    document.getElementById('batchAnalyzeClose').addEventListener('click', () => {
+        overlay.style.display = 'none';
+    });
+    return overlay;
+}
+
+function updateBatchAnalyzeProgress(done, total, filename, statusText) {
+    const overlay = ensureBatchAnalyzeProgressModal();
+    const percent = total > 0 ? Math.round((done / total) * 100) : 0;
+    document.getElementById('batchAnalyzeBar').style.width = percent + '%';
+    document.getElementById('batchAnalyzeCount').textContent = done + ' / ' + total;
+    document.getElementById('batchAnalyzePercent').textContent = '%' + percent;
+    document.getElementById('batchAnalyzeSummary').textContent = statusText || 'Analiz devam ediyor...';
+    document.getElementById('batchAnalyzeCurrent').textContent = filename
+        ? 'İşlenen dosya: ' + filename
+        : 'Hazırlanıyor...';
+    overlay.style.display = 'flex';
+}
+
+function finishBatchAnalyzeProgress(total, successCount, failureCount, failures) {
+    const overlay = ensureBatchAnalyzeProgressModal();
+    document.getElementById('batchAnalyzeBar').style.width = '100%';
+    document.getElementById('batchAnalyzeCount').textContent = total + ' / ' + total;
+    document.getElementById('batchAnalyzePercent').textContent = '%100';
+    document.getElementById('batchAnalyzeTitle').textContent =
+        failureCount === 0 ? '✅ Analiz tamamlandı' : '⚠️ Analiz tamamlandı';
+    document.getElementById('batchAnalyzeSummary').textContent =
+        total + ' dosya işlendi • ' + successCount + ' başarılı • ' + failureCount + ' hatalı';
+    document.getElementById('batchAnalyzeCurrent').textContent =
+        failureCount === 0
+            ? 'Klasör taraması başarıyla tamamlandı.'
+            : 'Tarama tamamlandı; bazı dosyalar ayrıca kontrol edilmeli.';
+
+    const errorBox = document.getElementById('batchAnalyzeErrors');
+    if (failureCount > 0) {
+        errorBox.style.display = 'block';
+        errorBox.textContent = failures.slice(0, 8).join('\n');
+    } else {
+        errorBox.style.display = 'none';
+        errorBox.textContent = '';
+    }
+
+    document.getElementById('batchAnalyzeClose').style.display = 'block';
+    overlay.style.display = 'flex';
+}
+
 async function batchAnalyze() {
     if(!currentCat) return alert("Kategori seçili değil!");
-    if(!confirm(currentCat + " kategorisindeki tüm şablonlar analiz edilecek. Onaylıyor musunuz?")) return;
-    
+    if(batchAnalyzeRunning) return;
+
+    const templates = Object.keys(
+        ayarlar?.kategoriler?.[currentCat]?.sablonlar || {}
+    );
+    if(templates.length === 0) return alert("Bu kategoride analiz edilecek şablon bulunamadı.");
+
+    if(!confirm(
+        currentCat + " kategorisindeki " + templates.length +
+        " şablon analiz edilecek. Onaylıyor musunuz?"
+    )) return;
+
+    batchAnalyzeRunning = true;
+    const button = document.getElementById('batchAnalyzeButton');
+    if (button) {
+        button.disabled = true;
+        button.style.opacity = '0.55';
+        button.style.cursor = 'wait';
+    }
+
+    const overlay = ensureBatchAnalyzeProgressModal();
+    document.getElementById('batchAnalyzeTitle').textContent = 'Şablonlar analiz ediliyor';
+    document.getElementById('batchAnalyzeClose').style.display = 'none';
+    document.getElementById('batchAnalyzeErrors').style.display = 'none';
+
+    const category = currentCat;
+    let successCount = 0;
+    let failureCount = 0;
+    const failures = [];
+
     try {
-        let res = await fetch('/api/templates/batch_analyze', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ category: currentCat })
-        });
-        let data = await res.json();
-        if(data.success) {
-            alert("Analiz tamamlandı. İşlenen dosya: " + data.results.length);
-        } else {
-            alert("Hata: " + data.error);
+        updateBatchAnalyzeProgress(0, templates.length, '', 'Tarama başlatılıyor...');
+
+        for (let i = 0; i < templates.length; i++) {
+            const tmpl = templates[i];
+            updateBatchAnalyzeProgress(
+                i,
+                templates.length,
+                tmpl,
+                'Analiz ediliyor...'
+            );
+
+            try {
+                const res = await fetch('/api/templates/analyze', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Active-Category': category,
+                        'X-Active-Template': tmpl
+                    },
+                    body: JSON.stringify({})
+                });
+                const data = await res.json();
+
+                if (res.ok && data.success) {
+                    successCount += 1;
+                } else {
+                    failureCount += 1;
+                    failures.push(
+                        tmpl + ': ' + (data.error || ('HTTP ' + res.status))
+                    );
+                }
+            } catch (err) {
+                failureCount += 1;
+                failures.push(tmpl + ': ' + String(err));
+            }
+
+            updateBatchAnalyzeProgress(
+                i + 1,
+                templates.length,
+                tmpl,
+                'İlerleme: ' + (i + 1) + ' / ' + templates.length
+            );
         }
-    } catch(e) {
-        alert("Bağlantı hatası: " + e);
+
+        finishBatchAnalyzeProgress(
+            templates.length,
+            successCount,
+            failureCount,
+            failures
+        );
+    } finally {
+        batchAnalyzeRunning = false;
+        if (button) {
+            button.disabled = false;
+            button.style.opacity = '1';
+            button.style.cursor = 'pointer';
+        }
     }
 }
 
