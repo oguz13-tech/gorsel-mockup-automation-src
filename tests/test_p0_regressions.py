@@ -171,6 +171,31 @@ class TestSQLiteBootstrap(unittest.TestCase):
         )
 
 
+class TestArtifactCompletionRequiresLocalFile(unittest.TestCase):
+    def test_completed_db_record_without_file_is_not_reusable(self):
+        from SISTEM_MOTORU.pc_master_factory import artifact_record_is_complete_on_disk
+
+        self.assertFalse(
+            artifact_record_is_complete_on_disk({
+                "status": "COMPLETED",
+                "local_output_path": str(Path(tempfile.gettempdir()) / "missing-render.jpg"),
+            })
+        )
+
+    def test_completed_db_record_with_file_is_reusable(self):
+        from SISTEM_MOTORU.pc_master_factory import artifact_record_is_complete_on_disk
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "render.jpg"
+            path.write_bytes(b"ok")
+            self.assertTrue(
+                artifact_record_is_complete_on_disk({
+                    "status": "COMPLETED",
+                    "local_output_path": str(path),
+                })
+            )
+
+
 class TestForegroundAIDependencyPreflight(unittest.TestCase):
     def test_missing_sam2_symbols_are_reported(self):
         from types import SimpleNamespace
