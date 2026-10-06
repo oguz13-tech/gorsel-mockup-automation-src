@@ -3854,8 +3854,54 @@ class PCMasterFactory:
                             if RealESRGANQualityEngine.upscale_4k(
                                 out_path, upscaled_path
                             ):
-                                import shutil
-                                shutil.move(str(upscaled_path), str(out_path))
+                                original_saved = cv2.imdecode(
+                                    np.fromfile(
+                                        str(out_path),
+                                        dtype=np.uint8,
+                                    ),
+                                    cv2.IMREAD_COLOR,
+                                )
+                                candidate_saved = cv2.imdecode(
+                                    np.fromfile(
+                                        str(upscaled_path),
+                                        dtype=np.uint8,
+                                    ),
+                                    cv2.IMREAD_COLOR,
+                                )
+                                if original_saved is None:
+                                    candidate_ok = False
+                                    candidate_msg = (
+                                        "referans final çıktı okunamadı"
+                                    )
+                                else:
+                                    oh, ow = original_saved.shape[:2]
+                                    candidate_ok, candidate_msg = (
+                                        QualityInspector.inspect_final_output(
+                                            candidate_saved,
+                                            minimum_width=ow,
+                                            minimum_height=oh,
+                                            expected_aspect=(
+                                                ow / float(max(oh, 1))
+                                            ),
+                                        )
+                                    )
+
+                                if candidate_ok:
+                                    os.replace(upscaled_path, out_path)
+                                    logger.info(
+                                        "  ✅ RealESRGAN final QA geçti: "
+                                        f"{candidate_msg}"
+                                    )
+                                else:
+                                    logger.warning(
+                                        "  ⚠️ RealESRGAN adayı reddedildi; "
+                                        "güvenli r6/r7 render korunuyor: "
+                                        f"{candidate_msg}"
+                                    )
+                                    try:
+                                        upscaled_path.unlink(missing_ok=True)
+                                    except OSError:
+                                        pass
 
                         # Persist the local artifact before any network work.
                         # A crash or provider outage can then resume upload
