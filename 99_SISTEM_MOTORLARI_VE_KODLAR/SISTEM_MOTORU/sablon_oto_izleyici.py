@@ -17,6 +17,8 @@ import sys
 import time
 import json
 import logging
+import hashlib
+import shutil
 from pathlib import Path
 import numpy as np
 
@@ -194,6 +196,111 @@ def _write_png_atomic(dest_path: Path, img_cv: np.ndarray) -> bool:
                 tmp_path.unlink()
             except OSError:
                 pass
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def recover_stale_processing_files(
+    stale_seconds: float = 300.0,
+) -> dict:
+    """Recover crash-leftover .processing files without destroying data.
+
+    - If the original name is free, restore it in place.
+    - If the original exists and bytes are identical, remove only the duplicate.
+    - If the original exists but differs, move the orphan to a dedicated
+      recovery area outside the watched staging tree.
+    """
+    result = {
+        "restored": [],
+        "deduplicated": [],
+        "quarantined": [],
+        "failed": [],
+    }
+    if not STAGING_DIR.exists():
+        return result
+
+    recovery_root = BASE_DIR / "_KURTARMA_PROCESSING"
+    now = time.time()
+
+    for processing_path in sorted(STAGING_DIR.rglob("*.processing")):
+        try:
+            age = now - processing_path.stat().st_mtime
+        except OSError as exc:
+            result["failed"].append(
+                {"path": str(processing_path), "error": str(exc)}
+            )
+            continue
+        if age < float(stale_seconds):
+            continue
+
+        original_name = processing_path.name[:-len(".processing")]
+        if not original_name:
+            continue
+        original_path = processing_path.with_name(original_name)
+
+        try:
+            if not original_path.exists():
+                processing_path.rename(original_path)
+                result["restored"].append(str(original_path))
+                logger.warning(
+                    f"↩️ Eski .processing dosyası geri yüklendi: "
+                    f"{original_path}"
+                )
+                continue
+
+            try:
+                identical = (
+                    processing_path.stat().st_size
+                    == original_path.stat().st_size
+                    and _sha256_file(processing_path)
+                    == _sha256_file(original_path)
+                )
+            except OSError:
+                identical = False
+
+            if identical:
+                processing_path.unlink()
+                result["deduplicated"].append(str(processing_path))
+                logger.info(
+                    f"🧹 Aynı bytes'a sahip eski .processing kopyası "
+                    f"temizlendi: {processing_path}"
+                )
+                continue
+
+            category = processing_path.parent.name
+            quarantine_dir = recovery_root / category
+            quarantine_dir.mkdir(parents=True, exist_ok=True)
+            stamp = time.strftime("%Y%m%d_%H%M%S")
+            base_name = f"{Path(original_name).stem}__{stamp}"
+            suffix = Path(original_name).suffix
+            candidate = quarantine_dir / f"{base_name}{suffix}"
+            counter = 1
+            while candidate.exists():
+                candidate = quarantine_dir / (
+                    f"{base_name}_{counter}{suffix}"
+                )
+                counter += 1
+            shutil.move(str(processing_path), str(candidate))
+            result["quarantined"].append(str(candidate))
+            logger.warning(
+                "⚠️ Eski .processing ile aktif dosya farklıydı; "
+                f"iki kopya da korundu. Kurtarma: {candidate}"
+            )
+        except Exception as exc:
+            result["failed"].append(
+                {"path": str(processing_path), "error": str(exc)}
+            )
+            logger.exception(
+                f".processing kurtarma hatası: {processing_path}"
+            )
+
+    return result
 
 
 def _restore_processing_file(processing_path: Path, original_path: Path) -> None:
@@ -402,6 +509,22 @@ def run_watcher():
     logger.info("==================================================================")
 
     STAGING_DIR.mkdir(parents=True, exist_ok=True)
+    recovery = recover_stale_processing_files()
+    recovered_count = (
+        len(recovery["restored"])
+        + len(recovery["deduplicated"])
+        + len(recovery["quarantined"])
+    )
+    if recovered_count:
+        logger.info(
+            f"🛟 Başlangıç kurtarması tamamlandı: "
+            f"{recovered_count} eski .processing kaydı ele alındı."
+        )
+    if recovery["failed"]:
+        logger.error(
+            f"⚠️ {len(recovery['failed'])} .processing dosyası "
+            "otomatik kurtarılamadı."
+        )
 
     try:
         while True:
