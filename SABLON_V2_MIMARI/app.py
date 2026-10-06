@@ -37,6 +37,30 @@ import uuid
 
 app = Flask(__name__)
 
+
+def manual_occlusion_has_positive_selection(plan) -> bool:
+    """Only positive foreground selections prove that an occluder exists.
+
+    Subtract-only brush strokes are corrections, not evidence of foreground.
+    This intentionally matches the factory's production-side semantics.
+    """
+    if not isinstance(plan, dict):
+        return False
+    return bool(plan.get("object_boxes") or plan.get("add_brush"))
+
+
+def resolve_reviewed_occlusion(
+    existing_has_occlusion: bool,
+    plan,
+    occlusion_reviewed: bool = False,
+) -> bool:
+    """Resolve final human-reviewed occlusion truth without sticky false flags."""
+    positive_manual = manual_occlusion_has_positive_selection(plan)
+    if occlusion_reviewed:
+        return positive_manual
+    return bool(existing_has_occlusion or positive_manual)
+
+
 # The UI and factory share the same SQLite schema. Ensure a clean checkout can
 # start safely without requiring a separate migration command first.
 init_db()
@@ -1191,13 +1215,10 @@ def api_templates_update_corners():
                 "success": False,
                 "error": "on_plan maske verisi nesne olmali.",
             }), 422
-        has_manual_occlusion = False
-        if isinstance(req_on_plan, dict):
-            has_manual_occlusion = bool(
-                req_on_plan.get("object_boxes")
-                or req_on_plan.get("add_brush")
-                or req_on_plan.get("subtract_brush")
-            )
+        occlusion_reviewed = bool(req.get("occlusion_reviewed", False))
+        has_manual_occlusion = manual_occlusion_has_positive_selection(
+            req_on_plan
+        )
         if not uid or corners is None:
             return jsonify({"success": False, "error": "Eksik parametre"}), 400
 
@@ -1274,8 +1295,10 @@ def api_templates_update_corners():
                 profile_id = None
                 existing_has_occlusion = False
 
-            effective_has_occlusion = bool(
-                existing_has_occlusion or has_manual_occlusion
+            effective_has_occlusion = resolve_reviewed_occlusion(
+                existing_has_occlusion,
+                req_on_plan,
+                occlusion_reviewed=occlusion_reviewed,
             )
 
             image = cv2.imdecode(
