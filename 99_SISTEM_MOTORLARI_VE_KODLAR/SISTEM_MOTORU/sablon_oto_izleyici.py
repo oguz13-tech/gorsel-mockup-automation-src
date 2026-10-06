@@ -262,6 +262,13 @@ def process_from_staging(staging_path: Path, thread_lock=None) -> bool:
         return False
 
     cat_key = processing_path.parent.name
+    if cat_key not in KNOWN_CATEGORIES:
+        logger.error(
+            f"Bilinmeyen staging kategorisi; dosya geri bırakıldı: {cat_key}"
+        )
+        _restore_processing_file(processing_path, original_staging_path)
+        return False
+
     prefixes = {
         "01_Wifi_Kutusu": "Wifi_Kutusu",
         "02_Cam_Tablo_Dikey": "CamTabloDikey",
@@ -338,6 +345,12 @@ def process_from_staging(staging_path: Path, thread_lock=None) -> bool:
         #    in pixel content to the durable original backup.
         if not _write_png_atomic(working_path, img_cv):
             logger.error(f"Çalışma şablonu yazılamadı: {working_path}")
+            try:
+                backup_path.unlink(missing_ok=True)
+            except Exception as cleanup_exc:
+                logger.warning(
+                    f"Başarısız ingest yedeği temizlenemedi: {cleanup_exc}"
+                )
             _restore_processing_file(processing_path, original_staging_path)
             return False
 
@@ -347,10 +360,14 @@ def process_from_staging(staging_path: Path, thread_lock=None) -> bool:
             save_template(cat_key, new_name, s_conf)
         except Exception as exc:
             logger.error(f"Şablon review DB'ye kaydedilemedi: {exc}")
-            try:
-                working_path.unlink(missing_ok=True)
-            except Exception:
-                pass
+            for created_path in (working_path, backup_path):
+                try:
+                    created_path.unlink(missing_ok=True)
+                except Exception as cleanup_exc:
+                    logger.warning(
+                        f"Başarısız ingest artığı temizlenemedi "
+                        f"({created_path.name}): {cleanup_exc}"
+                    )
             _restore_processing_file(processing_path, original_staging_path)
             return False
 
