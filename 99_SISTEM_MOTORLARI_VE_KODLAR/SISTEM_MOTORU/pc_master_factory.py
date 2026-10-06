@@ -147,7 +147,7 @@ db_lock = threading.RLock()
 # Render recipe participates in immutable artifact identity. Bump whenever
 # renderer/aspect/occlusion behavior changes so old artifacts are never silently
 # reused under a new visual contract.
-RECIPE_VERSION = "v3_epic3_20261007_r5"
+RECIPE_VERSION = "v3_epic3_20261007_r6"
 
 # ==============================================================================
 # 2. ÜRÜN VE FORMAT SÖZLEŞMESİ (URUN_FORMAT_HARITASI)
@@ -2021,13 +2021,14 @@ class MockupRenderer:
         image_cv: np.ndarray,
         target_width: int = 1200,
         target_height: int = 1600,
+        product_quad=None,
+        smart_product_focus: bool = False,
     ) -> np.ndarray:
-        """Return a marketplace-ready 3:4 canvas without cropping the scene.
+        """Return a marketplace-ready canvas without stretching the scene.
 
-        The primary rendered template is always fitted with "contain" semantics:
-        no content is cropped and no non-uniform stretch is applied. If the
-        template aspect differs from the marketplace canvas, a heavily blurred
-        cover copy is used only as background extension.
+        Normal templates retain contain semantics. For difficult wide scenes,
+        smart_product_focus may enlarge and crop expendable scene margins while
+        keeping the reviewed product quad inside the final frame.
         """
         if image_cv is None or image_cv.size == 0:
             raise ValueError("Marketplace canvas received an empty image")
@@ -2041,7 +2042,6 @@ class MockupRenderer:
         src_ratio = src_w / float(src_h)
         target_ratio = target_width / float(target_height)
 
-        # Near-identical aspect: a uniform resize is sufficient.
         if abs(src_ratio - target_ratio) <= 0.01:
             return cv2.resize(
                 image_cv,
@@ -2049,7 +2049,15 @@ class MockupRenderer:
                 interpolation=cv2.INTER_LANCZOS4,
             )
 
-        # Background extension may be cropped because it is decorative only.
+        quad = None
+        if product_quad is not None:
+            try:
+                quad = np.asarray(product_quad, dtype=np.float32).reshape(-1, 2)
+                if quad.shape[0] < 4:
+                    quad = None
+            except Exception:
+                quad = None
+
         cover_scale = max(
             target_width / float(src_w),
             target_height / float(src_h),
@@ -2061,38 +2069,81 @@ class MockupRenderer:
             (cover_w, cover_h),
             interpolation=cv2.INTER_LANCZOS4,
         )
-        x0 = max(0, (cover_w - target_width) // 2)
-        y0 = max(0, (cover_h - target_height) // 2)
+
+        if quad is not None and smart_product_focus:
+            product_center = np.mean(quad, axis=0) * cover_scale
+            x0 = int(round(product_center[0] - target_width * 0.5))
+            y0 = int(round(product_center[1] - target_height * 0.48))
+            x0 = int(np.clip(x0, 0, max(0, cover_w - target_width)))
+            y0 = int(np.clip(y0, 0, max(0, cover_h - target_height)))
+        else:
+            x0 = max(0, (cover_w - target_width) // 2)
+            y0 = max(0, (cover_h - target_height) // 2)
+
         background = cover[
             y0:y0 + target_height,
             x0:x0 + target_width,
         ].copy()
-
-        # Strong blur prevents the extension from looking like duplicated
-        # product content while preserving the scene's overall light/color.
-        sigma = max(12.0, min(target_width, target_height) * 0.025)
-        background = cv2.GaussianBlur(background, (0, 0), sigmaX=sigma, sigmaY=sigma)
+        sigma = max(10.0, min(target_width, target_height) * 0.020)
+        background = cv2.GaussianBlur(
+            background,
+            (0, 0),
+            sigmaX=sigma,
+            sigmaY=sigma,
+        )
 
         contain_scale = min(
             target_width / float(src_w),
             target_height / float(src_h),
         )
-        fitted_w = max(1, int(round(src_w * contain_scale)))
-        fitted_h = max(1, int(round(src_h * contain_scale)))
+        foreground_scale = contain_scale
+
+        if quad is not None and smart_product_focus:
+            qmin = np.min(quad, axis=0)
+            qmax = np.max(quad, axis=0)
+            prod_w = max(float(qmax[0] - qmin[0]), 1.0)
+            prod_h = max(float(qmax[1] - qmin[1]), 1.0)
+            fit_product_scale = min(
+                (target_width * 0.92) / prod_w,
+                (target_height * 0.78) / prod_h,
+            )
+            foreground_scale = min(
+                cover_scale,
+                max(contain_scale, fit_product_scale),
+            )
+
+        fitted_w = max(1, int(round(src_w * foreground_scale)))
+        fitted_h = max(1, int(round(src_h * foreground_scale)))
         fitted = cv2.resize(
             image_cv,
             (fitted_w, fitted_h),
             interpolation=cv2.INTER_LANCZOS4,
         )
 
-        x1 = (target_width - fitted_w) // 2
-        y1 = (target_height - fitted_h) // 2
+        if quad is not None and smart_product_focus:
+            center = np.mean(quad, axis=0) * foreground_scale
+            x1 = int(round(target_width * 0.5 - center[0]))
+            y1 = int(round(target_height * 0.48 - center[1]))
+        else:
+            x1 = (target_width - fitted_w) // 2
+            y1 = (target_height - fitted_h) // 2
 
-        # A narrow feather hides the rectangular join without materially
-        # changing the actual mockup/product region.
-        alpha = np.ones((fitted_h, fitted_w), dtype=np.float32)
-        feather_px = max(2, int(round(min(fitted_w, fitted_h) * 0.006)))
-        if feather_px > 1:
+        dst_x0 = max(0, x1)
+        dst_y0 = max(0, y1)
+        dst_x1 = min(target_width, x1 + fitted_w)
+        dst_y1 = min(target_height, y1 + fitted_h)
+        src_x0 = max(0, -x1)
+        src_y0 = max(0, -y1)
+        src_x1 = src_x0 + max(0, dst_x1 - dst_x0)
+        src_y1 = src_y0 + max(0, dst_y1 - dst_y0)
+
+        if dst_x1 <= dst_x0 or dst_y1 <= dst_y0:
+            return background
+
+        visible = fitted[src_y0:src_y1, src_x0:src_x1]
+        alpha = np.ones(visible.shape[:2], dtype=np.float32)
+        feather_px = max(2, int(round(min(visible.shape[:2]) * 0.004)))
+        if feather_px > 1 and min(visible.shape[:2]) > feather_px * 4:
             alpha[:feather_px, :] = 0.0
             alpha[-feather_px:, :] = 0.0
             alpha[:, :feather_px] = 0.0
@@ -2105,11 +2156,11 @@ class MockupRenderer:
             )
             alpha = np.clip(alpha, 0.0, 1.0)
 
-        roi = background[y1:y1 + fitted_h, x1:x1 + fitted_w].astype(np.float32)
-        fitted_f = fitted.astype(np.float32)
+        roi = background[dst_y0:dst_y1, dst_x0:dst_x1].astype(np.float32)
+        visible_f = visible.astype(np.float32)
         alpha_3c = alpha[..., None]
-        blended = fitted_f * alpha_3c + roi * (1.0 - alpha_3c)
-        background[y1:y1 + fitted_h, x1:x1 + fitted_w] = np.clip(
+        blended = visible_f * alpha_3c + roi * (1.0 - alpha_3c)
+        background[dst_y0:dst_y1, dst_x0:dst_x1] = np.clip(
             blended, 0, 255
         ).astype(np.uint8)
         return background
@@ -2439,6 +2490,13 @@ class MockupRenderer:
                     final_cv,
                     target_width=output_width,
                     target_height=output_height,
+                    product_quad=koseler,
+                    smart_product_focus=bool(
+                        config.get(
+                            "smart_product_focus",
+                            category_name == "05_Ocak_Arkasi",
+                        )
+                    ),
                 )
 
             # Final whole-image quality stage. This is intentionally after
