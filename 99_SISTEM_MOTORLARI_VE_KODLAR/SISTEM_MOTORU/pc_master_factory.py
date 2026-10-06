@@ -351,6 +351,33 @@ def artifact_record_is_complete_on_disk(record) -> bool:
     return Path(local_output_path).is_file()
 
 
+def choose_stable_template_record(
+    records: list,
+    sequence_number: int,
+    persisted_name: str | None = None,
+):
+    """Choose one template deterministically and preserve prior assignment.
+
+    Mutable confidence/update timestamps must never silently change which scene
+    an existing SKU uses. A persisted name wins while still eligible; otherwise
+    selection falls back to a name-sorted round robin.
+    """
+    if not records:
+        return None
+    persisted = str(persisted_name or "").strip()
+    if persisted:
+        for record in records:
+            if str(record.get("name") or "") == persisted:
+                return record
+
+    ordered = sorted(
+        records,
+        key=lambda record: str(record.get("name") or "").casefold(),
+    )
+    index = (max(int(sequence_number), 1) - 1) % len(ordered)
+    return ordered[index]
+
+
 def physical_orientation_verified(component_confidences) -> bool:
     """Return whether physical H/V provenance was explicitly trusted/reviewed."""
     payload = component_confidences
@@ -3742,16 +3769,51 @@ class PCMasterFactory:
                         if not record["completed"]
                     ]
                 else:
-                    # Stable round-robin selection operates on all compatible
-                    # approved templates, independent of which source H/V each
-                    # template needs.
-                    target_index = (seq - 1) % len(template_records)
-                    target_record = template_records[target_index]
-                    selected_records = (
-                        []
-                        if target_record["completed"]
-                        else [target_record]
+                    # Persist the scene assignment per logical product. Without
+                    # this, adding/re-approving a template could reorder the
+                    # pool and silently change an existing SKU's visual.
+                    template_selection_key = (
+                        f"template_v1_{master_id}_{prod_key}"
                     )
+                    with db_lock, self.state.conn:
+                        selection_row = self.state.conn.execute(
+                            "SELECT value FROM system_meta WHERE key = ?",
+                            (template_selection_key,),
+                        ).fetchone()
+                        persisted_template_name = (
+                            str(selection_row["value"])
+                            if selection_row
+                            else ""
+                        )
+
+                    target_record = choose_stable_template_record(
+                        template_records,
+                        seq,
+                        persisted_template_name,
+                    )
+                    if target_record is None:
+                        selected_records = []
+                    else:
+                        selected_name = str(target_record["name"])
+                        if selected_name != persisted_template_name:
+                            with db_lock, self.state.conn:
+                                self.state.conn.execute(
+                                    """INSERT INTO system_meta
+                                           (key, value, updated_at)
+                                       VALUES (?, ?, CURRENT_TIMESTAMP)
+                                       ON CONFLICT(key) DO UPDATE SET
+                                           value=excluded.value,
+                                           updated_at=CURRENT_TIMESTAMP""",
+                                    (
+                                        template_selection_key,
+                                        selected_name,
+                                    ),
+                                )
+                        selected_records = (
+                            []
+                            if target_record["completed"]
+                            else [target_record]
+                        )
 
                 for record in selected_records:
                     sablon_name = record["name"]
