@@ -35,18 +35,33 @@ logging.basicConfig(
 )
 logger = logging.getLogger("AutoWhitener")
 
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
-SABLON_DIR = BASE_DIR / "2_SABLON_HAVUZU"
-AYARLAR_PATH = BASE_DIR / "99_SISTEM_MOTORLARI_VE_KODLAR" / "SISTEM_MOTORU" / "ayarlar.json"
-REGISTRY_PATH = BASE_DIR / "99_SISTEM_MOTORLARI_VE_KODLAR" / "SISTEM_MOTORU" / "logs" / "whitened_registry.json"
+SOURCE_ROOT = Path(__file__).resolve().parent.parent.parent
+_runtime_override = str(os.environ.get("MOCKUP_RUNTIME_WORKSPACE") or "").strip()
+BASE_DIR = (
+    Path(_runtime_override).expanduser().resolve()
+    if _runtime_override
+    else SOURCE_ROOT.resolve()
+)
+os.environ["MOCKUP_RUNTIME_WORKSPACE"] = str(BASE_DIR)
 
-sys.path.insert(0, str(BASE_DIR / "99_SISTEM_MOTORLARI_VE_KODLAR" / "SISTEM_MOTORU"))
+SABLON_DIR = BASE_DIR / "2_SABLON_HAVUZU"
+YEDEK_DIR = BASE_DIR / "2_SABLON_HAVUZU_ORIJINAL_YEDEK"
+STAGING_DIR = BASE_DIR / "YENI-BOS MOCKUP SABLON HAVUZU"
+RUNTIME_ENGINE_DIR = BASE_DIR / "99_SISTEM_MOTORLARI_VE_KODLAR" / "SISTEM_MOTORU"
+REGISTRY_PATH = RUNTIME_ENGINE_DIR / "logs" / "whitened_registry.json"
+
+SOURCE_ENGINE_DIR = SOURCE_ROOT / "99_SISTEM_MOTORLARI_VE_KODLAR" / "SISTEM_MOTORU"
+SOURCE_ARCH_DIR = SOURCE_ROOT / "SABLON_V2_MIMARI"
+sys.path.insert(0, str(SOURCE_ENGINE_DIR))
+sys.path.insert(0, str(SOURCE_ARCH_DIR))
+
 from sablon_beyazlatma_motoru import (
     imread_unicode,
     imwrite_unicode,
     whiten_canvas,
     get_polygon_points
 )
+from core.db import get_all_ayarlar, save_template
 # from foreground_ai import ForegroundAIEngine # Gereksiz sistem yükü oluşturduğu için devredışı bırakıldı
 
 FRAMELESS_KEYS = ["01_Wifi_Kutusu", "04_Cam_Dograma", "05_Ocak_Arkasi"]
@@ -150,155 +165,214 @@ def detect_frame_auto(img_cv: np.ndarray) -> dict:
     cw, ch = int(w * 0.50), int(h * 0.60)
     return {"tip": "duz", "x": cx, "y": cy, "w": cw, "h": ch, "supheli": True}
 
-STAGING_DIR = BASE_DIR / "YENI-BOS MOCKUP SABLON HAVUZU"
+def _write_png_atomic(dest_path: Path, img_cv: np.ndarray) -> bool:
+    """Write a PNG atomically so crashes never leave a half-written template."""
+    dest_path.parent.mkdir(parents=True, exist_ok=True)
+    ok, encoded = cv2.imencode(".png", img_cv)
+    if not ok:
+        return False
+    tmp_path = dest_path.with_name(dest_path.name + ".tmp")
+    try:
+        with open(tmp_path, "wb") as handle:
+            handle.write(encoded.tobytes())
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp_path, dest_path)
+        return True
+    finally:
+        if tmp_path.exists():
+            try:
+                tmp_path.unlink()
+            except OSError:
+                pass
+
+
+def _restore_processing_file(processing_path: Path, original_path: Path) -> None:
+    """Best-effort rollback: never strand the only user copy as .processing."""
+    if not processing_path.exists() or original_path.exists():
+        return
+    try:
+        processing_path.rename(original_path)
+        logger.warning(
+            f"↩️ İşlem tamamlanamadı; staging dosyası geri yüklendi: "
+            f"{original_path.name}"
+        )
+    except Exception as exc:
+        logger.error(
+            f"KRİTİK: staging dosyası geri yüklenemedi: "
+            f"{processing_path} -> {original_path}: {exc}"
+        )
+
+
+def _existing_template_names(cat_key: str) -> set[str]:
+    names = set()
+    for root in (SABLON_DIR, YEDEK_DIR):
+        cat_dir = root / cat_key
+        if cat_dir.exists():
+            for path in cat_dir.iterdir():
+                if path.is_file():
+                    names.add(path.name)
+
+    try:
+        ayarlar = get_all_ayarlar()
+        names.update(
+            ayarlar.get("kategoriler", {})
+            .get(cat_key, {})
+            .get("sablonlar", {})
+            .keys()
+        )
+    except Exception as exc:
+        logger.warning(f"DB şablon isimleri okunamadı: {exc}")
+    return names
+
 
 def process_from_staging(staging_path: Path, thread_lock=None) -> bool:
-    if "-düzenleme-yapıldı" in staging_path.stem or "-beyazlatilmis-onizleme" in staging_path.stem or staging_path.suffix == ".processing":
+    """Safely ingest one raw template into backup + review workspace.
+
+    Safety contract:
+    - never overwrite an existing original backup silently;
+    - never delete the only staging copy before durable backup + DB registration;
+    - every failure attempts to restore the original staging filename;
+    - new templates enter review as REVIEW_REQUIRED, never production-approved.
+    """
+    if (
+        "-düzenleme-yapıldı" in staging_path.stem
+        or "-beyazlatilmis-onizleme" in staging_path.stem
+        or staging_path.suffix == ".processing"
+    ):
         return False
 
-    # CRITICAL BUG FIX: Çoklu İşlem Çakışmasını (Race Condition) Önleme (OS-Level Lock)
-    # Hem UI (SABLON_DUZELTICI) hem de oto-izleyici aynı anda aynı dosyayı işlemeye çalışırsa ayarlar.json bozulur.
-    # Bunu engellemek için dosyayı işleme almadan önce adını .processing olarak değiştiriyoruz.
-    processing_path = staging_path.with_suffix(staging_path.suffix + ".processing")
+    original_staging_path = staging_path
+    processing_path = staging_path.with_suffix(
+        staging_path.suffix + ".processing"
+    )
     try:
         staging_path.rename(processing_path)
-    except Exception as e:
-        # Eğer isim değiştirilemiyorsa, başka bir process şu an bu dosyayı işliyor demektir.
+    except Exception:
+        # Another process may already own the file.
         return False
 
     cat_key = processing_path.parent.name
-    is_frameless = cat_key in FRAMELESS_KEYS
-    
     prefixes = {
         "01_Wifi_Kutusu": "Wifi_Kutusu",
         "02_Cam_Tablo_Dikey": "CamTabloDikey",
         "02_Cam_Tablo_Yatay": "CamTabloYatay",
         "03_Ahsap_Tablo": "AhsapTablo",
         "04_Cam_Dograma": "CamDograma",
-        "05_Ocak_Arkasi": "OcakArkasi"
+        "05_Ocak_Arkasi": "OcakArkasi",
     }
     prefix = prefixes.get(cat_key, cat_key)
-    target_cat_dir = SABLON_DIR / cat_key
-    target_cat_dir.mkdir(parents=True, exist_ok=True)
-    
-    # KULLANICI TALEBİ: Sisteme giren her dosya ne olursa olsun anında .png'ye çevrilerek standartlaştırılsın!
-    ext = ".png"
-    
-    # Mevcut numaraları topla, boşlukları (silinenleri) bul
-    existing_nums = set()
-    for ex in target_cat_dir.glob(f"{prefix}_*.*"):
-        if ex.suffix.lower() in VALID_EXTS:
+
+    try:
+        img_cv = imread_unicode(processing_path)
+        if img_cv is None:
+            logger.error(f"Görsel okunamadı: {processing_path}")
+            _restore_processing_file(processing_path, original_staging_path)
+            return False
+
+        existing_names = _existing_template_names(cat_key)
+        existing_nums = set()
+        for name in existing_names:
+            p = Path(name)
+            if p.suffix.lower() not in VALID_EXTS:
+                continue
             try:
-                num = int(ex.stem.replace(f"{prefix}_", ""))
-                existing_nums.add(num)
-            except:
+                existing_nums.add(int(p.stem.replace(f"{prefix}_", "")))
+            except (TypeError, ValueError):
+                continue
+
+        # Silent overwrite is forbidden. Preserve a requested number only when
+        # it is truly unused; otherwise allocate the first free slot.
+        requested_idx = None
+        original_stem = original_staging_path.stem
+        if original_stem.startswith(f"{prefix}_"):
+            try:
+                requested_idx = int(
+                    original_stem.replace(f"{prefix}_", "")
+                )
+            except (TypeError, ValueError):
+                requested_idx = None
+
+        if requested_idx is not None and requested_idx not in existing_nums:
+            new_idx = requested_idx
+        else:
+            new_idx = 1
+            while new_idx in existing_nums:
+                new_idx += 1
+
+        new_name = f"{prefix}_{new_idx:03d}.png"
+        backup_path = YEDEK_DIR / cat_key / new_name
+        working_path = SABLON_DIR / cat_key / new_name
+
+        if backup_path.exists() or working_path.exists():
+            logger.error(
+                f"Güvenlik nedeniyle mevcut şablon üzerine yazılmadı: {new_name}"
+            )
+            _restore_processing_file(processing_path, original_staging_path)
+            return False
+
+        logger.info(
+            f"🔍 Yeni şablon analiz ediliyor: "
+            f"{processing_path.name} -> {new_name}"
+        )
+        s_conf = detect_frame_auto(img_cv)
+        s_conf["review_status"] = "REVIEW_REQUIRED"
+        s_conf["ingest_source"] = "staging_watcher"
+
+        # 1) Immutable recovery copy first.
+        if not _write_png_atomic(backup_path, img_cv):
+            logger.error(f"Orijinal yedek yazılamadı: {backup_path}")
+            _restore_processing_file(processing_path, original_staging_path)
+            return False
+
+        # 2) Working copy may later be transformed, but starts byte-equivalent
+        #    in pixel content to the durable original backup.
+        if not _write_png_atomic(working_path, img_cv):
+            logger.error(f"Çalışma şablonu yazılamadı: {working_path}")
+            _restore_processing_file(processing_path, original_staging_path)
+            return False
+
+        # 3) Register in the ACTIVE SQLite review architecture. Do not mutate
+        #    legacy ayarlar.json; the Flask review UI reads ayarlar.db.
+        try:
+            save_template(cat_key, new_name, s_conf)
+        except Exception as exc:
+            logger.error(f"Şablon review DB'ye kaydedilemedi: {exc}")
+            try:
+                working_path.unlink(missing_ok=True)
+            except Exception:
                 pass
-            
-    # EĞER GELEN DOSYA ZATEN SISTEMDE VARSA, YENİ İSİM VERME, ÜZERİNE YAZ
-    original_stem = staging_path.stem
-    new_name = None
-    if original_stem.startswith(f"{prefix}_"):
-        try:
-            potential_num = int(original_stem.replace(f"{prefix}_", ""))
-            if potential_num in existing_nums:
-                new_name = f"{original_stem}{ext}"
-                logger.info(f"🔄 Var olan şablon güncelleniyor (Üzerine yazılacak): {new_name}")
-        except:
-            pass
-            
-    if not new_name:
-        new_idx = 1
-        while new_idx in existing_nums:
-            new_idx += 1
-            
-        new_name = f"{prefix}_{new_idx:03d}{ext}"
-        
-    final_target_path = target_cat_dir / new_name
+            _restore_processing_file(processing_path, original_staging_path)
+            return False
 
-    img_cv = imread_unicode(processing_path)
-    if img_cv is None:
-        return False
-
-    logger.info(f"🔍 Yeni şablon için çerçeve tespit ediliyor: {processing_path.name} -> Hedef: {new_name}")
-    s_conf = detect_frame_auto(img_cv)
-    
-    # Kiritik Bölge (Critical Section): OS-Level File Lock ile ayarlar.json'u koruma
-    # Flask UI ve Oto-İzleyici farklı process'ler olduğu için thread_lock işe yaramaz.
-    lock_file = AYARLAR_PATH.with_suffix('.json.lock')
-    max_retries = 50
-    for attempt in range(max_retries):
-        try:
-            # Sadece bu process lock dosyasını oluşturabilirse (exclusive creation) içeri girer
-            fd = os.open(str(lock_file), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-            os.close(fd)
-            break
-        except FileExistsError:
-            time.sleep(0.1)
-    else:
-        logger.error("OS-Level Lock alınamadı! ayarlar.json güncellenmedi.")
-        processing_path.with_suffix(ext) # İsmi eski haline döndür
-        return False
-
-    try:
-        with open(AYARLAR_PATH, "r", encoding="utf-8") as f:
-            ayarlar = json.load(f)
-
-        cat_cfg = ayarlar.setdefault("kategoriler", {}).setdefault(cat_key, {"sablonlar": {}})
-        sablonlar = cat_cfg.setdefault("sablonlar", {})
-        sablonlar[new_name] = s_conf
-        
-        tmp_path = AYARLAR_PATH.with_suffix('.json.tmp')
-        with open(tmp_path, "w", encoding="utf-8") as f:
-            json.dump(ayarlar, f, ensure_ascii=False, indent=2)
-        os.replace(tmp_path, AYARLAR_PATH)
-    finally:
-        try:
-            lock_file.unlink()
-        except:
-            pass
-            
-    logger.info(f"💾 Yeni koordinatlar ayarlar.json'a kaydedildi: {s_conf}")
-
-    # Orijinal dosyayi YEDEK klasörüne kopyala ama artık shutil ile değil, saf PNG formatında kodla!
-    yedek_cat_dir = BASE_DIR / "2_SABLON_HAVUZU_ORIJINAL_YEDEK" / cat_key
-    yedek_cat_dir.mkdir(parents=True, exist_ok=True)
-    try:
-        imwrite_unicode(str(yedek_cat_dir / new_name), img_cv)
-        logger.info(f"📦 Orijinal ham görsel standart PNG olarak yedeğe alındı: {yedek_cat_dir / new_name}")
-    except Exception as ey:
-        logger.error(f"Yedekleme hatası: {ey}")
-
-
-    # KULLANICI TALEBİ (ONAY SİSTEMİ):
-    # SAM 2.1 bazen köşeleri tam bulamayabilir. O yüzden izleyici (watcher) artık görseli otomatik olarak
-    # kesip biçip '2_SABLON_HAVUZU'na (nihai havuza) ATMAYACAK. 
-    # Sadece '2_SABLON_HAVUZU_ORIJINAL_YEDEK' klasörüne yedeği alacak ve ayarlar.json'a koordinatları yazacak.
-    # Kullanıcı arayüzü (SABLON_DUZELTICI) açıp görseli kontrol edecek, gerekirse köşeleri eliyle düzeltecek 
-    # ve arayüzdeki "KAYDET" butonuna basarak ONAY verdiğinde asıl havuza aktarılacak.
-
-    # Eski otomatik beyazlatma ve asıl havuza atma kodu iptal edildi:
-    # whitened = whiten_canvas(img_cv, s_conf, is_frameless=is_frameless)
-    # success = imwrite_unicode(final_target_path, whitened)
-    
-    success = True # Yedekleme ve ayarlar JSON güncellemesi başarılıysa işlem başarılı sayılır.
-    
-    if success:
-        logger.info(f"⏳ [ONAY BEKLİYOR] {new_name} yedeğe alındı ve koordinatları hesaplandı. Arayüzden onayınız (Kaydet) bekleniyor!")
-        
-        # Hazırlık (staging) klasöründeki orijinal dosyayı tamamen sil (Inbox mantığı)
+        # Only now is the staging copy redundant.
         try:
             processing_path.unlink()
-            logger.info(f"🗑️ Hazırlık klasöründen temizlendi: {processing_path.name}")
-        except Exception as e:
-            logger.error(f"Eski dosya silinemedi: {e}")
-            
-    return success
+        except Exception as exc:
+            logger.warning(
+                f"Şablon güvenle kaydedildi ancak staging kopyası silinemedi: {exc}"
+            )
+
+        logger.info(
+            f"📦 Orijinal korundu: {backup_path}"
+        )
+        logger.info(
+            f"⏳ [REVIEW_REQUIRED] {new_name} inceleme merkezine eklendi. "
+            "Üretime girmesi için insan onayı gerekiyor."
+        )
+        return True
+
+    except Exception as exc:
+        logger.exception(f"Şablon staging işlemi başarısız: {exc}")
+        _restore_processing_file(processing_path, original_staging_path)
+        return False
+
 
 def run_watcher():
     logger.info("==================================================================")
     logger.info("👀 ŞABLON HAVUZU HAZIRLIK (STAGING) İZLEYİCİSİ DEVREDE")
     logger.info(f"📁 İzlenen Hazırlık Klasörü: {STAGING_DIR}")
-    logger.info("ℹ️ Bu klasöre attığınız görseller otomatik işlenip '2_SABLON_HAVUZU'na aktarılacaktır.")
+    logger.info("ℹ️ Yeni görseller güvenli yedek + çalışma kopyası olarak kaydedilir ve REVIEW_REQUIRED durumunda inceleme merkezine eklenir.")
     logger.info("==================================================================")
 
     STAGING_DIR.mkdir(parents=True, exist_ok=True)
