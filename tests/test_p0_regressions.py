@@ -738,6 +738,7 @@ class TestR8SceneRealism(unittest.TestCase):
         self.assertEqual(meta_a["angle_deg"], meta_b["angle_deg"])
 
     def test_scene_realism_protects_product_more_than_surroundings(self):
+        import cv2
         import numpy as np
         from SISTEM_MOTORU.pc_master_factory import MockupRenderer
 
