@@ -1409,6 +1409,52 @@ class MockupRenderer:
         return image_cv + (noise * noise_mask_3c)
 
     @staticmethod
+    def resolve_print_mask(
+        quad_mask_f: np.ndarray,
+        alpha_mask: np.ndarray | None,
+        target_width: int,
+        target_height: int,
+    ) -> np.ndarray:
+        """Combine reviewed quad with a meaningful transparent print hole.
+
+        Ordinary RGBA PNGs are often fully opaque. Treating their alpha channel
+        as a cut-out would zero the artwork mask and produce a technically
+        successful render with no visible design. Alpha restricts the reviewed
+        quad only when there is meaningful transparency inside that quad.
+        """
+        quad_mask_f = np.clip(quad_mask_f.astype(np.float32), 0.0, 1.0)
+        if alpha_mask is None:
+            return quad_mask_f
+
+        alpha = alpha_mask
+        if alpha.ndim == 3:
+            alpha = cv2.cvtColor(alpha, cv2.COLOR_BGR2GRAY)
+        if alpha.shape[:2] != (target_height, target_width):
+            alpha = cv2.resize(
+                alpha,
+                (target_width, target_height),
+                interpolation=cv2.INTER_LINEAR,
+            )
+        transparent_hole = 1.0 - (alpha.astype(np.float32) / 255.0)
+        inside = quad_mask_f > 0.10
+        if not np.any(inside):
+            raise ValueError("Approved quad produced an empty print mask")
+
+        # Require a real transparent region inside the approved surface.
+        transparent_fraction = float(
+            np.mean(transparent_hole[inside] > 0.10)
+        )
+        if transparent_fraction < 0.02:
+            return quad_mask_f
+
+        restricted = np.clip(transparent_hole * quad_mask_f, 0.0, 1.0)
+        restricted_pixels = int(np.count_nonzero(restricted > 0.05))
+        quad_pixels = int(np.count_nonzero(inside))
+        if restricted_pixels < max(64, int(quad_pixels * 0.02)):
+            return quad_mask_f
+        return restricted
+
+    @staticmethod
     def render_cv2_optik(
         art_cv: np.ndarray,
         bg_cv: np.ndarray,
@@ -1425,6 +1471,7 @@ class MockupRenderer:
         template_sha: str = None,
         auto_foreground: bool = False,
         foreground_required: bool = False,
+        camera_artifacts: bool = False,
     ) -> np.ndarray:
         h_bg, w_bg = bg_cv.shape[:2]
         h_art, w_art = art_cv.shape[:2]
@@ -1469,19 +1516,12 @@ class MockupRenderer:
             dst_pts,
             feather_px=1.8,
         )
-        if alpha_mask is not None:
-            if alpha_mask.shape[:2] != (h_bg, w_bg):
-                alpha_mask = cv2.resize(
-                    alpha_mask,
-                    (w_bg, h_bg),
-                    interpolation=cv2.INTER_LINEAR,
-                )
-            transparent_hole = 1.0 - (
-                alpha_mask.astype(np.float32) / 255.0
-            )
-            mask_f = np.clip(transparent_hole * quad_mask_f, 0.0, 1.0)
-        else:
-            mask_f = quad_mask_f
+        mask_f = MockupRenderer.resolve_print_mask(
+            quad_mask_f,
+            alpha_mask,
+            w_bg,
+            h_bg,
+        )
         mask_3c = np.stack([mask_f] * 3, axis=-1)
 
         # -------------------------------------------------------------
@@ -1506,16 +1546,26 @@ class MockupRenderer:
         # 1. Ortam Renk Isısı Harmanlama (White Balance Match)
         warped_lit = MockupRenderer.match_color_cast(warped_lit, bg_cv, mask_f)
         
-        # 2. Lens Sapması (Chromatic Aberration)
-        warped_lit = MockupRenderer.apply_chromatic_aberration(warped_lit, intensity=1)
-        
-        # 3. Sensör Kumlanması (Camera Grain)
-        seed = None
-        if source_design_identity and template_identity and recipe_version:
-            import hashlib
-            h = hashlib.sha256(f"{source_design_identity}_{template_identity}_{recipe_version}".encode()).hexdigest()
-            seed = int(h[:8], 16)
-        warped_lit = MockupRenderer.apply_camera_grain(warped_lit, intensity=3.5, seed=seed)
+        # 2-3. Optional camera artifacts. Marketplace product imagery
+        # defaults to maximum sharpness; cinematic grain/channel shift must be
+        # explicitly opted in per template.
+        if camera_artifacts:
+            warped_lit = MockupRenderer.apply_chromatic_aberration(
+                warped_lit,
+                intensity=1,
+            )
+            seed = None
+            if source_design_identity and template_identity and recipe_version:
+                import hashlib
+                h = hashlib.sha256(
+                    f"{source_design_identity}_{template_identity}_{recipe_version}".encode()
+                ).hexdigest()
+                seed = int(h[:8], 16)
+            warped_lit = MockupRenderer.apply_camera_grain(
+                warped_lit,
+                intensity=3.5,
+                seed=seed,
+            )
         # ----------------------------------------------------------------
 
         # -------------------------------------------------------------
@@ -2113,6 +2163,7 @@ class MockupRenderer:
                 template_sha=template_sha,
                 auto_foreground=auto_foreground,
                 foreground_required=foreground_required,
+                camera_artifacts=bool(config.get("camera_artifacts", False)),
             )
 
             # Kalite Kontrol Denetimi (Quality Inspector)
@@ -2123,8 +2174,8 @@ class MockupRenderer:
 
             # Marketplace-ready output. Defaults to Trendyol-friendly 3:4
             # while allowing an explicit per-template override.
-            output_width = int(config.get("output_width", 1200) or 1200)
-            output_height = int(config.get("output_height", 1600) or 1600)
+            output_width = int(config.get("output_width", 2400) or 2400)
+            output_height = int(config.get("output_height", 3200) or 3200)
             marketplace_ready = bool(config.get("marketplace_ready", True))
             if marketplace_ready:
                 final_cv = cls.prepare_marketplace_canvas(
@@ -2138,7 +2189,7 @@ class MockupRenderer:
             success, enc_img = cv2.imencode(
                 '.jpg',
                 final_cv,
-                [int(cv2.IMWRITE_JPEG_QUALITY), 95],
+                [int(cv2.IMWRITE_JPEG_QUALITY), 98],
             )
             if success:
                 enc_img.tofile(str(output_path))
