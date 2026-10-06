@@ -147,7 +147,7 @@ db_lock = threading.RLock()
 # Render recipe participates in immutable artifact identity. Bump whenever
 # renderer/aspect/occlusion behavior changes so old artifacts are never silently
 # reused under a new visual contract.
-RECIPE_VERSION = "v3_epic3_20261006_r4"
+RECIPE_VERSION = "v3_epic3_20261007_r5"
 
 # ==============================================================================
 # 2. ÜRÜN VE FORMAT SÖZLEŞMESİ (URUN_FORMAT_HARITASI)
@@ -1870,15 +1870,17 @@ class MockupRenderer:
     def prepare_artwork_for_nominal_aspect(
         image_cv: np.ndarray,
         nominal_aspect,
-        max_extension_fraction: float = 0.35,
+        max_direct_fit_error: float = 0.15,
     ) -> np.ndarray:
-        """Pad artwork to physical print aspect without crop or stretch.
+        """Validate aspect compatibility without manufacturing edge pixels.
 
-        Perspective projection is geometrically correct only when the source
-        artwork plane has the same physical width/height ratio as the product.
-        We therefore preserve every source pixel and extend only the short
-        dimension with replicated edge pixels. Large mismatches are rejected
-        instead of silently distorting marketplace artwork.
+        Older code padded modest ratio differences with BORDER_REPLICATE. That
+        copied the outermost ornament/background pixels into long horizontal or
+        vertical streaks after perspective projection. For compatible master
+        variants we keep every real source pixel and let the physical homography
+        perform the modest aspect fit. Large mismatches are rejected instead of
+        silently cropping, stretching via an intermediate resize, or inventing
+        fake edge content.
         """
         if image_cv is None or image_cv.size == 0:
             raise ValueError("Artwork is empty")
@@ -1899,46 +1901,16 @@ class MockupRenderer:
         if relative_error <= 0.005:
             return image_cv
 
-        if source_ratio > target_ratio:
-            # Source is too wide: extend height, never crop width.
-            target_h = int(round(w / target_ratio))
-            added = max(0, target_h - h)
-            extension_fraction = added / float(max(h, 1))
-            if extension_fraction > max_extension_fraction:
-                raise ValueError(
-                    f"Artwork aspect mismatch too large: {source_ratio:.4f} "
-                    f"vs physical {target_ratio:.4f}"
-                )
-            top = added // 2
-            bottom = added - top
-            return cv2.copyMakeBorder(
-                image_cv,
-                top,
-                bottom,
-                0,
-                0,
-                borderType=cv2.BORDER_REPLICATE,
-            )
-
-        # Source is too tall/narrow: extend width, never crop height.
-        target_w = int(round(h * target_ratio))
-        added = max(0, target_w - w)
-        extension_fraction = added / float(max(w, 1))
-        if extension_fraction > max_extension_fraction:
+        if relative_error > max_direct_fit_error:
             raise ValueError(
                 f"Artwork aspect mismatch too large: {source_ratio:.4f} "
                 f"vs physical {target_ratio:.4f}"
             )
-        left = added // 2
-        right = added - left
-        return cv2.copyMakeBorder(
-            image_cv,
-            0,
-            0,
-            left,
-            right,
-            borderType=cv2.BORDER_REPLICATE,
-        )
+
+        # Important: do not pad with replicated/mirrored pixels here. The
+        # perspective transform below maps the complete source artwork to the
+        # reviewed physical surface in one sampling operation.
+        return image_cv
 
     @staticmethod
     def prepare_marketplace_canvas(
@@ -2066,23 +2038,105 @@ class MockupRenderer:
         mask_f: np.ndarray,
         strength: float = 0.45,
     ) -> np.ndarray:
-        """Restore high-frequency artwork detail without removing material light.
+        """Restore artwork microdetail while protecting the physical perimeter.
 
-        Reflection, ambient light and color adaptation are intentionally
-        low-frequency photographic effects. Reintroducing only a bounded
-        high-pass component preserves fine calligraphy/ornament while leaving
-        those realism layers intact.
+        Only high-frequency detail is reintroduced. The mask is contracted and
+        softly feathered first so sharpening never creates ringing/halos on the
+        outer product boundary.
         """
         if final_cv is None or warped_art_cv is None:
             return final_cv
-        sigma = 0.85
+
         base = warped_art_cv.astype(np.float32)
-        low = cv2.GaussianBlur(base, (0, 0), sigmaX=sigma, sigmaY=sigma)
-        detail = np.clip(base - low, -28.0, 28.0)
-        mask = np.clip(mask_f.astype(np.float32), 0.0, 1.0)[..., None]
-        restored = final_cv.astype(np.float32) + detail * float(strength) * mask
+        low = cv2.GaussianBlur(base, (0, 0), sigmaX=0.85, sigmaY=0.85)
+        detail = np.clip(base - low, -24.0, 24.0)
+
+        mask = np.clip(mask_f.astype(np.float32), 0.0, 1.0)
+        binary = (mask > 0.20).astype(np.uint8)
+        if np.any(binary):
+            kernel = np.ones((5, 5), np.uint8)
+            safe_core = cv2.erode(binary, kernel, iterations=1).astype(np.float32)
+            safe_core = cv2.GaussianBlur(
+                safe_core,
+                (0, 0),
+                sigmaX=1.1,
+                sigmaY=1.1,
+            )
+            mask = np.minimum(mask, np.clip(safe_core, 0.0, 1.0))
+
+        mask_3c = mask[..., None]
+        restored = (
+            final_cv.astype(np.float32)
+            + detail * float(strength) * mask_3c
+        )
         return np.clip(restored, 0.0, 255.0).astype(np.uint8)
 
+    @staticmethod
+    def final_master_quality_pass(
+        image_cv: np.ndarray,
+        strength: float = 0.34,
+    ) -> np.ndarray:
+        """Edge-aware final quality pass for the complete marketplace image.
+
+        The pass operates on luminance only to avoid color fringing. Moderate
+        texture/detail receives controlled high-frequency recovery, while the
+        strongest contrast boundaries are automatically protected from halo and
+        ringing. Material reflections, shadows and color response remain intact.
+        """
+        if image_cv is None or image_cv.size == 0:
+            return image_cv
+
+        image_u8 = np.clip(image_cv, 0, 255).astype(np.uint8)
+        lab = cv2.cvtColor(image_u8, cv2.COLOR_BGR2LAB)
+        l_chan, a_chan, b_chan = cv2.split(lab)
+        l_float = l_chan.astype(np.float32)
+
+        low = cv2.GaussianBlur(
+            l_float,
+            (0, 0),
+            sigmaX=0.90,
+            sigmaY=0.90,
+        )
+        detail = np.clip(l_float - low, -20.0, 20.0)
+
+        gx = cv2.Sobel(l_float, cv2.CV_32F, 1, 0, ksize=3)
+        gy = cv2.Sobel(l_float, cv2.CV_32F, 0, 1, ksize=3)
+        gradient = cv2.magnitude(gx, gy)
+
+        positive = gradient[gradient > 0]
+        if positive.size:
+            reference = float(np.percentile(positive, 92.0))
+        else:
+            reference = 1.0
+        reference = max(reference, 1.0)
+        edge_strength = np.clip(gradient / reference, 0.0, 1.5)
+        edge_protection = 1.0 - np.clip(
+            (edge_strength - 0.55) / 0.75,
+            0.0,
+            1.0,
+        )
+
+        texture = np.clip(np.abs(detail) / 7.0, 0.0, 1.0)
+        adaptive_weight = (
+            float(strength)
+            * (0.30 + 0.70 * texture)
+            * edge_protection
+        )
+
+        enhanced_l = np.clip(
+            l_float + detail * adaptive_weight,
+            0.0,
+            255.0,
+        ).astype(np.uint8)
+
+        enhanced = cv2.cvtColor(
+            cv2.merge([enhanced_l, a_chan, b_chan]),
+            cv2.COLOR_LAB2BGR,
+        )
+        return enhanced
+
+    @classmethod
+    def process_mockup(cls, raw_path: Path, template_path: Path,
     @classmethod
     def process_mockup(cls, raw_path: Path, template_path: Path,
                        config: dict, is_glass: bool, output_path: Path, source_design_identity: str = None, template_identity: str = None, recipe_version: str = None, template_sha: str = None) -> bool:
@@ -2284,6 +2338,15 @@ class MockupRenderer:
                     target_width=output_width,
                     target_height=output_height,
                 )
+
+            # Final whole-image quality stage. This is intentionally after
+            # composition so every visible pixel (scene, frame, artwork,
+            # material reflections and foreground) benefits from one controlled
+            # edge-aware pass.
+            final_cv = cls.final_master_quality_pass(
+                final_cv,
+                strength=float(config.get("master_quality_strength", 0.34) or 0.34),
+            )
 
             # Kaydet (Unicode güvenli)
             output_path.parent.mkdir(parents=True, exist_ok=True)
