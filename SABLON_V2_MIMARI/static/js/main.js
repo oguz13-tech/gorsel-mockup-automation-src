@@ -1791,7 +1791,8 @@ async function approveTemplate() {
                 template: currentTmpl,
                 corners: canonicalCorners,
                 physical_orientation: physicalOrientation,
-                on_plan: cloneForegroundMask()
+                on_plan: cloneForegroundMask(),
+                occlusion_reviewed: true
             })
         });
         let data = await res.json();
