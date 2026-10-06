@@ -220,7 +220,7 @@ window.onerror = function(msg, url, line, col, error) {
                     item.title = 'Henüz incelenmedi.';
                 }
                 
-                item.onclick = () => loadTemplate(cat, tmpl, item);
+                item.onclick = () => navigateToTemplate(cat, tmpl, item);
                 list.appendChild(item);
                 allTemplates.push({cat, tmpl, elem: item, list});
             }
@@ -229,26 +229,39 @@ window.onerror = function(msg, url, line, col, error) {
         }
     }
 
-    function nextTemplate() {
+    async function navigateToTemplate(cat, tmpl, elem) {
+        if (cat === currentCat && tmpl === currentTmpl) {
+            loadTemplate(cat, tmpl, elem);
+            return;
+        }
+        if (currentCat && currentTmpl) {
+            const saved = await saveAll(true);
+            if (!saved) {
+                alert('Mevcut şablon kaydedilemedi. Veri kaybını önlemek için geçiş iptal edildi.');
+                return;
+            }
+        }
+        loadTemplate(cat, tmpl, elem);
+    }
+
+    async function nextTemplate() {
         if (allTemplates.length === 0) return;
-        saveAll(true); // Auto-save on navigation
         let idx = allTemplates.findIndex(t => t.cat === currentCat && t.tmpl === currentTmpl);
         if (idx === -1 || idx === allTemplates.length - 1) idx = 0;
         else idx++;
         const target = allTemplates[idx];
         if (target.list) target.list.style.display = 'block';
-        loadTemplate(target.cat, target.tmpl, target.elem);
+        await navigateToTemplate(target.cat, target.tmpl, target.elem);
     }
 
-    function prevTemplate() {
+    async function prevTemplate() {
         if (allTemplates.length === 0) return;
-        saveAll(true); // Auto-save on navigation
         let idx = allTemplates.findIndex(t => t.cat === currentCat && t.tmpl === currentTmpl);
         if (idx <= 0) idx = allTemplates.length - 1;
         else idx--;
         const target = allTemplates[idx];
         if (target.list) target.list.style.display = 'block';
-        loadTemplate(target.cat, target.tmpl, target.elem);
+        await navigateToTemplate(target.cat, target.tmpl, target.elem);
     }
 
     function updateCounter() {
