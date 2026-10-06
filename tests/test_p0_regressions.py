@@ -564,6 +564,61 @@ class TestEdgeSafeMasterQuality(unittest.TestCase):
         self.assertLessEqual(int(enhanced.max()), 255)
 
 
+
+class TestR6AdaptiveRealism(unittest.TestCase):
+    def test_subtle_glass_streak_is_small_and_low_opacity(self):
+        import numpy as np
+        from SISTEM_MOTORU.pc_master_factory import MockupRenderer
+
+        streak = MockupRenderer.generate_subtle_glass_streak(
+            400, 300, intensity=0.075
+        )
+        self.assertEqual(streak.shape, (300, 400, 3))
+        self.assertGreater(float(streak.max()), 0.0)
+        self.assertLessEqual(float(streak.max()), 0.12 + 1e-6)
+        active_fraction = float(np.mean(streak[:, :, 0] > 0.01))
+        self.assertLess(active_fraction, 0.35)
+
+    def test_detail_aware_reflection_preserves_some_reflection(self):
+        import numpy as np
+        from SISTEM_MOTORU.pc_master_factory import MockupRenderer
+
+        art = np.zeros((120, 160, 3), dtype=np.uint8)
+        art[:, 80:, :] = 230
+        art[20:100:4, 20:75, :] = 255
+        reflection = np.full((120, 160, 3), 0.20, dtype=np.float32)
+        mask = np.ones((120, 160), dtype=np.float32)
+
+        protected = MockupRenderer.protect_artwork_detail_from_reflection(
+            reflection,
+            art,
+            mask,
+            min_reflection_fraction=0.30,
+        )
+        self.assertEqual(protected.shape, reflection.shape)
+        self.assertGreater(float(protected.max()), 0.0)
+        self.assertLess(float(np.mean(protected[:, 90:, :])), 0.20)
+        self.assertGreaterEqual(float(protected.min()), 0.0)
+
+    def test_smart_marketplace_focus_returns_exact_canvas(self):
+        import numpy as np
+        from SISTEM_MOTORU.pc_master_factory import MockupRenderer
+
+        image = np.full((600, 1000, 3), 110, dtype=np.uint8)
+        image[180:430, 230:800, :] = 180
+        quad = [[230, 180], [800, 180], [800, 430], [230, 430]]
+
+        result = MockupRenderer.prepare_marketplace_canvas(
+            image,
+            target_width=600,
+            target_height=800,
+            product_quad=quad,
+            smart_product_focus=True,
+        )
+        self.assertEqual(result.shape, (800, 600, 3))
+        self.assertEqual(result.dtype, np.uint8)
+
+
 class TestPrintMaskAlphaSemantics(unittest.TestCase):
     def test_fully_opaque_alpha_does_not_hide_artwork(self):
         import numpy as np
