@@ -62,6 +62,78 @@ def resolve_reviewed_occlusion(
     return bool(existing_has_occlusion or positive_manual)
 
 
+def annotate_review_metadata(data: dict) -> dict:
+    """Decorate UI template data with the ACTIVE profile review truth.
+
+    The sidebar must never confuse "four coordinates exist" with "human
+    APPROVED". Metadata is added only to the response object; no DB row or
+    legacy template JSON is modified here.
+    """
+    if not isinstance(data, dict):
+        return data
+    db_path = os.path.join(BASE_DIR, "SABLON_V2_MIMARI", "ayarlar.db")
+    if not os.path.isfile(db_path):
+        return data
+
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute(
+            """SELECT template_uid, category, source_relative_path,
+                      review_status, manually_verified, is_active
+               FROM template_profiles
+               WHERE is_active=1"""
+        ).fetchall()
+    except Exception:
+        return data
+    finally:
+        conn.close()
+
+    uid_counts = {}
+    for row in rows:
+        uid = str(row["template_uid"] or "")
+        uid_counts[uid] = uid_counts.get(uid, 0) + 1
+
+    categories = data.get("kategoriler", {})
+    for row in rows:
+        category = str(row["category"] or "")
+        templates = (
+            categories.get(category, {}).get("sablonlar", {})
+            if isinstance(categories, dict)
+            else {}
+        )
+        if not isinstance(templates, dict):
+            continue
+
+        relative = str(row["source_relative_path"] or "").replace("\\", "/")
+        filename = relative.split("/", 1)[-1] if relative else ""
+        target_name = filename if filename in templates else None
+        if target_name is None and filename:
+            wanted_stem = Path(filename).stem
+            matches = [
+                name
+                for name in templates
+                if Path(name).stem == wanted_stem
+            ]
+            if len(matches) == 1:
+                target_name = matches[0]
+        if target_name is None:
+            continue
+
+        uid = str(row["template_uid"] or "")
+        status = str(row["review_status"] or "UNANALYZED")
+        if uid_counts.get(uid, 0) > 1:
+            status = "AMBIGUOUS_DUPLICATE"
+
+        template_data = templates.get(target_name)
+        if isinstance(template_data, dict):
+            template_data["_review_status"] = status
+            template_data["_manually_verified"] = bool(
+                row["manually_verified"]
+            )
+    return data
+
+
 # The UI and factory share the same SQLite schema. Ensure a clean checkout can
 # start safely without requiring a separate migration command first.
 init_db()
@@ -73,7 +145,7 @@ def index():
 @app.route('/api/ayarlar', methods=['GET', 'POST'])
 def api_ayarlar():
     if request.method == 'GET':
-        data = get_all_ayarlar()
+        data = annotate_review_metadata(get_all_ayarlar())
         return jsonify(data)
 
     elif request.method == 'POST':
