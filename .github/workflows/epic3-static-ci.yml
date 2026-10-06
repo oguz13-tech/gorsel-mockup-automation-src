@@ -30,10 +30,10 @@ jobs:
 
       - name: Python syntax gate
         run: |
-          python -m py_compile             SABLON_V2_MIMARI/core/db.py             SABLON_V2_MIMARI/core/vision.py             SABLON_V2_MIMARI/core/template_intelligence.py             SABLON_V2_MIMARI/app.py             V2_KONTROL_MERKEZI/app.py             99_SISTEM_MOTORLARI_VE_KODLAR/SISTEM_MOTORU/foreground_ai.py             99_SISTEM_MOTORLARI_VE_KODLAR/SISTEM_MOTORU/pc_master_factory.py             scripts/epic3_benchmark.py             scripts/geometry_diagnostics.py             scripts/scorer_telemetry.py             scripts/migrate_legacy_geometry_profiles.py             scripts/epic3_validation_bundle.py
+          python -m py_compile             SABLON_V2_MIMARI/core/db.py             SABLON_V2_MIMARI/core/vision.py             SABLON_V2_MIMARI/core/template_intelligence.py             SABLON_V2_MIMARI/app.py             V2_KONTROL_MERKEZI/app.py             99_SISTEM_MOTORLARI_VE_KODLAR/SISTEM_MOTORU/foreground_ai.py             99_SISTEM_MOTORLARI_VE_KODLAR/SISTEM_MOTORU/sablon_oto_izleyici.py             99_SISTEM_MOTORLARI_VE_KODLAR/SISTEM_MOTORU/pc_master_factory.py             scripts/epic3_benchmark.py             scripts/geometry_diagnostics.py             scripts/scorer_telemetry.py             scripts/migrate_legacy_geometry_profiles.py             scripts/epic3_validation_bundle.py
 
       - name: Full regression suite
         env:
           PYTHONUTF8: "1"
         run: |
-          python -m unittest             tests/test_p0_regressions.py             tests/test_p1_p15_suite.py             tests/test_t1_client.py             tests/test_benchmark_metrics.py             tests/test_geometry_diagnostics.py             tests/test_epic3_validation_bundle.py             tests/test_epic3_benchmark.py             tests/test_control_center_file_ops.py             tests/test_runtime_workspace_routing.py             -v
+          python -m unittest             tests/test_p0_regressions.py             tests/test_p1_p15_suite.py             tests/test_t1_client.py             tests/test_benchmark_metrics.py             tests/test_geometry_diagnostics.py             tests/test_epic3_validation_bundle.py             tests/test_epic3_benchmark.py             tests/test_control_center_file_ops.py             tests/test_runtime_workspace_routing.py             tests/test_template_profile_schema_migration.py             tests/test_watcher_safety.py             -v
