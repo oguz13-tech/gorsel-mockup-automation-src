@@ -178,12 +178,17 @@ def main() -> int:
         print("İşlenecek görsel bulunamadı.")
         return 0
 
-    if exe is None and any(
-        args.force_ai
-        or max((_read_image(path) or np.zeros((1, 1, 3))).shape[:2])
-        < args.highres_threshold
-        for path in files
-    ):
+    needs_ai = bool(args.force_ai)
+    if exe is None and not needs_ai:
+        for path in files:
+            probe = _read_image(path)
+            if probe is None:
+                continue
+            if max(probe.shape[:2]) < args.highres_threshold:
+                needs_ai = True
+                break
+
+    if exe is None and needs_ai:
         print(
             "HATA: realesrgan-ncnn-vulkan.exe bulunamadı. "
             "AI_Kalite_Artirici klasörünü kontrol edin."
