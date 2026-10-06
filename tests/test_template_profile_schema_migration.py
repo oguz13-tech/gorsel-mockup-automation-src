@@ -23,6 +23,7 @@ class TestTemplateProfileLegacyUniqueMigration(unittest.TestCase):
                    analyzer_version TEXT,
                    product_class TEXT,
                    orientation TEXT,
+                   nominal_aspect TEXT,
                    geometry_type TEXT,
                    print_policy TEXT,
                    surface_quad TEXT,
@@ -37,6 +38,7 @@ class TestTemplateProfileLegacyUniqueMigration(unittest.TestCase):
                    component_confidences TEXT,
                    review_status TEXT,
                    manually_verified INTEGER,
+                   is_active INTEGER DEFAULT 1,
                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
                )"""
         )
