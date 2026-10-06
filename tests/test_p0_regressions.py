@@ -453,6 +453,41 @@ class TestExcelFlushNoDeadlock(unittest.TestCase):
             wb.close()
 
 
+class TestDetailPreservingRealism(unittest.TestCase):
+    def test_quality_render_scale_supersamples_small_templates(self):
+        from SISTEM_MOTORU.pc_master_factory import MockupRenderer
+
+        scale = MockupRenderer.compute_quality_render_scale(
+            1200, 1600, 2400, 3200, max_scale=2.5
+        )
+        self.assertAlmostEqual(scale, 2.0, places=5)
+
+    def test_quality_render_scale_does_not_downscale_large_templates(self):
+        from SISTEM_MOTORU.pc_master_factory import MockupRenderer
+
+        scale = MockupRenderer.compute_quality_render_scale(
+            3000, 4000, 2400, 3200, max_scale=2.5
+        )
+        self.assertEqual(scale, 1.0)
+
+    def test_microdetail_restoration_preserves_shape_and_dtype(self):
+        import numpy as np
+        from SISTEM_MOTORU.pc_master_factory import MockupRenderer
+
+        base = np.full((80, 80, 3), 100, dtype=np.uint8)
+        art = base.copy()
+        art[20:60, 39:41] = 240
+        mask = np.zeros((80, 80), dtype=np.float32)
+        mask[10:70, 10:70] = 1.0
+
+        restored = MockupRenderer.restore_artwork_microdetail(
+            base, art, mask, strength=0.5
+        )
+        self.assertEqual(restored.shape, base.shape)
+        self.assertEqual(restored.dtype, np.uint8)
+        self.assertGreater(int(restored[40, 40, 0]), int(base[40, 40, 0]))
+
+
 class TestPrintMaskAlphaSemantics(unittest.TestCase):
     def test_fully_opaque_alpha_does_not_hide_artwork(self):
         import numpy as np
