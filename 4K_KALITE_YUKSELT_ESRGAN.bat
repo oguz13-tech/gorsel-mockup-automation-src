@@ -1,13 +1,20 @@
 @echo off
 chcp 65001 > nul
-title AI Real-ESRGAN 4K Kalite Motoru
+title Eski 4K Aracı - Güvenlik Nedeniyle Devre Dışı
 cls
 echo ===============================================================================
-echo      YAPAY ZEKA (REAL-ESRGAN) 4K/5K KRISTAL KALITE MOTORU (RTX 3060)
+echo      BU ESKI TOPLU 4K ARACI ARTIK KULLANILMIYOR
 echo ===============================================================================
 echo.
-echo Uretilen tum urun mockuplari 4K cozunurluge yukseltiliyor...
+echo NEDEN:
+echo  - Üretim dosyasını artifact/recipe kimliği dışında sonradan değiştiriyordu.
+echo  - Final QA ve yeniden üretilebilirlik zincirini bypass edebiliyordu.
 echo.
-python "99_SISTEM_MOTORLARI_VE_KODLAR\SISTEM_MOTORU\kalite_artirici_otomasyon.py"
+echo RealESRGAN gerekiyorsa artık pc_master_factory içindeki ENTEGRE ve
+echo FINAL-QA KORUMALI kalite motoru kullanılır. Başarısız AI upscale adayı
+echo otomatik reddedilir ve güvenli render korunur.
 echo.
+echo Hiçbir dosya değiştirilmedi.
+echo ===============================================================================
 pause
+exit /b 2
