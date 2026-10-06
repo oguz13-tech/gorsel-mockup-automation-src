@@ -488,6 +488,57 @@ class TestDetailPreservingRealism(unittest.TestCase):
         self.assertGreater(int(restored[40, 40, 0]), int(base[40, 40, 0]))
 
 
+
+class TestEdgeSafeMasterQuality(unittest.TestCase):
+    def test_nominal_aspect_compatibility_does_not_replicate_edges(self):
+        import numpy as np
+        from SISTEM_MOTORU.pc_master_factory import MockupRenderer
+
+        image = np.zeros((896, 1200, 3), dtype=np.uint8)
+        image[:, 0, :] = 77
+        image[:, -1, :] = 199
+        prepared = MockupRenderer.prepare_artwork_for_nominal_aspect(
+            image,
+            1.42857143,
+        )
+        self.assertEqual(prepared.shape, image.shape)
+        self.assertTrue(np.array_equal(prepared, image))
+
+    def test_large_aspect_mismatch_is_rejected(self):
+        import numpy as np
+        from SISTEM_MOTORU.pc_master_factory import MockupRenderer
+
+        image = np.zeros((1000, 1000, 3), dtype=np.uint8)
+        with self.assertRaises(ValueError):
+            MockupRenderer.prepare_artwork_for_nominal_aspect(
+                image,
+                2.0,
+            )
+
+    def test_final_master_quality_preserves_flat_regions(self):
+        import numpy as np
+        from SISTEM_MOTORU.pc_master_factory import MockupRenderer
+
+        image = np.full((160, 160, 3), 128, dtype=np.uint8)
+        enhanced = MockupRenderer.final_master_quality_pass(image)
+        self.assertEqual(enhanced.shape, image.shape)
+        self.assertEqual(enhanced.dtype, np.uint8)
+        self.assertLessEqual(
+            int(np.abs(enhanced.astype(np.int16) - image.astype(np.int16)).max()),
+            1,
+        )
+
+    def test_final_master_quality_keeps_values_bounded(self):
+        import numpy as np
+        from SISTEM_MOTORU.pc_master_factory import MockupRenderer
+
+        image = np.zeros((160, 160, 3), dtype=np.uint8)
+        image[:, 80:, :] = 255
+        enhanced = MockupRenderer.final_master_quality_pass(image)
+        self.assertGreaterEqual(int(enhanced.min()), 0)
+        self.assertLessEqual(int(enhanced.max()), 255)
+
+
 class TestPrintMaskAlphaSemantics(unittest.TestCase):
     def test_fully_opaque_alpha_does_not_hide_artwork(self):
         import numpy as np
