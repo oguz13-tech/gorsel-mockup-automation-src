@@ -2661,18 +2661,25 @@ class MockupRenderer:
             # Marketplace-ready output. Defaults to Trendyol-friendly 3:4
             # while allowing an explicit per-template override.
             marketplace_ready = bool(config.get("marketplace_ready", True))
+            smart_product_focus = bool(
+                config.get(
+                    "smart_product_focus",
+                    category_name == "05_Ocak_Arkasi",
+                )
+            )
+            framing_meta = {
+                "product_quad_output": koseler,
+                "foreground_fill_fraction": 1.0,
+                "smart_product_focus": False,
+            }
             if marketplace_ready:
-                final_cv = cls.prepare_marketplace_canvas(
+                final_cv, framing_meta = cls.prepare_marketplace_canvas(
                     final_cv,
                     target_width=output_width,
                     target_height=output_height,
                     product_quad=koseler,
-                    smart_product_focus=bool(
-                        config.get(
-                            "smart_product_focus",
-                            category_name == "05_Ocak_Arkasi",
-                        )
-                    ),
+                    smart_product_focus=smart_product_focus,
+                    return_metadata=True,
                 )
 
             # Final whole-image quality stage. This is intentionally after
@@ -2681,20 +2688,87 @@ class MockupRenderer:
             # edge-aware pass.
             final_cv = cls.final_master_quality_pass(
                 final_cv,
-                strength=float(config.get("master_quality_strength", 0.34) or 0.34),
+                strength=float(
+                    config.get("master_quality_strength", 0.34) or 0.34
+                ),
             )
 
-            # Kaydet (Unicode güvenli)
+            # END-USER QA: validate the exact image that will be encoded and
+            # uploaded, not only the pre-marketplace render.
+            final_valid, final_msg = QualityInspector.inspect_final_output(
+                final_cv,
+                expected_width=(output_width if marketplace_ready else None),
+                expected_height=(output_height if marketplace_ready else None),
+                product_quad=framing_meta.get("product_quad_output"),
+                smart_product_focus=bool(
+                    framing_meta.get("smart_product_focus")
+                ),
+                foreground_fill_fraction=framing_meta.get(
+                    "foreground_fill_fraction"
+                ),
+            )
+            if not final_valid:
+                logger.error(
+                    f"  ❌ Final Kullanıcı Kalite Denetimi Başarısız "
+                    f"({raw_path.name}): {final_msg}. QUARANTINE!"
+                )
+                return False
+            logger.info(f"  ✅ {final_msg}")
+
+            # Encode and persist atomically. A crash can never leave a partial
+            # JPEG at the final artifact path.
             output_path.parent.mkdir(parents=True, exist_ok=True)
             success, enc_img = cv2.imencode(
-                '.jpg',
+                ".jpg",
                 final_cv,
                 [int(cv2.IMWRITE_JPEG_QUALITY), 98],
             )
-            if success:
-                enc_img.tofile(str(output_path))
+            if not success:
+                return False
+
+            tmp_output = output_path.with_name(
+                output_path.name + ".writing"
+            )
+            try:
+                enc_img.tofile(str(tmp_output))
+                persisted = cv2.imdecode(
+                    np.fromfile(str(tmp_output), dtype=np.uint8),
+                    cv2.IMREAD_COLOR,
+                )
+                persisted_valid, persisted_msg = (
+                    QualityInspector.inspect_final_output(
+                        persisted,
+                        expected_width=(
+                            output_width if marketplace_ready else None
+                        ),
+                        expected_height=(
+                            output_height if marketplace_ready else None
+                        ),
+                        product_quad=framing_meta.get(
+                            "product_quad_output"
+                        ),
+                        smart_product_focus=bool(
+                            framing_meta.get("smart_product_focus")
+                        ),
+                        foreground_fill_fraction=framing_meta.get(
+                            "foreground_fill_fraction"
+                        ),
+                    )
+                )
+                if not persisted_valid:
+                    logger.error(
+                        "  ❌ JPEG sonrası final kalite denetimi başarısız: "
+                        f"{persisted_msg}"
+                    )
+                    return False
+                os.replace(tmp_output, output_path)
                 return True
-            return False
+            finally:
+                if tmp_output.exists():
+                    try:
+                        tmp_output.unlink()
+                    except OSError:
+                        pass
 
         except Exception as e:
             logger.error(f"Mockup render hatası: {e}", exc_info=True)
