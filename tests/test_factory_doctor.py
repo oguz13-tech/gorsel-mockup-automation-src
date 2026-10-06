@@ -13,7 +13,10 @@ ARCH_DIR = ROOT / "SABLON_V2_MIMARI"
 if str(ARCH_DIR) not in sys.path:
     sys.path.insert(0, str(ARCH_DIR))
 
-from core.factory_doctor import run_factory_doctor
+from core.factory_doctor import (
+    run_factory_doctor,
+    _read_current_recipe_version,
+)
 
 
 class TestFactoryDoctor(unittest.TestCase):
@@ -147,7 +150,50 @@ class TestFactoryDoctor(unittest.TestCase):
             self.assertIn("APPROVED_SOURCE_STALE", codes)
             self.assertEqual(db_path.stat().st_mtime_ns, before_mtime)
 
-    def test_completed_artifact_with_missing_file_is_reported(self):
+    def test_current_recipe_artifact_with_missing_file_is_reported(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            self._base_runtime(root)
+            self._create_review_db(root, stale_hash=False)
+
+            recipe = _read_current_recipe_version(ROOT)
+            self.assertTrue(recipe)
+
+            state_path = (
+                root
+                / "99_SISTEM_MOTORLARI_VE_KODLAR"
+                / "SISTEM_MOTORU"
+                / "commerce_state.db"
+            )
+            conn = sqlite3.connect(state_path)
+            conn.execute(
+                """CREATE TABLE render_artifacts(
+                       artifact_key TEXT,
+                       local_output_path TEXT,
+                       status TEXT
+                   )"""
+            )
+            conn.execute(
+                "INSERT INTO render_artifacts VALUES (?,?,?)",
+                (
+                    f"artifact-1_{recipe}",
+                    str(root / "missing.jpg"),
+                    "COMPLETED",
+                ),
+            )
+            conn.commit()
+            conn.close()
+
+            report = run_factory_doctor(root, ROOT, deep=False)
+            warning_codes = {
+                item["code"] for item in report["warnings"]
+            }
+            self.assertIn(
+                "CURRENT_ARTIFACT_FILE_MISSING",
+                warning_codes,
+            )
+
+    def test_old_recipe_missing_file_is_historical_info_only(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             self._base_runtime(root)
@@ -169,7 +215,11 @@ class TestFactoryDoctor(unittest.TestCase):
             )
             conn.execute(
                 "INSERT INTO render_artifacts VALUES (?,?,?)",
-                ("artifact-1", str(root / "missing.jpg"), "COMPLETED"),
+                (
+                    "artifact-old_v3_epic3_20261005_r2",
+                    str(root / "missing-old.jpg"),
+                    "COMPLETED",
+                ),
             )
             conn.commit()
             conn.close()
@@ -178,9 +228,16 @@ class TestFactoryDoctor(unittest.TestCase):
             warning_codes = {
                 item["code"] for item in report["warnings"]
             }
-            self.assertIn(
-                "COMPLETED_ARTIFACT_FILE_MISSING",
+            info_codes = {
+                item["code"] for item in report["info"]
+            }
+            self.assertNotIn(
+                "CURRENT_ARTIFACT_FILE_MISSING",
                 warning_codes,
+            )
+            self.assertIn(
+                "HISTORICAL_ARTIFACT_FILE_MISSING",
+                info_codes,
             )
 
 
