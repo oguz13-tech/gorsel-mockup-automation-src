@@ -3207,7 +3207,9 @@ class MockupRenderer:
                     config.get("scene_realism_enabled", True)
                 ),
                 scene_realism_strength=float(
-                    config.get("scene_realism_strength", 1.0) or 1.0
+                    1.0
+                    if config.get("scene_realism_strength", 1.0) is None
+                    else config.get("scene_realism_strength", 1.0)
                 ),
             )
 
