@@ -3,11 +3,12 @@
 ================================================================================
 SABLON OTO İZLEYİCİ (Auto-Template Whitener & Watcher)
 ================================================================================
-'2_SABLON_HAVUZU' klasörünü ve alt klasörlerini sürekli izler.
-Kullanıcı klasöre yeni bir oda / şablon görseli eklediği anda:
-1. Görseli otomatik algılar.
-2. Koordinatı yoksa akıllı çerçeve tespiti yapar ve ayarlar.json'a kaydeder.
-3. Çerçeve içini anında bembeyaz / boş sergi kanvasına dönüştürür.
+'YENI-BOS MOCKUP SABLON HAVUZU' staging klasörünü izler.
+Yeni bir şablon geldiğinde:
+1. Kullanıcının tek kopyasını koruyarak işleme alır.
+2. Kurtarma yedeği + çalışma kopyası oluşturur.
+3. Aktif SQLite review veritabanına REVIEW_REQUIRED olarak kaydeder.
+4. İnsan onayı olmadan üretime APPROVED geometri vermez.
 ================================================================================
 """
 
@@ -66,6 +67,14 @@ from core.db import get_all_ayarlar, save_template
 
 FRAMELESS_KEYS = ["01_Wifi_Kutusu", "04_Cam_Dograma", "05_Ocak_Arkasi"]
 VALID_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".avif"}
+KNOWN_CATEGORIES = {
+    "01_Wifi_Kutusu",
+    "02_Cam_Tablo_Dikey",
+    "02_Cam_Tablo_Yatay",
+    "03_Ahsap_Tablo",
+    "04_Cam_Dograma",
+    "05_Ocak_Arkasi",
+}
 
 def load_registry() -> set:
     if REGISTRY_PATH.exists():
