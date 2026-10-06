@@ -147,7 +147,7 @@ db_lock = threading.RLock()
 # Render recipe participates in immutable artifact identity. Bump whenever
 # renderer/aspect/occlusion behavior changes so old artifacts are never silently
 # reused under a new visual contract.
-RECIPE_VERSION = "v3_epic3_20261006_r3"
+RECIPE_VERSION = "v3_epic3_20261006_r4"
 
 # ==============================================================================
 # 2. ÜRÜN VE FORMAT SÖZLEŞMESİ (URUN_FORMAT_HARITASI)
@@ -1552,7 +1552,7 @@ class MockupRenderer:
         if camera_artifacts:
             warped_lit = MockupRenderer.apply_chromatic_aberration(
                 warped_lit,
-                intensity=1,
+                intensity=0.55,
             )
             seed = None
             if source_design_identity and template_identity and recipe_version:
@@ -1563,7 +1563,7 @@ class MockupRenderer:
                 seed = int(h[:8], 16)
             warped_lit = MockupRenderer.apply_camera_grain(
                 warped_lit,
-                intensity=3.5,
+                intensity=1.25,
                 seed=seed,
             )
         # ----------------------------------------------------------------
@@ -1649,7 +1649,16 @@ class MockupRenderer:
             wood_surface = np.clip(warped_lit * (1.0 - inner_shadow_3c), 0.0, 255.0)
             final = bg_cv.astype(np.float32) * (1.0 - mask_3c) + wood_surface * mask_3c
 
-        final = np.clip(final, 0, 255).astype(np.uint8)
+        # Preserve the realism stack (ambient light, glass reflection,
+        # bevel, shadows, material response) while restoring bounded fine
+        # artwork detail that those low-frequency effects can soften.
+        detail_strength = 0.52 if is_glass else 0.42
+        final = MockupRenderer.restore_artwork_microdetail(
+            np.clip(final, 0, 255).astype(np.uint8),
+            warped_lit,
+            mask_f,
+            strength=detail_strength,
+        )
 
         # ---------------------------------------------------------
         # FOREGROUND / OCCLUSION RESTORE
@@ -2029,6 +2038,51 @@ class MockupRenderer:
         ).astype(np.uint8)
         return background
 
+    @staticmethod
+    def compute_quality_render_scale(
+        source_width: int,
+        source_height: int,
+        output_width: int,
+        output_height: int,
+        max_scale: float = 2.5,
+    ) -> float:
+        """Render above template-native resolution when final output needs it.
+
+        Optical/material effects are evaluated on this larger working canvas,
+        then the finished scene is reduced only once for marketplace output.
+        """
+        if source_width <= 0 or source_height <= 0:
+            return 1.0
+        requested = max(
+            output_width / float(source_width),
+            output_height / float(source_height),
+        )
+        return float(np.clip(requested, 1.0, max_scale))
+
+    @staticmethod
+    def restore_artwork_microdetail(
+        final_cv: np.ndarray,
+        warped_art_cv: np.ndarray,
+        mask_f: np.ndarray,
+        strength: float = 0.45,
+    ) -> np.ndarray:
+        """Restore high-frequency artwork detail without removing material light.
+
+        Reflection, ambient light and color adaptation are intentionally
+        low-frequency photographic effects. Reintroducing only a bounded
+        high-pass component preserves fine calligraphy/ornament while leaving
+        those realism layers intact.
+        """
+        if final_cv is None or warped_art_cv is None:
+            return final_cv
+        sigma = 0.85
+        base = warped_art_cv.astype(np.float32)
+        low = cv2.GaussianBlur(base, (0, 0), sigmaX=sigma, sigmaY=sigma)
+        detail = np.clip(base - low, -28.0, 28.0)
+        mask = np.clip(mask_f.astype(np.float32), 0.0, 1.0)[..., None]
+        restored = final_cv.astype(np.float32) + detail * float(strength) * mask
+        return np.clip(restored, 0.0, 255.0).astype(np.uint8)
+
     @classmethod
     def process_mockup(cls, raw_path: Path, template_path: Path,
                        config: dict, is_glass: bool, output_path: Path, source_design_identity: str = None, template_identity: str = None, recipe_version: str = None, template_sha: str = None) -> bool:
@@ -2137,6 +2191,12 @@ class MockupRenderer:
                 )
             art_cv = prepared_art
 
+            # Final marketplace dimensions are known before rendering so
+            # the optical renderer can work at an appropriately high internal
+            # resolution instead of compositing small and enlarging later.
+            output_width = int(config.get("output_width", 2400) or 2400)
+            output_height = int(config.get("output_height", 3200) or 3200)
+
             # Orijinal yedek görseli yükle (True Shadow Mapping için)
             orig_path = USER_WORKSPACE_DIR / "2_SABLON_HAVUZU_ORIJINAL_YEDEK" / template_path.parent.name / template_path.name
             orig_bg_cv = None
@@ -2152,6 +2212,49 @@ class MockupRenderer:
                 ):
                     orig_bg_cv = orig_bg_cv[:, :, :3]
 
+            # High-resolution internal render: upscale the scene/corners,
+            # not the artwork separately. warpPerspective then samples the
+            # original artwork directly into the larger physical surface,
+            # avoiding an extra destructive resize.
+            src_h, src_w = bg_cv.shape[:2]
+            max_render_scale = float(config.get("max_render_scale", 2.5) or 2.5)
+            render_scale = cls.compute_quality_render_scale(
+                src_w,
+                src_h,
+                output_width,
+                output_height,
+                max_scale=max_render_scale,
+            )
+            if render_scale > 1.001:
+                work_w = max(1, int(round(src_w * render_scale)))
+                work_h = max(1, int(round(src_h * render_scale)))
+                bg_cv = cv2.resize(
+                    bg_cv,
+                    (work_w, work_h),
+                    interpolation=cv2.INTER_LANCZOS4,
+                )
+                if orig_bg_cv is not None:
+                    orig_bg_cv = cv2.resize(
+                        orig_bg_cv,
+                        (work_w, work_h),
+                        interpolation=cv2.INTER_LANCZOS4,
+                    )
+                if alpha_mask is not None:
+                    alpha_mask = cv2.resize(
+                        alpha_mask,
+                        (work_w, work_h),
+                        interpolation=cv2.INTER_LINEAR,
+                    )
+                koseler = [
+                    [float(pt[0]) * render_scale, float(pt[1]) * render_scale]
+                    for pt in koseler
+                ]
+                logger.info(
+                    f"  🔬 Yüksek çözünürlük iç render: "
+                    f"{src_w}x{src_h} -> {work_w}x{work_h} "
+                    f"(x{render_scale:.2f})"
+                )
+
             final_cv = cls.render_cv2_optik(
                 art_cv, bg_cv, koseler, is_glass, 
                 on_plan=on_plan, template_name=template_path.name, 
@@ -2163,7 +2266,7 @@ class MockupRenderer:
                 template_sha=template_sha,
                 auto_foreground=auto_foreground,
                 foreground_required=foreground_required,
-                camera_artifacts=bool(config.get("camera_artifacts", False)),
+                camera_artifacts=bool(config.get("camera_artifacts", True)),
             )
 
             # Kalite Kontrol Denetimi (Quality Inspector)
@@ -2174,8 +2277,6 @@ class MockupRenderer:
 
             # Marketplace-ready output. Defaults to Trendyol-friendly 3:4
             # while allowing an explicit per-template override.
-            output_width = int(config.get("output_width", 2400) or 2400)
-            output_height = int(config.get("output_height", 3200) or 3200)
             marketplace_ready = bool(config.get("marketplace_ready", True))
             if marketplace_ready:
                 final_cv = cls.prepare_marketplace_canvas(
