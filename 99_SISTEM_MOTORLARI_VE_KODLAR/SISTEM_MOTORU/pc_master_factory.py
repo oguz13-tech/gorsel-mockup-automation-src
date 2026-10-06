@@ -1782,6 +1782,7 @@ class MockupRenderer:
         category_name: str,
         deterministic_key: str,
         return_metadata: bool = False,
+        strength_multiplier: float = 1.0,
     ):
         """Apply localized, product-safe environmental realism.
 
@@ -1807,6 +1808,11 @@ class MockupRenderer:
             return (image_cv, metadata) if return_metadata else image_cv
 
         profile = MockupRenderer._scene_realism_profile(category_name)
+        strength_multiplier = float(
+            np.clip(float(strength_multiplier), 0.0, 1.5)
+        )
+        for key in ("light", "shadow", "organic"):
+            profile[key] = float(profile.get(key, 0.0)) * strength_multiplier
         seed_hex = hashlib.sha256(
             str(deterministic_key or category_name or "scene").encode("utf-8")
         ).hexdigest()
@@ -2087,6 +2093,8 @@ class MockupRenderer:
         auto_foreground: bool = False,
         foreground_required: bool = False,
         camera_artifacts: bool = False,
+        scene_realism_enabled: bool = True,
+        scene_realism_strength: float = 1.0,
     ) -> np.ndarray:
         h_bg, w_bg = bg_cv.shape[:2]
         h_art, w_art = art_cv.shape[:2]
@@ -2504,13 +2512,20 @@ class MockupRenderer:
             f"{source_design_identity or ''}|{template_identity or template_name or ''}|"
             f"{recipe_version or ''}|{category_name or ''}"
         )
-        final, realism_meta = MockupRenderer.apply_scene_realism_layer(
-            np.clip(final, 0, 255).astype(np.uint8),
-            dst_pts,
-            category_name or "",
-            realism_key,
-            return_metadata=True,
-        )
+        if scene_realism_enabled:
+            final, realism_meta = MockupRenderer.apply_scene_realism_layer(
+                np.clip(final, 0, 255).astype(np.uint8),
+                dst_pts,
+                category_name or "",
+                realism_key,
+                return_metadata=True,
+                strength_multiplier=scene_realism_strength,
+            )
+        else:
+            realism_meta = {
+                "applied": False,
+                "reason": "disabled_by_template",
+            }
         if realism_meta.get("applied"):
             logger.info(
                 "  🌤️ Scene Realism | "
@@ -3188,6 +3203,12 @@ class MockupRenderer:
                 auto_foreground=auto_foreground,
                 foreground_required=foreground_required,
                 camera_artifacts=bool(config.get("camera_artifacts", True)),
+                scene_realism_enabled=bool(
+                    config.get("scene_realism_enabled", True)
+                ),
+                scene_realism_strength=float(
+                    config.get("scene_realism_strength", 1.0) or 1.0
+                ),
             )
 
             # Kalite Kontrol Denetimi (Quality Inspector)
