@@ -772,6 +772,66 @@ class TestR8SceneRealism(unittest.TestCase):
         scene_delta = float(np.mean(delta[mask == 0]))
         self.assertLess(product_delta, scene_delta)
 
+    def test_room_sunlight_is_deterministic(self):
+        import numpy as np
+        from SISTEM_MOTORU.pc_master_factory import MockupRenderer
+
+        scene = self._scene()
+        quad = [[260, 160], [470, 160], [470, 330], [260, 330]]
+        a, meta_a = MockupRenderer.apply_room_sunlight_layer(
+            scene,
+            quad,
+            "03_Ahsap_Tablo",
+            "same-room-key",
+            return_metadata=True,
+        )
+        b, meta_b = MockupRenderer.apply_room_sunlight_layer(
+            scene,
+            quad,
+            "03_Ahsap_Tablo",
+            "same-room-key",
+            return_metadata=True,
+        )
+        self.assertTrue(np.array_equal(a, b))
+        self.assertEqual(meta_a["anchor"], meta_b["anchor"])
+        self.assertEqual(meta_a["angle_deg"], meta_b["angle_deg"])
+
+    def test_room_sunlight_prefers_scene_over_product(self):
+        import cv2
+        import numpy as np
+        from SISTEM_MOTORU.pc_master_factory import MockupRenderer
+
+        scene = self._scene()
+        quad = np.asarray(
+            [[260, 160], [470, 160], [470, 330], [260, 330]],
+            dtype=np.float32,
+        )
+        result, meta = MockupRenderer.apply_room_sunlight_layer(
+            scene,
+            quad,
+            "03_Ahsap_Tablo",
+            "room-protection-test",
+            return_metadata=True,
+        )
+        self.assertTrue(meta["applied"])
+        self.assertLess(meta["product_delta_mean"], 5.0)
+        self.assertLess(meta["scene_delta_mean"], 22.0)
+        self.assertGreater(meta["scene_delta_mean"], 0.03)
+
+        delta = np.mean(
+            np.abs(
+                result.astype(np.float32)
+                - scene.astype(np.float32)
+            ),
+            axis=2,
+        )
+        mask = np.zeros(scene.shape[:2], dtype=np.uint8)
+        cv2.fillConvexPoly(mask, quad.astype(np.int32), 1)
+        self.assertLess(
+            float(np.mean(delta[mask == 1])),
+            float(np.mean(delta[mask == 0])),
+        )
+
     def test_all_production_categories_have_conservative_profiles(self):
         from SISTEM_MOTORU.pc_master_factory import MockupRenderer
 
@@ -787,6 +847,8 @@ class TestR8SceneRealism(unittest.TestCase):
             profile = MockupRenderer._scene_realism_profile(category)
             self.assertLessEqual(float(profile["light"]), 0.06)
             self.assertLessEqual(float(profile["shadow"]), 0.05)
+            self.assertLessEqual(float(profile["room_light"]), 0.08)
+            self.assertLessEqual(float(profile["room_shadow"]), 0.065)
             self.assertGreaterEqual(
                 float(profile["product_protection"]),
                 0.94,
