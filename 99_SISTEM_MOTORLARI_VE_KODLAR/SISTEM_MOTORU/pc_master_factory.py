@@ -2023,7 +2023,8 @@ class MockupRenderer:
         target_height: int = 1600,
         product_quad=None,
         smart_product_focus: bool = False,
-    ) -> np.ndarray:
+        return_metadata: bool = False,
+    ):
         """Return a marketplace-ready canvas without stretching the scene.
 
         Normal templates retain contain semantics. For difficult wide scenes,
@@ -2043,11 +2044,38 @@ class MockupRenderer:
         target_ratio = target_width / float(target_height)
 
         if abs(src_ratio - target_ratio) <= 0.01:
-            return cv2.resize(
+            resized = cv2.resize(
                 image_cv,
                 (target_width, target_height),
                 interpolation=cv2.INTER_LANCZOS4,
             )
+            output_quad = None
+            if product_quad is not None:
+                try:
+                    q = np.asarray(
+                        product_quad,
+                        dtype=np.float32,
+                    ).reshape(-1, 2)
+                    if q.shape[0] >= 4:
+                        output_quad = q.copy()
+                        output_quad[:, 0] *= (
+                            target_width / float(src_w)
+                        )
+                        output_quad[:, 1] *= (
+                            target_height / float(src_h)
+                        )
+                except Exception:
+                    output_quad = None
+            metadata = {
+                "product_quad_output": (
+                    output_quad.tolist()
+                    if output_quad is not None
+                    else None
+                ),
+                "foreground_fill_fraction": 1.0,
+                "smart_product_focus": bool(smart_product_focus),
+            }
+            return (resized, metadata) if return_metadata else resized
 
         quad = None
         if product_quad is not None:
@@ -2138,7 +2166,12 @@ class MockupRenderer:
         src_y1 = src_y0 + max(0, dst_y1 - dst_y0)
 
         if dst_x1 <= dst_x0 or dst_y1 <= dst_y0:
-            return background
+            metadata = {
+                "product_quad_output": None,
+                "foreground_fill_fraction": 0.0,
+                "smart_product_focus": bool(smart_product_focus),
+            }
+            return (background, metadata) if return_metadata else background
 
         visible = fitted[src_y0:src_y1, src_x0:src_x1]
         alpha = np.ones(visible.shape[:2], dtype=np.float32)
@@ -2163,7 +2196,29 @@ class MockupRenderer:
         background[dst_y0:dst_y1, dst_x0:dst_x1] = np.clip(
             blended, 0, 255
         ).astype(np.uint8)
-        return background
+
+        output_quad = None
+        if quad is not None:
+            output_quad = (
+                quad * float(foreground_scale)
+                + np.array([x1, y1], dtype=np.float32)
+            )
+        visible_area = max(0, dst_x1 - dst_x0) * max(
+            0, dst_y1 - dst_y0
+        )
+        metadata = {
+            "product_quad_output": (
+                output_quad.tolist()
+                if output_quad is not None
+                else None
+            ),
+            "foreground_fill_fraction": float(
+                visible_area
+                / float(max(target_width * target_height, 1))
+            ),
+            "smart_product_focus": bool(smart_product_focus),
+        }
+        return (background, metadata) if return_metadata else background
 
     @staticmethod
     def compute_quality_render_scale(
