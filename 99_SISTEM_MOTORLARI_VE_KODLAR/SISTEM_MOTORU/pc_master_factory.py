@@ -990,6 +990,127 @@ class QualityInspector:
         
         return True, f"Kalite Onaylandı (Keskinlik: {laplacian_var:.1f})"
 
+    @staticmethod
+    def inspect_final_output(
+        img_cv: np.ndarray,
+        expected_width: int | None = None,
+        expected_height: int | None = None,
+        product_quad=None,
+        smart_product_focus: bool = False,
+        foreground_fill_fraction: float | None = None,
+        minimum_width: int | None = None,
+        minimum_height: int | None = None,
+        expected_aspect: float | None = None,
+    ) -> Tuple[bool, str]:
+        """Validate the image the customer/marketplace will actually receive.
+
+        This deliberately runs after marketplace composition and final quality
+        processing. It catches failures that pre-composition render QA cannot
+        see: wrong output size/aspect, product cropped out of frame, nearly-flat
+        images, excessive smart-focus letterboxing, and severe final blur.
+        """
+        if img_cv is None or img_cv.size == 0:
+            return False, "Final çıktı boş veya okunamıyor"
+
+        h, w = img_cv.shape[:2]
+        if expected_width is not None and w != int(expected_width):
+            return False, f"Final genişlik yanlış: {w} != {expected_width}"
+        if expected_height is not None and h != int(expected_height):
+            return False, f"Final yükseklik yanlış: {h} != {expected_height}"
+        if minimum_width is not None and w < int(minimum_width):
+            return False, f"Final genişlik küçülmüş: {w} < {minimum_width}"
+        if minimum_height is not None and h < int(minimum_height):
+            return False, f"Final yükseklik küçülmüş: {h} < {minimum_height}"
+
+        actual_aspect = w / float(max(h, 1))
+        target_aspect = expected_aspect
+        if (
+            target_aspect is None
+            and expected_width is not None
+            and expected_height is not None
+        ):
+            target_aspect = float(expected_width) / float(expected_height)
+        if target_aspect is not None:
+            rel_error = abs(actual_aspect - float(target_aspect)) / max(
+                abs(float(target_aspect)),
+                1e-6,
+            )
+            if rel_error > 0.01:
+                return False, (
+                    f"Final en-boy oranı yanlış: {actual_aspect:.4f} "
+                    f"(beklenen {float(target_aspect):.4f})"
+                )
+
+        gray = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
+        if float(np.std(gray)) < 4.0:
+            return False, "Final çıktı neredeyse tek renk/boş"
+
+        laplacian_var = float(
+            cv2.Laplacian(gray, cv2.CV_64F).var()
+        )
+        if laplacian_var < 28.0:
+            return False, (
+                f"Final çıktı aşırı bulanık "
+                f"(Laplacian: {laplacian_var:.1f})"
+            )
+
+        product_area_fraction = None
+        if product_quad is not None:
+            try:
+                quad = np.asarray(
+                    product_quad,
+                    dtype=np.float32,
+                ).reshape(-1, 2)
+            except Exception:
+                return False, "Final ürün dörtgeni okunamıyor"
+            if quad.shape[0] < 4 or not np.isfinite(quad).all():
+                return False, "Final ürün dörtgeni geçersiz"
+
+            tolerance = 3.0
+            if (
+                float(np.min(quad[:, 0])) < -tolerance
+                or float(np.min(quad[:, 1])) < -tolerance
+                or float(np.max(quad[:, 0])) > w - 1 + tolerance
+                or float(np.max(quad[:, 1])) > h - 1 + tolerance
+            ):
+                return False, "Ürün final 3:4 çerçevede kırpılmış/taşmış"
+
+            area = abs(
+                float(cv2.contourArea(quad.astype(np.float32)))
+            )
+            product_area_fraction = area / float(max(w * h, 1))
+            if product_area_fraction < 0.004:
+                return False, (
+                    "Ürün final görselde kullanılamayacak kadar küçük "
+                    f"({product_area_fraction:.2%})"
+                )
+            if product_area_fraction > 0.94:
+                return False, (
+                    "Ürün final görseli anormal biçimde tamamen kaplıyor "
+                    f"({product_area_fraction:.2%})"
+                )
+
+        if (
+            smart_product_focus
+            and foreground_fill_fraction is not None
+            and float(foreground_fill_fraction) < 0.55
+        ):
+            return False, (
+                "Akıllı 3:4 kadraj sahneyi yeterince dolduramadı "
+                f"({float(foreground_fill_fraction):.1%})"
+            )
+
+        return True, (
+            "Final kalite onaylandı "
+            f"(keskinlik={laplacian_var:.1f}"
+            + (
+                f", ürün_alanı={product_area_fraction:.1%}"
+                if product_area_fraction is not None
+                else ""
+            )
+            + ")"
+        )
+
 # ==============================================================================
 # 9. MOCKUP MOTORU (Optik Cam Parlaması, Bevel Pahı, Gün Işığı & Sıfır Kenar Hatası)
 # ==============================================================================
