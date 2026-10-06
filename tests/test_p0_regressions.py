@@ -578,6 +578,8 @@ class TestEdgeSafeMasterQuality(unittest.TestCase):
 
         image = np.zeros((1200, 896, 3), dtype=np.uint8)
         image[:] = (20, 30, 40)
+        image[0, :, :] = (250, 5, 5)
+        image[-1, :, :] = (5, 250, 5)
         image[120:1080, 100:796] = (180, 120, 60)
 
         prepared = MockupRenderer.prepare_artwork_for_nominal_aspect(
