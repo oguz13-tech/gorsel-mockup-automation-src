@@ -2137,8 +2137,6 @@ class MockupRenderer:
 
     @classmethod
     def process_mockup(cls, raw_path: Path, template_path: Path,
-    @classmethod
-    def process_mockup(cls, raw_path: Path, template_path: Path,
                        config: dict, is_glass: bool, output_path: Path, source_design_identity: str = None, template_identity: str = None, recipe_version: str = None, template_sha: str = None) -> bool:
         try:
             # Unicode güvenli okuma (Numpy decode)
