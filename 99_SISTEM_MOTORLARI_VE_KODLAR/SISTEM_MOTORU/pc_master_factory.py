@@ -147,7 +147,7 @@ db_lock = threading.RLock()
 # Render recipe participates in immutable artifact identity. Bump whenever
 # renderer/aspect/occlusion behavior changes so old artifacts are never silently
 # reused under a new visual contract.
-RECIPE_VERSION = "v3_epic3_20261007_r8"
+RECIPE_VERSION = "v3_epic3_20261007_r9"
 
 # ==============================================================================
 # 2. ÜRÜN VE FORMAT SÖZLEŞMESİ (URUN_FORMAT_HARITASI)
@@ -1582,45 +1582,57 @@ class MockupRenderer:
         profiles = {
             "01_Wifi_Kutusu": {
                 "style": "soft_window",
-                "light": 0.034,
-                "shadow": 0.026,
-                "organic": 0.008,
-                "product_protection": 0.975,
+                "light": 0.042,
+                "shadow": 0.032,
+                "organic": 0.010,
+                "room_light": 0.060,
+                "room_shadow": 0.050,
+                "product_protection": 0.980,
             },
             "02_Cam_Tablo_Dikey": {
                 "style": "window_gallery",
-                "light": 0.038,
-                "shadow": 0.028,
+                "light": 0.044,
+                "shadow": 0.032,
                 "organic": 0.006,
-                "product_protection": 0.985,
+                "room_light": 0.055,
+                "room_shadow": 0.046,
+                "product_protection": 0.988,
             },
             "02_Cam_Tablo_Yatay": {
                 "style": "window_gallery",
-                "light": 0.038,
-                "shadow": 0.028,
+                "light": 0.044,
+                "shadow": 0.032,
                 "organic": 0.006,
-                "product_protection": 0.985,
+                "room_light": 0.055,
+                "room_shadow": 0.046,
+                "product_protection": 0.988,
             },
             "03_Ahsap_Tablo": {
                 "style": "warm_window_leaf",
-                "light": 0.052,
-                "shadow": 0.038,
-                "organic": 0.020,
-                "product_protection": 0.965,
+                "light": 0.055,
+                "shadow": 0.040,
+                "organic": 0.022,
+                "room_light": 0.075,
+                "room_shadow": 0.060,
+                "product_protection": 0.970,
             },
             "04_Cam_Dograma": {
                 "style": "countertop_bounce",
-                "light": 0.030,
-                "shadow": 0.018,
+                "light": 0.034,
+                "shadow": 0.022,
                 "organic": 0.000,
-                "product_protection": 0.950,
+                "room_light": 0.042,
+                "room_shadow": 0.032,
+                "product_protection": 0.955,
             },
             "05_Ocak_Arkasi": {
                 "style": "kitchen_daylight",
-                "light": 0.026,
-                "shadow": 0.016,
+                "light": 0.030,
+                "shadow": 0.020,
                 "organic": 0.000,
-                "product_protection": 0.985,
+                "room_light": 0.040,
+                "room_shadow": 0.030,
+                "product_protection": 0.988,
             },
         }
         return dict(
@@ -1628,10 +1640,12 @@ class MockupRenderer:
                 category_name,
                 {
                     "style": "soft_window",
-                    "light": 0.030,
-                    "shadow": 0.020,
+                    "light": 0.036,
+                    "shadow": 0.024,
                     "organic": 0.004,
-                    "product_protection": 0.980,
+                    "room_light": 0.045,
+                    "room_shadow": 0.035,
+                    "product_protection": 0.982,
                 },
             )
         )
@@ -1961,6 +1975,267 @@ class MockupRenderer:
             "scene_delta_mean": round(scene_delta, 4),
         }
         return (result, metadata) if return_metadata else result
+
+    @staticmethod
+    def apply_room_sunlight_layer(
+        image_cv: np.ndarray,
+        dst_pts: np.ndarray,
+        category_name: str,
+        deterministic_key: str,
+        return_metadata: bool = False,
+        strength_multiplier: float = 1.0,
+    ):
+        """Add a second, room-scale daylight/window-shadow realism layer.
+
+        Unlike material effects, this layer is aimed at nearby wall/floor/
+        countertop regions. The reviewed product quad is strongly protected so
+        print readability and material detail remain intact.
+        """
+        if image_cv is None or image_cv.size == 0:
+            meta = {"applied": False, "reason": "empty_image"}
+            return (image_cv, meta) if return_metadata else image_cv
+
+        h, w = image_cv.shape[:2]
+        quad = np.asarray(dst_pts, dtype=np.float32).reshape(-1, 2)
+        if quad.shape[0] < 4 or not np.isfinite(quad).all():
+            meta = {"applied": False, "reason": "invalid_quad"}
+            return (image_cv, meta) if return_metadata else image_cv
+
+        profile = MockupRenderer._scene_realism_profile(category_name)
+        strength_multiplier = float(
+            np.clip(float(strength_multiplier), 0.0, 1.6)
+        )
+        room_light_strength = float(
+            profile.get("room_light", 0.045)
+        ) * strength_multiplier
+        room_shadow_strength = float(
+            profile.get("room_shadow", 0.035)
+        ) * strength_multiplier
+        product_protection = float(
+            profile.get("product_protection", 0.98)
+        )
+
+        seed_hex = hashlib.sha256(
+            str(
+                deterministic_key
+                or category_name
+                or "room-sunlight"
+            ).encode("utf-8")
+        ).hexdigest()
+        seed = int(seed_hex[:8], 16)
+        rng = np.random.default_rng(seed)
+
+        protection = MockupRenderer._scene_realism_product_protection(
+            h,
+            w,
+            quad,
+        )
+
+        gray = cv2.cvtColor(
+            np.clip(image_cv, 0, 255).astype(np.uint8),
+            cv2.COLOR_BGR2GRAY,
+        ).astype(np.float32)
+        gx = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3)
+        gy = cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3)
+        grad = cv2.magnitude(gx, gy)
+
+        product_center = np.mean(quad, axis=0)
+        candidates = np.array(
+            [
+                [w * 0.12, h * 0.14],
+                [w * 0.88, h * 0.14],
+                [w * 0.12, h * 0.82],
+                [w * 0.88, h * 0.82],
+                [w * 0.16, h * 0.48],
+                [w * 0.84, h * 0.48],
+            ],
+            dtype=np.float32,
+        )
+
+        patch_rx = max(12, int(round(w * 0.14)))
+        patch_ry = max(12, int(round(h * 0.14)))
+        scored = []
+        for cx, cy in candidates:
+            ix = int(round(float(cx)))
+            iy = int(round(float(cy)))
+            xa = max(0, ix - patch_rx)
+            xb = min(w, ix + patch_rx + 1)
+            ya = max(0, iy - patch_ry)
+            yb = min(h, iy + patch_ry + 1)
+            if xb <= xa or yb <= ya:
+                continue
+
+            clearance = float(
+                np.mean(1.0 - protection[ya:yb, xa:xb])
+            )
+            if clearance < 0.58:
+                continue
+            texture = float(
+                np.mean(
+                    np.clip(
+                        grad[ya:yb, xa:xb] / 50.0,
+                        0.0,
+                        1.0,
+                    )
+                )
+            )
+            distance = float(
+                np.linalg.norm(
+                    np.array([cx, cy], dtype=np.float32)
+                    - product_center
+                )
+            )
+            distance_score = min(
+                distance / float(max(h, w)),
+                1.0,
+            )
+            mean_lum = float(np.mean(gray[ya:yb, xa:xb]))
+            luminance_score = 1.0 - min(
+                abs(mean_lum - 145.0) / 145.0,
+                1.0,
+            )
+            score = (
+                clearance * 0.40
+                + (1.0 - texture) * 0.25
+                + distance_score * 0.20
+                + luminance_score * 0.15
+            )
+            scored.append((score, float(cx), float(cy)))
+
+        if scored:
+            _, anchor_x, anchor_y = max(
+                scored,
+                key=lambda item: item[0],
+            )
+        else:
+            corners = [
+                (w * 0.12, h * 0.14),
+                (w * 0.88, h * 0.14),
+                (w * 0.12, h * 0.82),
+                (w * 0.88, h * 0.82),
+            ]
+            anchor_x, anchor_y = max(
+                corners,
+                key=lambda pt: (
+                    (pt[0] - product_center[0]) ** 2
+                    + (pt[1] - product_center[1]) ** 2
+                ),
+            )
+
+        angle_deg = float(31.0 + rng.uniform(-9.0, 9.0))
+        if anchor_x > w * 0.5:
+            angle_deg = 180.0 - angle_deg
+        angle = np.radians(angle_deg)
+        ca, sa = np.cos(angle), np.sin(angle)
+
+        y, x = np.mgrid[0:h, 0:w].astype(np.float32)
+        xr = (x - anchor_x) * ca + (y - anchor_y) * sa
+        yr = -(x - anchor_x) * sa + (y - anchor_y) * ca
+        max_dim = float(max(h, w))
+
+        # Room-scale sun patch. It is intentionally broad and soft.
+        light_envelope = np.exp(
+            -(
+                (xr / max(max_dim * 0.50, 1.0)) ** 2
+                + (yr / max(max_dim * 0.32, 1.0)) ** 2
+            )
+        ).astype(np.float32)
+
+        # Architectural window bars and a faint crossbar.
+        bars = np.zeros((h, w), dtype=np.float32)
+        bar_sigma = max(max_dim * 0.026, 2.5)
+        for offset in (-0.22, -0.07, 0.08, 0.23):
+            center = max_dim * offset
+            bars = np.maximum(
+                bars,
+                np.exp(
+                    -0.5
+                    * ((xr - center) / bar_sigma) ** 2
+                ),
+            )
+        cross = np.exp(
+            -0.5
+            * (
+                (yr - max_dim * 0.015)
+                / max(max_dim * 0.035, 2.5)
+            ) ** 2
+        ).astype(np.float32)
+        room_shadow = np.clip(
+            (bars * 0.88 + cross * 0.22)
+            * light_envelope,
+            0.0,
+            1.0,
+        )
+        room_shadow = cv2.GaussianBlur(
+            room_shadow,
+            (0, 0),
+            sigmaX=max(2.0, min(h, w) * 0.006),
+            sigmaY=max(2.0, min(h, w) * 0.006),
+        )
+
+        scene_weight = 1.0 - protection * max(
+            product_protection,
+            0.97,
+        )
+        scene_weight = np.clip(scene_weight, 0.0, 1.0)
+
+        before = np.clip(image_cv, 0, 255).astype(np.uint8)
+        work = before.astype(np.float32)
+
+        shadow_amount = (
+            room_shadow_strength
+            * room_shadow
+            * scene_weight
+        )
+        work *= 1.0 - shadow_amount[..., None]
+
+        light_amount = (
+            room_light_strength
+            * light_envelope
+            * scene_weight
+        )
+        warm_weights = np.array(
+            [0.38, 0.70, 1.00],
+            dtype=np.float32,
+        )
+        work = work + (
+            (255.0 - work)
+            * light_amount[..., None]
+            * warm_weights.reshape(1, 1, 3)
+        )
+
+        result = np.clip(work, 0.0, 255.0).astype(np.uint8)
+        delta = np.mean(
+            np.abs(
+                result.astype(np.float32)
+                - before.astype(np.float32)
+            ),
+            axis=2,
+        )
+        product_pixels = protection > 0.55
+        scene_pixels = protection < 0.15
+        product_delta = (
+            float(np.mean(delta[product_pixels]))
+            if np.any(product_pixels)
+            else 0.0
+        )
+        scene_delta = (
+            float(np.mean(delta[scene_pixels]))
+            if np.any(scene_pixels)
+            else 0.0
+        )
+
+        meta = {
+            "applied": True,
+            "anchor": [
+                round(float(anchor_x), 2),
+                round(float(anchor_y), 2),
+            ],
+            "angle_deg": round(float(angle_deg), 2),
+            "product_delta_mean": round(product_delta, 4),
+            "scene_delta_mean": round(scene_delta, 4),
+        }
+        return (result, meta) if return_metadata else result
 
     @staticmethod
     def match_color_cast(art_cv: np.ndarray, bg_cv: np.ndarray, poly_mask: np.ndarray) -> np.ndarray:
@@ -2543,6 +2818,51 @@ class MockupRenderer:
                 raise RuntimeError(
                     "Scene Realism safety gate: scene effect is too strong "
                     f"({realism_meta.get('scene_delta_mean'):.2f})"
+                )
+
+        # ---------------------------------------------------------
+        # 6. r9 ROOM-SCALE SUNLIGHT / WINDOW SHADOW
+        # ---------------------------------------------------------
+        # A second environmental layer gives the surrounding wall/floor/
+        # countertop a more visible photographic light direction while the
+        # product itself remains strongly protected.
+        if scene_realism_enabled:
+            room_key = (
+                f"{source_design_identity or ''}|"
+                f"{template_identity or template_name or ''}|"
+                f"{recipe_version or ''}|room|{category_name or ''}"
+            )
+            final, room_meta = MockupRenderer.apply_room_sunlight_layer(
+                np.clip(final, 0, 255).astype(np.uint8),
+                dst_pts,
+                category_name or "",
+                room_key,
+                return_metadata=True,
+                strength_multiplier=scene_realism_strength,
+            )
+        else:
+            room_meta = {
+                "applied": False,
+                "reason": "disabled_by_template",
+            }
+
+        if room_meta.get("applied"):
+            logger.info(
+                "  ☀️ Room Sunlight | "
+                f"anchor={room_meta.get('anchor')} "
+                f"angle={room_meta.get('angle_deg')} "
+                f"product_delta={room_meta.get('product_delta_mean'):.2f} "
+                f"scene_delta={room_meta.get('scene_delta_mean'):.2f}"
+            )
+            if float(room_meta.get("product_delta_mean", 0.0)) > 5.0:
+                raise RuntimeError(
+                    "Room Sunlight safety gate: product surface changed too much "
+                    f"({room_meta.get('product_delta_mean'):.2f})"
+                )
+            if float(room_meta.get("scene_delta_mean", 0.0)) > 22.0:
+                raise RuntimeError(
+                    "Room Sunlight safety gate: room effect is too strong "
+                    f"({room_meta.get('scene_delta_mean'):.2f})"
                 )
 
         return final
