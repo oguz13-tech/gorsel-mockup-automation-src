@@ -13,7 +13,11 @@ import shutil
 # Add parent to path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "SABLON_V2_MIMARI")))
 
-from app import app
+from app import (
+    app,
+    manual_occlusion_has_positive_selection,
+    resolve_reviewed_occlusion,
+)
 import core.db as db_core
 
 class TestT1DeleteUndoIntegrity(unittest.TestCase):
@@ -288,6 +292,43 @@ class TestT1DeleteUndoIntegrity(unittest.TestCase):
             self.assertEqual(row["manually_verified"], 0)
         finally:
             conn.close()
+
+
+class TestOcclusionReviewSemantics(unittest.TestCase):
+    def test_subtract_only_is_not_positive_occlusion_evidence(self):
+        self.assertFalse(
+            manual_occlusion_has_positive_selection({
+                "object_boxes": [],
+                "add_brush": [],
+                "subtract_brush": [[20, 20, 5]],
+            })
+        )
+
+    def test_human_review_can_clear_old_false_positive(self):
+        self.assertFalse(
+            resolve_reviewed_occlusion(
+                True,
+                {
+                    "object_boxes": [],
+                    "add_brush": [],
+                    "subtract_brush": [],
+                },
+                occlusion_reviewed=True,
+            )
+        )
+
+    def test_human_review_preserves_positive_manual_selection(self):
+        self.assertTrue(
+            resolve_reviewed_occlusion(
+                False,
+                {
+                    "object_boxes": [[1, 1, 10, 10]],
+                    "add_brush": [],
+                    "subtract_brush": [],
+                },
+                occlusion_reviewed=True,
+            )
+        )
 
 
 if __name__ == "__main__":
