@@ -16,6 +16,10 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
 
+from PIL import Image
+
+from .template_intelligence import CategoryRuleEngine
+
 
 PRODUCTION_CATEGORIES = (
     "01_Wifi_Kutusu",
@@ -202,6 +206,7 @@ def run_factory_doctor(
         "item_count": 0,
         "missing_sources": [],
         "duplicate_master_ids": [],
+        "aspect_fit_warnings": [],
     }
     if not manifest_path.is_file():
         add_error("MANIFEST_MISSING", f"manifest.json yok: {manifest_path}")
@@ -265,12 +270,73 @@ def run_factory_doctor(
                         manifest_summary["missing_sources"].append(
                             f"{master_id}:{orientation}:{candidate}"
                         )
+                        continue
+
+                    # One generic H/V master is currently fitted into several
+                    # physical product ratios. Quantify that geometry risk
+                    # explicitly instead of letting it remain invisible.
+                    try:
+                        with Image.open(candidate) as image:
+                            source_w, source_h = image.size
+                        source_aspect = source_w / float(max(source_h, 1))
+                        source_orientation = (
+                            "H" if orientation == "horizontal" else "V"
+                        )
+                        for category in PRODUCTION_CATEGORIES:
+                            nominal = (
+                                CategoryRuleEngine.NOMINAL_ASPECTS
+                                .get(category, {})
+                                .get(source_orientation)
+                            )
+                            if nominal is None:
+                                continue
+                            rel_error = abs(
+                                source_aspect - float(nominal)
+                            ) / float(nominal)
+                            if rel_error > 0.03:
+                                record = {
+                                    "master_id": master_id,
+                                    "source_orientation": source_orientation,
+                                    "category": category,
+                                    "source_aspect": round(
+                                        source_aspect, 6
+                                    ),
+                                    "nominal_aspect": round(
+                                        float(nominal), 6
+                                    ),
+                                    "relative_error": round(
+                                        rel_error, 6
+                                    ),
+                                }
+                                manifest_summary[
+                                    "aspect_fit_warnings"
+                                ].append(record)
+                    except Exception as exc:
+                        add_warning(
+                            "MASTER_DIMENSIONS_UNREADABLE",
+                            f"Master boyutları okunamadı: {candidate}: {exc}",
+                        )
 
             if manifest_summary["missing_sources"]:
                 add_error(
                     "MASTER_SOURCE_MISSING",
                     "Manifestte eksik/boş H-V master kaynakları var.",
                     examples=manifest_summary["missing_sources"][:10],
+                )
+
+            if manifest_summary["aspect_fit_warnings"]:
+                worst = sorted(
+                    manifest_summary["aspect_fit_warnings"],
+                    key=lambda item: item["relative_error"],
+                    reverse=True,
+                )
+                add_warning(
+                    "MASTER_ASPECT_DIRECT_FIT",
+                    "Bazı H/V masterlar ürünün fiziksel oranına doğrudan "
+                    "homografi ile uyduruluyor; bu, kenar bozulması üretmeden "
+                    "tasarım geometrisini esnetebilir. Uzun vadeli çözüm: "
+                    "ürün oranına uygun master/bleed-safe tasarım kaynağı.",
+                    examples=worst[:10],
                 )
         except Exception as exc:
             add_error(
