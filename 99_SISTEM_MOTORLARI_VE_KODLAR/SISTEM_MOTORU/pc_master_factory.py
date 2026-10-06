@@ -341,6 +341,16 @@ def foreground_is_required(config: dict, on_plan) -> bool:
     )
 
 
+def artifact_record_is_complete_on_disk(record) -> bool:
+    """A completed DB artifact is reusable only while its local file exists."""
+    if not record or record.get("status") != "COMPLETED":
+        return False
+    local_output_path = str(record.get("local_output_path") or "").strip()
+    if not local_output_path:
+        return False
+    return Path(local_output_path).is_file()
+
+
 def physical_orientation_verified(component_confidences) -> bool:
     """Return whether physical H/V provenance was explicitly trusted/reviewed."""
     payload = component_confidences
@@ -3254,13 +3264,8 @@ class PCMasterFactory:
                         "source_identity": source_info["identity"],
                         "source_orientation": source_orientation,
                         "artifact_state": artifact_state,
-                        "completed": (
-                            artifact_state is not None
-                            and artifact_state.get("status") == "COMPLETED"
-                            and bool(artifact_state.get("local_output_path"))
-                            and Path(
-                                artifact_state.get("local_output_path")
-                            ).is_file()
+                        "completed": artifact_record_is_complete_on_disk(
+                            artifact_state
                         ),
                     })
 
