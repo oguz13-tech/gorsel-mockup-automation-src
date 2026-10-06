@@ -1490,7 +1490,8 @@ window.onerror = function(msg, url, line, col, error) {
                 if (res.success && res.corners && res.corners.length === 4) {
                     tmplData.koseler = res.corners;
                     tmplData.tip = 'perspektif';
-                    t.elem.textContent = '✅ ' + t.tmpl; // Update sidebar
+                    t.elem.textContent = '📝 ' + t.tmpl;
+                    t.elem.title = 'Otomatik 4 köşe bulundu; insan APPROVED onayı gerekli.';
                     successCount++;
                     bulkUpdates.push({ category: t.cat, filename: t.tmpl, data: tmplData });
                 } else {
