@@ -32,6 +32,10 @@ jobs:
         run: |
           python -m py_compile             SABLON_V2_MIMARI/core/db.py             SABLON_V2_MIMARI/core/vision.py             SABLON_V2_MIMARI/core/template_intelligence.py             SABLON_V2_MIMARI/core/factory_doctor.py             SABLON_V2_MIMARI/app.py             V2_KONTROL_MERKEZI/app.py             99_SISTEM_MOTORLARI_VE_KODLAR/SISTEM_MOTORU/foreground_ai.py             99_SISTEM_MOTORLARI_VE_KODLAR/SISTEM_MOTORU/sablon_oto_izleyici.py             99_SISTEM_MOTORLARI_VE_KODLAR/SISTEM_MOTORU/pc_master_factory.py             scripts/epic3_benchmark.py             scripts/geometry_diagnostics.py             scripts/scorer_telemetry.py             scripts/factory_doctor.py             scripts/migrate_legacy_geometry_profiles.py             scripts/epic3_validation_bundle.py
 
+      - name: JavaScript syntax gate
+        run: |
+          node --check SABLON_V2_MIMARI/static/js/main.js
+
       - name: Full regression suite
         env:
           PYTHONUTF8: "1"
