@@ -2506,7 +2506,16 @@ def build_factory_preflight() -> dict:
                             row["has_occlusion"]
                             or foreground_plan_has_positive_selection(plan)
                         )
-                        if requires_occlusion:
+                        # Match render-time auto_foreground defaults. The
+                        # review UI currently persists a settings-only on_plan,
+                        # so AI may be intentionally used as an opportunistic
+                        # scan even when no occluder is known in advance.
+                        auto_foreground_requested = bool(
+                            category == "04_Cam_Dograma"
+                            or requires_occlusion
+                            or bool(plan)
+                        )
+                        if auto_foreground_requested:
                             has_positive_manual_plan = False
                             if plan_trusted and isinstance(plan, list):
                                 has_positive_manual_plan = len(plan) >= 3
