@@ -356,19 +356,39 @@ def run_factory_doctor(
                 )
 
             if manifest_summary["aspect_fit_warnings"]:
-                worst = sorted(
+                ordered = sorted(
                     manifest_summary["aspect_fit_warnings"],
                     key=lambda item: item["relative_error"],
                     reverse=True,
                 )
-                add_warning(
-                    "MASTER_ASPECT_DIRECT_FIT",
-                    "Bazı H/V masterlar ürünün fiziksel oranına doğrudan "
-                    "homografi ile uyduruluyor; bu, kenar bozulması üretmeden "
-                    "tasarım geometrisini esnetebilir. Uzun vadeli çözüm: "
-                    "ürün oranına uygun master/bleed-safe tasarım kaynağı.",
-                    examples=worst[:10],
-                )
+                bleed_cases = [
+                    item
+                    for item in ordered
+                    if item["relative_error"] > 0.075
+                ]
+                crop_cases = [
+                    item
+                    for item in ordered
+                    if 0.03 < item["relative_error"] <= 0.075
+                ]
+                if bleed_cases:
+                    add_warning(
+                        "MASTER_ASPECT_BLEED_ADAPTATION",
+                        "Bazı H/V masterlar fiziksel ürün oranından belirgin "
+                        "farklı. r7 bunları geometrik olarak ESNETMEZ; tam "
+                        "tasarımı koruyup yalnız gerekli dış bölgede yumuşak "
+                        "bleed üretir. En kusursuz uzun vadeli çözüm yine ürün "
+                        "oranına özel master kaynağıdır.",
+                        examples=bleed_cases[:10],
+                    )
+                if crop_cases:
+                    add_info(
+                        "MASTER_ASPECT_SAFE_CROP",
+                        "Bazı H/V masterlarda küçük oran farkı var. r7 bu "
+                        "durumlarda yeniden ölçeklemek yerine küçük merkez "
+                        "crop kullanarak tasarım geometrisini korur.",
+                        examples=crop_cases[:10],
+                    )
         except Exception as exc:
             add_error(
                 "MANIFEST_UNREADABLE",
