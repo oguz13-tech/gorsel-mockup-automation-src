@@ -319,6 +319,28 @@ def cached_foreground_mask_usable(mask: np.ndarray | None, foreground_required: 
     return True
 
 
+def foreground_plan_has_positive_selection(plan) -> bool:
+    """Return True only when a manual plan proves foreground pixels exist.
+
+    Review UI always carries an on_plan settings object (feather, GrabCut
+    iterations, empty arrays). That metadata must not be mistaken for evidence
+    that an occluding object actually exists.
+    """
+    if isinstance(plan, list):
+        return len(plan) >= 3
+    if not isinstance(plan, dict):
+        return False
+    return bool(plan.get("object_boxes") or plan.get("add_brush"))
+
+
+def foreground_is_required(config: dict, on_plan) -> bool:
+    """Fail closed only for source-reviewed/explicit foreground evidence."""
+    return bool(
+        (config or {}).get("has_occlusion")
+        or foreground_plan_has_positive_selection(on_plan)
+    )
+
+
 def physical_orientation_verified(component_confidences) -> bool:
     """Return whether physical H/V provenance was explicitly trusted/reviewed."""
     payload = component_confidences
@@ -1982,21 +2004,11 @@ class MockupRenderer:
             # Cutting-board templates are the highest-occlusion category
             # (food/knife/utensil objects in front of the printable glass).
             # Templates can override this explicitly with auto_foreground.
-            foreground_required = bool(
-                category_name == "04_Cam_Dograma"
-                or config.get("has_occlusion")
-                or (
-                    isinstance(on_plan, list)
-                    and len(on_plan) >= 3
-                )
-                or (
-                    isinstance(on_plan, dict)
-                    and (
-                        on_plan.get("object_boxes")
-                        or on_plan.get("add_brush")
-                    )
-                )
-            )
+            # Auto foreground discovery may run on any template, but a
+            # no-object result is fatal only when reviewed evidence says an
+            # occluder truly exists. Category membership and an empty/default
+            # on_plan settings object are not occlusion evidence.
+            foreground_required = foreground_is_required(config, on_plan)
             auto_foreground = bool(
                 config.get(
                     "auto_foreground",
@@ -2491,9 +2503,8 @@ def build_factory_preflight() -> dict:
                         )
 
                         requires_occlusion = bool(
-                            category == "04_Cam_Dograma"
-                            or bool(row["has_occlusion"])
-                            or bool(plan)
+                            row["has_occlusion"]
+                            or foreground_plan_has_positive_selection(plan)
                         )
                         if requires_occlusion:
                             has_positive_manual_plan = False
@@ -2826,7 +2837,9 @@ class PCMasterFactory:
                         break
             config = dict(legacy_cfg or {})
             raw_on_plan = config.get("on_plan")
-            legacy_requires_occlusion = bool(raw_on_plan)
+            legacy_requires_occlusion = foreground_plan_has_positive_selection(
+                raw_on_plan
+            )
             plan_source_hash = str(
                 config.get("on_plan_source_sha256")
                 or (
@@ -3320,7 +3333,10 @@ class PCMasterFactory:
             f"persistence_failed={self.persistence_failures} "
             f"worker_failed={self.worker_failures}"
         )
-        logger.info(f"📊 Durum Özeti: {self.state.get_summary()}")
+        logger.info(
+            "📊 Kalıcı DB geçmiş özeti (bu koşunun sonucu değildir): "
+            f"{self.state.get_summary()}"
+        )
         logger.info(f"📁 Çıktı Excel: {self.excel.file_path}")
 
         if eligible_template_count == 0:
