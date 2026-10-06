@@ -58,14 +58,22 @@ class TestWatcherSafety(unittest.TestCase):
         self.backup_dir.mkdir(parents=True)
         self.working_dir.mkdir(parents=True)
 
+        self.old_base_dir = self.watcher.BASE_DIR
+        self.old_staging_dir = self.watcher.STAGING_DIR
         self.old_sablon_dir = self.watcher.SABLON_DIR
         self.old_yedek_dir = self.watcher.YEDEK_DIR
+        self.watcher.BASE_DIR = self.root
+        self.watcher.STAGING_DIR = (
+            self.root / "YENI-BOS MOCKUP SABLON HAVUZU"
+        )
         self.watcher.SABLON_DIR = self.root / "2_SABLON_HAVUZU"
         self.watcher.YEDEK_DIR = (
             self.root / "2_SABLON_HAVUZU_ORIJINAL_YEDEK"
         )
 
     def tearDown(self):
+        self.watcher.BASE_DIR = self.old_base_dir
+        self.watcher.STAGING_DIR = self.old_staging_dir
         self.watcher.SABLON_DIR = self.old_sablon_dir
         self.watcher.YEDEK_DIR = self.old_yedek_dir
         self.tmp.cleanup()
@@ -215,6 +223,54 @@ class TestWatcherSafety(unittest.TestCase):
         self.assertFalse(
             (self.working_dir / "Wifi_Kutusu_001.png").exists()
         )
+
+    def test_stale_processing_is_restored_when_original_missing(self):
+        processing = self.staging_dir / "Wifi_Kutusu_135.png.processing"
+        processing.write_bytes(b"recover-me")
+        os.utime(processing, (1, 1))
+
+        result = self.watcher.recover_stale_processing_files(
+            stale_seconds=0
+        )
+
+        original = self.staging_dir / "Wifi_Kutusu_135.png"
+        self.assertTrue(original.is_file())
+        self.assertEqual(original.read_bytes(), b"recover-me")
+        self.assertFalse(processing.exists())
+        self.assertIn(str(original), result["restored"])
+
+    def test_stale_processing_collision_preserves_both_different_files(self):
+        original = self.staging_dir / "Wifi_Kutusu_135.png"
+        processing = self.staging_dir / "Wifi_Kutusu_135.png.processing"
+        original.write_bytes(b"active-copy")
+        processing.write_bytes(b"orphan-copy")
+        os.utime(processing, (1, 1))
+
+        result = self.watcher.recover_stale_processing_files(
+            stale_seconds=0
+        )
+
+        self.assertEqual(original.read_bytes(), b"active-copy")
+        self.assertFalse(processing.exists())
+        self.assertEqual(len(result["quarantined"]), 1)
+        recovered = Path(result["quarantined"][0])
+        self.assertTrue(recovered.is_file())
+        self.assertEqual(recovered.read_bytes(), b"orphan-copy")
+
+    def test_stale_processing_identical_duplicate_is_removed(self):
+        original = self.staging_dir / "Wifi_Kutusu_135.png"
+        processing = self.staging_dir / "Wifi_Kutusu_135.png.processing"
+        original.write_bytes(b"same-bytes")
+        processing.write_bytes(b"same-bytes")
+        os.utime(processing, (1, 1))
+
+        result = self.watcher.recover_stale_processing_files(
+            stale_seconds=0
+        )
+
+        self.assertTrue(original.is_file())
+        self.assertFalse(processing.exists())
+        self.assertEqual(len(result["deduplicated"]), 1)
 
     def test_unknown_category_is_rejected_without_data_loss(self):
         unknown_dir = (
