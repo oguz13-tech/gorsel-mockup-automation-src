@@ -171,6 +171,42 @@ class TestSQLiteBootstrap(unittest.TestCase):
         )
 
 
+
+class TestStableTemplateAssignment(unittest.TestCase):
+    def test_persisted_template_name_wins_even_if_pool_order_changes(self):
+        from SISTEM_MOTORU.pc_master_factory import (
+            choose_stable_template_record,
+        )
+
+        records = [
+            {"name": "Template_C.png"},
+            {"name": "Template_A.png"},
+            {"name": "Template_B.png"},
+        ]
+        chosen = choose_stable_template_record(
+            records,
+            sequence_number=2,
+            persisted_name="Template_C.png",
+        )
+        self.assertEqual(chosen["name"], "Template_C.png")
+
+    def test_new_assignment_is_name_sorted_and_deterministic(self):
+        from SISTEM_MOTORU.pc_master_factory import (
+            choose_stable_template_record,
+        )
+
+        records_a = [
+            {"name": "Template_C.png"},
+            {"name": "Template_A.png"},
+            {"name": "Template_B.png"},
+        ]
+        records_b = list(reversed(records_a))
+        chosen_a = choose_stable_template_record(records_a, 2)
+        chosen_b = choose_stable_template_record(records_b, 2)
+        self.assertEqual(chosen_a["name"], "Template_B.png")
+        self.assertEqual(chosen_b["name"], "Template_B.png")
+
+
 class TestArtifactCompletionRequiresLocalFile(unittest.TestCase):
     def test_completed_db_record_without_file_is_not_reusable(self):
         from SISTEM_MOTORU.pc_master_factory import artifact_record_is_complete_on_disk
