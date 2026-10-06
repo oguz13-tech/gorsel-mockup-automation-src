@@ -3257,6 +3257,10 @@ class PCMasterFactory:
                         "completed": (
                             artifact_state is not None
                             and artifact_state.get("status") == "COMPLETED"
+                            and bool(artifact_state.get("local_output_path"))
+                            and Path(
+                                artifact_state.get("local_output_path")
+                            ).is_file()
                         ),
                     })
 
