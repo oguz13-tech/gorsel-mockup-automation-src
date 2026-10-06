@@ -619,6 +619,88 @@ class TestR6AdaptiveRealism(unittest.TestCase):
         self.assertEqual(result.dtype, np.uint8)
 
 
+
+class TestFinalMarketplaceQA(unittest.TestCase):
+    def _textured_image(self, width=600, height=800):
+        import numpy as np
+
+        y, x = np.mgrid[0:height, 0:width]
+        base = ((x * 3 + y * 5) % 180 + 35).astype(np.uint8)
+        return np.stack(
+            [base, np.roll(base, 3, axis=1), np.roll(base, 5, axis=0)],
+            axis=-1,
+        )
+
+    def test_final_qa_accepts_valid_marketplace_image(self):
+        from SISTEM_MOTORU.pc_master_factory import QualityInspector
+
+        image = self._textured_image()
+        quad = [[80, 160], [520, 160], [520, 560], [80, 560]]
+        valid, message = QualityInspector.inspect_final_output(
+            image,
+            expected_width=600,
+            expected_height=800,
+            product_quad=quad,
+            smart_product_focus=True,
+            foreground_fill_fraction=0.85,
+        )
+        self.assertTrue(valid, message)
+
+    def test_final_qa_rejects_product_cropped_outside_canvas(self):
+        from SISTEM_MOTORU.pc_master_factory import QualityInspector
+
+        image = self._textured_image()
+        quad = [[-20, 120], [520, 120], [520, 560], [-20, 560]]
+        valid, message = QualityInspector.inspect_final_output(
+            image,
+            expected_width=600,
+            expected_height=800,
+            product_quad=quad,
+        )
+        self.assertFalse(valid)
+        self.assertIn("kırpılmış", message)
+
+    def test_final_qa_rejects_excessive_smart_focus_letterboxing(self):
+        from SISTEM_MOTORU.pc_master_factory import QualityInspector
+
+        image = self._textured_image()
+        quad = [[80, 160], [520, 160], [520, 560], [80, 560]]
+        valid, message = QualityInspector.inspect_final_output(
+            image,
+            expected_width=600,
+            expected_height=800,
+            product_quad=quad,
+            smart_product_focus=True,
+            foreground_fill_fraction=0.40,
+        )
+        self.assertFalse(valid)
+        self.assertIn("yeterince dolduramadı", message)
+
+    def test_smart_canvas_metadata_tracks_product_inside_frame(self):
+        import numpy as np
+        from SISTEM_MOTORU.pc_master_factory import MockupRenderer
+
+        image = np.full((600, 1000, 3), 110, dtype=np.uint8)
+        image[180:430, 230:800, :] = 180
+        quad = [[230, 180], [800, 180], [800, 430], [230, 430]]
+
+        result, meta = MockupRenderer.prepare_marketplace_canvas(
+            image,
+            target_width=600,
+            target_height=800,
+            product_quad=quad,
+            smart_product_focus=True,
+            return_metadata=True,
+        )
+        self.assertEqual(result.shape, (800, 600, 3))
+        self.assertGreater(meta["foreground_fill_fraction"], 0.55)
+        out_quad = np.asarray(meta["product_quad_output"], dtype=np.float32)
+        self.assertGreaterEqual(float(out_quad[:, 0].min()), -1.0)
+        self.assertGreaterEqual(float(out_quad[:, 1].min()), -1.0)
+        self.assertLessEqual(float(out_quad[:, 0].max()), 600.0)
+        self.assertLessEqual(float(out_quad[:, 1].max()), 800.0)
+
+
 class TestPrintMaskAlphaSemantics(unittest.TestCase):
     def test_fully_opaque_alpha_does_not_hide_artwork(self):
         import numpy as np
