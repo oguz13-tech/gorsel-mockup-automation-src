@@ -696,6 +696,102 @@ class TestR6AdaptiveRealism(unittest.TestCase):
 
 
 
+
+class TestR8SceneRealism(unittest.TestCase):
+    def _scene(self):
+        import numpy as np
+
+        h, w = 480, 720
+        y, x = np.mgrid[0:h, 0:w]
+        base = (92 + 26 * (x / float(w)) + 18 * (y / float(h))).astype(
+            np.uint8
+        )
+        scene = np.stack(
+            [base, np.clip(base + 8, 0, 255), np.clip(base + 15, 0, 255)],
+            axis=-1,
+        )
+        scene[160:330, 260:470] = (70, 90, 135)
+        return scene
+
+    def test_scene_realism_is_deterministic(self):
+        import numpy as np
+        from SISTEM_MOTORU.pc_master_factory import MockupRenderer
+
+        scene = self._scene()
+        quad = [[260, 160], [470, 160], [470, 330], [260, 330]]
+        a, meta_a = MockupRenderer.apply_scene_realism_layer(
+            scene,
+            quad,
+            "03_Ahsap_Tablo",
+            "same-template-key",
+            return_metadata=True,
+        )
+        b, meta_b = MockupRenderer.apply_scene_realism_layer(
+            scene,
+            quad,
+            "03_Ahsap_Tablo",
+            "same-template-key",
+            return_metadata=True,
+        )
+        self.assertTrue(np.array_equal(a, b))
+        self.assertEqual(meta_a["anchor"], meta_b["anchor"])
+        self.assertEqual(meta_a["angle_deg"], meta_b["angle_deg"])
+
+    def test_scene_realism_protects_product_more_than_surroundings(self):
+        import numpy as np
+        from SISTEM_MOTORU.pc_master_factory import MockupRenderer
+
+        scene = self._scene()
+        quad = np.asarray(
+            [[260, 160], [470, 160], [470, 330], [260, 330]],
+            dtype=np.float32,
+        )
+        result, meta = MockupRenderer.apply_scene_realism_layer(
+            scene,
+            quad,
+            "03_Ahsap_Tablo",
+            "protection-test",
+            return_metadata=True,
+        )
+        self.assertTrue(meta["applied"])
+        self.assertLess(meta["product_delta_mean"], 4.5)
+        self.assertLess(meta["scene_delta_mean"], 14.0)
+        self.assertGreater(meta["scene_delta_mean"], 0.02)
+
+        delta = np.mean(
+            np.abs(
+                result.astype(np.float32)
+                - scene.astype(np.float32)
+            ),
+            axis=2,
+        )
+        mask = np.zeros(scene.shape[:2], dtype=np.uint8)
+        cv2.fillConvexPoly(mask, quad.astype(np.int32), 1)
+        product_delta = float(np.mean(delta[mask == 1]))
+        scene_delta = float(np.mean(delta[mask == 0]))
+        self.assertLess(product_delta, scene_delta)
+
+    def test_all_production_categories_have_conservative_profiles(self):
+        from SISTEM_MOTORU.pc_master_factory import MockupRenderer
+
+        categories = [
+            "01_Wifi_Kutusu",
+            "02_Cam_Tablo_Dikey",
+            "02_Cam_Tablo_Yatay",
+            "03_Ahsap_Tablo",
+            "04_Cam_Dograma",
+            "05_Ocak_Arkasi",
+        ]
+        for category in categories:
+            profile = MockupRenderer._scene_realism_profile(category)
+            self.assertLessEqual(float(profile["light"]), 0.06)
+            self.assertLessEqual(float(profile["shadow"]), 0.05)
+            self.assertGreaterEqual(
+                float(profile["product_protection"]),
+                0.94,
+            )
+
+
 class TestFinalMarketplaceQA(unittest.TestCase):
     def _textured_image(self, width=600, height=800):
         import numpy as np
