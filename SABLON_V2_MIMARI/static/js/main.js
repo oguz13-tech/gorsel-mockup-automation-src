@@ -1864,6 +1864,15 @@ async function rejectTemplate() {
         });
         let data = await res.json();
         if(data.success) {
+            const tmplObj = ayarlar.kategoriler[currentCat].sablonlar[currentTmpl];
+            if (tmplObj) tmplObj._review_status = 'REJECTED';
+            const currentItem = allTemplates.find(
+                t => t.cat === currentCat && t.tmpl === currentTmpl
+            );
+            if (currentItem && currentItem.elem) {
+                currentItem.elem.textContent = '🚫 ' + currentTmpl;
+                currentItem.elem.title = 'İnsan incelemesinde reddedildi.';
+            }
             alert("Geometri reddedildi (REJECTED).");
         } else {
             alert("Hata: " + data.error);
