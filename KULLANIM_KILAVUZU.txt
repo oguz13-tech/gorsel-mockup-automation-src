@@ -75,6 +75,35 @@ GÜVENLİK KURALLARI
 - DB 'COMPLETED' dese bile yerel çıktı dosyası silindiyse factory yeniden render eder.
 - Kod kaynağı ile runtime workspace farklı olabilir. Launcher size runtime yolunu sorar.
 
+R8 SCENE REALISM LAYER
+----------------------
+r8 ile bütün üretim kategorilerinde çevresel gerçekçilik varsayılan olarak aktiftir.
+
+Temel davranış:
+- Ürünün onaylı dörtgeni güçlü biçimde korunur.
+- Sistem ürünün çevresindeki düşük detaylı / sakin sahne bölgelerini tarar.
+- En uygun yakın bölgeye lokal ve düşük şiddetli günışığı, pencere gölgesi
+  ve kategori uygunsa çok hafif organik/yaprak gölgesi ekler.
+- Efekt ürünün üstüne bindirilmek zorunda değildir; tercihen yakın duvar,
+  zemin, tezgah veya ürün çevresindeki boş alanda görünür.
+- Cam ürünlerin mevcut material reflection / rodaj sistemi korunur.
+- Cam Doğrama'nın küçük şeffaf yansıması korunur.
+- Aynı tasarım + aynı şablon + aynı recipe aynı efekti üretir (deterministik).
+- Güvenlik kapısı ürün yüzeyi veya sahne değişimi aşırı olursa renderı durdurur.
+
+Kategori profilleri:
+- Wifi Kutusu: çok hafif soft-window çevre ışığı.
+- Cam Tablo Dikey/Yatay: gallery/window ambience; ürün yüzeyi maksimum korunur.
+- Ahşap Tablo: sıcak pencere ışığı + ultra hafif organik gölge.
+- Cam Doğrama: mutfak/tezgah light-bounce + mevcut cam micro-reflection.
+- Ocak Arkası: kontrollü mutfak günışığı; baskı okunurluğu maksimum korunur.
+
+Gerekirse tek bir şablonda:
+  scene_realism_enabled = false
+veya
+  scene_realism_strength = 0.0 .. 1.5
+ile ayarlanabilir. Varsayılan strength = 1.0'dır.
+
 FACTORY DOCTOR
 --------------
 Elle derin tarama için:
