@@ -551,19 +551,57 @@ class TestDetailPreservingRealism(unittest.TestCase):
 
 
 class TestEdgeSafeMasterQuality(unittest.TestCase):
-    def test_nominal_aspect_compatibility_does_not_replicate_edges(self):
+    def test_modest_aspect_mismatch_uses_crop_without_stretch(self):
         import numpy as np
         from SISTEM_MOTORU.pc_master_factory import MockupRenderer
 
         image = np.zeros((896, 1200, 3), dtype=np.uint8)
-        image[:, 0, :] = 77
-        image[:, -1, :] = 199
+        # Horizontal bands let us prove the remaining pixels were cropped,
+        # not resized/interpolated.
+        image[:, :, 0] = np.arange(896, dtype=np.uint16)[:, None] % 256
         prepared = MockupRenderer.prepare_artwork_for_nominal_aspect(
             image,
             1.42857143,
         )
-        self.assertEqual(prepared.shape, image.shape)
-        self.assertTrue(np.array_equal(prepared, image))
+        self.assertEqual(prepared.shape, (840, 1200, 3))
+        expected = image[28:868, :, :]
+        self.assertTrue(np.array_equal(prepared, expected))
+        self.assertAlmostEqual(
+            prepared.shape[1] / prepared.shape[0],
+            1.42857143,
+            places=3,
+        )
+
+    def test_larger_accepted_mismatch_uses_bleed_and_preserves_core(self):
+        import numpy as np
+        from SISTEM_MOTORU.pc_master_factory import MockupRenderer
+
+        image = np.zeros((1200, 896, 3), dtype=np.uint8)
+        image[:] = (20, 30, 40)
+        image[120:1080, 100:796] = (180, 120, 60)
+
+        prepared = MockupRenderer.prepare_artwork_for_nominal_aspect(
+            image,
+            2.0 / 3.0,
+        )
+
+        self.assertEqual(prepared.shape, (1344, 896, 3))
+        self.assertAlmostEqual(
+            prepared.shape[1] / prepared.shape[0],
+            2.0 / 3.0,
+            places=3,
+        )
+        # The original is centered at y=72. Stay well clear of the seam.
+        self.assertTrue(
+            np.array_equal(
+                prepared[72 + 40:72 + 1160, 40:856],
+                image[40:1160, 40:856],
+            )
+        )
+        # Bleed exists, but it is not a sharp copy of the first source row.
+        self.assertFalse(
+            np.array_equal(prepared[0], image[0])
+        )
 
     def test_large_aspect_mismatch_is_rejected(self):
         import numpy as np
