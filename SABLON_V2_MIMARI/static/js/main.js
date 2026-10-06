@@ -49,7 +49,10 @@ window.onerror = function(msg, url, line, col, error) {
     fetch('/api/saglik_durumu')
         .then(res => res.json())
         .then(data => {
-            if(data.sorun_sayisi > 0 || data.cozulen_sayisi > 0) {
+            const errorCount = Number(data.sorun_sayisi || 0);
+            const warningCount = Number(data.uyari_sayisi || 0);
+            const solvedCount = Number(data.cozulen_sayisi || 0);
+            if(errorCount > 0 || warningCount > 0 || solvedCount > 0) {
                 let banner = document.createElement("div");
                 banner.style.padding = "10px";
                 banner.style.textAlign = "center";
@@ -57,20 +60,28 @@ window.onerror = function(msg, url, line, col, error) {
                 banner.style.zIndex = "10000";
                 banner.style.position = "relative";
                 
-                if(data.sorun_sayisi > 0) {
+                if(errorCount > 0) {
                     banner.style.backgroundColor = "#ff4444";
                     banner.style.color = "white";
-                    banner.innerHTML = "⚠️ DİKKAT: " + data.sorun_sayisi + " ADET SİSTEM SORUNU TESPİT EDİLDİ! LÜTFEN LOGLARI KONTROL EDİN.";
+                    banner.textContent = "⛔ ÜRETİM GÜVENLİĞİ: " + errorCount + " kritik sorun bulundu.";
+                } else if(warningCount > 0) {
+                    banner.style.backgroundColor = "#ffbf47";
+                    banner.style.color = "black";
+                    banner.textContent = "⚠️ FACTORY DOCTOR: " + warningCount + " geliştirme/sağlık uyarısı var.";
                 } else {
                     banner.style.backgroundColor = "#44ff44";
                     banner.style.color = "black";
-                    banner.innerHTML = "✅ SİSTEM " + data.cozulen_sayisi + " ADET SORUNU OTOMATİK OLARAK ÇÖZDÜ!";
+                    banner.textContent = "✅ SİSTEM " + solvedCount + " adet sorunu otomatik olarak çözdü.";
                 }
                 
                 let details = document.createElement("button");
                 details.innerText = "Detaylar";
                 details.style.marginLeft = "15px";
-                details.onclick = () => alert("ÇÖZÜLENLER:\n" + data.cozulenler.join("\n") + "\n\nSORUNLAR:\n" + data.sorunlar.join("\n"));
+                details.onclick = () => alert(
+                    "KRİTİK SORUNLAR:\n" + (data.sorunlar || []).join("\n") +
+                    "\n\nUYARILAR:\n" + (data.uyarilar || []).join("\n") +
+                    "\n\nÇÖZÜLENLER:\n" + (data.cozulenler || []).join("\n")
+                );
                 banner.appendChild(details);
                 
                 let mainDiv = document.getElementById("main");
