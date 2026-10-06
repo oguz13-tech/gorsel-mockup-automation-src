@@ -158,11 +158,19 @@ def migrate_schema(conn):
         ("nominal_aspect", "ALTER TABLE template_profiles ADD COLUMN nominal_aspect TEXT"),
         ("is_active", "ALTER TABLE template_profiles ADD COLUMN is_active INTEGER DEFAULT 1"),
     ]
+
+    # Inspect schema metadata instead of probing columns with SELECT ... LIMIT 1.
+    # A successful SELECT that is not fetched leaves an active read cursor on
+    # template_profiles; rebuilding that same table in this transaction then
+    # fails with "database table is locked" on real upgraded runtime DBs.
+    existing_columns = {
+        row[1]
+        for row in c.execute("PRAGMA table_info(template_profiles)").fetchall()
+    }
     for col_name, alter_sql in migrations:
-        try:
-            c.execute(f"SELECT {col_name} FROM template_profiles LIMIT 1")
-        except sqlite3.OperationalError:
+        if col_name not in existing_columns:
             c.execute(alter_sql)
+            existing_columns.add(col_name)
 
     # Legacy databases may still have UNIQUE(template_uid). EPIC-3 deliberately
     # stores stale + current source-version rows under the same template_uid, so
