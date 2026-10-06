@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 import sqlite3
 import time
@@ -90,6 +91,36 @@ def _positive_on_plan(plan: Any) -> bool:
     if not isinstance(plan, dict):
         return False
     return bool(plan.get("object_boxes") or plan.get("add_brush"))
+
+
+def _read_current_recipe_version(source_root: Path) -> str:
+    factory_path = (
+        source_root
+        / "99_SISTEM_MOTORLARI_VE_KODLAR"
+        / "SISTEM_MOTORU"
+        / "pc_master_factory.py"
+    )
+    try:
+        text = factory_path.read_text(encoding="utf-8")
+    except Exception:
+        return ""
+    match = re.search(
+        r'^RECIPE_VERSION\s*=\s*["\']([^"\']+)["\']',
+        text,
+        flags=re.MULTILINE,
+    )
+    return match.group(1).strip() if match else ""
+
+
+def _looks_like_test_artifact_key(key: str) -> bool:
+    lowered = str(key or "").casefold()
+    return (
+        lowered.startswith("test_")
+        or lowered.startswith("test-")
+        or lowered.startswith("t5_")
+        or lowered.startswith("t1_")
+        or "fixture" in lowered
+    )
 
 
 def run_factory_doctor(
@@ -576,11 +607,16 @@ def run_factory_doctor(
         / "SISTEM_MOTORU"
         / "commerce_state.db"
     )
+    current_recipe = _read_current_recipe_version(source)
     state_summary = {
         "path": str(commerce_db),
         "quick_check": None,
         "status_counts": {},
+        "current_recipe": current_recipe or None,
         "completed_missing_local_files": 0,
+        "current_recipe_missing_local_files": 0,
+        "historical_missing_local_files": 0,
+        "test_residue_missing_local_files": 0,
     }
     if commerce_db.is_file():
         conn = None
@@ -610,22 +646,61 @@ def run_factory_doctor(
                     Counter(str(row["status"] or "UNKNOWN") for row in rows)
                 )
                 missing_completed = []
+                missing_current = []
+                missing_historical = []
+                missing_test = []
                 for row in rows:
                     if str(row["status"]) != "COMPLETED":
                         continue
                     local = Path(str(row["local_output_path"] or ""))
-                    if not local.is_file():
-                        missing_completed.append(str(row["artifact_key"]))
+                    if local.is_file():
+                        continue
+
+                    key = str(row["artifact_key"] or "")
+                    missing_completed.append(key)
+                    if _looks_like_test_artifact_key(key):
+                        missing_test.append(key)
+                    elif current_recipe and key.endswith(
+                        "_" + current_recipe
+                    ):
+                        missing_current.append(key)
+                    else:
+                        missing_historical.append(key)
+
                 state_summary[
                     "completed_missing_local_files"
                 ] = len(missing_completed)
-                if missing_completed:
+                state_summary[
+                    "current_recipe_missing_local_files"
+                ] = len(missing_current)
+                state_summary[
+                    "historical_missing_local_files"
+                ] = len(missing_historical)
+                state_summary[
+                    "test_residue_missing_local_files"
+                ] = len(missing_test)
+
+                if missing_current:
                     add_warning(
-                        "COMPLETED_ARTIFACT_FILE_MISSING",
-                        f"{len(missing_completed)} COMPLETED artifact'ın "
-                        "yerel dosyası yok. Yeni fabrika sürümü bunları "
-                        "otomatik yeniden render eder.",
-                        examples=missing_completed[:5],
+                        "CURRENT_ARTIFACT_FILE_MISSING",
+                        f"{len(missing_current)} mevcut recipe artifact'ının "
+                        "yerel dosyası yok. Factory bunları yeniden render eder.",
+                        examples=missing_current[:5],
+                    )
+                if missing_historical:
+                    add_info(
+                        "HISTORICAL_ARTIFACT_FILE_MISSING",
+                        f"{len(missing_historical)} eski recipe COMPLETED kaydı "
+                        "yerel dosya olmadan audit geçmişinde duruyor. "
+                        "Bu normaldir ve güncel üretimi engellemez.",
+                        examples=missing_historical[:5],
+                    )
+                if missing_test:
+                    add_info(
+                        "TEST_ARTIFACT_RESIDUE",
+                        f"{len(missing_test)} test/fixture artifact kaydı "
+                        "commerce_state geçmişinde bulundu.",
+                        examples=missing_test[:5],
                     )
         except Exception as exc:
             add_error(
