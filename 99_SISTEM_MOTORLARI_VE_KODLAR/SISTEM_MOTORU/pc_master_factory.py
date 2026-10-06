@@ -147,7 +147,7 @@ db_lock = threading.RLock()
 # Render recipe participates in immutable artifact identity. Bump whenever
 # renderer/aspect/occlusion behavior changes so old artifacts are never silently
 # reused under a new visual contract.
-RECIPE_VERSION = "v3_epic3_20261007_r6"
+RECIPE_VERSION = "v3_epic3_20261007_r7"
 
 # ==============================================================================
 # 2. ÜRÜN VE FORMAT SÖZLEŞMESİ (URUN_FORMAT_HARITASI)
@@ -2122,17 +2122,23 @@ class MockupRenderer:
     def prepare_artwork_for_nominal_aspect(
         image_cv: np.ndarray,
         nominal_aspect,
-        max_direct_fit_error: float = 0.15,
+        max_aspect_error: float = 0.15,
+        crop_error_threshold: float = 0.075,
     ) -> np.ndarray:
-        """Validate aspect compatibility without manufacturing edge pixels.
+        """Fit artwork to physical product ratio without geometric stretching.
 
-        Older code padded modest ratio differences with BORDER_REPLICATE. That
-        copied the outermost ornament/background pixels into long horizontal or
-        vertical streaks after perspective projection. For compatible master
-        variants we keep every real source pixel and let the physical homography
-        perform the modest aspect fit. Large mismatches are rejected instead of
-        silently cropping, stretching via an intermediate resize, or inventing
-        fake edge content.
+        Strategy:
+        - <=0.5% difference: keep source unchanged.
+        - modest mismatch (<=7.5%): center-crop the small excess dimension.
+          The artwork geometry stays untouched; no resize/stretch is applied.
+        - larger but accepted mismatch (<=15%): preserve the complete artwork
+          and synthesize only the required outer bleed as low-frequency color/
+          texture continuation. Sharp edge pixels are never replicated.
+        - larger mismatch: reject and require a dedicated master.
+
+        This specifically replaces the old "direct homography stretch" risk
+        detected by Factory Doctor while avoiding the prior BORDER_REPLICATE
+        streak failure.
         """
         if image_cv is None or image_cv.size == 0:
             raise ValueError("Artwork is empty")
@@ -2153,16 +2159,107 @@ class MockupRenderer:
         if relative_error <= 0.005:
             return image_cv
 
-        if relative_error > max_direct_fit_error:
+        if relative_error > float(max_aspect_error):
             raise ValueError(
                 f"Artwork aspect mismatch too large: {source_ratio:.4f} "
                 f"vs physical {target_ratio:.4f}"
             )
 
-        # Important: do not pad with replicated/mirrored pixels here. The
-        # perspective transform below maps the complete source artwork to the
-        # reviewed physical surface in one sampling operation.
-        return image_cv
+        # Small mismatch: crop only the excess dimension. This preserves every
+        # remaining pixel's geometry and avoids any interpolation of the art.
+        if relative_error <= float(crop_error_threshold):
+            if source_ratio > target_ratio:
+                target_w = max(1, int(round(h * target_ratio)))
+                target_w = min(target_w, w)
+                x0 = max(0, (w - target_w) // 2)
+                return image_cv[:, x0:x0 + target_w].copy()
+
+            target_h = max(1, int(round(w / target_ratio)))
+            target_h = min(target_h, h)
+            y0 = max(0, (h - target_h) // 2)
+            return image_cv[y0:y0 + target_h, :].copy()
+
+        # Larger accepted mismatch: keep the complete original artwork. Create
+        # only the missing perimeter as a strongly blurred low-frequency bleed.
+        # The sharp design itself remains byte-for-byte unchanged away from a
+        # narrow feather seam.
+        if source_ratio > target_ratio:
+            target_w = w
+            target_h = max(h, int(round(w / target_ratio)))
+        else:
+            target_h = h
+            target_w = max(w, int(round(h * target_ratio)))
+
+        low_frequency = cv2.resize(
+            image_cv,
+            (target_w, target_h),
+            interpolation=cv2.INTER_AREA,
+        )
+        sigma = max(6.0, min(target_w, target_h) * 0.030)
+        low_frequency = cv2.GaussianBlur(
+            low_frequency,
+            (0, 0),
+            sigmaX=sigma,
+            sigmaY=sigma,
+        )
+
+        # Pull the bleed toward the median border color so ornament/detail does
+        # not reappear as blurry replicated bands.
+        edge = max(2, int(round(min(w, h) * 0.025)))
+        border_samples = np.concatenate(
+            [
+                image_cv[:edge, :, :].reshape(-1, 3),
+                image_cv[-edge:, :, :].reshape(-1, 3),
+                image_cv[:, :edge, :].reshape(-1, 3),
+                image_cv[:, -edge:, :].reshape(-1, 3),
+            ],
+            axis=0,
+        )
+        border_median = np.median(
+            border_samples.astype(np.float32),
+            axis=0,
+        )
+        canvas = (
+            low_frequency.astype(np.float32) * 0.24
+            + border_median.reshape(1, 1, 3) * 0.76
+        )
+
+        x0 = (target_w - w) // 2
+        y0 = (target_h - h) // 2
+
+        alpha = np.zeros((target_h, target_w), dtype=np.float32)
+        alpha[y0:y0 + h, x0:x0 + w] = 1.0
+        seam = max(2.0, min(w, h) * 0.0035)
+        alpha = cv2.GaussianBlur(
+            alpha,
+            (0, 0),
+            sigmaX=seam,
+            sigmaY=seam,
+        )
+        alpha = np.clip(alpha, 0.0, 1.0)
+
+        source_layer = canvas.copy()
+        source_layer[y0:y0 + h, x0:x0 + w] = image_cv.astype(
+            np.float32
+        )
+        blended = (
+            source_layer * alpha[..., None]
+            + canvas * (1.0 - alpha[..., None])
+        )
+
+        # Keep the interior completely untouched; feathering is only for seams.
+        inset = max(4, int(round(seam * 3.0)))
+        iy0 = min(y0 + inset, y0 + h)
+        iy1 = max(y0 + h - inset, iy0)
+        ix0 = min(x0 + inset, x0 + w)
+        ix1 = max(x0 + w - inset, ix0)
+        if iy1 > iy0 and ix1 > ix0:
+            blended[iy0:iy1, ix0:ix1] = image_cv[
+                iy0 - y0:iy1 - y0,
+                ix0 - x0:ix1 - x0,
+            ]
+
+        return np.clip(blended, 0, 255).astype(np.uint8)
 
     @staticmethod
     def prepare_marketplace_canvas(
@@ -2594,7 +2691,7 @@ class MockupRenderer:
                 return False
             if prepared_art.shape[:2] != art_cv.shape[:2]:
                 logger.info(
-                    f"  ↔️ Artwork fiziksel orana içerik kaybetmeden uyarlandı: "
+                    f"  ↔️ Artwork fiziksel orana geometri korunarak uyarlandı: "
                     f"{art_cv.shape[1]}x{art_cv.shape[0]} -> "
                     f"{prepared_art.shape[1]}x{prepared_art.shape[0]} "
                     f"(nominal={nominal_aspect})"
