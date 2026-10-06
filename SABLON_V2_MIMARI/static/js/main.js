@@ -1389,45 +1389,62 @@ window.onerror = function(msg, url, line, col, error) {
         });
     }
 
-    function saveAll(silent = false) {
+    async function saveAll(silent = false) {
         if (currentCat && currentTmpl) {
             updateDataFromPoints();
             saveCurrentTemplateData();
         }
         const saveCat = currentCat;
         const saveTmpl = currentTmpl;
-        if (!saveCat || !saveTmpl) return;
-        
-        const currentData = ayarlar.kategoriler[saveCat].sablonlar[saveTmpl];
+        if (!saveCat || !saveTmpl) return true;
 
-        fetch('/api/tekil_sablon_kaydet', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                "kategori": saveCat,
-                "sablon": saveTmpl,
-                "data": currentData
-            })
-        }).then(r => r.json()).then(res => {
-            if(res.success) {
-                // Sadece manuel kaydetmede görseli yenile
-                if (saveCat && saveTmpl && !silent) {
-                    const stem = saveTmpl.replace(/\.[^.]+$/, '');
-                    const tempImg = new Image();
-                    tempImg.onload = () => { currentImg = tempImg; draw(); };
-                    tempImg.src = '/image/' + encodeURIComponent(saveCat) + '/' + encodeURIComponent(stem + '.png') + '?t=' + Date.now();
-                }
+        // Freeze the payload at click/navigation time so later UI changes can
+        // never mutate an already in-flight save request.
+        const currentData = JSON.parse(JSON.stringify(
+            ayarlar.kategoriler[saveCat].sablonlar[saveTmpl]
+        ));
+
+        try {
+            const response = await fetch('/api/tekil_sablon_kaydet', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    "kategori": saveCat,
+                    "sablon": saveTmpl,
+                    "data": currentData
+                })
+            });
+            const res = await response.json();
+            if (!res.success) {
                 if (!silent) {
-                    alert('Tum degisiklikler ve on plan maskeleri basariyla ayarlar.json dosyasina kaydedildi!');
+                    alert('Kaydetme hatası: ' + (res.error || 'Bilinmeyen hata'));
                 }
-            } else {
-                if (!silent) alert('Hata olustu! Detay: ' + (res.error || 'Bilinmeyen'));
+                return false;
             }
-        }).catch(err => {
-            if (!silent) alert('Kaydetme hatasi: ' + err);
-        });
+
+            // Sadece manuel kaydetmede görseli yenile.
+            if (saveCat && saveTmpl && !silent) {
+                const stem = saveTmpl.replace(/\.[^.]+$/, '');
+                const tempImg = new Image();
+                tempImg.onload = () => {
+                    if (saveCat === currentCat && saveTmpl === currentTmpl) {
+                        currentImg = tempImg;
+                        draw();
+                    }
+                };
+                tempImg.src = '/image/' + encodeURIComponent(saveCat) + '/' +
+                    encodeURIComponent(stem + '.png') + '?t=' + Date.now();
+            }
+            if (!silent) {
+                alert('Değişiklikler aktif şablon veritabanına başarıyla kaydedildi.');
+            }
+            return true;
+        } catch (err) {
+            if (!silent) alert('Kaydetme hatası: ' + err);
+            return false;
+        }
     }
 
     async function batchAutoDetect() {
