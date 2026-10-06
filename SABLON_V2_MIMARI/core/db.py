@@ -29,8 +29,130 @@ def get_db_connection():
     conn.execute("PRAGMA journal_mode = WAL")
     return conn
 
+def _template_uid_has_legacy_unique_constraint(conn) -> bool:
+    """Return True when an old DB still enforces UNIQUE(template_uid).
+
+    EPIC-3 keeps source-version history for a template_uid, so multiple rows
+    with the same UID are valid as long as only the current row is active.
+    Older runtime DBs used UNIQUE(template_uid), which makes source replacement
+    fail during re-analysis with "UNIQUE constraint failed".
+    """
+    c = conn.cursor()
+    for index_row in c.execute("PRAGMA index_list(template_profiles)").fetchall():
+        # PRAGMA index_list columns: seq, name, unique, origin, partial.
+        if not int(index_row[2] or 0):
+            continue
+        index_name = str(index_row[1] or "")
+        if not index_name:
+            continue
+        quoted_name = index_name.replace('"', '""')
+        cols = [
+            row[2]
+            for row in c.execute(
+                f'PRAGMA index_info("{quoted_name}")'
+            ).fetchall()
+        ]
+        if cols == ["template_uid"]:
+            return True
+    return False
+
+
+def _rebuild_template_profiles_without_uid_unique(conn):
+    """Rebuild legacy template_profiles while preserving every existing row."""
+    c = conn.cursor()
+    legacy_columns = {
+        row[1]
+        for row in c.execute("PRAGMA table_info(template_profiles)").fetchall()
+    }
+
+    c.execute("DROP TABLE IF EXISTS template_profiles__epic3_migration")
+    c.execute(
+        """CREATE TABLE template_profiles__epic3_migration (
+               id INTEGER PRIMARY KEY AUTOINCREMENT,
+               template_uid TEXT,
+               category TEXT,
+               source_relative_path TEXT,
+               source_asset_sha256 TEXT,
+               profile_version TEXT,
+               analyzer_version TEXT,
+               product_class TEXT,
+               orientation TEXT,
+               nominal_aspect TEXT,
+               geometry_type TEXT,
+               print_policy TEXT,
+               surface_quad TEXT,
+               outer_quad TEXT,
+               surface_mask_path TEXT,
+               material TEXT,
+               has_frame INTEGER,
+               has_mat INTEGER,
+               has_reflection INTEGER,
+               has_occlusion INTEGER,
+               confidence_total REAL,
+               component_confidences TEXT,
+               review_status TEXT,
+               manually_verified INTEGER,
+               is_active INTEGER DEFAULT 1,
+               updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+           )"""
+    )
+
+    canonical_columns = [
+        "id",
+        "template_uid",
+        "category",
+        "source_relative_path",
+        "source_asset_sha256",
+        "profile_version",
+        "analyzer_version",
+        "product_class",
+        "orientation",
+        "nominal_aspect",
+        "geometry_type",
+        "print_policy",
+        "surface_quad",
+        "outer_quad",
+        "surface_mask_path",
+        "material",
+        "has_frame",
+        "has_mat",
+        "has_reflection",
+        "has_occlusion",
+        "confidence_total",
+        "component_confidences",
+        "review_status",
+        "manually_verified",
+        "is_active",
+        "updated_at",
+    ]
+
+    insert_columns = []
+    select_expressions = []
+    for column in canonical_columns:
+        if column == "id":
+            insert_columns.append("id")
+            select_expressions.append("id" if "id" in legacy_columns else "rowid")
+        elif column in legacy_columns:
+            insert_columns.append(column)
+            select_expressions.append(column)
+
+    if insert_columns:
+        c.execute(
+            f"""INSERT INTO template_profiles__epic3_migration
+                    ({", ".join(insert_columns)})
+                SELECT {", ".join(select_expressions)}
+                FROM template_profiles"""
+        )
+
+    c.execute("DROP TABLE template_profiles")
+    c.execute(
+        "ALTER TABLE template_profiles__epic3_migration "
+        "RENAME TO template_profiles"
+    )
+
+
 def migrate_schema(conn):
-    """Single idempotent schema migration point. Add all ALTER TABLE operations here."""
+    """Single idempotent schema migration point for all runtime DB versions."""
     c = conn.cursor()
     migrations = [
         ("nominal_aspect", "ALTER TABLE template_profiles ADD COLUMN nominal_aspect TEXT"),
@@ -41,6 +163,12 @@ def migrate_schema(conn):
             c.execute(f"SELECT {col_name} FROM template_profiles LIMIT 1")
         except sqlite3.OperationalError:
             c.execute(alter_sql)
+
+    # Legacy databases may still have UNIQUE(template_uid). EPIC-3 deliberately
+    # stores stale + current source-version rows under the same template_uid, so
+    # that constraint must be removed without deleting historical evidence.
+    if _template_uid_has_legacy_unique_constraint(conn):
+        _rebuild_template_profiles_without_uid_unique(conn)
 
 
 def init_db():
