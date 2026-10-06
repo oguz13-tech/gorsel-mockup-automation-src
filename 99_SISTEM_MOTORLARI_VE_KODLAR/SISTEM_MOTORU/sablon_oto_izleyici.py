@@ -541,4 +541,15 @@ def run_watcher():
         logger.info("İzleyici durduruldu.")
 
 if __name__ == "__main__":
+    if "--recover-only" in sys.argv:
+        STAGING_DIR.mkdir(parents=True, exist_ok=True)
+        recovery = recover_stale_processing_files(stale_seconds=0)
+        print(
+            json.dumps(
+                recovery,
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        raise SystemExit(1 if recovery["failed"] else 0)
     run_watcher()
