@@ -32,6 +32,7 @@ from core.vision import (
 
 from core.db import init_db, get_all_ayarlar, save_settings_node, save_category, save_template, delete_template, save_templates_bulk
 from core.template_intelligence import TemplateAnalyzer, save_template_profile, TemplateSelector, GeometryValidator, CategoryRuleEngine
+from core.factory_doctor import run_factory_doctor
 import hashlib
 import uuid
 
@@ -1567,12 +1568,45 @@ def api_kaggle_reddet():
 
 @app.route('/api/saglik_durumu')
 def api_saglik_durumu():
-    rapor_path = os.path.join(BASE_DIR, "99_SISTEM_MOTORLARI_VE_KODLAR", "SISTEM_MOTORU", "logs", "sistem_saglik_raporu.json")
-    if os.path.exists(rapor_path):
-        with open(rapor_path, 'r', encoding='utf-8') as rf:
-            data = json.load(rf)
-            return jsonify(data)
-    return jsonify({"sorun_sayisi": 0, "sorunlar": [], "cozulen_sayisi": 0, "cozulenler": []})
+    """Return a live, read-only workspace integrity snapshot.
+
+    The old endpoint only replayed a possibly stale JSON log. The UI now asks
+    the same current runtime DB/filesystem that production will use.
+    """
+    try:
+        report = run_factory_doctor(
+            BASE_DIR,
+            source_root=SOURCE_ROOT,
+            deep=False,
+        )
+        return jsonify({
+            "ready": bool(report.get("ready")),
+            "sorun_sayisi": int(report.get("error_count", 0)),
+            "sorunlar": [
+                f"[{item.get('code')}] {item.get('message')}"
+                for item in report.get("errors", [])
+            ],
+            "uyari_sayisi": int(report.get("warning_count", 0)),
+            "uyarilar": [
+                f"[{item.get('code')}] {item.get('message')}"
+                for item in report.get("warnings", [])
+            ],
+            # Kept for backward-compatible frontend rendering.
+            "cozulen_sayisi": 0,
+            "cozulenler": [],
+            "doctor": report,
+        })
+    except Exception as exc:
+        logger.exception("Canli sistem saglik taramasi basarisiz")
+        return jsonify({
+            "ready": False,
+            "sorun_sayisi": 1,
+            "sorunlar": [f"[DOCTOR_FAILED] {exc}"],
+            "uyari_sayisi": 0,
+            "uyarilar": [],
+            "cozulen_sayisi": 0,
+            "cozulenler": [],
+        }), 500
 
 @app.route('/<path:filename>')
 def serve_temp_files(filename):
