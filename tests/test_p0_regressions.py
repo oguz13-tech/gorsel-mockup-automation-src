@@ -453,6 +453,43 @@ class TestExcelFlushNoDeadlock(unittest.TestCase):
             wb.close()
 
 
+class TestPrintMaskAlphaSemantics(unittest.TestCase):
+    def test_fully_opaque_alpha_does_not_hide_artwork(self):
+        import numpy as np
+        from SISTEM_MOTORU.pc_master_factory import MockupRenderer
+
+        quad = np.zeros((100, 100), dtype=np.float32)
+        quad[10:90, 10:90] = 1.0
+        opaque_alpha = np.full((100, 100), 255, dtype=np.uint8)
+
+        resolved = MockupRenderer.resolve_print_mask(
+            quad,
+            opaque_alpha,
+            100,
+            100,
+        )
+        self.assertGreater(np.count_nonzero(resolved > 0.05), 6000)
+        self.assertTrue(np.allclose(resolved, quad))
+
+    def test_meaningful_transparent_hole_restricts_quad(self):
+        import numpy as np
+        from SISTEM_MOTORU.pc_master_factory import MockupRenderer
+
+        quad = np.zeros((100, 100), dtype=np.float32)
+        quad[10:90, 10:90] = 1.0
+        alpha = np.full((100, 100), 255, dtype=np.uint8)
+        alpha[25:75, 25:75] = 0
+
+        resolved = MockupRenderer.resolve_print_mask(
+            quad,
+            alpha,
+            100,
+            100,
+        )
+        self.assertGreater(np.count_nonzero(resolved > 0.05), 2000)
+        self.assertLess(np.count_nonzero(resolved > 0.05), np.count_nonzero(quad > 0.05))
+
+
 class TestQAFailStopsProduction(unittest.TestCase):
     """Verify QA failure returns False (quarantine), not just a warning."""
     
