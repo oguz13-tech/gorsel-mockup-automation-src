@@ -11,6 +11,18 @@
 <div id="sidebar">
     <h2 style="margin-top:0;">Şablon İnceleme</h2>
     <div class="panel-hint">Şablonu seçin, köşeleri kontrol edin ve doğruysa onaylayın.</div>
+    <div id="bulk-select-panel">
+        <button type="button" id="bulkModeButton" onclick="toggleBulkSelectionMode()">☑️ Toplu Seçim</button>
+        <div id="bulkSelectionActions" style="display:none;">
+            <div class="tool-note" style="margin:5px 0 7px;">Birden fazla şablonu işaretleyip tek seferde çöpe atabilirsiniz.</div>
+            <div class="bulk-action-row">
+                <button type="button" onclick="selectAllInCurrentCategory()">Bu Kategorinin Tümünü Seç</button>
+                <button type="button" onclick="clearBulkSelection()">Seçimi Temizle</button>
+            </div>
+            <div id="bulkSelectedCount">0 şablon seçildi</div>
+            <button type="button" id="bulkDeleteButton" onclick="bulkDeleteSelected()">🗑️ Seçilenleri Çöpe At</button>
+        </div>
+    </div>
     <div id="categories" style="flex:1; overflow-y:auto;">Yükleniyor...</div>
     <div class="status-legend">
         <b>Durumlar:</b> ✅ Onaylı · 📝 Kontrol bekliyor · ⚠️ Şüpheli · ⛔ Eski/uyumsuz
