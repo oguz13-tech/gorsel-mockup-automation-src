@@ -448,7 +448,7 @@ def _retire_template_safely(active_cat: str, active_tmpl: str) -> dict:
     src_img = _safe_template_path(active_cat, active_tmpl)
     removed_conf = templates[active_tmpl]
     if not os.path.isfile(src_img):
-        raise FileNotFoundError(
+        raise RuntimeError(
             "Şablon kaynak görseli bulunamadı; güvenli silme yapılamaz."
         )
 
@@ -582,6 +582,12 @@ def api_sablon_sil():
         return jsonify({"success": False, "error": str(exc)}), 400
     except FileNotFoundError as exc:
         return jsonify({"success": False, "error": str(exc)}), 404
+    except RuntimeError as exc:
+        return jsonify({
+            "success": False,
+            "error": str(exc),
+            "code": "SOURCE_IMAGE_MISSING",
+        }), 409
     except Exception as exc:
         logger.exception("Sablon cop kutusuna tasinamadi")
         return jsonify({"success": False, "error": str(exc)}), 500
