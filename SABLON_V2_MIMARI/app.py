@@ -525,157 +525,120 @@ def _find_template_backup_asset(category: str, template_name: str):
     return None
 
 
-@app.route('/api/sablon_sil', methods=['POST'])
-def api_sablon_sil():
-    """Safely retire a template and its approval lineage.
+def _retire_template_safely(active_cat: str, active_tmpl: str) -> dict:
+    """Retire one template with reversible files + DB state."""
+    active_cat = str(active_cat or "").strip()
+    active_tmpl = str(active_tmpl or "").strip()
+    if not active_cat or not active_tmpl:
+        raise ValueError("Kategori/sablon eksik")
 
-    The active working image and matching original backup are moved to the
-    reversible trash area. Matching active template_profiles are deactivated
-    in the same operation so production never sees a ghost APPROVED profile.
-    """
     meta_path = None
     moved_pairs = []
     deactivated_rowids = []
-    try:
-        active_cat = request.headers.get('X-Active-Category', '')
-        active_tmpl = request.headers.get('X-Active-Template', '')
-        if not active_cat or not active_tmpl:
-            return jsonify({
-                "success": False,
-                "error": "Kategori/sablon eksik",
-            }), 400
 
-        _ayarlar = get_all_ayarlar()
-        category_data = _ayarlar.get('kategoriler', {}).get(active_cat, {})
-        templates = category_data.get('sablonlar', {})
-        if active_tmpl not in templates:
-            return jsonify({
-                "success": False,
-                "error": "Sablon bulunamadi",
-            }), 404
+    _ayarlar = get_all_ayarlar()
+    category_data = _ayarlar.get("kategoriler", {}).get(active_cat, {})
+    templates = category_data.get("sablonlar", {})
+    if active_tmpl not in templates:
+        raise FileNotFoundError("Sablon bulunamadi")
 
-        src_img = _safe_template_path(active_cat, active_tmpl)
-        removed_conf = templates[active_tmpl]
-        if not os.path.isfile(src_img):
-            return jsonify({
-                "success": False,
-                "error": (
-                    "Şablon kaynak görseli bulunamadı; geri alınabilir silme "
-                    "işlemi güvenli şekilde yapılamaz."
-                ),
-                "code": "SOURCE_IMAGE_MISSING",
-            }), 409
-
-        trash_dir = os.path.join(BASE_DIR, "SILINEN_SABLONLAR_COP_KUTUSU")
-        os.makedirs(trash_dir, exist_ok=True)
-        stamp = time.strftime("%Y%m%d_%H%M%S")
-        token = uuid.uuid4().hex[:8]
-        safe_stem = Path(active_tmpl).stem
-
-        trash_image_name = (
-            f"{active_cat}__{safe_stem}__{stamp}_{token}"
-            f"{Path(active_tmpl).suffix}"
+    src_img = _safe_template_path(active_cat, active_tmpl)
+    removed_conf = templates[active_tmpl]
+    if not os.path.isfile(src_img):
+        raise FileNotFoundError(
+            "Şablon kaynak görseli bulunamadı; güvenli silme yapılamaz."
         )
-        trash_img = os.path.join(trash_dir, trash_image_name)
 
-        backup_src = _find_template_backup_asset(active_cat, active_tmpl)
-        backup_trash_name = None
-        backup_trash_path = None
-        if backup_src:
-            backup_trash_name = (
-                f"{active_cat}__{safe_stem}__ORIGINAL__{stamp}_{token}"
-                f"{Path(backup_src).suffix}"
-            )
-            backup_trash_path = os.path.join(
-                trash_dir,
-                backup_trash_name,
-            )
+    trash_dir = os.path.join(BASE_DIR, "SILINEN_SABLONLAR_COP_KUTUSU")
+    os.makedirs(trash_dir, exist_ok=True)
+    stamp = time.strftime("%Y%m%d_%H%M%S")
+    token = uuid.uuid4().hex[:8]
+    safe_stem = Path(active_tmpl).stem
 
-        db_path = os.path.join(BASE_DIR, "SABLON_V2_MIMARI", "ayarlar.db")
-        conn = sqlite3.connect(db_path)
-        conn.row_factory = sqlite3.Row
-        try:
-            rows = conn.execute(
-                """SELECT rowid AS profile_rowid, source_asset_sha256
-                   FROM template_profiles
-                   WHERE category=? AND is_active=1
-                     AND (
-                         source_relative_path=?
-                         OR template_uid=?
-                     )""",
-                (
-                    active_cat,
-                    f"{active_cat}/{active_tmpl}",
-                    f"{active_cat}_{active_tmpl}",
-                ),
-            ).fetchall()
-            deactivated_rowids = [
-                int(row["profile_rowid"])
-                for row in rows
-            ]
+    trash_image_name = (
+        f"{active_cat}__{safe_stem}__{stamp}_{token}"
+        f"{Path(active_tmpl).suffix}"
+    )
+    trash_img = os.path.join(trash_dir, trash_image_name)
 
-            meta_name = (
-                f"{active_cat}__{safe_stem}__{stamp}_{token}_meta.json"
-            )
-            meta_path = os.path.join(trash_dir, meta_name)
-            meta_data = {
-                "kategori": active_cat,
-                "sablon": active_tmpl,
-                "conf": removed_conf,
-                "trash_image_name": trash_image_name,
-                "backup_trash_name": backup_trash_name,
-                "deactivated_profile_rowids": deactivated_rowids,
-                "source_sha256": _sha256_file(src_img),
-                "deleted_at": stamp,
-            }
-            tmp_meta = meta_path + ".tmp"
-            with open(tmp_meta, "w", encoding="utf-8") as handle:
-                json.dump(
-                    meta_data,
-                    handle,
-                    ensure_ascii=False,
-                    indent=2,
-                )
-                handle.flush()
-                os.fsync(handle.fileno())
-            os.replace(tmp_meta, meta_path)
+    backup_src = _find_template_backup_asset(active_cat, active_tmpl)
+    backup_trash_name = None
+    backup_trash_path = None
+    if backup_src:
+        backup_trash_name = (
+            f"{active_cat}__{safe_stem}__ORIGINAL__{stamp}_{token}"
+            f"{Path(backup_src).suffix}"
+        )
+        backup_trash_path = os.path.join(trash_dir, backup_trash_name)
 
-            shutil.move(src_img, trash_img)
-            moved_pairs.append((trash_img, src_img))
+    db_path = os.path.join(BASE_DIR, "SABLON_V2_MIMARI", "ayarlar.db")
+    conn = sqlite3.connect(db_path, timeout=30)
+    conn.row_factory = sqlite3.Row
+    try:
+        rows = conn.execute(
+            """SELECT rowid AS profile_rowid, source_asset_sha256
+               FROM template_profiles
+               WHERE category=? AND is_active=1
+                 AND (
+                     source_relative_path=?
+                     OR template_uid=?
+                 )""",
+            (
+                active_cat,
+                f"{active_cat}/{active_tmpl}",
+                f"{active_cat}_{active_tmpl}",
+            ),
+        ).fetchall()
+        deactivated_rowids = [
+            int(row["profile_rowid"])
+            for row in rows
+        ]
 
-            if backup_src and backup_trash_path:
-                shutil.move(backup_src, backup_trash_path)
-                moved_pairs.append((backup_trash_path, backup_src))
+        meta_name = (
+            f"{active_cat}__{safe_stem}__{stamp}_{token}_meta.json"
+        )
+        meta_path = os.path.join(trash_dir, meta_name)
+        meta_data = {
+            "kategori": active_cat,
+            "sablon": active_tmpl,
+            "conf": removed_conf,
+            "trash_image_name": trash_image_name,
+            "backup_trash_name": backup_trash_name,
+            "deactivated_profile_rowids": deactivated_rowids,
+            "source_sha256": _sha256_file(src_img),
+            "deleted_at": stamp,
+        }
 
-            if deactivated_rowids:
-                placeholders = ",".join("?" for _ in deactivated_rowids)
-                conn.execute(
-                    f"""UPDATE template_profiles
-                        SET is_active=0, updated_at=CURRENT_TIMESTAMP
-                        WHERE rowid IN ({placeholders})""",
-                    deactivated_rowids,
-                )
+        tmp_meta = meta_path + ".tmp"
+        with open(tmp_meta, "w", encoding="utf-8") as handle:
+            json.dump(meta_data, handle, ensure_ascii=False, indent=2)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp_meta, meta_path)
 
+        shutil.move(src_img, trash_img)
+        moved_pairs.append((trash_img, src_img))
+
+        if backup_src and backup_trash_path:
+            shutil.move(backup_src, backup_trash_path)
+            moved_pairs.append((backup_trash_path, backup_src))
+
+        if deactivated_rowids:
+            placeholders = ",".join("?" for _ in deactivated_rowids)
             conn.execute(
-                "DELETE FROM templates WHERE category_id=? AND filename=?",
-                (active_cat, active_tmpl),
+                f"""UPDATE template_profiles
+                    SET is_active=0, updated_at=CURRENT_TIMESTAMP
+                    WHERE rowid IN ({placeholders})""",
+                deactivated_rowids,
             )
-            conn.commit()
-        except Exception:
-            conn.rollback()
-            raise
-        finally:
-            conn.close()
 
-        return jsonify({
-            "success": True,
-            "trash_record": os.path.basename(meta_path),
-            "deactivated_profiles": len(deactivated_rowids),
-            "backup_archived": bool(backup_src),
-        })
-    except ValueError as e:
-        return jsonify({"success": False, "error": str(e)}), 400
-    except Exception as e:
+        conn.execute(
+            "DELETE FROM templates WHERE category_id=? AND filename=?",
+            (active_cat, active_tmpl),
+        )
+        conn.commit()
+    except Exception:
+        conn.rollback()
         for moved_dst, moved_src in reversed(moved_pairs):
             if os.path.exists(moved_dst) and not os.path.exists(moved_src):
                 try:
@@ -690,8 +653,97 @@ def api_sablon_sil():
                 os.remove(meta_path)
             except OSError:
                 pass
+        raise
+    finally:
+        conn.close()
+
+    return {
+        "category": active_cat,
+        "template": active_tmpl,
+        "trash_record": os.path.basename(meta_path),
+        "deactivated_profiles": len(deactivated_rowids),
+        "backup_archived": bool(backup_src),
+    }
+
+
+@app.route('/api/sablon_sil', methods=['POST'])
+def api_sablon_sil():
+    """Safely retire one template."""
+    try:
+        result = _retire_template_safely(
+            request.headers.get("X-Active-Category", ""),
+            request.headers.get("X-Active-Template", ""),
+        )
+        return jsonify({"success": True, **result})
+    except ValueError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 400
+    except FileNotFoundError as exc:
+        return jsonify({"success": False, "error": str(exc)}), 404
+    except Exception as exc:
         logger.exception("Sablon cop kutusuna tasinamadi")
-        return jsonify({"success": False, "error": str(e)}), 500
+        return jsonify({"success": False, "error": str(exc)}), 500
+
+
+@app.route('/api/sablon_sil_toplu', methods=['POST'])
+def api_sablon_sil_toplu():
+    """Retire many selected templates in one browser request."""
+    payload = request.get_json(silent=True) or {}
+    items = payload.get("items")
+    if not isinstance(items, list) or not items:
+        return jsonify({
+            "success": False,
+            "error": "Toplu silme için en az bir şablon seçilmeli.",
+        }), 400
+    if len(items) > 500:
+        return jsonify({
+            "success": False,
+            "error": "Tek işlemde en fazla 500 şablon seçilebilir.",
+        }), 400
+
+    deleted = []
+    failed = []
+    seen = set()
+
+    for item in items:
+        if not isinstance(item, dict):
+            failed.append({
+                "category": "",
+                "template": "",
+                "error": "Geçersiz seçim kaydı.",
+            })
+            continue
+
+        category = str(item.get("category") or "").strip()
+        template = str(item.get("template") or "").strip()
+        key = (category, template)
+        if not category or not template or key in seen:
+            if key not in seen:
+                failed.append({
+                    "category": category,
+                    "template": template,
+                    "error": "Kategori veya şablon adı eksik.",
+                })
+            continue
+        seen.add(key)
+
+        try:
+            deleted.append(
+                _retire_template_safely(category, template)
+            )
+        except Exception as exc:
+            failed.append({
+                "category": category,
+                "template": template,
+                "error": str(exc),
+            })
+
+    return jsonify({
+        "success": len(failed) == 0,
+        "deleted_count": len(deleted),
+        "failed_count": len(failed),
+        "deleted": deleted,
+        "failed": failed,
+    }), (200 if not failed else 207)
 
 
 @app.route('/api/sablon_sil_geri_al', methods=['POST'])
