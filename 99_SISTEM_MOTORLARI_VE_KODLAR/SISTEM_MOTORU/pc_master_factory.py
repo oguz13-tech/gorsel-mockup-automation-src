@@ -147,7 +147,7 @@ db_lock = threading.RLock()
 # Render recipe participates in immutable artifact identity. Bump whenever
 # renderer/aspect/occlusion behavior changes so old artifacts are never silently
 # reused under a new visual contract.
-RECIPE_VERSION = "v3_epic3_20261007_r10"
+RECIPE_VERSION = "v3_epic3_20261007_r11"
 
 # ==============================================================================
 # 2. ÜRÜN VE FORMAT SÖZLEŞMESİ (URUN_FORMAT_HARITASI)
@@ -1334,6 +1334,92 @@ class MockupRenderer:
         return np.clip(mask_aa, 0.0, 1.0)
 
     @staticmethod
+    def create_perspective_rounded_mask(
+        h_bg: int,
+        w_bg: int,
+        src_width: int,
+        src_height: int,
+        matrix: np.ndarray,
+        radius_fraction: float,
+        feather_px: float = 1.2,
+    ) -> np.ndarray:
+        """Create a perspective-correct rounded-rectangle surface mask.
+
+        The four reviewed corner points remain the authoritative geometry.
+        Rounding is applied only to the render mask in artwork/source space,
+        then projected with the same homography. This preserves perspective
+        accuracy while avoiding unnaturally razor-sharp glass corners.
+        """
+        radius_fraction = float(np.clip(radius_fraction, 0.0, 0.12))
+        if radius_fraction <= 0.0:
+            return np.ones((h_bg, w_bg), dtype=np.float32)
+
+        src_width = max(2, int(src_width))
+        src_height = max(2, int(src_height))
+        supersample = 4
+        sw = src_width * supersample
+        sh = src_height * supersample
+        radius = int(
+            round(min(sw, sh) * radius_fraction)
+        )
+        radius = max(2, min(radius, min(sw, sh) // 3))
+
+        source_mask_hi = np.zeros((sh, sw), dtype=np.float32)
+        x1 = sw - 1
+        y1 = sh - 1
+
+        cv2.rectangle(
+            source_mask_hi,
+            (radius, 0),
+            (x1 - radius, y1),
+            1.0,
+            thickness=-1,
+        )
+        cv2.rectangle(
+            source_mask_hi,
+            (0, radius),
+            (x1, y1 - radius),
+            1.0,
+            thickness=-1,
+        )
+        for center in (
+            (radius, radius),
+            (x1 - radius, radius),
+            (x1 - radius, y1 - radius),
+            (radius, y1 - radius),
+        ):
+            cv2.circle(
+                source_mask_hi,
+                center,
+                radius,
+                1.0,
+                thickness=-1,
+                lineType=cv2.LINE_AA,
+            )
+
+        source_mask = cv2.resize(
+            source_mask_hi,
+            (src_width, src_height),
+            interpolation=cv2.INTER_AREA,
+        )
+        rounded = cv2.warpPerspective(
+            source_mask,
+            matrix,
+            (w_bg, h_bg),
+            flags=cv2.INTER_LINEAR,
+            borderMode=cv2.BORDER_CONSTANT,
+            borderValue=0.0,
+        )
+        if feather_px > 0:
+            rounded = cv2.GaussianBlur(
+                rounded,
+                (0, 0),
+                sigmaX=max(0.35, float(feather_px) * 0.42),
+                sigmaY=max(0.35, float(feather_px) * 0.42),
+            )
+        return np.clip(rounded, 0.0, 1.0)
+
+    @staticmethod
     def generate_window_reflection(gw: int, gh: int, intensity: float = 0.48) -> np.ndarray:
         """
         Referans tavuskuşu cam tablodaki mimari pencere yansıması:
@@ -2429,6 +2515,7 @@ class MockupRenderer:
         camera_artifacts: bool = False,
         scene_realism_enabled: bool = True,
         scene_realism_strength: float = 1.0,
+        glass_corner_radius_fraction: float = 0.0,
     ) -> np.ndarray:
         h_bg, w_bg = bg_cv.shape[:2]
         h_art, w_art = art_cv.shape[:2]
@@ -2473,6 +2560,25 @@ class MockupRenderer:
             dst_pts,
             feather_px=1.8,
         )
+        if is_glass and float(glass_corner_radius_fraction or 0.0) > 0.0:
+            rounded_glass_mask = (
+                MockupRenderer.create_perspective_rounded_mask(
+                    h_bg,
+                    w_bg,
+                    fw,
+                    fh,
+                    matrix,
+                    radius_fraction=float(
+                        glass_corner_radius_fraction
+                    ),
+                    feather_px=1.2,
+                )
+            )
+            quad_mask_f = np.minimum(
+                quad_mask_f,
+                rounded_glass_mask,
+            )
+
         mask_f = MockupRenderer.resolve_print_mask(
             quad_mask_f,
             alpha_mask,
@@ -3629,6 +3735,30 @@ class MockupRenderer:
                     f"(x{render_scale:.2f})"
                 )
 
+            glass_corner_radius_defaults = {
+                "02_Cam_Tablo_Dikey": 0.012,
+                "02_Cam_Tablo_Yatay": 0.012,
+                "04_Cam_Dograma": 0.018,
+                "05_Ocak_Arkasi": 0.010,
+            }
+            glass_corner_radius_fraction = float(
+                config.get(
+                    "glass_corner_radius_fraction",
+                    glass_corner_radius_defaults.get(
+                        category_name,
+                        0.0,
+                    ),
+                )
+                or 0.0
+            )
+            glass_corner_radius_fraction = float(
+                np.clip(
+                    glass_corner_radius_fraction,
+                    0.0,
+                    0.08,
+                )
+            )
+
             final_cv = cls.render_cv2_optik(
                 art_cv, bg_cv, koseler, is_glass, 
                 on_plan=on_plan, template_name=template_path.name, 
@@ -3648,6 +3778,11 @@ class MockupRenderer:
                     1.0
                     if config.get("scene_realism_strength", 1.0) is None
                     else config.get("scene_realism_strength", 1.0)
+                ),
+                glass_corner_radius_fraction=(
+                    glass_corner_radius_fraction
+                    if is_glass
+                    else 0.0
                 ),
             )
 
