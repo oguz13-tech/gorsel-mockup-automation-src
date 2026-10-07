@@ -5,6 +5,7 @@ import sqlite3
 import base64
 import time
 import shutil
+import subprocess
 import cv2
 import numpy as np
 from pathlib import Path
@@ -138,6 +139,69 @@ init_db()
 @app.route('/')
 def index():
     return render_template('index.html')
+
+
+@app.route('/tools')
+def tools_center():
+    return render_template('tools.html')
+
+
+_ALLOWED_USER_TOOLS = {
+    "rename",
+    "convert",
+    "watermark",
+    "4k",
+    "links",
+    "seo_titles",
+    "seo_descriptions",
+}
+
+
+@app.route('/api/tools/launch/<tool_name>', methods=['POST'])
+def api_launch_user_tool(tool_name):
+    """Launch one independent desktop tool without coupling it to the factory."""
+    tool_name = str(tool_name or "").strip()
+    if tool_name not in _ALLOWED_USER_TOOLS:
+        return jsonify({
+            "success": False,
+            "error": "Bilinmeyen araç.",
+        }), 404
+
+    runner = Path(SOURCE_ROOT) / "SABLON_V2_MIMARI" / "tools_runner.py"
+    if not runner.is_file():
+        return jsonify({
+            "success": False,
+            "error": "Araç çalıştırıcısı bulunamadı.",
+        }), 500
+
+    env = os.environ.copy()
+    env["MOCKUP_RUNTIME_WORKSPACE"] = BASE_DIR
+    kwargs = {
+        "cwd": SOURCE_ROOT,
+        "env": env,
+    }
+    if os.name == "nt":
+        kwargs["creationflags"] = subprocess.CREATE_NEW_CONSOLE
+
+    try:
+        process = subprocess.Popen(
+            [sys.executable, str(runner), tool_name],
+            **kwargs,
+        )
+        return jsonify({
+            "success": True,
+            "pid": int(process.pid),
+            "message": (
+                "Araç ayrı pencerede açıldı. Açılan seçim penceresinden "
+                "işlem yapmak istediğiniz görselleri seçin."
+            ),
+        })
+    except Exception as exc:
+        logger.exception("Bağımsız araç başlatılamadı")
+        return jsonify({
+            "success": False,
+            "error": str(exc),
+        }), 500
 
 @app.route('/api/ayarlar', methods=['GET', 'POST'])
 def api_ayarlar():
