@@ -61,6 +61,46 @@ class TestIndependentUserTools(unittest.TestCase):
                 ],
             )
 
+    def test_template_number_used_in_trash_is_forced_to_change(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            runtime = root / "runtime"
+            trash = runtime / "SILINEN_SABLONLAR_COP_KUTUSU"
+            trash.mkdir(parents=True)
+            (runtime / "SABLON_V2_MIMARI").mkdir(parents=True)
+            import sqlite3
+            sqlite3.connect(
+                runtime / "SABLON_V2_MIMARI" / "ayarlar.db"
+            ).close()
+
+            (trash / "old_meta.json").write_text(
+                '{"kategori":"01_Wifi_Kutusu",'
+                '"sablon":"Wifi_Kutusu_135.png"}',
+                encoding="utf-8",
+            )
+
+            source = root / "new.png"
+            self._image(source, mode="RGBA")
+
+            from SABLON_V2_MIMARI.core.template_identity import (
+                TemplateNumberConflictError,
+            )
+
+            with self.assertRaises(TemplateNumberConflictError) as ctx:
+                rename_images(
+                    [source],
+                    "Wifi_Kutusu_",
+                    runtime_root=runtime,
+                    start_number=135,
+                )
+
+            self.assertEqual(ctx.exception.conflicts, (135,))
+            self.assertGreaterEqual(
+                int(ctx.exception.suggested_start),
+                136,
+            )
+            self.assertTrue(source.is_file())
+
     def test_rename_never_overwrites_unselected_target(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
