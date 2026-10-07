@@ -39,15 +39,12 @@ import uuid
 app = Flask(__name__)
 
 
-def manual_occlusion_has_positive_selection(plan) -> bool:
-    """Only positive foreground selections prove that an occluder exists.
-
-    Subtract-only brush strokes are corrections, not evidence of foreground.
-    This intentionally matches the factory's production-side semantics.
-    """
+def occlusion_plan_has_objects(plan) -> bool:
+    """Only automatically detected object boxes prove an occluder exists."""
     if not isinstance(plan, dict):
         return False
-    return bool(plan.get("object_boxes") or plan.get("add_brush"))
+    boxes = plan.get("object_boxes")
+    return bool(isinstance(boxes, list) and boxes)
 
 
 def resolve_reviewed_occlusion(
@@ -55,11 +52,11 @@ def resolve_reviewed_occlusion(
     plan,
     occlusion_reviewed: bool = False,
 ) -> bool:
-    """Resolve final human-reviewed occlusion truth without sticky false flags."""
-    positive_manual = manual_occlusion_has_positive_selection(plan)
+    """Resolve reviewed occlusion truth from automatic object evidence."""
+    has_objects = occlusion_plan_has_objects(plan)
     if occlusion_reviewed:
-        return positive_manual
-    return bool(existing_has_occlusion or positive_manual)
+        return has_objects
+    return bool(existing_has_occlusion or has_objects)
 
 
 def annotate_review_metadata(data: dict) -> dict:
@@ -312,100 +309,6 @@ def api_orijinal_yukle():
         logger.exception("Orijinal sablon geri yukleme hatasi")
         return jsonify({"success": False, "error": str(exc)}), 500
 
-
-@app.route('/api/anlik_beyazlat', methods=['POST'])
-def api_anlik_beyazlat():
-    try:
-        new_data = request.json
-        active_cat = request.headers.get('X-Active-Category', '')
-        active_tmpl = request.headers.get('X-Active-Template', '')
-        
-        if active_cat and active_tmpl:
-            sm_dir = os.path.join(SOURCE_ROOT, "99_SISTEM_MOTORLARI_VE_KODLAR", "SISTEM_MOTORU")
-            if sm_dir not in sys.path:
-                sys.path.append(sm_dir)
-            from sablon_beyazlatma_motoru import whiten_canvas, imread_unicode, imwrite_unicode
-            
-            stem = Path(active_tmpl).stem
-            src_path = None
-            for _ext in ['.jpg', '.jpeg', '.webp', '.png', '.avif']:
-                _cand = os.path.join(YEDEK_IMG_DIR, active_cat, stem + _ext)
-                if os.path.exists(_cand):
-                    src_path = _cand
-                    break
-            if not src_path:
-                src_path = os.path.join(BASE_DIR, "2_SABLON_HAVUZU", active_cat, stem + ".png")
-            if not src_path or not os.path.exists(src_path):
-                src_path = os.path.join(BASE_DIR, "2_SABLON_HAVUZU", active_cat, active_tmpl)
-                
-            dest_path = os.path.join(BASE_DIR, "2_SABLON_HAVUZU", active_cat, stem + ".png")
-            
-            img_cv = imread_unicode(src_path)
-            if img_cv is not None:
-                s_conf = new_data["kategoriler"][active_cat]["sablonlar"][active_tmpl]
-                is_frameless = active_cat in ["01_Wifi_Kutusu", "04_Cam_Dograma", "05_Ocak_Arkasi"]
-                whitened = whiten_canvas(img_cv, s_conf, is_frameless=is_frameless)
-                
-                try:
-                    preview_path = os.path.join(BASE_DIR, "YENI-BOS MOCKUP SABLON HAVUZU", active_cat, stem + "-beyazlatilmis-onizleme.png")
-                    os.makedirs(os.path.dirname(preview_path), exist_ok=True)
-                    imwrite_unicode(preview_path, whitened)
-                except Exception as ep:
-                    logger.error(f"Onizleme guncellenemedi: {ep}")
-                    
-                return jsonify({"success": True})
-        return jsonify({"success": False, "error": "Kategori veya sablon eksik"}), 400
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
-
-@app.route('/api/tumunu_beyazlat', methods=['POST'])
-def api_tumunu_beyazlat():
-    try:
-        req = request.json
-        hedef_cat = req.get("kategori", None)
-        
-        ayarlar = get_all_ayarlar()
-            
-        sm_dir = os.path.join(SOURCE_ROOT, "99_SISTEM_MOTORLARI_VE_KODLAR", "SISTEM_MOTORU")
-        if sm_dir not in sys.path:
-            sys.path.append(sm_dir)
-        from sablon_beyazlatma_motoru import whiten_canvas, imread_unicode, imwrite_unicode
-        
-        islenen_sayisi = 0
-        kategoriler = [hedef_cat] if hedef_cat else ayarlar.get("kategoriler", {}).keys()
-        
-        for cat in kategoriler:
-            sablonlar = ayarlar.get("kategoriler", {}).get(cat, {}).get("sablonlar", {})
-            is_frameless = cat in ["01_Wifi_Kutusu", "04_Cam_Dograma", "05_Ocak_Arkasi"]
-            
-            for tmpl, s_conf in sablonlar.items():
-                src_path = os.path.join(YEDEK_IMG_DIR, cat, tmpl)
-                if not os.path.exists(src_path):
-                    stem = Path(tmpl).stem
-                    for _ext in ['.jpg', '.jpeg', '.webp', '.png', '.avif']:
-                        _cand = os.path.join(YEDEK_IMG_DIR, cat, stem + _ext)
-                        if os.path.exists(_cand):
-                            src_path = _cand
-                            break
-                if not os.path.exists(src_path):
-                    src_path = os.path.join(BASE_DIR, "2_SABLON_HAVUZU", cat, tmpl)
-                    
-                if os.path.exists(src_path):
-                    img_cv = imread_unicode(src_path)
-                    if img_cv is not None:
-                        try:
-                            whitened = whiten_canvas(img_cv, s_conf, is_frameless=is_frameless)
-                            stem = Path(tmpl).stem
-                            dest_dir = os.path.join(BASE_DIR, "YENI-BOS MOCKUP SABLON HAVUZU", cat)
-                            os.makedirs(dest_dir, exist_ok=True)
-                            dest_path = os.path.join(dest_dir, stem + "-beyazlatilmis-batch.png")
-                            imwrite_unicode(dest_path, whitened)
-                            islenen_sayisi += 1
-                        except Exception as ex:
-                            logger.error(f"SABLON {tmpl} BEYAZLATILAMADI: {ex}")
-        return jsonify({'success': True, 'islenen': islenen_sayisi})
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/auto_detect_corners', methods=['POST'])
 def api_auto_detect_corners():
@@ -944,26 +847,6 @@ def _path_within_root(root: str, candidate: str) -> bool:
         return False
 
 
-@app.route('/preview/<cat>/<tmpl>')
-def serve_preview(cat, tmpl):
-    import urllib.parse
-    cat = urllib.parse.unquote(cat)
-    tmpl = urllib.parse.unquote(tmpl)
-    stem = Path(tmpl).stem
-    
-    safe_preview_base = os.path.abspath(os.path.join(BASE_DIR, "YENI-BOS MOCKUP SABLON HAVUZU"))
-    preview_path = os.path.abspath(os.path.join(safe_preview_base, cat, stem + "-beyazlatilmis-onizleme.png"))
-    
-    if not _path_within_root(safe_preview_base, preview_path):
-        return "Erisim engellendi", 403
-        
-    if os.path.exists(preview_path):
-        response = send_file(preview_path)
-        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
-        return response
-        
-    return "Onizleme bulunamadi", 404
-
 @app.route('/image/<cat>/<tmpl>')
 def serve_image(cat, tmpl):
     import urllib.parse
@@ -1163,11 +1046,9 @@ def _load_matching_manual_prior(db_path, uid, img_path):
 
 @app.route('/api/templates/foreground_detect', methods=['POST'])
 def api_templates_foreground_detect():
-    """Suggest object-selection boxes using Grounding-DINO + SAM evidence.
+    """Suggest automatic foreground object boxes using Grounding-DINO + SAM.
 
-    The endpoint is review assistance only: it does not alter template files,
-    settings, profiles, or approval state. Returned boxes are copied into the
-    browser mask editor only after the user sees the result.
+    The endpoint is review assistance only and never auto-approves geometry.
     """
     try:
         req = request.get_json(silent=True) or {}
@@ -1550,12 +1431,24 @@ def api_templates_update_corners():
         if req_on_plan is not None and not isinstance(req_on_plan, dict):
             return jsonify({
                 "success": False,
-                "error": "on_plan maske verisi nesne olmali.",
+                "error": "Otomatik nesne koruma verisi nesne olmali.",
             }), 422
+        if isinstance(req_on_plan, dict):
+            boxes = req_on_plan.get("object_boxes")
+            req_on_plan = {
+                "object_boxes": (
+                    [box[:4] for box in boxes if isinstance(box, list) and len(box) == 4]
+                    if isinstance(boxes, list)
+                    else []
+                ),
+                "feather": float(req_on_plan.get("feather", 1.2) or 1.2),
+                "grabcut_iterations": int(
+                    req_on_plan.get("grabcut_iterations", 5) or 5
+                ),
+            }
+            if not req_on_plan["object_boxes"]:
+                req_on_plan = None
         occlusion_reviewed = bool(req.get("occlusion_reviewed", False))
-        has_manual_occlusion = manual_occlusion_has_positive_selection(
-            req_on_plan
-        )
         if not uid or corners is None:
             return jsonify({"success": False, "error": "Eksik parametre"}), 400
 
@@ -1837,70 +1730,6 @@ def api_templates_update_corners():
         logger.exception("Manuel geometri onayi hatasi")
         return jsonify({"success": False, "error": str(e)}), 500
 
-
-# KAGGLE ONAY SİSTEMİ (0_KAGGLE_ONAY_BEKLEYENLER -> 1_GELEN_KAGGLE_BASKILARI)
-# ==========================================
-WORKSPACE_DIR = BASE_DIR
-KAGGLE_BEKLEYENLER_DIR = os.path.join(WORKSPACE_DIR, "0_KAGGLE_ONAY_BEKLEYENLER")
-KAGGLE_GELENLER_DIR = os.path.join(WORKSPACE_DIR, "1_GELEN_KAGGLE_BASKILARI")
-
-os.makedirs(KAGGLE_BEKLEYENLER_DIR, exist_ok=True)
-os.makedirs(KAGGLE_GELENLER_DIR, exist_ok=True)
-
-@app.route('/api/kaggle/bekleyenler', methods=['GET'])
-def api_kaggle_bekleyenler():
-    files = []
-    exists = os.path.exists(KAGGLE_BEKLEYENLER_DIR)
-    if exists:
-        for f in os.listdir(KAGGLE_BEKLEYENLER_DIR):
-            if f.lower().endswith(('.png', '.jpg', '.jpeg')):
-                files.append(f)
-    return jsonify({"success": True, "files": files, "dir": KAGGLE_BEKLEYENLER_DIR, "exists": exists})
-
-@app.route('/image_kaggle/<path:filename>')
-def serve_kaggle_image(filename):
-    return send_from_directory(KAGGLE_BEKLEYENLER_DIR, filename)
-
-@app.route('/api/kaggle/onayla', methods=['POST'])
-def api_kaggle_onayla():
-    data = request.get_json(silent=True) or {}
-    filename = str(data.get('filename') or '')
-    if not filename or os.path.basename(filename) != filename:
-        return jsonify({"success": False, "error": "Gecersiz dosya adi"}), 400
-
-    src = os.path.join(KAGGLE_BEKLEYENLER_DIR, filename)
-    dst = os.path.join(KAGGLE_GELENLER_DIR, filename)
-    if os.path.exists(src):
-        import shutil
-        os.makedirs(KAGGLE_GELENLER_DIR, exist_ok=True)
-        shutil.move(src, dst)
-        return jsonify({"success": True})
-    return jsonify({"success": False, "error": "Dosya bulunamadi"}), 404
-
-@app.route('/api/kaggle/reddet', methods=['POST'])
-def api_kaggle_reddet():
-    data = request.get_json(silent=True) or {}
-    filename = str(data.get('filename') or '')
-    if not filename or os.path.basename(filename) != filename:
-        return jsonify({"success": False, "error": "Gecersiz dosya adi"}), 400
-
-    src = os.path.join(KAGGLE_BEKLEYENLER_DIR, filename)
-    if os.path.exists(src):
-        # Reject is reversible: move to a timestamped recycle area instead of
-        # permanently deleting user-generated artwork.
-        import shutil
-        recycle_dir = os.path.join(BASE_DIR, "_COP_KUTUSU", "KAGGLE_REJECTED")
-        os.makedirs(recycle_dir, exist_ok=True)
-        stem, ext = os.path.splitext(filename)
-        stamp = time.strftime("%Y%m%d_%H%M%S")
-        dst = os.path.join(recycle_dir, f"{stem}__{stamp}{ext}")
-        suffix = 1
-        while os.path.exists(dst):
-            dst = os.path.join(recycle_dir, f"{stem}__{stamp}_{suffix}{ext}")
-            suffix += 1
-        shutil.move(src, dst)
-        return jsonify({"success": True, "recycled_to": os.path.basename(dst)})
-    return jsonify({"success": False, "error": "Dosya bulunamadi"}), 404
 
 @app.route('/api/saglik_durumu')
 def api_saglik_durumu():
