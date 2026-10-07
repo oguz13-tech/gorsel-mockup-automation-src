@@ -21,3 +21,59 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background:
         
         #info { background: rgba(0,0,0,0.7); position: absolute; bottom: 20px; left: 20px; padding: 10px; border-radius: 4px; pointer-events: none; z-index: 10;}
         #help-sidebar { margin-top: 20px; padding-top: 15px; border-top: 1px solid #555; font-size: 13px; color: #ccc; line-height: 1.5; }
+
+        .panel-hint {
+            margin: -4px 0 10px 0;
+            padding: 8px 10px;
+            border-radius: 6px;
+            background: #242426;
+            color: #cfcfcf;
+            font-size: 12px;
+            line-height: 1.4;
+            border: 1px solid #3f3f42;
+        }
+        .status-legend {
+            margin: 8px 0 10px 0;
+            padding: 7px 8px;
+            border-radius: 6px;
+            background: #232325;
+            color: #bdbdbd;
+            font-size: 11px;
+            line-height: 1.45;
+            border: 1px solid #3a3a3d;
+        }
+        .tool-section-title {
+            margin: 0 0 5px 0;
+            font-size: 15px;
+            color: #fff;
+            text-align: center;
+            border-bottom: 1px solid #444;
+            padding-bottom: 8px;
+        }
+        .tool-divider {
+            height: 1px;
+            background: #444;
+            margin: 12px 0;
+            flex-shrink: 0;
+        }
+        .tool-note {
+            margin: -4px 2px 2px 2px;
+            color: #aeb4bb;
+            font-size: 10.5px;
+            line-height: 1.35;
+        }
+        .tool-note-accent {
+            color: #9edfc9;
+        }
+        .advanced-action {
+            background: #806515;
+            width: 100%;
+            padding: 10px;
+            margin-top: 8px;
+            font-weight: bold;
+            opacity: 0.90;
+        }
+        .advanced-action:hover {
+            background: #9a7919;
+            opacity: 1;
+        }
