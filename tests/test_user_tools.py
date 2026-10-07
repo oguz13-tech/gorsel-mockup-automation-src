@@ -36,6 +36,31 @@ class TestIndependentUserTools(unittest.TestCase):
             self.assertFalse(a.exists())
             self.assertFalse(b.exists())
 
+    def test_rename_can_start_from_135_without_appending_001(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            files = []
+            for name in ("c.png", "a.png", "b.png"):
+                path = root / name
+                self._image(path, mode="RGBA")
+                files.append(path)
+
+            outputs = rename_images(
+                files,
+                "Wifi_Kutusu_",
+                runtime_root=root / "runtime",
+                start_number=135,
+            )
+
+            self.assertEqual(
+                [p.name for p in outputs],
+                [
+                    "Wifi_Kutusu_135.png",
+                    "Wifi_Kutusu_136.png",
+                    "Wifi_Kutusu_137.png",
+                ],
+            )
+
     def test_rename_never_overwrites_unselected_target(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
