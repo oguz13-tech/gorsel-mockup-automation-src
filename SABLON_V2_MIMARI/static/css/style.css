@@ -180,3 +180,21 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background:
         .advanced-tools .advanced-action {
             margin-top: 8px;
         }
+
+        .tools-center-link {
+            display: block;
+            text-decoration: none;
+            margin: 0 0 4px 0;
+        }
+        .tools-center-button {
+            width: 100%;
+            padding: 10px 12px;
+            background: #6f42c1;
+            font-weight: 700;
+        }
+        .tools-center-button:hover {
+            background: #8056cc;
+        }
+        .tools-center-note {
+            margin: 0 2px 10px 2px;
+        }
