@@ -157,6 +157,204 @@ window.onerror = function(msg, url, line, col, error) {
     let previewModeActive = false; // Aninda beyazlatma devrede mi
     
     let allTemplates = [];
+    let bulkSelectionMode = false;
+    const bulkSelectedTemplates = new Set();
+
+    function bulkTemplateKey(cat, tmpl) {
+        return String(cat) + "\u0000" + String(tmpl);
+    }
+
+    function parseBulkTemplateKey(key) {
+        const idx = String(key).indexOf("\u0000");
+        if (idx < 0) return ["", ""];
+        return [key.slice(0, idx), key.slice(idx + 1)];
+    }
+
+    function updateBulkSelectedCount() {
+        const count = bulkSelectedTemplates.size;
+        const label = document.getElementById('bulkSelectedCount');
+        if (label) {
+            label.textContent = count + ' şablon seçildi';
+        }
+        const deleteButton = document.getElementById('bulkDeleteButton');
+        if (deleteButton) {
+            deleteButton.disabled = count === 0;
+            deleteButton.style.opacity = count === 0 ? '0.55' : '1';
+        }
+    }
+
+    function applyBulkSelectionUi() {
+        const actionPanel = document.getElementById('bulkSelectionActions');
+        const modeButton = document.getElementById('bulkModeButton');
+        if (actionPanel) {
+            actionPanel.style.display = bulkSelectionMode ? 'block' : 'none';
+        }
+        if (modeButton) {
+            modeButton.classList.toggle('active', bulkSelectionMode);
+            modeButton.textContent = bulkSelectionMode
+                ? '✅ Toplu Seçim Açık'
+                : '☑️ Toplu Seçim';
+        }
+
+        allTemplates.forEach(entry => {
+            const item = entry.elem;
+            if (!item) return;
+            item.dataset.category = entry.cat;
+            item.dataset.template = entry.tmpl;
+
+            const old = item.querySelector('.template-select-checkbox');
+            if (old) old.remove();
+
+            if (!bulkSelectionMode) return;
+
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.className = 'template-select-checkbox';
+            const key = bulkTemplateKey(entry.cat, entry.tmpl);
+            checkbox.checked = bulkSelectedTemplates.has(key);
+            checkbox.title = 'Bu şablonu toplu işlem için seç';
+            checkbox.onclick = event => event.stopPropagation();
+            checkbox.onchange = event => {
+                event.stopPropagation();
+                if (checkbox.checked) {
+                    bulkSelectedTemplates.add(key);
+                } else {
+                    bulkSelectedTemplates.delete(key);
+                }
+                updateBulkSelectedCount();
+            };
+            item.prepend(checkbox);
+        });
+        updateBulkSelectedCount();
+    }
+
+    function toggleBulkSelectionMode() {
+        bulkSelectionMode = !bulkSelectionMode;
+        if (!bulkSelectionMode) {
+            bulkSelectedTemplates.clear();
+        }
+        applyBulkSelectionUi();
+    }
+
+    function clearBulkSelection() {
+        bulkSelectedTemplates.clear();
+        applyBulkSelectionUi();
+    }
+
+    function selectAllInCurrentCategory() {
+        if (!currentCat) {
+            alert('Önce soldan bu kategoriye ait bir şablon açın.');
+            return;
+        }
+        allTemplates
+            .filter(entry => entry.cat === currentCat)
+            .forEach(entry => {
+                bulkSelectedTemplates.add(
+                    bulkTemplateKey(entry.cat, entry.tmpl)
+                );
+            });
+        applyBulkSelectionUi();
+    }
+
+    async function bulkDeleteSelected() {
+        const selected = Array.from(bulkSelectedTemplates)
+            .map(parseBulkTemplateKey)
+            .filter(([cat, tmpl]) => (
+                cat && tmpl
+                && ayarlar?.kategoriler?.[cat]?.sablonlar?.[tmpl]
+            ));
+        if (selected.length === 0) {
+            alert('Önce çöpe atılacak şablonları işaretleyin.');
+            return;
+        }
+        if (!confirm(
+            selected.length + ' şablon aktif kullanımdan çıkarılıp geri alınabilir ' +
+            'çöp alanına taşınacak. Devam edilsin mi?'
+        )) {
+            return;
+        }
+
+        const button = document.getElementById('bulkDeleteButton');
+        const countLabel = document.getElementById('bulkSelectedCount');
+        const originalText = button ? button.textContent : '';
+        if (button) button.disabled = true;
+
+        let successCount = 0;
+        const failures = [];
+        const deletedKeys = new Set();
+
+        for (let i = 0; i < selected.length; i++) {
+            const [cat, tmpl] = selected[i];
+            if (button) {
+                button.textContent =
+                    '⏳ Çöpe taşınıyor ' + (i + 1) + ' / ' + selected.length;
+            }
+            if (countLabel) {
+                countLabel.textContent =
+                    'İşleniyor: ' + tmpl + ' (' + (i + 1) + '/' + selected.length + ')';
+            }
+            try {
+                const response = await fetch('/api/sablon_sil', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Active-Category': cat,
+                        'X-Active-Template': tmpl
+                    }
+                });
+                const data = await response.json();
+                if (response.ok && data.success) {
+                    successCount += 1;
+                    deletedKeys.add(bulkTemplateKey(cat, tmpl));
+                } else {
+                    failures.push(
+                        cat + ' / ' + tmpl + ': ' +
+                        (data.error || ('HTTP ' + response.status))
+                    );
+                }
+            } catch (err) {
+                failures.push(cat + ' / ' + tmpl + ': ' + String(err));
+            }
+        }
+
+        deletedKeys.forEach(key => bulkSelectedTemplates.delete(key));
+
+        try {
+            const response = await fetch('/api/ayarlar');
+            if (response.ok) {
+                ayarlar = await response.json();
+            }
+        } catch (err) {
+            console.error('Toplu silme sonrası liste yenilenemedi:', err);
+        }
+
+        if (
+            currentCat
+            && currentTmpl
+            && !ayarlar?.kategoriler?.[currentCat]?.sablonlar?.[currentTmpl]
+        ) {
+            currentTmpl = null;
+            currentImg = null;
+            originalImgObj = null;
+        }
+
+        renderSidebar();
+
+        if (button) {
+            button.textContent = originalText || '🗑️ Seçilenleri Çöpe At';
+            button.disabled = bulkSelectedTemplates.size === 0;
+        }
+
+        const failureText = failures.length
+            ? '\n\nSilinemeyenler:\n' + failures.slice(0, 8).join('\n')
+            : '';
+        alert(
+            'Toplu işlem tamamlandı.\n' +
+            successCount + ' şablon çöpe taşındı.' +
+            (failures.length ? '\n' + failures.length + ' şablon silinemedi.' : '') +
+            failureText
+        );
+    }
 
     // Load config
     fetch('/api/ayarlar')
@@ -185,7 +383,10 @@ window.onerror = function(msg, url, line, col, error) {
             if (cat === currentCat) {
                 list.style.display = 'block';
             }
-            title.onclick = () => { list.style.display = list.style.display === 'block' ? 'none' : 'block'; };
+            title.onclick = () => {
+                currentCat = cat;
+                list.style.display = list.style.display === 'block' ? 'none' : 'block';
+            };
             div.appendChild(title);
             for (const tmpl in ayarlar.kategoriler[cat].sablonlar) {
                 const itemData = ayarlar.kategoriler[cat].sablonlar[tmpl];
@@ -227,6 +428,7 @@ window.onerror = function(msg, url, line, col, error) {
             div.appendChild(list);
             catDiv.appendChild(div);
         }
+        applyBulkSelectionUi();
     }
 
     async function navigateToTemplate(cat, tmpl, elem) {
