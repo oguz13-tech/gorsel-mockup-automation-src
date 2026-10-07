@@ -169,6 +169,7 @@ window.onerror = function(msg, url, line, col, error) {
     function applyBulkSelectionUi() {
         const actionPanel = document.getElementById('bulkSelectionActions');
         const modeButton = document.getElementById('bulkModeButton');
+
         if (actionPanel) {
             actionPanel.style.display = bulkSelectionMode ? 'block' : 'none';
         }
@@ -182,32 +183,34 @@ window.onerror = function(msg, url, line, col, error) {
         allTemplates.forEach(entry => {
             const item = entry.elem;
             if (!item) return;
-            item.dataset.category = entry.cat;
-            item.dataset.template = entry.tmpl;
 
-            const old = item.querySelector('.template-select-checkbox');
-            if (old) old.remove();
+            let checkbox = item.querySelector('.template-select-checkbox');
+            if (!checkbox) {
+                checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.className = 'template-select-checkbox';
+                checkbox.title = 'Bu şablonu toplu işlem için seç';
+                checkbox.onclick = event => event.stopPropagation();
+                checkbox.onchange = event => {
+                    event.stopPropagation();
+                    const key = bulkTemplateKey(entry.cat, entry.tmpl);
+                    if (checkbox.checked) bulkSelectedTemplates.add(key);
+                    else bulkSelectedTemplates.delete(key);
+                    updateBulkSelectedCount();
+                };
+                item.prepend(checkbox);
+            }
 
-            if (!bulkSelectionMode) return;
-
-            const checkbox = document.createElement('input');
-            checkbox.type = 'checkbox';
-            checkbox.className = 'template-select-checkbox';
-            const key = bulkTemplateKey(entry.cat, entry.tmpl);
-            checkbox.checked = bulkSelectedTemplates.has(key);
-            checkbox.title = 'Bu şablonu toplu işlem için seç';
-            checkbox.onclick = event => event.stopPropagation();
-            checkbox.onchange = event => {
-                event.stopPropagation();
-                if (checkbox.checked) {
-                    bulkSelectedTemplates.add(key);
-                } else {
-                    bulkSelectedTemplates.delete(key);
-                }
-                updateBulkSelectedCount();
-            };
-            item.prepend(checkbox);
+            checkbox.style.display = bulkSelectionMode ? 'inline-block' : 'none';
+            checkbox.checked = bulkSelectedTemplates.has(
+                bulkTemplateKey(entry.cat, entry.tmpl)
+            );
+            item.classList.toggle(
+                'bulk-selected',
+                bulkSelectionMode && checkbox.checked
+            );
         });
+
         updateBulkSelectedCount();
     }
 
@@ -247,97 +250,100 @@ window.onerror = function(msg, url, line, col, error) {
                 cat && tmpl
                 && ayarlar?.kategoriler?.[cat]?.sablonlar?.[tmpl]
             ));
+
         if (selected.length === 0) {
             alert('Önce çöpe atılacak şablonları işaretleyin.');
             return;
         }
+
         if (!confirm(
-            selected.length + ' şablon aktif kullanımdan çıkarılıp geri alınabilir ' +
-            'çöp alanına taşınacak. Devam edilsin mi?'
-        )) {
-            return;
-        }
+            selected.length +
+            ' şablon aktif kullanımdan çıkarılıp geri alınabilir çöp alanına taşınacak. Devam edilsin mi?'
+        )) return;
 
         const button = document.getElementById('bulkDeleteButton');
         const countLabel = document.getElementById('bulkSelectedCount');
         const originalText = button ? button.textContent : '';
-        if (button) button.disabled = true;
-
-        let successCount = 0;
-        const failures = [];
-        const deletedKeys = new Set();
-
-        for (let i = 0; i < selected.length; i++) {
-            const [cat, tmpl] = selected[i];
-            if (button) {
-                button.textContent =
-                    '⏳ Çöpe taşınıyor ' + (i + 1) + ' / ' + selected.length;
-            }
-            if (countLabel) {
-                countLabel.textContent =
-                    'İşleniyor: ' + tmpl + ' (' + (i + 1) + '/' + selected.length + ')';
-            }
-            try {
-                const response = await fetch('/api/sablon_sil', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Active-Category': cat,
-                        'X-Active-Template': tmpl
-                    }
-                });
-                const data = await response.json();
-                if (response.ok && data.success) {
-                    successCount += 1;
-                    deletedKeys.add(bulkTemplateKey(cat, tmpl));
-                } else {
-                    failures.push(
-                        cat + ' / ' + tmpl + ': ' +
-                        (data.error || ('HTTP ' + response.status))
-                    );
-                }
-            } catch (err) {
-                failures.push(cat + ' / ' + tmpl + ': ' + String(err));
-            }
-        }
-
-        deletedKeys.forEach(key => bulkSelectedTemplates.delete(key));
-
-        try {
-            const response = await fetch('/api/ayarlar');
-            if (response.ok) {
-                ayarlar = await response.json();
-            }
-        } catch (err) {
-            console.error('Toplu silme sonrası liste yenilenemedi:', err);
-        }
-
-        if (
-            currentCat
-            && currentTmpl
-            && !ayarlar?.kategoriler?.[currentCat]?.sablonlar?.[currentTmpl]
-        ) {
-            currentTmpl = null;
-            currentImg = null;
-            originalImgObj = null;
-        }
-
-        renderSidebar();
 
         if (button) {
-            button.textContent = originalText || '🗑️ Seçilenleri Çöpe At';
-            button.disabled = bulkSelectedTemplates.size === 0;
+            button.disabled = true;
+            button.textContent = '⏳ Seçilenler çöpe taşınıyor...';
+        }
+        if (countLabel) {
+            countLabel.textContent =
+                selected.length + ' şablon işleniyor...';
         }
 
-        const failureText = failures.length
-            ? '\n\nSilinemeyenler:\n' + failures.slice(0, 8).join('\n')
-            : '';
-        alert(
-            'Toplu işlem tamamlandı.\n' +
-            successCount + ' şablon çöpe taşındı.' +
-            (failures.length ? '\n' + failures.length + ' şablon silinemedi.' : '') +
-            failureText
-        );
+        try {
+            const response = await fetch('/api/sablon_sil_toplu', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    items: selected.map(([category, template]) => ({
+                        category,
+                        template
+                    }))
+                })
+            });
+            const data = await response.json();
+
+            const deleted = Array.isArray(data.deleted) ? data.deleted : [];
+            const failed = Array.isArray(data.failed) ? data.failed : [];
+
+            for (const item of deleted) {
+                bulkSelectedTemplates.delete(
+                    bulkTemplateKey(item.category, item.template)
+                );
+            }
+
+            const refresh = await fetch('/api/ayarlar');
+            if (!refresh.ok) {
+                throw new Error('Şablon listesi yenilenemedi.');
+            }
+            ayarlar = await refresh.json();
+
+            if (
+                currentCat
+                && currentTmpl
+                && !ayarlar?.kategoriler?.[currentCat]?.sablonlar?.[currentTmpl]
+            ) {
+                currentTmpl = null;
+                currentImg = null;
+                originalImgObj = null;
+                pts = [];
+                draw();
+            }
+
+            renderSidebar();
+
+            const failedText = failed.length
+                ? '\n\nSilinemeyenler:\n' +
+                  failed.slice(0, 10).map(item =>
+                      (item.category ? item.category + ' / ' : '') +
+                      (item.template || 'Bilinmeyen') +
+                      ': ' + (item.error || 'Bilinmeyen hata')
+                  ).join('\n')
+                : '';
+
+            alert(
+                'Toplu işlem tamamlandı.\n' +
+                Number(data.deleted_count || deleted.length) +
+                ' şablon çöpe taşındı.' +
+                (failed.length
+                    ? '\n' + failed.length + ' şablon silinemedi.'
+                    : '') +
+                failedText
+            );
+        } catch (err) {
+            alert('Toplu silme başarısız: ' + err.message);
+        } finally {
+            if (button) {
+                button.textContent =
+                    originalText || '🗑️ Seçilenleri Çöpe At';
+                button.disabled = bulkSelectedTemplates.size === 0;
+            }
+            updateBulkSelectedCount();
+        }
     }
 
     // Load config
@@ -376,36 +382,81 @@ window.onerror = function(msg, url, line, col, error) {
                 const itemData = ayarlar.kategoriler[cat].sablonlar[tmpl];
                 const item = document.createElement('div');
                 item.className = 'template-item';
-                
-                const hasCorners = itemData.koseler && itemData.koseler.length === 4;
+                item.dataset.category = cat;
+                item.dataset.template = tmpl;
+
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.className = 'template-select-checkbox';
+                checkbox.style.display = bulkSelectionMode ? 'inline-block' : 'none';
+                checkbox.title = 'Bu şablonu toplu işlem için seç';
+                checkbox.onclick = event => event.stopPropagation();
+                checkbox.onchange = event => {
+                    event.stopPropagation();
+                    const key = bulkTemplateKey(cat, tmpl);
+                    if (checkbox.checked) bulkSelectedTemplates.add(key);
+                    else bulkSelectedTemplates.delete(key);
+                    item.classList.toggle('bulk-selected', checkbox.checked);
+                    updateBulkSelectedCount();
+                };
+                checkbox.checked = bulkSelectedTemplates.has(
+                    bulkTemplateKey(cat, tmpl)
+                );
+
+                const label = document.createElement('span');
+                label.className = 'template-item-label';
+
+                const hasCorners = (
+                    itemData.koseler
+                    && itemData.koseler.length === 4
+                );
                 const reviewStatus = String(
-                    itemData._review_status || itemData.review_status || 'UNANALYZED'
+                    itemData._review_status
+                    || itemData.review_status
+                    || 'UNANALYZED'
                 ).toUpperCase();
+
                 if (reviewStatus === 'APPROVED') {
-                    item.textContent = '✅ ' + tmpl;
+                    label.textContent = '✅ ' + tmpl;
                     item.title = 'İnsan onaylı ve üretime uygun profil.';
-                } else if (reviewStatus === 'STALE_SOURCE_CHANGED' || reviewStatus === 'AMBIGUOUS_DUPLICATE') {
-                    item.textContent = '⛔ ' + tmpl;
-                    item.style.backgroundColor = 'rgba(220, 53, 69, 0.2)';
+                } else if (
+                    reviewStatus === 'STALE_SOURCE_CHANGED'
+                    || reviewStatus === 'AMBIGUOUS_DUPLICATE'
+                ) {
+                    label.textContent = '⛔ ' + tmpl;
+                    item.style.backgroundColor = 'rgba(220,53,69,0.2)';
                     item.style.color = '#ff9999';
                     item.title = 'Onay artık güvenli değil; yeniden analiz/onay gerekli.';
                 } else if (reviewStatus === 'REJECTED') {
-                    item.textContent = '🚫 ' + tmpl;
+                    label.textContent = '🚫 ' + tmpl;
                     item.title = 'İnsan incelemesinde reddedildi.';
                 } else if (itemData.supheli) {
-                    item.textContent = '⚠️ ' + tmpl;
-                    item.style.backgroundColor = 'rgba(220, 53, 69, 0.2)';
+                    label.textContent = '⚠️ ' + tmpl;
+                    item.style.backgroundColor = 'rgba(220,53,69,0.2)';
                     item.style.color = '#ff9999';
                     item.title = 'Otomatik tespit şüpheli. İnsan kontrolü gerekli.';
                 } else if (hasCorners) {
-                    item.textContent = '📝 ' + tmpl;
-                    item.title = '4 köşe var fakat henüz APPROVED değil.';
+                    label.textContent = '📝 ' + tmpl;
+                    item.title = '4 köşe var fakat henüz onaylanmadı.';
                 } else {
-                    item.textContent = '⏳ ' + tmpl;
+                    label.textContent = '⏳ ' + tmpl;
                     item.title = 'Henüz incelenmedi.';
                 }
-                
-                item.onclick = () => navigateToTemplate(cat, tmpl, item);
+
+                item.appendChild(checkbox);
+                item.appendChild(label);
+
+                item.onclick = () => {
+                    if (bulkSelectionMode) {
+                        checkbox.checked = !checkbox.checked;
+                        checkbox.dispatchEvent(
+                            new Event('change', {bubbles: false})
+                        );
+                        return;
+                    }
+                    navigateToTemplate(cat, tmpl, item);
+                };
+
                 list.appendChild(item);
                 allTemplates.push({cat, tmpl, elem: item, list});
             }
