@@ -200,6 +200,15 @@ def init_db():
                     value TEXT
                  )''')
     
+    c.execute('''CREATE TABLE IF NOT EXISTS template_number_registry (
+                    category TEXT NOT NULL,
+                    template_number INTEGER NOT NULL,
+                    canonical_name TEXT,
+                    first_seen_source TEXT,
+                    first_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (category, template_number)
+                 )''')
+
     c.execute('''CREATE TABLE IF NOT EXISTS template_profiles (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     template_uid TEXT,
