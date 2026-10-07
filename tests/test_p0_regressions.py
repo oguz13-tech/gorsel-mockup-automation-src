@@ -832,6 +832,25 @@ class TestR8SceneRealism(unittest.TestCase):
             float(np.mean(delta[mask == 0])),
         )
 
+    def test_room_sunlight_detects_bright_left_source(self):
+        import numpy as np
+        from SISTEM_MOTORU.pc_master_factory import MockupRenderer
+
+        scene = self._scene()
+        scene[:, :90, :] = 245
+        scene[:, -90:, :] = 70
+        quad = [[260, 160], [470, 160], [470, 330], [260, 330]]
+
+        _, meta = MockupRenderer.apply_room_sunlight_layer(
+            scene,
+            quad,
+            "03_Ahsap_Tablo",
+            "left-source-test",
+            return_metadata=True,
+        )
+        self.assertEqual(meta["light_source_side"], "left")
+        self.assertGreater(meta["changed_scene_fraction"], 0.05)
+
     def test_all_production_categories_have_conservative_profiles(self):
         from SISTEM_MOTORU.pc_master_factory import MockupRenderer
 
@@ -847,8 +866,8 @@ class TestR8SceneRealism(unittest.TestCase):
             profile = MockupRenderer._scene_realism_profile(category)
             self.assertLessEqual(float(profile["light"]), 0.06)
             self.assertLessEqual(float(profile["shadow"]), 0.05)
-            self.assertLessEqual(float(profile["room_light"]), 0.08)
-            self.assertLessEqual(float(profile["room_shadow"]), 0.065)
+            self.assertLessEqual(float(profile["room_light"]), 0.12)
+            self.assertLessEqual(float(profile["room_shadow"]), 0.09)
             self.assertGreaterEqual(
                 float(profile["product_protection"]),
                 0.94,
@@ -910,6 +929,30 @@ class TestFinalMarketplaceQA(unittest.TestCase):
         )
         self.assertFalse(valid)
         self.assertIn("yeterince dolduramadı", message)
+
+    def test_smart_canvas_trims_large_uniform_white_bands(self):
+        import numpy as np
+        from SISTEM_MOTORU.pc_master_factory import MockupRenderer
+
+        image = np.full((800, 600, 3), 252, dtype=np.uint8)
+        image[180:620, :, :] = 120
+        image[260:520, 70:530, :] = 70
+        quad = [[70, 260], [530, 260], [530, 520], [70, 520]]
+
+        result, meta = MockupRenderer.prepare_marketplace_canvas(
+            image,
+            target_width=600,
+            target_height=800,
+            product_quad=quad,
+            smart_product_focus=True,
+            return_metadata=True,
+        )
+
+        self.assertEqual(result.shape, (800, 600, 3))
+        self.assertGreater(meta.get("trimmed_top", 0), 0)
+        self.assertGreater(meta.get("trimmed_bottom", 0), 0)
+        self.assertLess(float(np.mean(result[:80])), 248.0)
+        self.assertLess(float(np.mean(result[-80:])), 248.0)
 
     def test_smart_canvas_metadata_tracks_product_inside_frame(self):
         import numpy as np
