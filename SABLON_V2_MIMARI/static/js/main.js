@@ -158,6 +158,7 @@ window.onerror = function(msg, url, line, col, error) {
     
     let allTemplates = [];
     let bulkSelectionMode = false;
+    let bulkTargetCategory = null;
     const bulkSelectedTemplates = new Set();
 
     function bulkTemplateKey(cat, tmpl) {
@@ -242,12 +243,13 @@ window.onerror = function(msg, url, line, col, error) {
     }
 
     function selectAllInCurrentCategory() {
-        if (!currentCat) {
-            alert('Önce soldan bu kategoriye ait bir şablon açın.');
+        const targetCategory = bulkTargetCategory || currentCat;
+        if (!targetCategory) {
+            alert('Önce soldan bir kategori başlığına veya şablona tıklayın.');
             return;
         }
         allTemplates
-            .filter(entry => entry.cat === currentCat)
+            .filter(entry => entry.cat === targetCategory)
             .forEach(entry => {
                 bulkSelectedTemplates.add(
                     bulkTemplateKey(entry.cat, entry.tmpl)
@@ -384,7 +386,7 @@ window.onerror = function(msg, url, line, col, error) {
                 list.style.display = 'block';
             }
             title.onclick = () => {
-                currentCat = cat;
+                bulkTargetCategory = cat;
                 list.style.display = list.style.display === 'block' ? 'none' : 'block';
             };
             div.appendChild(title);
@@ -479,6 +481,7 @@ window.onerror = function(msg, url, line, col, error) {
         if(elem) elem.classList.add('active');
         
         currentCat = cat;
+        bulkTargetCategory = cat;
         currentTmpl = tmpl;
         const data = ayarlar.kategoriler[cat].sablonlar[tmpl];
         
