@@ -9,6 +9,7 @@ import hashlib
 import unittest
 import tempfile
 import shutil
+from unittest.mock import patch
 
 # Add parent to path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "SABLON_V2_MIMARI")))
@@ -314,6 +315,40 @@ class TestT1DeleteUndoIntegrity(unittest.TestCase):
             )
         finally:
             conn.close()
+
+
+class TestBulkDeleteEndpoint(unittest.TestCase):
+    def setUp(self):
+        app.config["TESTING"] = True
+        self.client = app.test_client()
+
+    def test_bulk_delete_uses_single_endpoint_and_returns_counts(self):
+        def fake_retire(category, template):
+            return {
+                "category": category,
+                "template": template,
+                "trash_record": template + ".json",
+                "deactivated_profiles": 1,
+                "backup_archived": True,
+            }
+
+        with patch("app._retire_template_safely", side_effect=fake_retire) as retire:
+            response = self.client.post(
+                "/api/sablon_sil_toplu",
+                json={
+                    "items": [
+                        {"category": "cat", "template": "a.png"},
+                        {"category": "cat", "template": "b.png"},
+                    ]
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.get_json()
+        self.assertTrue(data["success"])
+        self.assertEqual(data["deleted_count"], 2)
+        self.assertEqual(data["failed_count"], 0)
+        self.assertEqual(retire.call_count, 2)
 
 
 class TestOcclusionReviewSemantics(unittest.TestCase):
