@@ -130,6 +130,62 @@ class TestWatcherSafety(unittest.TestCase):
         }
         return legacy, profile
 
+    def test_first_pass_auto_analysis_is_review_only_and_runs_once(self):
+        source, _ = self._write_input()
+        working = self.working_dir / "Wifi_Kutusu_001.png"
+        working.write_bytes(source.read_bytes())
+
+        fake_result = {
+            "source_asset_sha256": "abc123",
+            "surface_quad": [[20, 20], [160, 20], [160, 120], [20, 120]],
+            "outer_quad": None,
+            "confidence_total": 0.82,
+            "component_confidences": {"line_score": 0.9},
+            "review_status": "REVIEW_REQUIRED",
+            "rule": {
+                "product_class": "wifi",
+                "print_policy": "full_bleed",
+            },
+            "orientation": "H",
+            "nominal_aspect": "1.333333",
+            "analyzer_version": "test-analyzer",
+        }
+
+        class FakeAnalyzer:
+            calls = 0
+
+            def analyze(self, *args, **kwargs):
+                FakeAnalyzer.calls += 1
+                return dict(fake_result)
+
+        with patch.object(
+            self.watcher,
+            "TemplateAnalyzer",
+            FakeAnalyzer,
+        ), patch.object(
+            self.watcher,
+            "detect_frame_auto",
+            side_effect=AssertionError(
+                "legacy fallback should not run when analyzer found corners"
+            ),
+        ):
+            legacy, profile = self.watcher.analyze_new_template_once(
+                working,
+                self.category,
+                cv2.imdecode(
+                    np.fromfile(str(working), dtype=np.uint8),
+                    cv2.IMREAD_COLOR,
+                ),
+            )
+
+        self.assertEqual(FakeAnalyzer.calls, 1)
+        self.assertTrue(legacy["auto_corner_once"])
+        self.assertEqual(legacy["auto_corner_engine"], "template_analyzer")
+        self.assertEqual(legacy["review_status"], "REVIEW_REQUIRED")
+        self.assertEqual(profile["review_status"], "REVIEW_REQUIRED")
+        self.assertFalse(profile["manually_verified"])
+        self.assertEqual(profile["surface_quad"], fake_result["surface_quad"])
+
     def test_successful_ingest_creates_backup_working_and_review_row(self):
         source, decoded = self._write_input()
         saved = {}
