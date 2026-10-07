@@ -1429,55 +1429,6 @@ def api_templates_batch_analyze():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
-@app.route('/api/templates/reject', methods=['POST'])
-def api_templates_reject():
-    try:
-        req = request.get_json(silent=True) or {}
-        uid = req.get("template_uid")
-        if not uid:
-            return jsonify({"success": False, "error": "Eksik parametre"}), 400
-
-        db_path = os.path.join(BASE_DIR, "SABLON_V2_MIMARI", "ayarlar.db")
-        conn = sqlite3.connect(db_path)
-        try:
-            row = conn.execute(
-                """SELECT rowid AS profile_rowid, source_asset_sha256, source_relative_path
-                   FROM template_profiles
-                   WHERE template_uid=? AND is_active=1""",
-                (uid,),
-            ).fetchone()
-            if not row:
-                return jsonify({"success": False, "error": "Aktif profil bulunamadi"}), 404
-
-            profile_id, source_hash, relative_path = row
-            if source_hash and relative_path:
-                source_path = _safe_profile_relative_path(relative_path)
-                if os.path.exists(source_path):
-                    current_hash = _sha256_file(source_path)
-                    if current_hash != source_hash:
-                        return jsonify({
-                            "success": False,
-                            "error": "Kaynak gorsel degismis. Eski profil reddedilmeden once yeniden analiz gerekli.",
-                            "code": "STALE_SOURCE_CHANGED",
-                        }), 409
-
-            conn.execute(
-                """UPDATE template_profiles
-                   SET review_status='REJECTED', manually_verified=1,
-                       updated_at=CURRENT_TIMESTAMP
-                   WHERE rowid=?""",
-                (profile_id,),
-            )
-            conn.commit()
-        finally:
-            conn.close()
-
-        return jsonify({"success": True})
-    except ValueError as e:
-        return jsonify({"success": False, "error": str(e)}), 400
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
-
 @app.route('/api/templates/update_corners', methods=['POST'])
 def api_templates_update_corners():
     """Validate and atomically approve a human-corrected quad.
