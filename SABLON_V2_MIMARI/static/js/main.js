@@ -427,9 +427,6 @@ window.onerror = function(msg, url, line, col, error) {
                     item.style.backgroundColor = 'rgba(220,53,69,0.2)';
                     item.style.color = '#ff9999';
                     item.title = 'Onay artık güvenli değil; yeniden analiz/onay gerekli.';
-                } else if (reviewStatus === 'REJECTED') {
-                    label.textContent = '🚫 ' + tmpl;
-                    item.title = 'İnsan incelemesinde reddedildi.';
                 } else if (itemData.supheli) {
                     label.textContent = '⚠️ ' + tmpl;
                     item.style.backgroundColor = 'rgba(220,53,69,0.2)';
@@ -1492,36 +1489,6 @@ async function approveTemplate() {
                 currentItem.elem.style.color = '';
             }
             alert("Şablon onaylandı. Artık üretimde kullanılabilir.");
-        } else {
-            alert("Hata: " + data.error);
-        }
-    } catch(e) {
-        alert("Bağlantı hatası: " + e);
-    }
-}
-
-async function rejectTemplate() {
-    if(!currentCat || !currentTmpl) return;
-    let uid = currentCat + "_" + currentTmpl;
-    try {
-        let res = await fetch('/api/templates/reject', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({ template_uid: uid })
-        });
-        let data = await res.json();
-        if(data.success) {
-            const tmplObj = ayarlar.kategoriler[currentCat].sablonlar[currentTmpl];
-            if (tmplObj) tmplObj._review_status = 'REJECTED';
-            const currentItem = allTemplates.find(
-                t => t.cat === currentCat && t.tmpl === currentTmpl
-            );
-            if (currentItem && currentItem.elem) {
-                const label = currentItem.elem.querySelector('.template-item-label');
-                if (label) label.textContent = '🚫 ' + currentTmpl;
-                currentItem.elem.title = 'İnsan incelemesinde reddedildi.';
-            }
-            alert("Köşe önerisi reddedildi. Bu şablon onaylanmadan üretime girmez.");
         } else {
             alert("Hata: " + data.error);
         }
