@@ -77,3 +77,61 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background:
             background: #9a7919;
             opacity: 1;
         }
+
+        #bulk-select-panel {
+            margin: 0 0 9px 0;
+            padding: 7px;
+            border: 1px solid #434347;
+            border-radius: 7px;
+            background: #252527;
+        }
+        #bulkModeButton {
+            width: 100%;
+            padding: 8px 10px;
+            background: #495057;
+            font-size: 12px;
+        }
+        #bulkModeButton.active {
+            background: #0d6efd;
+        }
+        .bulk-action-row {
+            display: flex;
+            gap: 5px;
+        }
+        .bulk-action-row button {
+            flex: 1;
+            padding: 7px 5px;
+            font-size: 10.5px;
+            background: #3d3d41;
+        }
+        #bulkSelectedCount {
+            margin: 7px 2px 5px;
+            font-size: 11px;
+            color: #ddd;
+            font-weight: 600;
+        }
+        #bulkDeleteButton {
+            width: 100%;
+            padding: 8px;
+            font-size: 12px;
+            background: #c82333;
+        }
+        .template-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .template-select-checkbox {
+            flex: 0 0 auto;
+            width: 15px;
+            height: 15px;
+            margin: 0;
+            cursor: pointer;
+            accent-color: #0d6efd;
+        }
+        .template-item-label {
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
