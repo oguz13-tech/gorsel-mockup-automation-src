@@ -66,6 +66,14 @@ from sablon_beyazlatma_motoru import (
 )
 from core.db import get_all_ayarlar, save_template, delete_template
 from core.template_intelligence import TemplateAnalyzer, save_template_profile
+from core.template_identity import (
+    TemplateNumberConflictError,
+    backfill_registry,
+    collect_reserved_numbers,
+    find_next_contiguous_free_block,
+    reserve_number,
+    validate_number_block,
+)
 # from foreground_ai import ForegroundAIEngine # Gereksiz sistem yükü oluşturduğu için devredışı bırakıldı
 
 FRAMELESS_KEYS = ["01_Wifi_Kutusu", "04_Cam_Dograma", "05_Ocak_Arkasi"]
@@ -421,28 +429,6 @@ def _restore_processing_file(processing_path: Path, original_path: Path) -> None
         )
 
 
-def _existing_template_names(cat_key: str) -> set[str]:
-    names = set()
-    for root in (SABLON_DIR, YEDEK_DIR):
-        cat_dir = root / cat_key
-        if cat_dir.exists():
-            for path in cat_dir.iterdir():
-                if path.is_file():
-                    names.add(path.name)
-
-    try:
-        ayarlar = get_all_ayarlar()
-        names.update(
-            ayarlar.get("kategoriler", {})
-            .get(cat_key, {})
-            .get("sablonlar", {})
-            .keys()
-        )
-    except Exception as exc:
-        logger.warning(f"DB şablon isimleri okunamadı: {exc}")
-    return names
-
-
 def process_from_staging(staging_path: Path, thread_lock=None) -> bool:
     """Safely ingest one raw template into backup + review workspace.
 
@@ -494,19 +480,15 @@ def process_from_staging(staging_path: Path, thread_lock=None) -> bool:
             _restore_processing_file(processing_path, original_staging_path)
             return False
 
-        existing_names = _existing_template_names(cat_key)
-        existing_nums = set()
-        for name in existing_names:
-            p = Path(name)
-            if p.suffix.lower() not in VALID_EXTS:
-                continue
-            try:
-                existing_nums.add(int(p.stem.replace(f"{prefix}_", "")))
-            except (TypeError, ValueError):
-                continue
+        # A template number is a permanent identity across active files,
+        # backups, DB history, trash and generated artifact history.
+        reserved_nums = collect_reserved_numbers(
+            BASE_DIR,
+            cat_key,
+            ignore_paths=[processing_path],
+            include_pending_staging=True,
+        )
 
-        # Silent overwrite is forbidden. Preserve a requested number only when
-        # it is truly unused; otherwise allocate the first free slot.
         requested_idx = None
         original_stem = original_staging_path.stem
         if original_stem.startswith(f"{prefix}_"):
@@ -517,12 +499,44 @@ def process_from_staging(staging_path: Path, thread_lock=None) -> bool:
             except (TypeError, ValueError):
                 requested_idx = None
 
-        if requested_idx is not None and requested_idx not in existing_nums:
+        if requested_idx is not None:
+            try:
+                validate_number_block(
+                    BASE_DIR,
+                    cat_key,
+                    requested_idx,
+                    1,
+                    ignore_paths=[processing_path],
+                )
+            except TemplateNumberConflictError as exc:
+                logger.error(
+                    "⛔ İSİM ÇAKIŞMASI: %s daha önce kullanılmış. "
+                    "Dosya işlenmedi ve adı değiştirilmeden geri bırakıldı. "
+                    "Önerilen yeni numara: %s. Görsel İsimlendirici ile "
+                    "yeni numara seçin.",
+                    requested_idx,
+                    exc.suggested_start,
+                )
+                _restore_processing_file(
+                    processing_path,
+                    original_staging_path,
+                )
+                return False
             new_idx = requested_idx
         else:
-            new_idx = 1
-            while new_idx in existing_nums:
-                new_idx += 1
+            # Generic filenames may still be accepted, but allocation uses the
+            # permanent registry and never recycles an old identity.
+            new_idx = find_next_contiguous_free_block(
+                reserved_nums,
+                1,
+                1,
+            )
+            logger.info(
+                "ℹ️ Dosyada şablon numarası yok; ilk kalıcı boş numara "
+                "atanacak: %s_%03d",
+                prefix,
+                new_idx,
+            )
 
         new_name = f"{prefix}_{new_idx:03d}.png"
         backup_path = YEDEK_DIR / cat_key / new_name
@@ -586,6 +600,13 @@ def process_from_staging(staging_path: Path, thread_lock=None) -> bool:
             save_template(cat_key, new_name, s_conf)
             review_db = BASE_DIR / "SABLON_V2_MIMARI" / "ayarlar.db"
             save_template_profile(str(review_db), profile_data)
+            reserve_number(
+                BASE_DIR,
+                cat_key,
+                new_idx,
+                canonical_name=new_name,
+                source="staging_ingest",
+            )
         except Exception as exc:
             logger.error(f"Şablon review DB'ye kaydedilemedi: {exc}")
             try:
@@ -630,6 +651,21 @@ def process_from_staging(staging_path: Path, thread_lock=None) -> bool:
 
 
 def run_watcher():
+    try:
+        history = backfill_registry(BASE_DIR)
+        logger.info(
+            "🔒 Şablon numara geçmişi yüklendi: %s",
+            ", ".join(
+                f"{category}={count}"
+                for category, count in history.items()
+            ),
+        )
+    except Exception as exc:
+        logger.warning(
+            "Şablon numara geçmişi tam yüklenemedi; dinamik koruma devam ediyor: %s",
+            exc,
+        )
+
     logger.info("==================================================================")
     logger.info("👀 ŞABLON HAVUZU HAZIRLIK (STAGING) İZLEYİCİSİ DEVREDE")
     logger.info(f"📁 İzlenen Hazırlık Klasörü: {STAGING_DIR}")
