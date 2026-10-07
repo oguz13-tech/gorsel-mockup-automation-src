@@ -24,11 +24,18 @@ import requests
 from openpyxl import Workbook
 from PIL import Image
 
-from core.template_identity import (
-    TemplateNumberConflictError,
-    category_for_prefix,
-    validate_number_block,
-)
+try:
+    from .core.template_identity import (
+        TemplateNumberConflictError,
+        category_for_prefix,
+        validate_number_block,
+    )
+except ImportError:
+    from core.template_identity import (
+        TemplateNumberConflictError,
+        category_for_prefix,
+        validate_number_block,
+    )
 
 
 SOURCE_ROOT = Path(__file__).resolve().parent.parent
