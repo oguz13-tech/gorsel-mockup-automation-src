@@ -306,15 +306,13 @@ class TestForegroundPlanSemantics(unittest.TestCase):
 
         default_plan = {
             "object_boxes": [],
-            "add_brush": [],
-            "subtract_brush": [],
             "feather": 1.2,
             "grabcut_iterations": 5,
         }
         self.assertFalse(foreground_plan_has_positive_selection(default_plan))
         self.assertFalse(foreground_is_required({"has_occlusion": False}, default_plan))
 
-    def test_positive_manual_plan_or_profile_requires_foreground(self):
+    def test_positive_object_plan_or_profile_requires_foreground(self):
         from SISTEM_MOTORU.pc_master_factory import (
             foreground_plan_has_positive_selection,
             foreground_is_required,
@@ -322,21 +320,19 @@ class TestForegroundPlanSemantics(unittest.TestCase):
 
         positive_plan = {
             "object_boxes": [[10, 10, 30, 30]],
-            "add_brush": [],
-            "subtract_brush": [],
         }
         self.assertTrue(foreground_plan_has_positive_selection(positive_plan))
         self.assertTrue(foreground_is_required({"has_occlusion": False}, positive_plan))
         self.assertTrue(foreground_is_required({"has_occlusion": True}, {}))
 
-    def test_subtract_only_plan_is_not_positive_evidence(self):
+    def test_non_object_metadata_is_not_positive_evidence(self):
         from SISTEM_MOTORU.pc_master_factory import foreground_plan_has_positive_selection
 
         self.assertFalse(
             foreground_plan_has_positive_selection({
                 "object_boxes": [],
-                "add_brush": [],
-                "subtract_brush": [{"points": [[1, 1], [2, 2]]}],
+                "feather": 2.0,
+                "grabcut_iterations": 5,
             })
         )
 
