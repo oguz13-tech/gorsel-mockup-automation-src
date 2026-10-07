@@ -3,20 +3,25 @@
 <head>
     <meta charset="UTF-8">
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='4' fill='%23007acc'/><text x='16' y='23' text-anchor='middle' font-size='20' fill='white'>S</text></svg>">
-    <title>Şablon Hizalama Ekranı (Zoom ve Pan)</title>
+    <title>Şablon İnceleme Merkezi</title>
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
 
 <div id="sidebar">
-    <h2 style="margin-top:0;">Şablonlar</h2>
+    <h2 style="margin-top:0;">Şablon İnceleme</h2>
+    <div class="panel-hint">Şablonu seçin, köşeleri kontrol edin ve doğruysa onaylayın.</div>
     <div id="categories" style="flex:1; overflow-y:auto;">Yükleniyor...</div>
+    <div class="status-legend">
+        <b>Durumlar:</b> ✅ Onaylı · 📝 Kontrol bekliyor · ⚠️ Şüpheli · ⛔ Eski/uyumsuz
+    </div>
     <div id="help-sidebar" style="display:none; position: absolute; left: 360px; top: 60px; background: rgba(0,0,0,0.9); padding: 15px; border-radius: 8px; z-index: 9999; border: 1px solid #555; box-shadow: 0 4px 15px rgba(0,0,0,0.5);">
         <b style="color:#fff;">Kısayollar ve Kontroller:</b><br/>
-        - <b>🔴 4 Köşe:</b> Baskı köşelerini fare ile sürükleyin.<br/>
-        - <b>🪄 Otomatik Nesne:</b> Şablondaki taşan nesneleri otomatik bulur.<br/>
+        - <b>✋ Köşeleri Elle Ayarla:</b> Kırmızı noktaları gerçek baskı alanının köşelerine sürükleyin.<br/>
+        - <b>🧭 Köşeleri Yeniden Algıla:</b> Yeni şablonda ilk algılama zaten otomatik yapılır; yalnız yanlışsa tekrar kullanın.<br/>
+        - <b>🤖 Öndeki Nesneleri Bul:</b> Baskının önüne geçen gerçek objeleri bulmaya yardım eder.<br/>
         - <b>C / V Tuşları:</b> Köşeleri kopyala ve diğer şablona yapıştır.<br/>
-        - <b>Enter Tuşu:</b> O anki şablon için otomatik köşe algılamayı tetikler.<br/>
+        - <b>Enter Tuşu:</b> Seçili şablonda köşeleri yeniden algılar.<br/>
         - <b>Boşluk (Space):</b> Basılı tutarak ekranda kaydırma (Pan) yapın.<br/>
         - <b>↶ Geri Al:</b> <b>Ctrl+Z</b> (Maske hatalarını geri alır)<br/>
         - <b>Tekerlek:</b> Yakınlaş / Uzaklaş (Zoom)<br/>
@@ -67,17 +72,21 @@
         <div class="resizer" id="resizer-right"></div>
         <!-- Vertical Toolbar on the Right -->
         <div id="right-toolbar" style="width: 220px; flex-shrink: 0; box-sizing: border-box; background: #252526; display: flex; flex-direction: column; gap: 10px; padding: 15px; border-left: 1px solid #444; overflow-y: auto; z-index: 10;">
-            <h3 style="margin: 0 0 5px 0; font-size: 15px; color: #fff; text-align: center; border-bottom: 1px solid #444; padding-bottom: 10px;">Photoshop Araçları</h3>
+            <h3 class="tool-section-title">Köşe Ayarı</h3>
             
-            <button type="button" id="btnCorner" onclick="setEditorTool('corner')" style="outline: 3px solid #00aaff; width: 100%; text-align: left; padding: 12px 10px;" aria-label="4 Kose Modu">🔴 4 Köşe</button>
-            <button type="button" id="btnAutoCorner" onclick="autoDetectCorners()" style="background: linear-gradient(135deg, #00c853, #00bfa5); box-shadow: 0 2px 6px rgba(0,200,83,0.4); width: 100%; text-align: left; padding: 12px 10px; font-weight: bold;" title="Görseldeki baskı alanının 4 köşesini otomatik olarak tespit eder. Sonuç yine insan onayından geçer." aria-label="Otomatik Kose Algila">🟢 Otomatik Köşe Algıla</button>
+            <button type="button" id="btnCorner" onclick="setEditorTool('corner')" style="outline: 3px solid #00aaff; width: 100%; text-align: left; padding: 12px 10px;" aria-label="Köşeleri Elle Ayarla">✋ Köşeleri Elle Ayarla</button>
+            <div class="tool-note">Kırmızı noktaları gerçek baskı alanının dört köşesine sürükleyin.</div>
 
-            <div style="height: 1px; background: #444; margin: 15px 0;"></div>
-            <h3 style="margin: 0 0 5px 0; font-size: 15px; color: #fff; text-align: center; border-bottom: 1px solid #444; padding-bottom: 10px;">Ön Plan / Maske</h3>
-            <button type="button" id="btnAutoForeground" onclick="autoDetectForeground()" style="background:linear-gradient(135deg,#6f42c1,#0d6efd); width:100%; text-align:left; padding:10px; font-weight:bold;" title="Grounding-DINO + SAM ile baskının önündeki nesneleri bulur ve düzenlenebilir seçim kutuları oluşturur.">🤖 AI Ön Plan Bul</button>
-            <button type="button" id="btnObject" onclick="setEditorTool('object')" style="background:#0d6efd; width:100%; text-align:left; padding:10px;" title="Ön plandaki nesnenin çevresine kutu çizin. Render sırasında GrabCut ile nesne ayrıştırılır.">🪄 Nesne Seç</button>
-            <button type="button" id="btnAdd" onclick="setEditorTool('add')" style="background:#198754; width:100%; text-align:left; padding:10px;" title="Maskeye elle alan eklemek için fırça kullanın.">➕ Maske Ekle</button>
-            <button type="button" id="btnSubtract" onclick="setEditorTool('subtract')" style="background:#b02a37; width:100%; text-align:left; padding:10px;" title="Yanlış maskelenen alanları çıkarmak için fırça kullanın.">➖ Maske Çıkar</button>
+            <button type="button" id="btnAutoCorner" onclick="autoDetectCorners()" style="background: linear-gradient(135deg, #00c853, #00bfa5); box-shadow: 0 2px 6px rgba(0,200,83,0.4); width: 100%; text-align: left; padding: 12px 10px; font-weight: bold;" title="Seçili şablonda 4 köşeyi yeniden tespit eder. Sonuç insan onayı olmadan üretime girmez." aria-label="Köşeleri Yeniden Algıla">🧭 Köşeleri Yeniden Algıla</button>
+            <div class="tool-note tool-note-accent">Yeni yüklenen şablonlarda ilk köşe tespiti zaten otomatik yapılır. Bunu yalnız sonuç hatalıysa kullanın.</div>
+
+            <div class="tool-divider"></div>
+            <h3 class="tool-section-title">Öndeki Nesneleri Koru</h3>
+            <button type="button" id="btnAutoForeground" onclick="autoDetectForeground()" style="background:linear-gradient(135deg,#6f42c1,#0d6efd); width:100%; text-align:left; padding:10px; font-weight:bold;" title="Baskının önüne geçen gerçek nesneleri otomatik bulur.">🤖 Öndeki Nesneleri Otomatik Bul</button>
+            <div class="tool-note">Domates, vazo, çiçek gibi ürünün önünde kalması gereken bir obje varsa kullanın.</div>
+            <button type="button" id="btnObject" onclick="setEditorTool('object')" style="background:#0d6efd; width:100%; text-align:left; padding:10px;" title="Öndeki nesnenin çevresine elle seçim kutusu çizin.">🪄 Nesneyi Elle Seç</button>
+            <button type="button" id="btnAdd" onclick="setEditorTool('add')" style="background:#198754; width:100%; text-align:left; padding:10px;" title="Korunacak alana elle ekleme yapar.">➕ Korunacak Alan Ekle</button>
+            <button type="button" id="btnSubtract" onclick="setEditorTool('subtract')" style="background:#b02a37; width:100%; text-align:left; padding:10px;" title="Yanlış seçilmiş koruma alanını çıkarır.">➖ Fazla Alanı Çıkar</button>
             <label for="maskBrushSize" style="font-size:12px; color:#ddd; margin-top:4px;">Fırça boyutu: <span id="maskBrushValue">20</span> px</label>
             <input id="maskBrushSize" type="range" min="3" max="120" step="1" value="20" oninput="updateBrushSize(this.value)" style="width:100%;" aria-label="Maske firca boyutu">
             <div style="display:flex; gap:6px;">
@@ -85,8 +94,8 @@
                 <button type="button" onclick="clearForegroundMask()" style="background:#343a40; flex:1; padding:9px;" title="Bu şablondaki tüm nesne kutularını ve fırça düzeltmelerini temizle.">🧹 Temizle</button>
             </div>
 
-            <div style="height: 1px; background: #444; margin: 15px 0;"></div>
-            <h3 style="margin: 0 0 5px 0; font-size: 15px; color: #fff; text-align: center; border-bottom: 1px solid #444; padding-bottom: 10px;">Yapay Zeka Onay</h3>
+            <div class="tool-divider"></div>
+            <h3 class="tool-section-title">Kontrol ve Onay</h3>
             <div id="physical-orientation-wrap" style="display:none; padding:8px; border:1px solid #555; border-radius:5px; background:#1f1f1f;">
                 <label for="physicalOrientationSelect" style="display:block; font-size:12px; color:#ddd; margin-bottom:5px;">Fiziksel ürün yönü</label>
                 <select id="physicalOrientationSelect" onchange="savePhysicalOrientationSelection()" style="width:100%; padding:7px; background:#2d2d2d; color:#fff; border:1px solid #666; border-radius:4px;">
@@ -96,20 +105,26 @@
                 </select>
                 <div style="font-size:11px; color:#aaa; margin-top:5px;">Cam Doğrama için perspektif köşeler fiziksel yönü belirlemez. Onaydan önce gerçek H/V yönünü seçin.</div>
             </div>
-            <button type="button" onclick="toggleReviewOverlay()" style="background: #17a2b8; width: 100%; padding: 12px 10px; margin-top: 5px; font-weight: bold;" title="Kalibrasyon Onizleme">👁️ Overlay Onizleme</button>
-            <button type="button" id="batchAnalyzeButton" onclick="batchAnalyze()" style="background: #e0a800; width: 100%; padding: 12px 10px; margin-top: 5px; font-weight: bold;" title="Klasördeki şablonları tek tek analiz eder ve gerçek ilerlemeyi gösterir">🔍 Klasörü Tarat</button>
-            <button type="button" onclick="approveTemplate()" style="background: #28a745; width: 100%; padding: 12px 10px; margin-top: 5px; font-weight: bold;" title="Geometrideki 4 köşeyi onaylar">✅ Onayla (Approve)</button>
-            <button type="button" onclick="rejectTemplate()" style="background: #dc3545; width: 100%; padding: 12px 10px; margin-top: 5px; font-weight: bold;" title="Geometriyi reddeder">❌ Reddet (Reject)</button>
+            <button type="button" onclick="toggleReviewOverlay()" style="background: #17a2b8; width: 100%; padding: 12px 10px; margin-top: 5px; font-weight: bold;" title="Köşe ve yerleşim alanını daha net kontrol etmenizi sağlar.">👁️ Yerleşimi Kontrol Et</button>
+            <div class="tool-note">Onaylamadan önce baskı alanının doğru yerde olduğunu kontrol edin.</div>
+            <button type="button" onclick="approveTemplate()" style="background: #28a745; width: 100%; padding: 12px 10px; margin-top: 5px; font-weight: bold;" title="Mevcut dört köşeyi insan onaylı hale getirir.">✅ Bu Şablonu Onayla</button>
+            <button type="button" onclick="rejectTemplate()" style="background: #dc3545; width: 100%; padding: 12px 10px; margin-top: 5px; font-weight: bold;" title="Mevcut köşe önerisini reddeder.">❌ Bu Öneriyi Reddet</button>
+            <div class="tool-note">Onaylanan şablon üretimde kullanılabilir. Reddedilen öneri üretime girmez.</div>
 
-            <h3 style="margin: 0 0 5px 0; font-size: 15px; color: #fff; text-align: center; border-bottom: 1px solid #444; padding-bottom: 10px;">Görsel İşlemleri</h3>
-            <button type="button" onclick="toggleCanvasBg()" style="background: #e67e22; width: 100%; padding: 12px 10px; font-weight: bold; margin-bottom: 5px; color: white; border: none; cursor: pointer; border-radius: 4px;" title="Arka plan rengini değiştirir (Siyah/Beyaz/Yeşil)">🎨 Arka Planı Değiştir</button>
-            <button type="button" onclick="instantWhiten()" style="background: #28a745; width: 100%; padding: 12px 10px; font-weight: bold;" title="Seçtiğiniz alanları anında beyazlatarak sonucu önizleyin">✨ Anında Beyazlat (Önizle)</button>
+            <button type="button" id="batchAnalyzeButton" onclick="batchAnalyze()" class="advanced-action" title="Seçili kategorideki tüm şablonları yeniden analiz eder. Genelde gerekli değildir.">🔍 Tüm Klasörü Yeniden Analiz Et</button>
+            <div class="tool-note">Gelişmiş işlem: normal kullanımda gerekmez. Tüm klasör için yeni köşe önerileri çıkarmak istediğinizde kullanın.</div>
+
+            <div class="tool-divider"></div>
+            <h3 class="tool-section-title">Görsel Yardımcıları</h3>
+            <button type="button" onclick="toggleCanvasBg()" style="background: #e67e22; width: 100%; padding: 12px 10px; font-weight: bold; margin-bottom: 5px; color: white; border: none; cursor: pointer; border-radius: 4px;" title="Arka plan rengini değiştirir (Siyah/Beyaz/Yeşil)">🎨 Önizleme Arka Planı</button>
+            <button type="button" onclick="instantWhiten()" style="background: #28a745; width: 100%; padding: 12px 10px; font-weight: bold;" title="Seçtiğiniz alanları anında beyazlatarak sonucu önizleyin">✨ Beyazlatmayı Önizle</button>
             <button type="button" id="btnToggleOriginal" onclick="toggleOriginalView()" style="background: #9c27b0; width: 100%; padding: 12px 10px; margin-top: 5px; font-weight: bold; border-radius: 4px; border: none; color: white; cursor: pointer;" title="Önizleme ile orijinal görsel arasında geçiş yapar">👁️ Orijinal / Önizleme</button>
-            <button type="button" onclick="restoreOriginal()" style="background: #6c757d; width: 100%; padding: 12px 10px; margin-top: 5px;" title="Görseli orijinal ve temiz haline geri döndür">🔄 Orijinale Dön (Temizle)</button>
+            <button type="button" onclick="restoreOriginal()" style="background: #6c757d; width: 100%; padding: 12px 10px; margin-top: 5px;" title="Görseli orijinal ve temiz haline geri döndür">🔄 Orijinal Görseli Geri Getir</button>
             
-            <div style="height: 1px; background: #444; margin: 15px 0;"></div>
-            <button type="button" onclick="deleteTemplate()" style="background: #dc3545; width: 100%; padding: 12px 10px; margin-top: 5px;" title="Bu şablonu çöpe at (geri alınabilir)">🗑️ Şablonu Çöpe At</button>
-            <button type="button" onclick="undoDelete()" style="background: #17a2b8; width: 100%; padding: 12px 10px; margin-top: 5px;" title="Son silinen şablonu geri al">♻️ Son Silineni Geri Al</button>
+            <div class="tool-divider"></div>
+            <button type="button" onclick="deleteTemplate()" style="background: #dc3545; width: 100%; padding: 12px 10px; margin-top: 5px;" title="Şablonu üretim havuzundan çıkarır ve geri alınabilir çöp alanına taşır.">🗑️ Şablonu Çöpe At</button>
+            <div class="tool-note">Geri alınabilir. Aktif üretim havuzundan ve onaylı kullanımdan çıkarılır.</div>
+            <button type="button" onclick="undoDelete()" style="background: #17a2b8; width: 100%; padding: 12px 10px; margin-top: 5px;" title="En son çöpe atılan şablonu güvenli şekilde geri getirir.">♻️ Son Silineni Geri Al</button>
         </div>
     </div>
 </div>
