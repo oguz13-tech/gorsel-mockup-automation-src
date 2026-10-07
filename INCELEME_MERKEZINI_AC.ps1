@@ -3,6 +3,7 @@ $ErrorActionPreference = "Stop"
 
 $RepoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $AppPath = Join-Path $RepoRoot "SABLON_V2_MIMARI\app.py"
+$WatcherPath = Join-Path $RepoRoot "99_SISTEM_MOTORLARI_VE_KODLAR\SISTEM_MOTORU\sablon_oto_izleyici.py"
 
 function Test-RuntimeRoot([string]$Path) {
     if ([string]::IsNullOrWhiteSpace($Path)) { return $false }
