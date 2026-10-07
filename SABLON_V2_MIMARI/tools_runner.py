@@ -24,6 +24,12 @@ import requests
 from openpyxl import Workbook
 from PIL import Image
 
+from core.template_identity import (
+    TemplateNumberConflictError,
+    category_for_prefix,
+    validate_number_block,
+)
+
 
 SOURCE_ROOT = Path(__file__).resolve().parent.parent
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
@@ -134,6 +140,16 @@ def rename_images(
     selected = sorted(selected, key=lambda p: p.name.casefold())
     parent = selected[0].parent
     selected_set = {p.resolve() for p in selected}
+
+    template_category = category_for_prefix(prefix)
+    if template_category:
+        validate_number_block(
+            Path(runtime_root or RUNTIME_ROOT),
+            template_category,
+            start_number,
+            len(selected),
+            ignore_paths=selected,
+        )
 
     last_number = start_number + len(selected) - 1
     digits = max(3, len(str(last_number)))
@@ -499,6 +515,7 @@ def interactive_rename() -> int:
         )
         if not files:
             return 0
+
         prefix = simpledialog.askstring(
             "Görsel İsimlendirici - 1/2",
             "TEMEL ADI yazın.\n"
@@ -510,25 +527,44 @@ def interactive_rename() -> int:
         if prefix is None:
             return 0
 
-        start_number = simpledialog.askinteger(
-            "Görsel İsimlendirici - 2/2",
-            "Kaçtan başlasın?\n\n"
-            "Örnek: 135 yazarsanız ilk dosya "
-            "Wifi_Kutusu_135 olur.",
-            initialvalue=1,
-            minvalue=0,
-            maxvalue=9999999,
-            parent=root,
-        )
-        if start_number is None:
-            return 0
+        suggested_start = 1
+        while True:
+            start_number = simpledialog.askinteger(
+                "Görsel İsimlendirici - 2/2",
+                "Kaçtan başlasın?\n\n"
+                "Örnek: 135 yazarsanız ilk dosya "
+                "Wifi_Kutusu_135 olur.\n\n"
+                "Daha önce kullanılmış numaralar tekrar kullanılamaz.",
+                initialvalue=suggested_start,
+                minvalue=0,
+                maxvalue=9999999,
+                parent=root,
+            )
+            if start_number is None:
+                return 0
 
-        outputs = rename_images(
-            [Path(p) for p in files],
-            prefix,
-            RUNTIME_ROOT,
-            start_number=start_number,
-        )
+            try:
+                outputs = rename_images(
+                    [Path(p) for p in files],
+                    prefix,
+                    RUNTIME_ROOT,
+                    start_number=start_number,
+                )
+                break
+            except TemplateNumberConflictError as exc:
+                suggested_start = (
+                    exc.suggested_start
+                    if exc.suggested_start is not None
+                    else start_number + 1
+                )
+                messagebox.showwarning(
+                    "Bu Numara Daha Önce Kullanılmış",
+                    f"{exc}\n\n"
+                    "İşlem yapılmadı. Yeni bir başlangıç numarası seçmeniz "
+                    "zorunlu. Araç şimdi tekrar numara soracak.",
+                    parent=root,
+                )
+
         _open_folder(outputs[0].parent)
         messagebox.showinfo(
             "Tamamlandı",
