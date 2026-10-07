@@ -147,7 +147,7 @@ db_lock = threading.RLock()
 # Render recipe participates in immutable artifact identity. Bump whenever
 # renderer/aspect/occlusion behavior changes so old artifacts are never silently
 # reused under a new visual contract.
-RECIPE_VERSION = "v3_epic3_20261007_r11"
+RECIPE_VERSION = "v3_epic3_20261007_r12"
 
 # ==============================================================================
 # 2. ÜRÜN VE FORMAT SÖZLEŞMESİ (URUN_FORMAT_HARITASI)
@@ -322,15 +322,12 @@ def cached_foreground_mask_usable(mask: np.ndarray | None, foreground_required: 
 def foreground_plan_has_positive_selection(plan) -> bool:
     """Return True only when a manual plan proves foreground pixels exist.
 
-    Review UI always carries an on_plan settings object (feather, GrabCut
-    iterations, empty arrays). That metadata must not be mistaken for evidence
-    that an occluding object actually exists.
+    Only automatic object boxes count as explicit foreground evidence.
     """
-    if isinstance(plan, list):
-        return len(plan) >= 3
     if not isinstance(plan, dict):
         return False
-    return bool(plan.get("object_boxes") or plan.get("add_brush"))
+    boxes = plan.get("object_boxes")
+    return bool(isinstance(boxes, list) and boxes)
 
 
 def foreground_is_required(config: dict, on_plan) -> bool:
@@ -1145,67 +1142,47 @@ class MockupRenderer:
     @staticmethod
     def build_foreground_mask(
         bg_cv: np.ndarray,
-        on_plan: dict | list | None,
+        on_plan: dict | None,
         base_mask: np.ndarray | None = None,
     ) -> np.ndarray:
-        """
-        Photoshop benzeri Object Selection & Brush mantığı.
-        on_plan formatı:
-        {
-            "object_boxes": [[x1, y1, x2, y2], ...],
-            "add_brush": [[x, y, radius], ...],
-            "subtract_brush": [[x, y, radius], ...],
-            "feather": 1.2,
-            "grabcut_iterations": 5
-        }
-        veya geriye dönük uyumlu polygon listesi.
-        """
+        """Build an occlusion mask from automatic object boxes only."""
         h, w = bg_cv.shape[:2]
         empty_mask = np.zeros((h, w), dtype=np.uint8)
 
         if base_mask is not None:
             base = np.asarray(base_mask)
             if base.ndim == 3:
-                base = cv2.cvtColor(base.astype(np.uint8), cv2.COLOR_BGR2GRAY)
+                base = cv2.cvtColor(
+                    base.astype(np.uint8),
+                    cv2.COLOR_BGR2GRAY,
+                )
             if base.shape[:2] != (h, w):
-                base = cv2.resize(base, (w, h), interpolation=cv2.INTER_NEAREST)
-            working_base = np.clip(base, 0, 255).astype(np.uint8)
+                base = cv2.resize(
+                    base,
+                    (w, h),
+                    interpolation=cv2.INTER_NEAREST,
+                )
+            final_mask = np.clip(base, 0, 255).astype(np.uint8)
         else:
-            working_base = empty_mask.copy()
+            final_mask = empty_mask.copy()
 
-        if not on_plan:
-            return working_base
+        if not isinstance(on_plan, dict):
+            return final_mask
 
-        # Eski polygon formatı geldiyse kırılmasın
-        if isinstance(on_plan, list):
-            if len(on_plan) >= 3:
-                try:
-                    pts = np.asarray(on_plan, dtype=np.int32)
-                    mask = working_base.copy()
-                    pts[:, 0] = np.clip(pts[:, 0], 0, w - 1)
-                    pts[:, 1] = np.clip(pts[:, 1], 0, h - 1)
-                    cv2.fillPoly(mask, [pts], 255)
-                    mask = cv2.GaussianBlur(mask, (0, 0), 1.2)
-                    return mask
-                except Exception:
-                    return working_base
-            return working_base
+        object_boxes = on_plan.get("object_boxes")
+        if not isinstance(object_boxes, list):
+            object_boxes = []
 
-        object_boxes = on_plan.get("object_boxes", [])
-        add_brush = on_plan.get("add_brush", [])
-        subtract_brush = on_plan.get("subtract_brush", [])
-        feather = float(on_plan.get("feather", 1.2))
-        iterations = int(on_plan.get("grabcut_iterations", 5))
+        feather = float(on_plan.get("feather", 1.2) or 1.2)
+        iterations = int(on_plan.get("grabcut_iterations", 5) or 5)
+        iterations = int(np.clip(iterations, 1, 10))
 
-        final_mask = working_base.copy()
-
-        # 1. OBJECT SELECTION (Her kutu ayrı GrabCut'tan geçirilir)
         for box in object_boxes:
-            if not box or len(box) != 4:
+            if not isinstance(box, (list, tuple)) or len(box) != 4:
                 continue
             try:
                 x1, y1, x2, y2 = map(int, box)
-            except Exception:
+            except (TypeError, ValueError):
                 continue
 
             x1, x2 = sorted((x1, x2))
@@ -1239,60 +1216,54 @@ class MockupRenderer:
                     bg_model,
                     fg_model,
                     iterations,
-                    cv2.GC_INIT_WITH_RECT
+                    cv2.GC_INIT_WITH_RECT,
                 )
                 object_mask = np.where(
-                    (gc_mask == cv2.GC_FGD) | (gc_mask == cv2.GC_PR_FGD),
+                    (gc_mask == cv2.GC_FGD)
+                    | (gc_mask == cv2.GC_PR_FGD),
                     255,
-                    0
+                    0,
                 ).astype(np.uint8)
                 final_mask = cv2.max(final_mask, object_mask)
             except cv2.error as exc:
                 logger.warning(f"[MASK] GrabCut uyarisi: {exc}")
-                cv2.rectangle(final_mask, (x1, y1), (x2, y2), 255, -1)
-
-        # 2. MANUEL + FIRÇA
-        for stroke in add_brush:
-            if not stroke or len(stroke) < 2:
-                continue
-            x = int(np.clip(int(stroke[0]), 0, w - 1))
-            y = int(np.clip(int(stroke[1]), 0, h - 1))
-            radius = int(stroke[2] if len(stroke) >= 3 else 20)
-            cv2.circle(final_mask, (x, y), max(1, radius), 255, -1, lineType=cv2.LINE_AA)
-
-        # 3. MANUEL - FIRÇA
-        for stroke in subtract_brush:
-            if not stroke or len(stroke) < 2:
-                continue
-            x = int(np.clip(int(stroke[0]), 0, w - 1))
-            y = int(np.clip(int(stroke[1]), 0, h - 1))
-            radius = int(stroke[2] if len(stroke) >= 3 else 20)
-            cv2.circle(final_mask, (x, y), max(1, radius), 0, -1, lineType=cv2.LINE_AA)
+                cv2.rectangle(
+                    final_mask,
+                    (x1, y1),
+                    (x2, y2),
+                    255,
+                    -1,
+                )
 
         if not np.any(final_mask):
             return final_mask
 
-        # 4. MASK TEMİZLİĞİ (Morphology Close & Küçük Leke Filtresi)
         kernel_close = np.ones((3, 3), np.uint8)
-        final_mask = cv2.morphologyEx(final_mask, cv2.MORPH_CLOSE, kernel_close, iterations=1)
+        final_mask = cv2.morphologyEx(
+            final_mask,
+            cv2.MORPH_CLOSE,
+            kernel_close,
+            iterations=1,
+        )
 
         num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(
             (final_mask > 127).astype(np.uint8),
-            connectivity=8
+            connectivity=8,
         )
         cleaned = np.zeros_like(final_mask)
         min_component_area = max(20, int((w * h) * 0.000005))
         for i in range(1, num_labels):
-            area = stats[i, cv2.CC_STAT_AREA]
-            if area >= min_component_area:
+            if stats[i, cv2.CC_STAT_AREA] >= min_component_area:
                 cleaned[labels == i] = 255
-        final_mask = cleaned
 
-        # 5. EDGE FEATHER (Kenar Yumuşatma)
         if feather > 0:
-            final_mask = cv2.GaussianBlur(final_mask, (0, 0), feather)
+            cleaned = cv2.GaussianBlur(
+                cleaned,
+                (0, 0),
+                max(0.1, feather),
+            )
 
-        return final_mask
+        return cleaned
 
     @staticmethod
     def restore_foreground(
@@ -2907,14 +2878,9 @@ class MockupRenderer:
                 fg_mask = _normalize_mask(fg_mask)
 
                 # A reviewed positive manual selection is sufficient evidence
-                # even when the optional AI path is unavailable. A subtract-
-                # only plan is not sufficient without an AI/cache base mask.
-                if isinstance(on_plan, list):
-                    if len(on_plan) >= 3:
-                        foreground_analysis_completed = True
-                elif isinstance(on_plan, dict):
-                    if on_plan.get("object_boxes") or on_plan.get("add_brush"):
-                        foreground_analysis_completed = True
+                # even when the optional AI path is unavailable.
+                if isinstance(on_plan, dict) and on_plan.get("object_boxes"):
+                    foreground_analysis_completed = True
 
             if auto_foreground and not foreground_analysis_completed:
                 raise RuntimeError(
@@ -4275,14 +4241,11 @@ def build_factory_preflight() -> dict:
                             or bool(plan)
                         )
                         if auto_foreground_requested:
-                            has_positive_manual_plan = False
-                            if plan_trusted and isinstance(plan, list):
-                                has_positive_manual_plan = len(plan) >= 3
-                            elif plan_trusted and isinstance(plan, dict):
-                                has_positive_manual_plan = bool(
-                                    plan.get("object_boxes")
-                                    or plan.get("add_brush")
-                                )
+                            has_positive_object_plan = bool(
+                                plan_trusted
+                                and isinstance(plan, dict)
+                                and plan.get("object_boxes")
+                            )
 
                             cache_file = (
                                 MASK_CACHE_DIR
@@ -4306,7 +4269,7 @@ def build_factory_preflight() -> dict:
                                     has_cached_mask = False
 
                             item_name = f"{category}/{template_name}"
-                            if has_positive_manual_plan or has_cached_mask:
+                            if has_positive_object_plan or has_cached_mask:
                                 report["occlusion"][
                                     "manual_or_cached_templates"
                                 ].append(item_name)
