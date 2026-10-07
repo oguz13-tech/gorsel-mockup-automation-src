@@ -503,25 +503,57 @@ def api_auto_detect_corners():
         logger.exception("Otomatik kose onerisi hatasi")
         return jsonify({"success": False, "error": str(e)}), 500
 
+def _find_template_backup_asset(category: str, template_name: str):
+    """Find the original-backup asset that corresponds to one template."""
+    backup_root = os.path.abspath(
+        os.path.join(BASE_DIR, "2_SABLON_HAVUZU_ORIJINAL_YEDEK")
+    )
+    category_dir = _safe_under_root(
+        backup_root,
+        category,
+        label="orijinal yedek kategorisi",
+    )
+    stem = Path(template_name).stem
+    for ext in (".png", ".jpg", ".jpeg", ".webp", ".avif"):
+        candidate = _safe_under_root(
+            category_dir,
+            stem + ext,
+            label="orijinal yedek",
+        )
+        if os.path.isfile(candidate):
+            return candidate
+    return None
+
+
 @app.route('/api/sablon_sil', methods=['POST'])
 def api_sablon_sil():
-    """Move a template to a reversible trash record without risking geometry."""
+    """Safely retire a template and its approval lineage.
+
+    The active working image and matching original backup are moved to the
+    reversible trash area. Matching active template_profiles are deactivated
+    in the same operation so production never sees a ghost APPROVED profile.
+    """
     meta_path = None
-    moved_src = None
-    moved_dst = None
+    moved_pairs = []
+    deactivated_rowids = []
     try:
         active_cat = request.headers.get('X-Active-Category', '')
         active_tmpl = request.headers.get('X-Active-Template', '')
         if not active_cat or not active_tmpl:
-            return jsonify({"success": False, "error": "Kategori/sablon eksik"}), 400
+            return jsonify({
+                "success": False,
+                "error": "Kategori/sablon eksik",
+            }), 400
 
         _ayarlar = get_all_ayarlar()
         category_data = _ayarlar.get('kategoriler', {}).get(active_cat, {})
         templates = category_data.get('sablonlar', {})
         if active_tmpl not in templates:
-            return jsonify({"success": False, "error": "Sablon bulunamadi"}), 404
+            return jsonify({
+                "success": False,
+                "error": "Sablon bulunamadi",
+            }), 404
 
-        # Resolve through the same path-safety gate used by review operations.
         src_img = _safe_template_path(active_cat, active_tmpl)
         removed_conf = templates[active_tmpl]
         if not os.path.isfile(src_img):
@@ -539,45 +571,117 @@ def api_sablon_sil():
         stamp = time.strftime("%Y%m%d_%H%M%S")
         token = uuid.uuid4().hex[:8]
         safe_stem = Path(active_tmpl).stem
-        trash_image_name = f"{active_cat}__{safe_stem}__{stamp}_{token}{Path(active_tmpl).suffix}"
+
+        trash_image_name = (
+            f"{active_cat}__{safe_stem}__{stamp}_{token}"
+            f"{Path(active_tmpl).suffix}"
+        )
         trash_img = os.path.join(trash_dir, trash_image_name)
-        meta_name = f"{active_cat}__{safe_stem}__{stamp}_{token}_meta.json"
-        meta_path = os.path.join(trash_dir, meta_name)
 
-        # Persist recovery metadata atomically BEFORE touching source/DB.
-        meta_data = {
-            "kategori": active_cat,
-            "sablon": active_tmpl,
-            "conf": removed_conf,
-            "trash_image_name": trash_image_name,
-            "deleted_at": stamp,
-        }
-        tmp_meta = meta_path + ".tmp"
-        with open(tmp_meta, "w", encoding="utf-8") as handle:
-            json.dump(meta_data, handle, ensure_ascii=False, indent=2)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(tmp_meta, meta_path)
+        backup_src = _find_template_backup_asset(active_cat, active_tmpl)
+        backup_trash_name = None
+        backup_trash_path = None
+        if backup_src:
+            backup_trash_name = (
+                f"{active_cat}__{safe_stem}__ORIGINAL__{stamp}_{token}"
+                f"{Path(backup_src).suffix}"
+            )
+            backup_trash_path = os.path.join(
+                trash_dir,
+                backup_trash_name,
+            )
 
-        if os.path.exists(src_img):
+        db_path = os.path.join(BASE_DIR, "SABLON_V2_MIMARI", "ayarlar.db")
+        conn = sqlite3.connect(db_path)
+        conn.row_factory = sqlite3.Row
+        try:
+            rows = conn.execute(
+                """SELECT rowid AS profile_rowid, source_asset_sha256
+                   FROM template_profiles
+                   WHERE category=? AND is_active=1
+                     AND (
+                         source_relative_path=?
+                         OR template_uid=?
+                     )""",
+                (
+                    active_cat,
+                    f"{active_cat}/{active_tmpl}",
+                    f"{active_cat}_{active_tmpl}",
+                ),
+            ).fetchall()
+            deactivated_rowids = [
+                int(row["profile_rowid"])
+                for row in rows
+            ]
+
+            meta_name = (
+                f"{active_cat}__{safe_stem}__{stamp}_{token}_meta.json"
+            )
+            meta_path = os.path.join(trash_dir, meta_name)
+            meta_data = {
+                "kategori": active_cat,
+                "sablon": active_tmpl,
+                "conf": removed_conf,
+                "trash_image_name": trash_image_name,
+                "backup_trash_name": backup_trash_name,
+                "deactivated_profile_rowids": deactivated_rowids,
+                "source_sha256": _sha256_file(src_img),
+                "deleted_at": stamp,
+            }
+            tmp_meta = meta_path + ".tmp"
+            with open(tmp_meta, "w", encoding="utf-8") as handle:
+                json.dump(
+                    meta_data,
+                    handle,
+                    ensure_ascii=False,
+                    indent=2,
+                )
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(tmp_meta, meta_path)
+
             shutil.move(src_img, trash_img)
-            moved_src = src_img
-            moved_dst = trash_img
+            moved_pairs.append((trash_img, src_img))
 
-        # Delete the UI row only after recovery material is durable.
-        delete_template(active_cat, active_tmpl)
-        return jsonify({"success": True, "trash_record": meta_name})
+            if backup_src and backup_trash_path:
+                shutil.move(backup_src, backup_trash_path)
+                moved_pairs.append((backup_trash_path, backup_src))
+
+            if deactivated_rowids:
+                placeholders = ",".join("?" for _ in deactivated_rowids)
+                conn.execute(
+                    f"""UPDATE template_profiles
+                        SET is_active=0, updated_at=CURRENT_TIMESTAMP
+                        WHERE rowid IN ({placeholders})""",
+                    deactivated_rowids,
+                )
+
+            delete_template(active_cat, active_tmpl)
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+        return jsonify({
+            "success": True,
+            "trash_record": os.path.basename(meta_path),
+            "deactivated_profiles": len(deactivated_rowids),
+            "backup_archived": bool(backup_src),
+        })
     except ValueError as e:
         return jsonify({"success": False, "error": str(e)}), 400
     except Exception as e:
-        # Best-effort rollback: never knowingly leave a source moved away while
-        # the DB still points to it because the delete operation failed.
-        if moved_dst and moved_src and os.path.exists(moved_dst) and not os.path.exists(moved_src):
-            try:
-                os.makedirs(os.path.dirname(moved_src), exist_ok=True)
-                shutil.move(moved_dst, moved_src)
-            except Exception:
-                logger.exception("Sablon silme rollback gorsel geri tasima basarisiz")
+        for moved_dst, moved_src in reversed(moved_pairs):
+            if os.path.exists(moved_dst) and not os.path.exists(moved_src):
+                try:
+                    os.makedirs(os.path.dirname(moved_src), exist_ok=True)
+                    shutil.move(moved_dst, moved_src)
+                except Exception:
+                    logger.exception(
+                        "Sablon silme rollback dosya geri tasima basarisiz"
+                    )
         if meta_path and os.path.exists(meta_path):
             try:
                 os.remove(meta_path)
@@ -589,8 +693,10 @@ def api_sablon_sil():
 
 @app.route('/api/sablon_sil_geri_al', methods=['POST'])
 def api_sablon_sil_geri_al():
+    """Undo the most recent safe template retirement."""
     try:
         import glob
+
         trash_dir = os.path.join(BASE_DIR, "SILINEN_SABLONLAR_COP_KUTUSU")
         metas = sorted(
             glob.glob(os.path.join(trash_dir, "*_meta.json")),
@@ -611,8 +717,20 @@ def api_sablon_sil_geri_al():
         tmpl = meta.get('sablon')
         conf = meta.get('conf', {})
         trash_image_name = meta.get('trash_image_name') or tmpl
+        backup_trash_name = meta.get('backup_trash_name')
+        deactivated_rowids = [
+            int(value)
+            for value in (
+                meta.get('deactivated_profile_rowids') or []
+            )
+        ]
+        original_sha = str(meta.get("source_sha256") or "")
+
         if not cat or not tmpl:
-            return jsonify({"success": False, "error": "Çöp meta verisi bozuk"}), 422
+            return jsonify({
+                "success": False,
+                "error": "Çöp meta verisi bozuk",
+            }), 422
 
         source_in_trash = _safe_under_root(
             trash_dir,
@@ -626,7 +744,9 @@ def api_sablon_sil_geri_al():
         if os.path.exists(restore_path):
             return jsonify({
                 "success": False,
-                "error": "Aynı isimde aktif şablon zaten var; üzerine yazılmadı.",
+                "error": (
+                    "Aynı isimde aktif şablon zaten var; üzerine yazılmadı."
+                ),
             }), 409
         if not os.path.isfile(source_in_trash):
             return jsonify({
@@ -638,37 +758,116 @@ def api_sablon_sil_geri_al():
                 "code": "TRASH_IMAGE_MISSING",
             }), 409
 
-        moved_back = False
+        restored_backup = None
+        backup_source_in_trash = None
+        if backup_trash_name:
+            backup_source_in_trash = _safe_under_root(
+                trash_dir,
+                backup_trash_name,
+                label="cop kutusu orijinal yedek",
+            )
+            backup_root = os.path.abspath(
+                os.path.join(
+                    BASE_DIR,
+                    "2_SABLON_HAVUZU_ORIJINAL_YEDEK",
+                )
+            )
+            backup_cat_dir = _safe_under_root(
+                backup_root,
+                cat,
+                label="orijinal yedek kategorisi",
+            )
+            os.makedirs(backup_cat_dir, exist_ok=True)
+            restored_backup = _safe_under_root(
+                backup_cat_dir,
+                Path(backup_source_in_trash).name.split(
+                    "__ORIGINAL__", 1
+                )[0].split("__", 1)[-1]
+                + Path(backup_source_in_trash).suffix,
+                label="orijinal yedek",
+            )
+            # Prefer the original template stem for predictable naming.
+            restored_backup = os.path.join(
+                backup_cat_dir,
+                Path(tmpl).stem + Path(backup_source_in_trash).suffix,
+            )
+            if os.path.exists(restored_backup):
+                return jsonify({
+                    "success": False,
+                    "error": (
+                        "Orijinal yedek hedefinde aynı isimde dosya var; "
+                        "geri alma üzerine yazma yapmadı."
+                    ),
+                }), 409
+
+        moved_back = []
+        db_path = os.path.join(BASE_DIR, "SABLON_V2_MIMARI", "ayarlar.db")
+        conn = sqlite3.connect(db_path)
         try:
             shutil.move(source_in_trash, restore_path)
-            moved_back = True
+            moved_back.append((restore_path, source_in_trash))
 
-            # A trash file can be modified outside the application before undo.
-            # Preserve approvals only when they still match the restored bytes.
-            # Do this BEFORE recreating the template row: if hash/profile safety
-            # work fails, rollback can return the image to trash without leaving
-            # a committed DB row that points to a missing source.
+            if (
+                backup_source_in_trash
+                and restored_backup
+                and os.path.isfile(backup_source_in_trash)
+            ):
+                shutil.move(
+                    backup_source_in_trash,
+                    restored_backup,
+                )
+                moved_back.append(
+                    (restored_backup, backup_source_in_trash)
+                )
+
             restored_hash = _sha256_file(restore_path)
-            _invalidate_stale_profiles_for_source(
-                cat,
-                tmpl,
-                os.path.basename(restore_path),
-                restored_hash,
-            )
             save_template(cat, tmpl, conf)
+
+            # Reactivate only the exact old approval lineage when bytes still
+            # match the retired source. Modified trash content must be reviewed.
+            reactivated = 0
+            if (
+                deactivated_rowids
+                and original_sha
+                and restored_hash == original_sha
+            ):
+                placeholders = ",".join(
+                    "?" for _ in deactivated_rowids
+                )
+                cur = conn.execute(
+                    f"""UPDATE template_profiles
+                        SET is_active=1, updated_at=CURRENT_TIMESTAMP
+                        WHERE rowid IN ({placeholders})
+                          AND source_asset_sha256=?""",
+                    [*deactivated_rowids, restored_hash],
+                )
+                reactivated = int(cur.rowcount or 0)
+            conn.commit()
         except Exception:
-            if moved_back and os.path.exists(restore_path):
-                try:
-                    shutil.move(restore_path, source_in_trash)
-                except Exception:
-                    logger.exception("Sablon geri alma rollback basarisiz")
+            conn.rollback()
+            for moved_src, moved_dst in reversed(moved_back):
+                if os.path.exists(moved_src) and not os.path.exists(moved_dst):
+                    try:
+                        shutil.move(moved_src, moved_dst)
+                    except Exception:
+                        logger.exception(
+                            "Sablon geri alma rollback basarisiz"
+                        )
             raise
+        finally:
+            conn.close()
 
         os.remove(meta_path)
-        return jsonify({"success": True, "restored_tmpl": tmpl})
+        return jsonify({
+            "success": True,
+            "restored_tmpl": tmpl,
+            "reactivated_profiles": reactivated,
+            "backup_restored": bool(restored_backup),
+        })
     except Exception as e:
         logger.exception("Sablon geri alma hatasi")
         return jsonify({"success": False, "error": str(e)}), 500
+
 
 def _path_within_root(root: str, candidate: str) -> bool:
     """Return True only when candidate resolves inside root (prefix-safe)."""
