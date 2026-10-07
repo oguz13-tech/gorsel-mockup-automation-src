@@ -1070,7 +1070,7 @@ window.onerror = function(msg, url, line, col, error) {
         });
     }
 
-    function restoreOriginal() {    function restoreOriginal() {
+    function restoreOriginal() {
         if (!currentCat || !currentTmpl) return;
         fetch('/api/orijinal_yukle', {
             method: 'POST',
@@ -1094,7 +1094,7 @@ window.onerror = function(msg, url, line, col, error) {
         });
     }
 
-    function deleteTemplate() {    function deleteTemplate() {
+    function deleteTemplate() {
         if (!currentCat || !currentTmpl) return;
         if (!confirm('Bu şablon kullanımdan çıkarılacak ve geri alınabilir çöp alanına taşınacak. Devam edilsin mi?')) return;
         
@@ -1338,7 +1338,7 @@ window.onerror = function(msg, url, line, col, error) {
         
     }, 500);
 
-// --- YZ ONAY SISTEMI ---// --- YZ ONAY SISTEMI ---
+// --- TOPLU ANALIZ / ONAY SISTEMI ---
 let batchAnalyzeRunning = false;
 
 function ensureBatchAnalyzeProgressModal() {
@@ -1561,7 +1561,8 @@ async function approveTemplate() {
                 t => t.cat === currentCat && t.tmpl === currentTmpl
             );
             if (currentItem && currentItem.elem) {
-                currentItem.elem.textContent = '✅ ' + currentTmpl;
+                const label = currentItem.elem.querySelector('.template-item-label');
+                if (label) label.textContent = '✅ ' + currentTmpl;
                 currentItem.elem.title = 'İnsan onaylı ve üretime uygun profil.';
                 currentItem.elem.style.backgroundColor = '';
                 currentItem.elem.style.color = '';
@@ -1592,7 +1593,8 @@ async function rejectTemplate() {
                 t => t.cat === currentCat && t.tmpl === currentTmpl
             );
             if (currentItem && currentItem.elem) {
-                currentItem.elem.textContent = '🚫 ' + currentTmpl;
+                const label = currentItem.elem.querySelector('.template-item-label');
+                if (label) label.textContent = '🚫 ' + currentTmpl;
                 currentItem.elem.title = 'İnsan incelemesinde reddedildi.';
             }
             alert("Köşe önerisi reddedildi. Bu şablon onaylanmadan üretime girmez.");
