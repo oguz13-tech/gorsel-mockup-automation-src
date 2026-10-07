@@ -238,7 +238,7 @@ class TestT1DeleteUndoIntegrity(unittest.TestCase):
         finally:
             conn.close()
 
-    def test_undo_marks_old_approval_stale_if_trash_bytes_changed(self):
+    def test_undo_keeps_old_approval_inactive_if_trash_bytes_changed(self):
         conn = db_core.get_db_connection()
         try:
             conn.execute(
@@ -264,6 +264,19 @@ class TestT1DeleteUndoIntegrity(unittest.TestCase):
         })
         self.assertEqual(deleted.status_code, 200)
         body = deleted.get_json()
+        self.assertEqual(body.get("deactivated_profiles"), 1)
+
+        conn = db_core.get_db_connection()
+        try:
+            active = conn.execute(
+                """SELECT is_active FROM template_profiles
+                   WHERE template_uid=?""",
+                ("test_cat_test_tmpl.png",),
+            ).fetchone()
+            self.assertIsNotNone(active)
+            self.assertEqual(active["is_active"], 0)
+        finally:
+            conn.close()
         trash_dir = os.path.join(
             self.test_dir,
             "SILINEN_SABLONLAR_COP_KUTUSU",
@@ -278,18 +291,27 @@ class TestT1DeleteUndoIntegrity(unittest.TestCase):
 
         restored = self.client.post('/api/sablon_sil_geri_al')
         self.assertEqual(restored.status_code, 200)
+        self.assertEqual(
+            restored.get_json().get("reactivated_profiles"),
+            0,
+        )
 
         conn = db_core.get_db_connection()
         try:
             row = conn.execute(
-                """SELECT review_status, manually_verified
+                """SELECT review_status, manually_verified, is_active
                    FROM template_profiles
-                   WHERE template_uid=? AND is_active=1""",
+                   WHERE template_uid=?""",
                 ("test_cat_test_tmpl.png",),
             ).fetchone()
             self.assertIsNotNone(row)
-            self.assertEqual(row["review_status"], "STALE_SOURCE_CHANGED")
-            self.assertEqual(row["manually_verified"], 0)
+            self.assertEqual(row["review_status"], "APPROVED")
+            self.assertEqual(row["manually_verified"], 1)
+            self.assertEqual(
+                row["is_active"],
+                0,
+                "Modified trash bytes must require a fresh review.",
+            )
         finally:
             conn.close()
 
