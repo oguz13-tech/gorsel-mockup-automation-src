@@ -656,7 +656,10 @@ def api_sablon_sil():
                     deactivated_rowids,
                 )
 
-            delete_template(active_cat, active_tmpl)
+            conn.execute(
+                "DELETE FROM templates WHERE category_id=? AND filename=?",
+                (active_cat, active_tmpl),
+            )
             conn.commit()
         except Exception:
             conn.rollback()
@@ -821,7 +824,17 @@ def api_sablon_sil_geri_al():
                 )
 
             restored_hash = _sha256_file(restore_path)
-            save_template(cat, tmpl, conf)
+            conn.execute(
+                """INSERT INTO templates (category_id, filename, data)
+                   VALUES (?, ?, ?)
+                   ON CONFLICT(category_id, filename)
+                   DO UPDATE SET data=excluded.data""",
+                (
+                    cat,
+                    tmpl,
+                    json.dumps(conf, ensure_ascii=False),
+                ),
+            )
 
             # Reactivate only the exact old approval lineage when bytes still
             # match the retired source. Modified trash content must be reviewed.
