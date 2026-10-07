@@ -885,7 +885,7 @@ class TestP1_P15Acceptance(unittest.TestCase):
         self.assertNotEqual(rows[1][2], "APPROVED")
 
 
-    def test_legacy_profile_schema_without_id_supports_review_flow(self):
+    def test_legacy_profile_schema_without_id_supports_approval_flow(self):
         import hashlib
         from app import app
         from core.template_intelligence import save_template_profile
@@ -954,11 +954,13 @@ class TestP1_P15Acceptance(unittest.TestCase):
             )
             self.assertEqual(reapproved.status_code, 200, reapproved.get_json())
 
+            # Reject is intentionally no longer part of the end-user
+            # workflow. Wrong proposals are corrected/re-detected instead.
             rejected = client.post(
                 '/api/templates/reject',
                 json={'template_uid': uid},
             )
-            self.assertEqual(rejected.status_code, 200, rejected.get_json())
+            self.assertEqual(rejected.status_code, 405)
 
         # Exercise save_template_profile's existing-row path against the
         # same legacy schema: row identity must use SQLite rowid, not id.
