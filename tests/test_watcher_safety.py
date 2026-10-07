@@ -267,7 +267,7 @@ class TestWatcherSafety(unittest.TestCase):
             source.with_suffix(source.suffix + ".processing").exists()
         )
 
-    def test_existing_template_number_is_never_overwritten(self):
+    def test_existing_template_number_forces_user_to_rename(self):
         existing = self.backup_dir / "Wifi_Kutusu_001.png"
         existing_bytes = b"DO_NOT_OVERWRITE"
         existing.write_bytes(existing_bytes)
@@ -276,28 +276,35 @@ class TestWatcherSafety(unittest.TestCase):
 
         with patch.object(
             self.watcher,
-            "get_all_ayarlar",
-            return_value={"kategoriler": {self.category: {"sablonlar": {}}}},
-        ), patch.object(
-            self.watcher,
             "save_template",
             side_effect=lambda _cat, name, _data: saved_names.append(name),
-        ), patch.object(
-            self.watcher,
-            "save_template_profile",
-            return_value=None,
-        ), patch.object(
-            self.watcher,
-            "analyze_new_template_once",
-            side_effect=self._first_pass_result,
         ):
             ok = self.watcher.process_from_staging(source)
 
-        self.assertTrue(ok)
+        self.assertFalse(ok)
         self.assertEqual(existing.read_bytes(), existing_bytes)
-        self.assertEqual(saved_names, ["Wifi_Kutusu_002.png"])
-        self.assertTrue(
-            (self.backup_dir / "Wifi_Kutusu_002.png").is_file()
+        self.assertEqual(saved_names, [])
+        self.assertTrue(source.is_file())
+        self.assertFalse(
+            (self.backup_dir / "Wifi_Kutusu_002.png").exists()
+        )
+
+    def test_deleted_trash_number_also_forces_user_to_rename(self):
+        trash = self.root / "SILINEN_SABLONLAR_COP_KUTUSU"
+        trash.mkdir(parents=True)
+        (trash / "old_meta.json").write_text(
+            '{"kategori":"01_Wifi_Kutusu",'
+            '"sablon":"Wifi_Kutusu_135.png"}',
+            encoding="utf-8",
+        )
+        source, _ = self._write_input("Wifi_Kutusu_135.jpg")
+
+        ok = self.watcher.process_from_staging(source)
+
+        self.assertFalse(ok)
+        self.assertTrue(source.is_file())
+        self.assertFalse(
+            (self.backup_dir / "Wifi_Kutusu_136.png").exists()
         )
 
     def test_db_failure_restores_staging_and_removes_created_files(self):
