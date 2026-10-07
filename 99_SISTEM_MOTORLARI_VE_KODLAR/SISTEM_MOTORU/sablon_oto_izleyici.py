@@ -64,7 +64,8 @@ from sablon_beyazlatma_motoru import (
     whiten_canvas,
     get_polygon_points
 )
-from core.db import get_all_ayarlar, save_template
+from core.db import get_all_ayarlar, save_template, delete_template
+from core.template_intelligence import TemplateAnalyzer, save_template_profile
 # from foreground_ai import ForegroundAIEngine # Gereksiz sistem yükü oluşturduğu için devredışı bırakıldı
 
 FRAMELESS_KEYS = ["01_Wifi_Kutusu", "04_Cam_Dograma", "05_Ocak_Arkasi"]
@@ -204,6 +205,106 @@ def _sha256_file(path: Path) -> str:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def analyze_new_template_once(
+    working_path: Path,
+    category: str,
+    image_cv: np.ndarray,
+) -> tuple[dict, dict]:
+    """Run first-pass geometry exactly once for a newly ingested template.
+
+    The proposal is review-only. It never auto-approves a template. The same
+    template can later be re-analyzed explicitly from the UI if the user wants.
+    """
+    source_hash = _sha256_file(working_path)
+    engine = "template_analyzer"
+    try:
+        analyzer = TemplateAnalyzer()
+        result = analyzer.analyze(
+            str(working_path),
+            category,
+            manual_geometry_prior=None,
+        )
+    except Exception as exc:
+        logger.warning(
+            f"İlk otomatik köşe analizi başarısız; güvenli fallback "
+            f"denenecek: {working_path.name} ({exc})"
+        )
+        result = {
+            "source_asset_sha256": source_hash,
+            "surface_quad": None,
+            "outer_quad": None,
+            "confidence_total": 0.0,
+            "component_confidences": {},
+            "review_status": "UNANALYZED",
+            "rule": {},
+            "orientation": "UNKNOWN",
+            "nominal_aspect": "UNKNOWN",
+            "analyzer_version": "staging-fallback-v1",
+        }
+        engine = "legacy_fallback"
+
+    corners = result.get("surface_quad")
+    if corners is None:
+        fallback = detect_frame_auto(image_cv)
+        fallback_corners = fallback.get("koseler") if isinstance(fallback, dict) else None
+        if (
+            isinstance(fallback_corners, list)
+            and len(fallback_corners) == 4
+        ):
+            corners = fallback_corners
+            result["surface_quad"] = corners
+            result["review_status"] = "REVIEW_REQUIRED"
+            result["component_confidences"] = {
+                **(result.get("component_confidences") or {}),
+                "legacy_fallback": 1.0,
+            }
+            engine = "legacy_fallback"
+
+    confidence = float(result.get("confidence_total", 0.0) or 0.0)
+    review_status = (
+        "REVIEW_REQUIRED"
+        if corners is not None
+        else "UNANALYZED"
+    )
+    result["review_status"] = review_status
+
+    legacy_conf = {
+        "tip": "perspektif" if corners is not None else "duz",
+        "supheli": bool(corners is None or confidence < 0.70),
+        "review_status": review_status,
+        "ingest_source": "staging_watcher",
+        "auto_corner_once": True,
+        "auto_corner_engine": engine,
+        "auto_corner_confidence": confidence,
+    }
+    if corners is not None:
+        legacy_conf["koseler"] = corners
+
+    rule = result.get("rule") or {}
+    profile_data = {
+        "template_uid": f"{category}_{working_path.name}",
+        "category": category,
+        "source_relative_path": f"{category}/{working_path.name}",
+        "source_asset_sha256": result.get("source_asset_sha256") or source_hash,
+        "profile_version": "v2",
+        "analyzer_version": result.get("analyzer_version") or "unknown",
+        "product_class": rule.get("product_class", "Bilinmeyen"),
+        "orientation": result.get("orientation", "UNKNOWN"),
+        "nominal_aspect": result.get("nominal_aspect", "UNKNOWN"),
+        "print_policy": rule.get("print_policy", "full_bleed"),
+        "surface_quad": corners,
+        "outer_quad": result.get("outer_quad"),
+        "confidence_total": confidence,
+        "component_confidences": {
+            **(result.get("component_confidences") or {}),
+            "first_pass_auto": 1.0,
+        },
+        "review_status": review_status,
+        "manually_verified": False,
+    }
+    return legacy_conf, profile_data
 
 
 def recover_stale_processing_files(
@@ -435,12 +536,9 @@ def process_from_staging(staging_path: Path, thread_lock=None) -> bool:
             return False
 
         logger.info(
-            f"🔍 Yeni şablon analiz ediliyor: "
+            f"🔍 Yeni şablon hazırlanıyor: "
             f"{processing_path.name} -> {new_name}"
         )
-        s_conf = detect_frame_auto(img_cv)
-        s_conf["review_status"] = "REVIEW_REQUIRED"
-        s_conf["ingest_source"] = "staging_watcher"
 
         # 1) Immutable recovery copy first.
         if not _write_png_atomic(backup_path, img_cv):
@@ -461,12 +559,42 @@ def process_from_staging(staging_path: Path, thread_lock=None) -> bool:
             _restore_processing_file(processing_path, original_staging_path)
             return False
 
-        # 3) Register in the ACTIVE SQLite review architecture. Do not mutate
-        #    legacy ayarlar.json; the Flask review UI reads ayarlar.db.
+        # 3) First-pass automatic corner proposal runs exactly once for this
+        #    newly ingested template. It remains REVIEW_REQUIRED and never
+        #    becomes APPROVED without a human click in the review center.
+        s_conf, profile_data = analyze_new_template_once(
+            working_path,
+            cat_key,
+            img_cv,
+        )
+        if profile_data.get("surface_quad") is not None:
+            logger.info(
+                f"🧭 İlk köşe önerisi hazır: {new_name} "
+                f"(motor={s_conf.get('auto_corner_engine')}, "
+                f"güven={s_conf.get('auto_corner_confidence', 0.0):.2f})"
+            )
+        else:
+            logger.warning(
+                f"⚠️ İlk köşe önerisi bulunamadı: {new_name}. "
+                "İnceleme ekranından 'Köşeleri Yeniden Algıla' kullanılabilir."
+            )
+
+        # 4) Register both the UI row and source-hash-bound review profile.
+        #    If either DB write fails, undo the partial registration and restore
+        #    the user's staging file.
         try:
             save_template(cat_key, new_name, s_conf)
+            review_db = BASE_DIR / "SABLON_V2_MIMARI" / "ayarlar.db"
+            save_template_profile(str(review_db), profile_data)
         except Exception as exc:
             logger.error(f"Şablon review DB'ye kaydedilemedi: {exc}")
+            try:
+                delete_template(cat_key, new_name)
+            except Exception as cleanup_exc:
+                logger.warning(
+                    f"Başarısız DB kaydı geri alınamadı "
+                    f"({new_name}): {cleanup_exc}"
+                )
             for created_path in (working_path, backup_path):
                 try:
                     created_path.unlink(missing_ok=True)
@@ -505,7 +633,7 @@ def run_watcher():
     logger.info("==================================================================")
     logger.info("👀 ŞABLON HAVUZU HAZIRLIK (STAGING) İZLEYİCİSİ DEVREDE")
     logger.info(f"📁 İzlenen Hazırlık Klasörü: {STAGING_DIR}")
-    logger.info("ℹ️ Yeni görseller güvenli yedek + çalışma kopyası olarak kaydedilir ve REVIEW_REQUIRED durumunda inceleme merkezine eklenir.")
+    logger.info("ℹ️ Yeni görseller güvenli yedeklenir, köşeleri bir kez otomatik önerilir ve REVIEW_REQUIRED olarak inceleme merkezine eklenir.")
     logger.info("==================================================================")
 
     STAGING_DIR.mkdir(parents=True, exist_ok=True)
