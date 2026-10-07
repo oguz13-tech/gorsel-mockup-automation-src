@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..",
 
 from app import (
     app,
-    manual_occlusion_has_positive_selection,
+    occlusion_plan_has_objects,
     resolve_reviewed_occlusion,
 )
 import core.db as db_core
@@ -317,12 +317,10 @@ class TestT1DeleteUndoIntegrity(unittest.TestCase):
 
 
 class TestOcclusionReviewSemantics(unittest.TestCase):
-    def test_subtract_only_is_not_positive_occlusion_evidence(self):
+    def test_empty_object_plan_is_not_positive_evidence(self):
         self.assertFalse(
-            manual_occlusion_has_positive_selection({
+            occlusion_plan_has_objects({
                 "object_boxes": [],
-                "add_brush": [],
-                "subtract_brush": [[20, 20, 5]],
             })
         )
 
@@ -330,24 +328,16 @@ class TestOcclusionReviewSemantics(unittest.TestCase):
         self.assertFalse(
             resolve_reviewed_occlusion(
                 True,
-                {
-                    "object_boxes": [],
-                    "add_brush": [],
-                    "subtract_brush": [],
-                },
+                {"object_boxes": []},
                 occlusion_reviewed=True,
             )
         )
 
-    def test_human_review_preserves_positive_manual_selection(self):
+    def test_human_review_preserves_automatic_object_selection(self):
         self.assertTrue(
             resolve_reviewed_occlusion(
                 False,
-                {
-                    "object_boxes": [[1, 1, 10, 10]],
-                    "add_brush": [],
-                    "subtract_brush": [],
-                },
+                {"object_boxes": [[1, 1, 10, 10]]},
                 occlusion_reviewed=True,
             )
         )
