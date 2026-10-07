@@ -697,6 +697,39 @@ class TestR6AdaptiveRealism(unittest.TestCase):
 
 
 
+class TestRoundedGlassSurfaceMask(unittest.TestCase):
+    def test_rounded_glass_mask_preserves_center_and_rounds_corners(self):
+        import cv2
+        import numpy as np
+        from SISTEM_MOTORU.pc_master_factory import MockupRenderer
+
+        width = 240
+        height = 160
+        src_pts = np.float32(
+            [[0, 0], [width, 0], [width, height], [0, height]]
+        )
+        dst_pts = src_pts.copy()
+        matrix = cv2.getPerspectiveTransform(src_pts, dst_pts)
+
+        mask = MockupRenderer.create_perspective_rounded_mask(
+            height,
+            width,
+            width,
+            height,
+            matrix,
+            radius_fraction=0.04,
+            feather_px=0.8,
+        )
+
+        self.assertEqual(mask.shape, (height, width))
+        self.assertGreater(float(mask[height // 2, width // 2]), 0.98)
+        self.assertLess(float(mask[0, 0]), 0.20)
+        self.assertGreater(float(mask[height // 2, 1]), 0.90)
+        self.assertGreater(float(mask[1, width // 2]), 0.90)
+        self.assertGreater(float(np.mean(mask)), 0.90)
+        self.assertLess(float(np.mean(mask)), 1.0)
+
+
 class TestR8SceneRealism(unittest.TestCase):
     def _scene(self):
         import numpy as np
