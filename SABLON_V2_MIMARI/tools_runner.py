@@ -107,6 +107,7 @@ def rename_images(
     files: list[Path],
     prefix: str,
     runtime_root: Path | None = None,
+    start_number: int = 1,
 ) -> list[Path]:
     """Collision-safe, two-phase rename for selected files in one folder."""
     selected = [Path(p).resolve() for p in files]
@@ -123,13 +124,29 @@ def rename_images(
 
     ensure_not_live_template_path(selected, runtime_root)
     prefix = _sanitize_prefix(prefix)
+    try:
+        start_number = int(start_number)
+    except (TypeError, ValueError):
+        raise ValueError("Başlangıç numarası geçerli bir sayı olmalıdır.")
+    if start_number < 0:
+        raise ValueError("Başlangıç numarası 0 veya daha büyük olmalıdır.")
+
     selected = sorted(selected, key=lambda p: p.name.casefold())
     parent = selected[0].parent
     selected_set = {p.resolve() for p in selected}
 
+    last_number = start_number + len(selected) - 1
+    digits = max(3, len(str(last_number)))
     targets = [
-        parent / f"{prefix}{index:03d}{source.suffix.lower()}"
-        for index, source in enumerate(selected, start=1)
+        parent
+        / (
+            f"{prefix}{number:0{digits}d}"
+            f"{source.suffix.lower()}"
+        )
+        for source, number in zip(
+            selected,
+            range(start_number, start_number + len(selected)),
+        )
     ]
     if len({p.name.casefold() for p in targets}) != len(targets):
         raise ValueError("Yeni dosya adları kendi içinde çakışıyor.")
@@ -483,23 +500,41 @@ def interactive_rename() -> int:
         if not files:
             return 0
         prefix = simpledialog.askstring(
-            "Görsel İsimlendirici",
-            "Görseller hangi kelime ile başlasın?\nÖrnek: Tablo_",
+            "Görsel İsimlendirici - 1/2",
+            "TEMEL ADI yazın.\n"
+            "Sayı yazmayın.\n\n"
+            "Örnek: Wifi_Kutusu_",
             initialvalue="Gorsel_",
             parent=root,
         )
         if prefix is None:
             return 0
+
+        start_number = simpledialog.askinteger(
+            "Görsel İsimlendirici - 2/2",
+            "Kaçtan başlasın?\n\n"
+            "Örnek: 135 yazarsanız ilk dosya "
+            "Wifi_Kutusu_135 olur.",
+            initialvalue=1,
+            minvalue=0,
+            maxvalue=9999999,
+            parent=root,
+        )
+        if start_number is None:
+            return 0
+
         outputs = rename_images(
             [Path(p) for p in files],
             prefix,
             RUNTIME_ROOT,
+            start_number=start_number,
         )
         _open_folder(outputs[0].parent)
         messagebox.showinfo(
             "Tamamlandı",
             f"{len(outputs)} görsel yeniden adlandırıldı.\n"
-            f"İlk dosya: {outputs[0].name}",
+            f"İlk dosya: {outputs[0].name}\n"
+            f"Son dosya: {outputs[-1].name}",
             parent=root,
         )
         return 0
