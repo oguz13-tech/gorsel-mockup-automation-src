@@ -98,6 +98,38 @@ class TestWatcherSafety(unittest.TestCase):
             "supheli": True,
         }
 
+    def _first_pass_result(self, working_path, category, _image):
+        corners = [[20, 20], [160, 20], [160, 120], [20, 120]]
+        legacy = {
+            "tip": "perspektif",
+            "koseler": corners,
+            "supheli": False,
+            "review_status": "REVIEW_REQUIRED",
+            "ingest_source": "staging_watcher",
+            "auto_corner_once": True,
+            "auto_corner_engine": "template_analyzer",
+            "auto_corner_confidence": 0.81,
+        }
+        profile = {
+            "template_uid": f"{category}_{Path(working_path).name}",
+            "category": category,
+            "source_relative_path": f"{category}/{Path(working_path).name}",
+            "source_asset_sha256": "test-sha",
+            "profile_version": "v2",
+            "analyzer_version": "test",
+            "product_class": "Test",
+            "orientation": "H",
+            "nominal_aspect": "1.333333",
+            "print_policy": "full_bleed",
+            "surface_quad": corners,
+            "outer_quad": None,
+            "confidence_total": 0.81,
+            "component_confidences": {"first_pass_auto": 1.0},
+            "review_status": "REVIEW_REQUIRED",
+            "manually_verified": False,
+        }
+        return legacy, profile
+
     def test_successful_ingest_creates_backup_working_and_review_row(self):
         source, decoded = self._write_input()
         saved = {}
@@ -107,6 +139,7 @@ class TestWatcherSafety(unittest.TestCase):
             saved["name"] = name
             saved["data"] = dict(data)
 
+        saved_profiles = []
         with patch.object(
             self.watcher,
             "get_all_ayarlar",
@@ -117,9 +150,13 @@ class TestWatcherSafety(unittest.TestCase):
             side_effect=fake_save_template,
         ), patch.object(
             self.watcher,
-            "detect_frame_auto",
-            side_effect=self._review_proposal,
-        ):
+            "save_template_profile",
+            side_effect=lambda _db, data: saved_profiles.append(dict(data)),
+        ), patch.object(
+            self.watcher,
+            "analyze_new_template_once",
+            side_effect=self._first_pass_result,
+        ) as first_pass:
             ok = self.watcher.process_from_staging(source)
 
         self.assertTrue(ok)
@@ -127,6 +164,12 @@ class TestWatcherSafety(unittest.TestCase):
         self.assertEqual(saved["category"], self.category)
         self.assertEqual(saved["name"], "Wifi_Kutusu_001.png")
         self.assertEqual(saved["data"]["review_status"], "REVIEW_REQUIRED")
+        self.assertTrue(saved["data"]["auto_corner_once"])
+        self.assertEqual(saved["data"]["auto_corner_engine"], "template_analyzer")
+        self.assertEqual(len(saved_profiles), 1)
+        self.assertEqual(saved_profiles[0]["review_status"], "REVIEW_REQUIRED")
+        self.assertEqual(saved_profiles[0]["surface_quad"], saved["data"]["koseler"])
+        self.assertEqual(first_pass.call_count, 1)
 
         backup = self.backup_dir / "Wifi_Kutusu_001.png"
         working = self.working_dir / "Wifi_Kutusu_001.png"
@@ -185,8 +228,12 @@ class TestWatcherSafety(unittest.TestCase):
             side_effect=lambda _cat, name, _data: saved_names.append(name),
         ), patch.object(
             self.watcher,
-            "detect_frame_auto",
-            side_effect=self._review_proposal,
+            "save_template_profile",
+            return_value=None,
+        ), patch.object(
+            self.watcher,
+            "analyze_new_template_once",
+            side_effect=self._first_pass_result,
         ):
             ok = self.watcher.process_from_staging(source)
 
@@ -210,8 +257,12 @@ class TestWatcherSafety(unittest.TestCase):
             side_effect=RuntimeError("db unavailable"),
         ), patch.object(
             self.watcher,
-            "detect_frame_auto",
-            side_effect=self._review_proposal,
+            "delete_template",
+            return_value=None,
+        ), patch.object(
+            self.watcher,
+            "analyze_new_template_once",
+            side_effect=self._first_pass_result,
         ):
             ok = self.watcher.process_from_staging(source)
 
