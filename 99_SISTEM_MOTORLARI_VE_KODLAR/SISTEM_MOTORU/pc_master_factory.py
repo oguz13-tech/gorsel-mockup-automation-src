@@ -147,7 +147,7 @@ db_lock = threading.RLock()
 # Render recipe participates in immutable artifact identity. Bump whenever
 # renderer/aspect/occlusion behavior changes so old artifacts are never silently
 # reused under a new visual contract.
-RECIPE_VERSION = "v3_epic3_20261007_r9"
+RECIPE_VERSION = "v3_epic3_20261007_r10"
 
 # ==============================================================================
 # 2. ÜRÜN VE FORMAT SÖZLEŞMESİ (URUN_FORMAT_HARITASI)
@@ -1585,18 +1585,18 @@ class MockupRenderer:
                 "light": 0.042,
                 "shadow": 0.032,
                 "organic": 0.010,
-                "room_light": 0.060,
-                "room_shadow": 0.050,
-                "product_protection": 0.980,
+                "room_light": 0.070,
+                "room_shadow": 0.060,
+                "product_protection": 0.992,
             },
             "02_Cam_Tablo_Dikey": {
                 "style": "window_gallery",
                 "light": 0.044,
                 "shadow": 0.032,
                 "organic": 0.006,
-                "room_light": 0.055,
-                "room_shadow": 0.046,
-                "product_protection": 0.988,
+                "room_light": 0.090,
+                "room_shadow": 0.076,
+                "product_protection": 0.995,
             },
             "02_Cam_Tablo_Yatay": {
                 "style": "window_gallery",
@@ -1612,27 +1612,27 @@ class MockupRenderer:
                 "light": 0.055,
                 "shadow": 0.040,
                 "organic": 0.022,
-                "room_light": 0.075,
-                "room_shadow": 0.060,
-                "product_protection": 0.970,
+                "room_light": 0.115,
+                "room_shadow": 0.088,
+                "product_protection": 0.990,
             },
             "04_Cam_Dograma": {
                 "style": "countertop_bounce",
                 "light": 0.034,
                 "shadow": 0.022,
                 "organic": 0.000,
-                "room_light": 0.042,
-                "room_shadow": 0.032,
-                "product_protection": 0.955,
+                "room_light": 0.072,
+                "room_shadow": 0.058,
+                "product_protection": 0.982,
             },
             "05_Ocak_Arkasi": {
                 "style": "kitchen_daylight",
                 "light": 0.030,
                 "shadow": 0.020,
                 "organic": 0.000,
-                "room_light": 0.040,
-                "room_shadow": 0.030,
-                "product_protection": 0.988,
+                "room_light": 0.062,
+                "room_shadow": 0.052,
+                "product_protection": 0.995,
             },
         }
         return dict(
@@ -1985,11 +1985,12 @@ class MockupRenderer:
         return_metadata: bool = False,
         strength_multiplier: float = 1.0,
     ):
-        """Add a second, room-scale daylight/window-shadow realism layer.
+        """Apply visible but product-safe room sunlight/window shadows.
 
-        Unlike material effects, this layer is aimed at nearby wall/floor/
-        countertop regions. The reviewed product quad is strongly protected so
-        print readability and material detail remain intact.
+        r10 does not choose an arbitrary corner. It estimates the dominant
+        incoming-light side from scene borders (left/right/top), then projects
+        a broad warm sun patch plus soft window-frame shadows into a quiet
+        nearby area. Product pixels remain strongly protected.
         """
         if image_cv is None or image_cv.size == 0:
             meta = {"applied": False, "reason": "empty_image"}
@@ -2006,20 +2007,20 @@ class MockupRenderer:
             np.clip(float(strength_multiplier), 0.0, 1.6)
         )
         room_light_strength = float(
-            profile.get("room_light", 0.045)
+            profile.get("room_light", 0.055)
         ) * strength_multiplier
         room_shadow_strength = float(
-            profile.get("room_shadow", 0.035)
+            profile.get("room_shadow", 0.045)
         ) * strength_multiplier
         product_protection = float(
-            profile.get("product_protection", 0.98)
+            profile.get("product_protection", 0.99)
         )
 
         seed_hex = hashlib.sha256(
             str(
                 deterministic_key
                 or category_name
-                or "room-sunlight"
+                or "room-sunlight-r10"
             ).encode("utf-8")
         ).hexdigest()
         seed = int(seed_hex[:8], 16)
@@ -2030,177 +2031,221 @@ class MockupRenderer:
             w,
             quad,
         )
-
-        gray = cv2.cvtColor(
-            np.clip(image_cv, 0, 255).astype(np.uint8),
-            cv2.COLOR_BGR2GRAY,
-        ).astype(np.float32)
+        before = np.clip(image_cv, 0, 255).astype(np.uint8)
+        gray = cv2.cvtColor(before, cv2.COLOR_BGR2GRAY).astype(np.float32)
         gx = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3)
         gy = cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3)
         grad = cv2.magnitude(gx, gy)
 
-        product_center = np.mean(quad, axis=0)
-        candidates = np.array(
-            [
-                [w * 0.12, h * 0.14],
-                [w * 0.88, h * 0.14],
-                [w * 0.12, h * 0.82],
-                [w * 0.88, h * 0.82],
-                [w * 0.16, h * 0.48],
-                [w * 0.84, h * 0.48],
-            ],
-            dtype=np.float32,
-        )
-
-        patch_rx = max(12, int(round(w * 0.14)))
-        patch_ry = max(12, int(round(h * 0.14)))
-        scored = []
-        for cx, cy in candidates:
-            ix = int(round(float(cx)))
-            iy = int(round(float(cy)))
-            xa = max(0, ix - patch_rx)
-            xb = min(w, ix + patch_rx + 1)
-            ya = max(0, iy - patch_ry)
-            yb = min(h, iy + patch_ry + 1)
-            if xb <= xa or yb <= ya:
-                continue
-
-            clearance = float(
-                np.mean(1.0 - protection[ya:yb, xa:xb])
-            )
-            if clearance < 0.58:
-                continue
+        # -------------------------------------------------------------
+        # 1. Estimate incoming light side from scene borders.
+        # -------------------------------------------------------------
+        band_x = max(12, int(round(w * 0.10)))
+        band_y = max(12, int(round(h * 0.10)))
+        border_slices = {
+            "left": (slice(0, h), slice(0, band_x)),
+            "right": (slice(0, h), slice(w - band_x, w)),
+            "top": (slice(0, band_y), slice(0, w)),
+        }
+        border_scores = {}
+        for side, (ys, xs) in border_slices.items():
+            p = protection[ys, xs]
+            clear = p < 0.35
+            if np.count_nonzero(clear) < 64:
+                clear = np.ones_like(p, dtype=bool)
+            lum_values = gray[ys, xs][clear]
+            grad_values = grad[ys, xs][clear]
+            brightness = float(np.mean(lum_values)) / 255.0
             texture = float(
-                np.mean(
-                    np.clip(
-                        grad[ya:yb, xa:xb] / 50.0,
-                        0.0,
-                        1.0,
-                    )
-                )
+                np.mean(np.clip(grad_values / 55.0, 0.0, 1.0))
             )
-            distance = float(
-                np.linalg.norm(
-                    np.array([cx, cy], dtype=np.float32)
-                    - product_center
-                )
+            clearance = float(np.mean(1.0 - p))
+            border_scores[side] = (
+                brightness * 0.62
+                + clearance * 0.23
+                + (1.0 - texture) * 0.15
             )
-            distance_score = min(
-                distance / float(max(h, w)),
-                1.0,
-            )
-            mean_lum = float(np.mean(gray[ya:yb, xa:xb]))
-            luminance_score = 1.0 - min(
-                abs(mean_lum - 145.0) / 145.0,
-                1.0,
-            )
-            score = (
-                clearance * 0.40
-                + (1.0 - texture) * 0.25
-                + distance_score * 0.20
-                + luminance_score * 0.15
-            )
-            scored.append((score, float(cx), float(cy)))
 
-        if scored:
-            _, anchor_x, anchor_y = max(
-                scored,
-                key=lambda item: item[0],
+        light_side = max(border_scores, key=border_scores.get)
+        product_center = np.mean(quad, axis=0)
+        max_dim = float(max(h, w))
+
+        # Anchor light just inside the detected source side. Deterministic
+        # jitter prevents every template from looking mechanically identical.
+        jitter = float(rng.uniform(-0.10, 0.10))
+        if light_side == "left":
+            anchor_x = w * 0.08
+            anchor_y = float(
+                np.clip(
+                    product_center[1] + jitter * h,
+                    h * 0.18,
+                    h * 0.72,
+                )
             )
+            angle_deg = float(26.0 + rng.uniform(-7.0, 7.0))
+        elif light_side == "right":
+            anchor_x = w * 0.92
+            anchor_y = float(
+                np.clip(
+                    product_center[1] + jitter * h,
+                    h * 0.18,
+                    h * 0.72,
+                )
+            )
+            angle_deg = float(154.0 + rng.uniform(-7.0, 7.0))
         else:
-            corners = [
-                (w * 0.12, h * 0.14),
-                (w * 0.88, h * 0.14),
-                (w * 0.12, h * 0.82),
-                (w * 0.88, h * 0.82),
-            ]
-            anchor_x, anchor_y = max(
-                corners,
-                key=lambda pt: (
-                    (pt[0] - product_center[0]) ** 2
-                    + (pt[1] - product_center[1]) ** 2
-                ),
+            anchor_x = float(
+                np.clip(
+                    product_center[0] + jitter * w,
+                    w * 0.20,
+                    w * 0.80,
+                )
             )
+            anchor_y = h * 0.07
+            angle_deg = float(88.0 + rng.uniform(-8.0, 8.0))
 
-        angle_deg = float(31.0 + rng.uniform(-9.0, 9.0))
-        if anchor_x > w * 0.5:
-            angle_deg = 180.0 - angle_deg
         angle = np.radians(angle_deg)
         ca, sa = np.cos(angle), np.sin(angle)
-
         y, x = np.mgrid[0:h, 0:w].astype(np.float32)
         xr = (x - anchor_x) * ca + (y - anchor_y) * sa
         yr = -(x - anchor_x) * sa + (y - anchor_y) * ca
-        max_dim = float(max(h, w))
 
-        # Room-scale sun patch. It is intentionally broad and soft.
-        light_envelope = np.exp(
+        # -------------------------------------------------------------
+        # 2. Broad sunlight patch: visible enough to read as directional
+        #    daylight, but localized rather than a whole-image filter.
+        # -------------------------------------------------------------
+        along_center = max_dim * 0.22
+        sun_patch = np.exp(
             -(
-                (xr / max(max_dim * 0.50, 1.0)) ** 2
-                + (yr / max(max_dim * 0.32, 1.0)) ** 2
+                ((xr - along_center) / max(max_dim * 0.46, 1.0)) ** 4
+                + (yr / max(max_dim * 0.30, 1.0)) ** 4
             )
         ).astype(np.float32)
 
-        # Architectural window bars and a faint crossbar.
+        # Keep the patch away from extreme opposite corners.
+        distance_from_anchor = np.sqrt(
+            (x - anchor_x) ** 2 + (y - anchor_y) ** 2
+        )
+        distance_gate = np.clip(
+            1.0 - distance_from_anchor / max(max_dim * 1.05, 1.0),
+            0.0,
+            1.0,
+        )
+        sun_patch *= np.sqrt(distance_gate)
+
+        # -------------------------------------------------------------
+        # 3. Soft window-frame shadows. These are broader/darker than r9,
+        #    which made them measurable but visually almost invisible.
+        # -------------------------------------------------------------
         bars = np.zeros((h, w), dtype=np.float32)
-        bar_sigma = max(max_dim * 0.026, 2.5)
-        for offset in (-0.22, -0.07, 0.08, 0.23):
+        bar_sigma = max(max_dim * 0.034, 3.0)
+        for offset in (-0.20, -0.065, 0.070, 0.205):
             center = max_dim * offset
             bars = np.maximum(
                 bars,
                 np.exp(
-                    -0.5
-                    * ((xr - center) / bar_sigma) ** 2
+                    -0.5 * ((yr - center) / bar_sigma) ** 2
                 ),
             )
-        cross = np.exp(
-            -0.5
-            * (
-                (yr - max_dim * 0.015)
-                / max(max_dim * 0.035, 2.5)
-            ) ** 2
-        ).astype(np.float32)
-        room_shadow = np.clip(
-            (bars * 0.88 + cross * 0.22)
-            * light_envelope,
+
+        crossbars = np.zeros((h, w), dtype=np.float32)
+        cross_sigma = max(max_dim * 0.030, 3.0)
+        for offset in (0.12, 0.35):
+            center = max_dim * offset
+            crossbars = np.maximum(
+                crossbars,
+                np.exp(
+                    -0.5
+                    * ((xr - center) / cross_sigma) ** 2
+                ),
+            )
+
+        window_shadow = np.clip(
+            (bars * 0.86 + crossbars * 0.56)
+            * sun_patch,
             0.0,
             1.0,
         )
-        room_shadow = cv2.GaussianBlur(
-            room_shadow,
+        window_shadow = cv2.GaussianBlur(
+            window_shadow,
             (0, 0),
-            sigmaX=max(2.0, min(h, w) * 0.006),
-            sigmaY=max(2.0, min(h, w) * 0.006),
+            sigmaX=max(2.0, min(h, w) * 0.008),
+            sigmaY=max(2.0, min(h, w) * 0.008),
         )
 
-        scene_weight = 1.0 - protection * max(
-            product_protection,
-            0.97,
-        )
+        # -------------------------------------------------------------
+        # 4. Optional dappled/leaf shadow for room-oriented products.
+        # -------------------------------------------------------------
+        dapple = np.zeros((h, w), dtype=np.float32)
+        if category_name in {
+            "01_Wifi_Kutusu",
+            "03_Ahsap_Tablo",
+        }:
+            for _ in range(7):
+                along = float(rng.uniform(0.05, 0.42)) * max_dim
+                across = float(rng.uniform(-0.18, 0.18)) * max_dim
+                ox = anchor_x + along * ca - across * sa
+                oy = anchor_y + along * sa + across * ca
+                sx = max(
+                    max_dim * float(rng.uniform(0.018, 0.045)),
+                    2.0,
+                )
+                sy = max(
+                    max_dim * float(rng.uniform(0.009, 0.025)),
+                    2.0,
+                )
+                blob = np.exp(
+                    -0.5
+                    * (
+                        ((x - ox) / sx) ** 2
+                        + ((y - oy) / sy) ** 2
+                    )
+                ).astype(np.float32)
+                dapple = np.maximum(dapple, blob)
+            dapple = cv2.GaussianBlur(
+                dapple * sun_patch,
+                (0, 0),
+                sigmaX=max(2.0, min(h, w) * 0.005),
+                sigmaY=max(2.0, min(h, w) * 0.005),
+            )
+
+        # -------------------------------------------------------------
+        # 5. Product protection and adaptive contrast.
+        # -------------------------------------------------------------
+        scene_weight = 1.0 - protection * product_protection
         scene_weight = np.clip(scene_weight, 0.0, 1.0)
 
-        before = np.clip(image_cv, 0, 255).astype(np.uint8)
-        work = before.astype(np.float32)
+        # Scenes that already contain hard dramatic shadows (e.g. Wifi source)
+        # should receive less additional darkness but may still gain sunlight.
+        scene_contrast = float(np.std(gray)) / 64.0
+        contrast_shadow_scale = float(
+            np.clip(1.10 - scene_contrast * 0.30, 0.62, 1.0)
+        )
 
         shadow_amount = (
             room_shadow_strength
-            * room_shadow
-            * scene_weight
-        )
-        work *= 1.0 - shadow_amount[..., None]
+            * window_shadow
+            * contrast_shadow_scale
+            + float(profile.get("organic", 0.0))
+            * dapple
+            * 1.45
+        ) * scene_weight
+
+        work = before.astype(np.float32)
+        work *= 1.0 - np.clip(shadow_amount, 0.0, 0.22)[..., None]
 
         light_amount = (
             room_light_strength
-            * light_envelope
+            * sun_patch
             * scene_weight
         )
         warm_weights = np.array(
-            [0.38, 0.70, 1.00],
+            [0.34, 0.68, 1.00],
             dtype=np.float32,
         )
-        work = work + (
+        work += (
             (255.0 - work)
-            * light_amount[..., None]
+            * np.clip(light_amount, 0.0, 0.18)[..., None]
             * warm_weights.reshape(1, 1, 3)
         )
 
@@ -2224,9 +2269,19 @@ class MockupRenderer:
             if np.any(scene_pixels)
             else 0.0
         )
+        changed_scene_fraction = (
+            float(np.mean(delta[scene_pixels] > 1.5))
+            if np.any(scene_pixels)
+            else 0.0
+        )
 
         meta = {
             "applied": True,
+            "light_source_side": light_side,
+            "border_scores": {
+                key: round(float(value), 4)
+                for key, value in border_scores.items()
+            },
             "anchor": [
                 round(float(anchor_x), 2),
                 round(float(anchor_y), 2),
@@ -2234,6 +2289,10 @@ class MockupRenderer:
             "angle_deg": round(float(angle_deg), 2),
             "product_delta_mean": round(product_delta, 4),
             "scene_delta_mean": round(scene_delta, 4),
+            "changed_scene_fraction": round(
+                changed_scene_fraction,
+                4,
+            ),
         }
         return (result, meta) if return_metadata else result
 
@@ -3037,7 +3096,73 @@ class MockupRenderer:
         src_ratio = src_w / float(src_h)
         target_ratio = target_width / float(target_height)
 
-        if abs(src_ratio - target_ratio) <= 0.01:
+        # r10 smart-focus pre-trim: some templates are already 3:4 but contain
+        # large uniform white bands above/below the actual lifestyle scene.
+        # Those bands made the old early-return path preserve unusable whitespace.
+        quad = None
+        if product_quad is not None:
+            try:
+                quad = np.asarray(
+                    product_quad,
+                    dtype=np.float32,
+                ).reshape(-1, 2)
+                if quad.shape[0] < 4 or not np.isfinite(quad).all():
+                    quad = None
+            except Exception:
+                quad = None
+
+        trimmed_top = 0
+        trimmed_bottom = 0
+        if smart_product_focus and quad is not None and src_h >= 200:
+            gray_src = cv2.cvtColor(
+                np.clip(image_cv, 0, 255).astype(np.uint8),
+                cv2.COLOR_BGR2GRAY,
+            ).astype(np.float32)
+            row_mean = np.mean(gray_src, axis=1)
+            row_std = np.std(gray_src, axis=1)
+            expendable = (row_mean >= 238.0) & (row_std <= 20.0)
+
+            top_run = 0
+            for flag in expendable:
+                if not bool(flag):
+                    break
+                top_run += 1
+            bottom_run = 0
+            for flag in expendable[::-1]:
+                if not bool(flag):
+                    break
+                bottom_run += 1
+
+            qmin_y = float(np.min(quad[:, 1]))
+            qmax_y = float(np.max(quad[:, 1]))
+            safe_pad = max(8.0, src_h * 0.045)
+            max_top = max(0, int(np.floor(qmin_y - safe_pad)))
+            max_bottom = max(
+                0,
+                int(np.floor(src_h - 1 - qmax_y - safe_pad)),
+            )
+            trimmed_top = min(top_run, max_top)
+            trimmed_bottom = min(bottom_run, max_bottom)
+
+            # Require meaningful removable whitespace before changing framing.
+            if (trimmed_top + trimmed_bottom) >= int(src_h * 0.08):
+                y_start = trimmed_top
+                y_end = src_h - trimmed_bottom
+                image_cv = image_cv[y_start:y_end, :].copy()
+                quad = quad.copy()
+                quad[:, 1] -= float(y_start)
+                src_h, src_w = image_cv.shape[:2]
+                src_ratio = src_w / float(src_h)
+            else:
+                trimmed_top = 0
+                trimmed_bottom = 0
+
+        # A near-target source may bypass generic composition only when smart
+        # product focus did not request a content-aware reframing.
+        if (
+            abs(src_ratio - target_ratio) <= 0.01
+            and not (smart_product_focus and quad is not None)
+        ):
             resized = cv2.resize(
                 image_cv,
                 (target_width, target_height),
@@ -3070,15 +3195,6 @@ class MockupRenderer:
                 "smart_product_focus": bool(smart_product_focus),
             }
             return (resized, metadata) if return_metadata else resized
-
-        quad = None
-        if product_quad is not None:
-            try:
-                quad = np.asarray(product_quad, dtype=np.float32).reshape(-1, 2)
-                if quad.shape[0] < 4:
-                    quad = None
-            except Exception:
-                quad = None
 
         cover_scale = max(
             target_width / float(src_w),
@@ -3130,8 +3246,8 @@ class MockupRenderer:
                 (target_height * 0.78) / prod_h,
             )
             foreground_scale = min(
-                cover_scale,
                 max(contain_scale, fit_product_scale),
+                max(cover_scale, contain_scale) * 1.45,
             )
 
         fitted_w = max(1, int(round(src_w * foreground_scale)))
@@ -3211,6 +3327,8 @@ class MockupRenderer:
                 / float(max(target_width * target_height, 1))
             ),
             "smart_product_focus": bool(smart_product_focus),
+            "trimmed_top": int(trimmed_top),
+            "trimmed_bottom": int(trimmed_bottom),
         }
         return (background, metadata) if return_metadata else background
 
