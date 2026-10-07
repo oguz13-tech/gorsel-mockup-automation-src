@@ -1188,12 +1188,12 @@ window.onerror = function(msg, url, line, col, error) {
 
     function autoDetectCorners() {
         if (!currentCat || !currentTmpl) {
-            alert("Lutfen once listeden bir sablon secin!");
+            alert("Önce soldaki listeden bir şablon seçin.");
             return;
         }
         const btn = document.getElementById('btnAutoCorner');
         const origText = btn.innerHTML;
-        btn.innerHTML = '⏳ Köşeler Algılanıyor...';
+        btn.innerHTML = '⏳ Köşeler yeniden algılanıyor...';
         btn.disabled = true;
 
         fetch('/api/auto_detect_corners', {
@@ -1216,9 +1216,9 @@ window.onerror = function(msg, url, line, col, error) {
                 pts = res.corners.map(p => ({x: p[0], y: p[1]}));
                 updateDataFromPoints();
                 draw();
-                alert('4 kose otomatik olarak basariyla tespit edildi! Koseleri kontrol edin, gerekirse ince ayar yapin.');
+                alert('Yeni köşe önerisi hazır. Kırmızı noktaları kontrol edin; doğruysa “Bu Şablonu Onayla”ya basın.');
             } else {
-                alert("Otomatik kose tespiti basarisiz: " + (res.error || "4 koselik bir alan bulunamadi. Lutfen elle ayarlayin."));
+                alert("Köşeler otomatik bulunamadı: " + (res.error || "Kırmızı noktaları “Köşeleri Elle Ayarla” ile yerleştirin."));
             }
         })
         .catch(err => {
@@ -1333,7 +1333,7 @@ window.onerror = function(msg, url, line, col, error) {
 
     function deleteTemplate() {
         if (!currentCat || !currentTmpl) return;
-        if (!confirm('Bu şablonu çöpe atmak istediğinize emin misiniz? (Geri alabilirsiniz)')) return;
+        if (!confirm('Bu şablon kullanımdan çıkarılacak ve geri alınabilir çöp alanına taşınacak. Devam edilsin mi?')) return;
         
         fetch('/api/sablon_sil', {
             method: 'POST',
@@ -1381,7 +1381,7 @@ window.onerror = function(msg, url, line, col, error) {
                     .then(data => {
                         ayarlar = data;
                         renderSidebar();
-                        alert("Şablon başarıyla geri getirildi: " + res.restored_tmpl);
+                        alert("Şablon geri getirildi: " + res.restored_tmpl);
                     });
             } else {
                 alert("Geri alma başarısız: " + (res.error || 'Çöpte dosya yok.'));
@@ -1741,7 +1741,7 @@ async function batchAnalyze() {
 
     if(!confirm(
         currentCat + " kategorisindeki " + templates.length +
-        " şablon analiz edilecek. Onaylıyor musunuz?"
+        " şablon yeniden analiz edilecek. Bu gelişmiş işlem normalde gerekli değildir. Devam edilsin mi?"
     )) return;
 
     batchAnalyzeRunning = true;
@@ -1875,7 +1875,7 @@ async function approveTemplate() {
                 currentItem.elem.style.backgroundColor = '';
                 currentItem.elem.style.color = '';
             }
-            alert("Geometri başarıyla onaylandı (APPROVED).");
+            alert("Şablon onaylandı. Artık üretimde kullanılabilir.");
         } else {
             alert("Hata: " + data.error);
         }
@@ -1904,7 +1904,7 @@ async function rejectTemplate() {
                 currentItem.elem.textContent = '🚫 ' + currentTmpl;
                 currentItem.elem.title = 'İnsan incelemesinde reddedildi.';
             }
-            alert("Geometri reddedildi (REJECTED).");
+            alert("Köşe önerisi reddedildi. Bu şablon onaylanmadan üretime girmez.");
         } else {
             alert("Hata: " + data.error);
         }
