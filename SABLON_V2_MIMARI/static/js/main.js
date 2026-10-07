@@ -674,11 +674,16 @@ window.onerror = function(msg, url, line, col, error) {
     // =========================================================
 
     function draw() {
-        if (!currentImg) return;
-        
         canvas.width = cont.clientWidth;
         canvas.height = cont.clientHeight;
-        
+        if (!currentImg) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            const info = document.getElementById('info');
+            if (info) info.textContent = 'Soldaki listeden bir şablon seçin.';
+            const currentFile = document.getElementById('current-file');
+            if (currentFile) currentFile.textContent = 'Görsel Seçin';
+            return;
+        }
         const padding = 40;
         const scaleX = (canvas.width - padding) / currentImg.width;
         const scaleY = (canvas.height - padding) / currentImg.height;
@@ -1114,13 +1119,12 @@ window.onerror = function(msg, url, line, col, error) {
                 const keys = Object.keys(ayarlar.kategoriler[currentCat].sablonlar);
                 if (keys.length > 0) {
                     const nextTmpl = keys[0];
-                    const listItems = document.querySelectorAll('.template-item');
-                    let nextElem = null;
-                    listItems.forEach(el => {
-                        if (el.textContent === nextTmpl || el.textContent === '⚠️ ' + nextTmpl) {
-                            nextElem = el;
-                        }
-                    });
+                    const nextElem = Array.from(
+                        document.querySelectorAll('.template-item')
+                    ).find(el => (
+                        el.dataset.category === currentCat
+                        && el.dataset.template === nextTmpl
+                    )) || null;
                     loadTemplate(currentCat, nextTmpl, nextElem);
                 } else {
                     currentTmpl = null;
@@ -1207,86 +1211,6 @@ window.onerror = function(msg, url, line, col, error) {
         } catch (err) {
             if (!silent) alert('Kaydetme hatası: ' + err);
             return false;
-        }
-    }
-
-    async function batchAutoDetect() {
-        if (!currentCat) { alert("Lütfen önce listeden bir kategori seçin!"); return; }
-        const templates = allTemplates.filter(t => t.cat === currentCat);
-        if (templates.length === 0) return;
-        
-        // Henüz işlenmemiş olanları say (hızlandırmak için sadece boş olanları da yapabiliriz ama hepsi baştan taranacak)
-        if (!confirm(`Bu kategorideki ${templates.length} şablon için otomatik algılama başlatılacak.\n\nİşlem biraz sürebilir, onaylıyor musunuz?`)) return;
-
-        let successCount = 0;
-        let failCount = 0;
-        
-        const btn = document.getElementById('btnBatchDetect');
-        const origHtml = btn.innerHTML;
-        btn.disabled = true;
-        btn.style.background = '#6c757d';
-
-        let bulkUpdates = [];
-
-        for (let i = 0; i < templates.length; i++) {
-            const t = templates[i];
-            btn.innerHTML = `⏳ ${i+1} / ${templates.length} taranıyor...`;
-            
-            // Eğer zaten köşeleri varsa atla
-            const tmplData = ayarlar.kategoriler[t.cat].sablonlar[t.tmpl];
-            if (tmplData.koseler && tmplData.koseler.length === 4) {
-                // Atla
-                continue;
-            }
-
-            try {
-                const res = await fetch('/api/auto_detect_corners', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Active-Category': t.cat,
-                        'X-Active-Template': t.tmpl
-                    },
-                    body: JSON.stringify({ kategori: t.cat, sablon: t.tmpl })
-                }).then(r => r.json());
-                
-                if (res.success && res.corners && res.corners.length === 4) {
-                    tmplData.koseler = res.corners;
-                    tmplData.tip = 'perspektif';
-                    t.elem.textContent = '📝 ' + t.tmpl;
-                    t.elem.title = 'Otomatik 4 köşe bulundu; insan APPROVED onayı gerekli.';
-                    successCount++;
-                    bulkUpdates.push({ category: t.cat, filename: t.tmpl, data: tmplData });
-                } else {
-                    failCount++;
-                }
-            } catch(e) { failCount++; }
-        }
-        
-        if (bulkUpdates.length > 0) {
-            try {
-                const saveRes = await fetch('/api/templates/bulk-save-geometry', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ templates: bulkUpdates })
-                }).then(r => r.json());
-                if (!saveRes.success) {
-                    console.error("Bulk save failed:", saveRes.error);
-                    alert("Uyarı: Taranan şablonlar kaydedilirken hata oluştu: " + saveRes.error);
-                }
-            } catch(e) {
-                console.error("Bulk save request failed:", e);
-                alert("Uyarı: Toplu kayıt isteği başarısız oldu.");
-            }
-        }
-        btn.disabled = false;
-        btn.style.background = '#e83e8c';
-        btn.innerHTML = origHtml;
-        alert(`Toplu tarama tamamlandı!\n\nYeni algılanan: ${successCount}\nBulunamayan: ${failCount}`);
-        
-        // Ekrani guncelle
-        if (currentCat && currentTmpl) {
-            loadTemplate(currentCat, currentTmpl, allTemplates.find(x => x.cat===currentCat && x.tmpl===currentTmpl).elem);
         }
     }
 
