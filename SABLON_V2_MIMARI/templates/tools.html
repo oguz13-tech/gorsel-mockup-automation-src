@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Profesyonel Araçlar</title>
+    <style>
+        :root {
+            color-scheme: dark;
+            font-family: Arial, sans-serif;
+        }
+        body {
+            margin: 0;
+            background: #171719;
+            color: #f1f1f1;
+        }
+        .page {
+            max-width: 1180px;
+            margin: 0 auto;
+            padding: 24px;
+        }
+        .topbar {
+            display: flex;
+            justify-content: space-between;
+            gap: 16px;
+            align-items: center;
+            margin-bottom: 22px;
+        }
+        .topbar h1 {
+            margin: 0;
+            font-size: 26px;
+        }
+        .subtitle {
+            margin-top: 6px;
+            color: #aaa;
+            font-size: 13px;
+        }
+        .back {
+            color: #9ecbff;
+            text-decoration: none;
+            font-size: 13px;
+            white-space: nowrap;
+        }
+        .notice {
+            padding: 12px 14px;
+            border: 1px solid #3d4a57;
+            background: #202832;
+            border-radius: 9px;
+            color: #d8e6f4;
+            font-size: 12px;
+            line-height: 1.5;
+            margin-bottom: 18px;
+        }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(285px, 1fr));
+            gap: 14px;
+        }
+        .card {
+            border: 1px solid #3c3c40;
+            border-radius: 10px;
+            background: #222225;
+            padding: 16px;
+            display: flex;
+            flex-direction: column;
+            min-height: 175px;
+        }
+        .title {
+            font-size: 17px;
+            font-weight: 700;
+            margin-bottom: 6px;
+        }
+        .desc {
+            color: #c6c6c8;
+            font-size: 12px;
+            line-height: 1.45;
+            flex: 1;
+        }
+        .tiny {
+            color: #8f969e;
+            font-size: 10.5px;
+            line-height: 1.4;
+            margin-top: 8px;
+        }
+        button {
+            margin-top: 13px;
+            border: 0;
+            border-radius: 7px;
+            background: #0d6efd;
+            color: white;
+            font-weight: 700;
+            padding: 10px 12px;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #2a7fff;
+        }
+        button:disabled {
+            opacity: .55;
+            cursor: wait;
+        }
+        .status {
+            margin-top: 20px;
+            padding: 11px 13px;
+            border-radius: 8px;
+            background: #202022;
+            border: 1px solid #3b3b3e;
+            color: #cfcfd2;
+            font-size: 12px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+<div class="page">
+    <div class="topbar">
+        <div>
+            <h1>🧰 Profesyonel Araçlar</h1>
+            <div class="subtitle">Factory'den bağımsız çalışabilen günlük yardımcı araçlar.</div>
+        </div>
+        <a class="back" href="/">← İnceleme Merkezi</a>
+    </div>
+
+    <div class="notice">
+        Bu araçlar mockup üretim zincirinden bağımsızdır. Görsel İsimlendirici,
+        aktif <b>2_SABLON_HAVUZU</b> ve <b>2_SABLON_HAVUZU_ORIJINAL_YEDEK</b>
+        klasörlerinde yeniden adlandırmayı özellikle engeller; onay/hash yapısı bozulmaz.
+    </div>
+
+    <div class="grid">
+        <div class="card">
+            <div class="title">📝 Görsel İsimlendirici</div>
+            <div class="desc">Seçtiğiniz görselleri Tablo_001, Tablo_002, Tablo_003 gibi sıralı adlandırır.</div>
+            <div class="tiny">Önce görselleri seçersiniz, sonra başlangıç adını yazarsınız. Çakışan dosyanın üzerine yazmaz.</div>
+            <button onclick="launchTool('rename', this)">Başlat</button>
+        </div>
+
+        <div class="card">
+            <div class="title">🔄 Format Çevirici — PNG / JPG</div>
+            <div class="desc">Seçtiğiniz görselleri toplu olarak JPG veya PNG formatına dönüştürür.</div>
+            <div class="tiny">Orijinalleri değiştirmez; sonucu ayrı FORMAT_JPG_CIKTILARI veya FORMAT_PNG_CIKTILARI klasörüne yazar.</div>
+            <button onclick="launchTool('convert', this)">Başlat</button>
+        </div>
+
+        <div class="card">
+            <div class="title">©️ Otomatik Filigran</div>
+            <div class="desc">Bir PNG logo seçip seçtiğiniz görsellerin sağ altına otomatik uygular.</div>
+            <div class="tiny">Orijinaller korunur; çıktılar FILIGRANLI_GORSELLER klasörüne kaydedilir.</div>
+            <button onclick="launchTool('watermark', this)">Başlat</button>
+        </div>
+
+        <div class="card">
+            <div class="title">✨ Görsel Kalite Artırıcı AI / 4K</div>
+            <div class="desc">Real-ESRGAN ile seçtiğiniz klasördeki görselleri yüksek çözünürlüğe çıkarır.</div>
+            <div class="tiny">Factory artifact zincirinden bağımsızdır ve orijinallerin üzerine yazmaz.</div>
+            <button onclick="launchTool('4k', this)">Başlat</button>
+        </div>
+
+        <div class="card">
+            <div class="title">🔗 Görselleri Link Dönüştürücü → Excel</div>
+            <div class="desc">Seçtiğiniz görselleri ImgBB'ye yükler ve dosya adı + internet linkini Excel'e yazar.</div>
+            <div class="tiny">Sistem ayarlarındaki ImgBB anahtarlarını kullanır. Hatalı yüklemeleri Excel'de açıkça işaretler.</div>
+            <button onclick="launchTool('links', this)">Başlat</button>
+        </div>
+
+        <div class="card">
+            <div class="title">🏷️ SEO Uyumlu Ürün Adı Üretici</div>
+            <div class="desc">Mevcut keyword havuzunu kullanarak Trendyol/Etsy için benzersiz ürün adları üretir.</div>
+            <div class="tiny">Adet ve Excel'in kaydedileceği klasörü siz seçersiniz.</div>
+            <button onclick="launchTool('seo_titles', this)">Başlat</button>
+        </div>
+
+        <div class="card">
+            <div class="title">✍️ SEO Uyumlu Açıklama Üretici</div>
+            <div class="desc">Mevcut açıklama ve SEO kelime havuzundan benzersiz ürün açıklamaları üretir.</div>
+            <div class="tiny">Adet ve Excel'in kaydedileceği klasörü siz seçersiniz.</div>
+            <button onclick="launchTool('seo_descriptions', this)">Başlat</button>
+        </div>
+    </div>
+
+    <div id="status" class="status"></div>
+</div>
+
+<script>
+async function launchTool(name, button) {
+    const status = document.getElementById('status');
+    const oldText = button.textContent;
+    button.disabled = true;
+    button.textContent = 'Açılıyor...';
+    status.style.display = 'block';
+    status.textContent = 'Araç başlatılıyor...';
+
+    try {
+        const response = await fetch('/api/tools/launch/' + encodeURIComponent(name), {
+            method: 'POST'
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+            throw new Error(data.error || 'Araç başlatılamadı.');
+        }
+        status.textContent = data.message || 'Araç ayrı pencerede açıldı.';
+    } catch (err) {
+        status.textContent = 'Hata: ' + err.message;
+    } finally {
+        button.disabled = false;
+        button.textContent = oldText;
+    }
+}
+</script>
+</body>
+</html>
