@@ -135,3 +135,48 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background:
             text-overflow: ellipsis;
             white-space: nowrap;
         }
+
+        .bulk-choice {
+            flex: 1;
+            min-width: 0;
+        }
+        .bulk-choice button {
+            width: 100%;
+        }
+        .template-item.bulk-selected {
+            background: rgba(13, 110, 253, 0.24) !important;
+            outline: 1px solid rgba(80, 160, 255, 0.75);
+        }
+        .toolbar-action {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            min-width: 0;
+        }
+        .toolbar-action .tool-note {
+            margin: 0 2px;
+            max-width: 210px;
+        }
+        .advanced-tools {
+            margin-top: 8px;
+            padding: 8px;
+            border: 1px solid #444;
+            border-radius: 7px;
+            background: #202022;
+        }
+        .advanced-tools summary {
+            cursor: pointer;
+            color: #ddd;
+            font-size: 12px;
+            font-weight: 700;
+            user-select: none;
+        }
+        .advanced-tools[open] summary {
+            margin-bottom: 8px;
+        }
+        .advanced-summary-note {
+            margin-bottom: 8px;
+        }
+        .advanced-tools .advanced-action {
+            margin-top: 8px;
+        }
