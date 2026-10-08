@@ -535,6 +535,16 @@ window.onerror = function(msg, url, line, col, error) {
         const summary = data?.summary || {};
         const lines = [
             'HAM / ÇALIŞMA DOSYASI SAĞLIK TARAMASI',
+            data?.saved_at
+                ? 'Kayıt zamanı: ' + data.saved_at
+                : (
+                    data?.generated_at
+                        ? 'Tarama zamanı: ' + data.generated_at
+                        : ''
+                ),
+            data?.saved_report
+                ? 'Bu rapor son manuel tam taramanın kalıcı kaydıdır.'
+                : '',
             '',
             'Toplam kayıt: ' + Number(summary.total_records || 0),
             'Sağlam: ' + Number(summary.ok || 0),
@@ -595,10 +605,15 @@ window.onerror = function(msg, url, line, col, error) {
         return lines.join('\n');
     }
 
-    async function refreshTemplateHealth(deep = false, showReport = false) {
+    async function refreshTemplateHealth(
+        deep = false,
+        showReport = false,
+        persist = false
+    ) {
         try {
             const response = await fetch(
-                '/api/template-health?deep=' + (deep ? '1' : '0')
+                '/api/template-health?deep=' + (deep ? '1' : '0') +
+                '&save=' + (persist ? '1' : '0')
             );
             const data = await response.json();
             if (!response.ok || !data.success) {
@@ -608,7 +623,9 @@ window.onerror = function(msg, url, line, col, error) {
             if (ayarlar) renderSidebar();
             if (showReport) {
                 showCopyableReport(
-                    'Ham Dosya Sağlık Taraması',
+                    data.saved_report
+                        ? 'Ham Dosya Sağlık Taraması — Kaydedildi'
+                        : 'Ham Dosya Sağlık Taraması',
                     formatTemplateHealthReport(data)
                 );
             }
@@ -629,12 +646,58 @@ window.onerror = function(msg, url, line, col, error) {
             button.textContent = '⏳ Ham dosyalar kontrol ediliyor...';
         }
         try {
-            await refreshTemplateHealth(true, true);
+            await refreshTemplateHealth(true, true, true);
         } finally {
             if (button) {
                 button.disabled = false;
                 button.textContent =
                     originalText || '🩺 Ham Dosya Sağlık Taraması';
+            }
+        }
+    }
+
+    async function openLastTemplateHealthReport() {
+        const button = document.getElementById(
+            'lastTemplateHealthReportButton'
+        );
+        const originalText = button ? button.textContent : '';
+        if (button) {
+            button.disabled = true;
+            button.textContent = '⏳ Son rapor açılıyor...';
+        }
+
+        try {
+            const response = await fetch('/api/template-health/last');
+            const data = await response.json();
+            if (!response.ok || !data.success) {
+                if (data.code === 'NO_SAVED_HEALTH_REPORT') {
+                    alert(
+                        'Henüz kaydedilmiş Ham Dosya Sağlık Raporu yok.\n\n' +
+                        'Önce “Ham Dosya Sağlık Taraması” butonuna basın. ' +
+                        'Tamamlanan rapor bundan sonra burada kalıcı olarak saklanır.'
+                    );
+                    return;
+                }
+                throw new Error(
+                    data.error || ('HTTP ' + response.status)
+                );
+            }
+
+            showCopyableReport(
+                'Son Ham Dosya Sağlık Raporu' +
+                    (data.saved_at ? ' — ' + data.saved_at : ''),
+                formatTemplateHealthReport(data)
+            );
+        } catch (err) {
+            alert(
+                'Son sağlık raporu açılamadı: ' +
+                err.message
+            );
+        } finally {
+            if (button) {
+                button.disabled = false;
+                button.textContent =
+                    originalText || '📄 Son Sağlık Raporunu Aç';
             }
         }
     }
