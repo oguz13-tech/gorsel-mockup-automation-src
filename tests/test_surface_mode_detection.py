@@ -205,6 +205,82 @@ class SurfaceModeDetectionTests(unittest.TestCase):
         self.assertEqual(mode, "DESIGNED_TEXTURED")
         self.assertGreaterEqual(confidence, 0.50)
 
+    def test_ocak_special_selector_prefers_white_panel_over_room_rectangle(self):
+        h, w = 600, 480
+        image = np.full((h, w, 3), 220, dtype=np.uint8)
+
+        # Quiet wall / room background.
+        cv2.rectangle(image, (0, 0), (479, 599), (214, 214, 214), -1)
+
+        # Real white glass panel in the backsplash zone.
+        panel = np.array(
+            [[150, 180], [390, 180], [390, 330], [150, 330]],
+            dtype=np.int32,
+        )
+        cv2.fillConvexPoly(image, panel, (238, 238, 238))
+        cv2.polylines(image, [panel], True, (188, 188, 188), 3)
+
+        # Reflection cues inside the panel.
+        cv2.rectangle(image, (170, 195), (195, 310), (226, 226, 226), -1)
+        cv2.line(image, (180, 200), (180, 305), (250, 250, 250), 2)
+
+        # Strong upper cabinets / wall rectangle distractor.
+        cv2.rectangle(image, (15, 35), (465, 170), (135, 125, 115), 5)
+        for x in (100, 220, 340):
+            cv2.line(image, (x, 35), (x, 170), (70, 70, 70), 3)
+
+        # Strong lower cabinet distractor.
+        cv2.rectangle(image, (20, 390), (460, 585), (110, 85, 65), -1)
+        cv2.rectangle(image, (20, 390), (460, 585), (35, 35, 35), 4)
+        for x in (130, 260, 370):
+            cv2.line(image, (x, 392), (x, 582), (45, 45, 45), 3)
+
+        candidates = CandidateGenerators.generate_low_contrast_glass_quads(
+            image,
+            "05_Ocak_Arkasi",
+        )
+        self.assertTrue(candidates)
+
+        analyzer = TemplateAnalyzer()
+        chosen = analyzer.select_ocak_arkasi_special_candidate(
+            image,
+            candidates,
+        )
+        self.assertIsNotNone(chosen)
+
+        quad = np.asarray(chosen["quad"], dtype=np.float32)
+        center = np.mean(quad, axis=0)
+        self.assertLess(
+            float(np.linalg.norm(center - np.array([270.0, 255.0]))),
+            95.0,
+        )
+        self.assertLess(chosen["area_ratio"], 0.42)
+        self.assertGreaterEqual(chosen["surface_score"], 0.42)
+
+    def test_non_ocak_categories_do_not_use_ocak_special_provenance(self):
+        h, w = 320, 240
+        image = np.full((h, w, 3), 180, dtype=np.uint8)
+        cv2.rectangle(image, (45, 55), (195, 270), (12, 12, 12), -1)
+
+        fd, path = tempfile.mkstemp(suffix=".png")
+        os.close(fd)
+        try:
+            self.assertTrue(cv2.imwrite(path, image))
+            result = TemplateAnalyzer().analyze(
+                path,
+                "02_Cam_Tablo_Dikey",
+            )
+        finally:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+
+        self.assertNotEqual(
+            result["provenance"],
+            "AUTO_OCAK_ARKASI_SPECIAL",
+        )
+
     def test_ocak_arkasi_rejects_full_scene_and_lower_cabinet_auto_quads(self):
         full_scene = np.array(
             [[10, 20], [310, 20], [310, 220], [10, 220]],
