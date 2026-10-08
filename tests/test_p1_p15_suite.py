@@ -991,5 +991,171 @@ class TestP1_P15Acceptance(unittest.TestCase):
         self.assertEqual(rows[1][2], 1)
 
 
+class TestOrphanTemplateRetirement(unittest.TestCase):
+    def test_missing_working_source_can_be_retired_and_undone_safely(self):
+        import app
+
+        with tempfile.TemporaryDirectory() as runtime_root:
+            category = "02_Cam_Tablo_Dikey"
+            filename = "CamTabloDikey_009.png"
+            db_dir = os.path.join(runtime_root, "SABLON_V2_MIMARI")
+            backup_dir = os.path.join(
+                runtime_root,
+                "2_SABLON_HAVUZU_ORIJINAL_YEDEK",
+                category,
+            )
+            os.makedirs(db_dir, exist_ok=True)
+            os.makedirs(backup_dir, exist_ok=True)
+
+            backup_path = os.path.join(backup_dir, filename)
+            cv2.imwrite(
+                backup_path,
+                np.full((24, 24, 3), 32, dtype=np.uint8),
+            )
+
+            db_path = os.path.join(db_dir, "ayarlar.db")
+            conn = sqlite3.connect(db_path)
+            conn.execute(
+                """CREATE TABLE templates (
+                    category_id TEXT,
+                    filename TEXT,
+                    data TEXT,
+                    PRIMARY KEY (category_id, filename)
+                )"""
+            )
+            conn.execute(
+                """CREATE TABLE template_profiles (
+                    template_uid TEXT,
+                    category TEXT,
+                    source_relative_path TEXT,
+                    source_asset_sha256 TEXT,
+                    review_status TEXT,
+                    manually_verified INTEGER,
+                    is_active INTEGER,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )"""
+            )
+            conf = {
+                "tip": "perspektif",
+                "koseler": [[1, 1], [20, 1], [20, 20], [1, 20]],
+            }
+            conn.execute(
+                "INSERT INTO templates (category_id, filename, data) VALUES (?, ?, ?)",
+                (category, filename, json.dumps(conf)),
+            )
+            conn.execute(
+                """INSERT INTO template_profiles (
+                    template_uid, category, source_relative_path,
+                    source_asset_sha256, review_status,
+                    manually_verified, is_active
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    category + "_" + filename,
+                    category,
+                    category + "/" + filename,
+                    "missing-active-source-hash",
+                    "REVIEW_REQUIRED",
+                    0,
+                    1,
+                ),
+            )
+            conn.commit()
+            conn.close()
+
+            fake_settings = {
+                "kategoriler": {
+                    category: {
+                        "sablonlar": {
+                            filename: conf,
+                        }
+                    }
+                }
+            }
+
+            with (
+                patch("app.BASE_DIR", runtime_root),
+                patch("app.get_all_ayarlar", return_value=fake_settings),
+                patch("app.reserve_number"),
+            ):
+                retired = app._retire_template_safely(
+                    category,
+                    filename,
+                )
+
+                self.assertTrue(retired["source_was_missing"])
+                self.assertTrue(retired["orphan_retired"])
+                self.assertTrue(retired["backup_archived"])
+                self.assertFalse(os.path.exists(backup_path))
+
+                trash_dir = os.path.join(
+                    runtime_root,
+                    "SILINEN_SABLONLAR_COP_KUTUSU",
+                )
+                meta_files = [
+                    name
+                    for name in os.listdir(trash_dir)
+                    if name.endswith("_meta.json")
+                ]
+                self.assertEqual(len(meta_files), 1)
+
+                with open(
+                    os.path.join(trash_dir, meta_files[0]),
+                    "r",
+                    encoding="utf-8",
+                ) as handle:
+                    meta = json.load(handle)
+                self.assertTrue(meta["source_was_missing"])
+                self.assertIsNone(meta["trash_image_name"])
+                self.assertTrue(meta["backup_trash_name"])
+
+                conn = sqlite3.connect(db_path)
+                template_count = conn.execute(
+                    "SELECT COUNT(*) FROM templates WHERE category_id=? AND filename=?",
+                    (category, filename),
+                ).fetchone()[0]
+                active_profile_count = conn.execute(
+                    "SELECT COUNT(*) FROM template_profiles WHERE category=? AND is_active=1",
+                    (category,),
+                ).fetchone()[0]
+                conn.close()
+                self.assertEqual(template_count, 0)
+                self.assertEqual(active_profile_count, 0)
+
+                app.app.config["TESTING"] = True
+                client = app.app.test_client()
+                undone = client.post("/api/sablon_sil_geri_al")
+                self.assertEqual(
+                    undone.status_code,
+                    200,
+                    undone.get_json(),
+                )
+                payload = undone.get_json()
+                self.assertTrue(payload["restored_as_orphan"])
+                self.assertFalse(payload["source_restored"])
+                self.assertTrue(payload["backup_restored"])
+                self.assertTrue(os.path.isfile(backup_path))
+
+                working_path = os.path.join(
+                    runtime_root,
+                    "2_SABLON_HAVUZU",
+                    category,
+                    filename,
+                )
+                self.assertFalse(os.path.exists(working_path))
+
+                conn = sqlite3.connect(db_path)
+                template_count = conn.execute(
+                    "SELECT COUNT(*) FROM templates WHERE category_id=? AND filename=?",
+                    (category, filename),
+                ).fetchone()[0]
+                active_profile_count = conn.execute(
+                    "SELECT COUNT(*) FROM template_profiles WHERE category=? AND is_active=1",
+                    (category,),
+                ).fetchone()[0]
+                conn.close()
+                self.assertEqual(template_count, 1)
+                self.assertEqual(active_profile_count, 0)
+
+
 if __name__ == "__main__":
     unittest.main()
