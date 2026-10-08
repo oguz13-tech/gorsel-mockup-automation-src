@@ -1292,5 +1292,264 @@ class TestTemplateAssetHealth(unittest.TestCase):
         )
 
 
+class TestFastBatchCornerScan(unittest.TestCase):
+    def test_matching_human_approved_source_is_skipped_before_heavy_analysis(self):
+        import app
+
+        with tempfile.TemporaryDirectory() as runtime_root:
+            category = "01_Wifi_Kutusu"
+            template = "Wifi_Kutusu_001.png"
+            working_dir = os.path.join(
+                runtime_root,
+                "2_SABLON_HAVUZU",
+                category,
+            )
+            db_dir = os.path.join(runtime_root, "SABLON_V2_MIMARI")
+            os.makedirs(working_dir, exist_ok=True)
+            os.makedirs(db_dir, exist_ok=True)
+
+            image_path = os.path.join(working_dir, template)
+            cv2.imwrite(
+                image_path,
+                np.full((40, 60, 3), 100, dtype=np.uint8),
+            )
+            source_hash = app._sha256_file(image_path)
+
+            db_path = os.path.join(db_dir, "ayarlar.db")
+            conn = sqlite3.connect(db_path)
+            conn.execute(
+                """CREATE TABLE template_profiles (
+                    template_uid TEXT,
+                    source_asset_sha256 TEXT,
+                    review_status TEXT,
+                    manually_verified INTEGER,
+                    is_active INTEGER,
+                    updated_at DATETIME
+                )"""
+            )
+            conn.execute(
+                """INSERT INTO template_profiles (
+                    template_uid, source_asset_sha256,
+                    review_status, manually_verified,
+                    is_active, updated_at
+                ) VALUES (?, ?, 'APPROVED', 1, 1, CURRENT_TIMESTAMP)""",
+                (category + "_" + template, source_hash),
+            )
+            conn.commit()
+            conn.close()
+
+            settings = {
+                "kategoriler": {
+                    category: {
+                        "sablonlar": {
+                            template: {},
+                        }
+                    }
+                }
+            }
+
+            app.app.config["TESTING"] = True
+            client = app.app.test_client()
+            with (
+                patch("app.BASE_DIR", runtime_root),
+                patch("app.get_all_ayarlar", return_value=settings),
+                patch(
+                    "app._analyze_template_for_batch",
+                    side_effect=AssertionError(
+                        "APPROVED source must not enter heavy analysis"
+                    ),
+                ),
+            ):
+                response = client.post(
+                    "/api/templates/batch_analyze",
+                    json={
+                        "category": category,
+                        "templates": [template],
+                        "workers": 2,
+                    },
+                )
+
+            self.assertEqual(
+                response.status_code,
+                200,
+                response.get_json(),
+            )
+            payload = response.get_json()
+            self.assertEqual(
+                payload["results"][0]["status"],
+                "SKIPPED_APPROVED",
+            )
+            self.assertEqual(
+                payload["approved_preserved_count"],
+                1,
+            )
+            self.assertEqual(
+                payload["quality_algorithm"],
+                "UNCHANGED",
+            )
+            self.assertEqual(
+                payload["db_writes"],
+                "SEQUENTIAL",
+            )
+
+    def test_unapproved_batch_keeps_analysis_stage_and_serial_profile_saves(self):
+        import app
+
+        with tempfile.TemporaryDirectory() as runtime_root:
+            category = "01_Wifi_Kutusu"
+            templates = [
+                "Wifi_Kutusu_010.png",
+                "Wifi_Kutusu_011.png",
+            ]
+            working_dir = os.path.join(
+                runtime_root,
+                "2_SABLON_HAVUZU",
+                category,
+            )
+            db_dir = os.path.join(runtime_root, "SABLON_V2_MIMARI")
+            os.makedirs(working_dir, exist_ok=True)
+            os.makedirs(db_dir, exist_ok=True)
+
+            for name in templates:
+                cv2.imwrite(
+                    os.path.join(working_dir, name),
+                    np.full((30, 50, 3), 80, dtype=np.uint8),
+                )
+
+            db_path = os.path.join(db_dir, "ayarlar.db")
+            conn = sqlite3.connect(db_path)
+            conn.execute(
+                """CREATE TABLE template_profiles (
+                    template_uid TEXT,
+                    source_asset_sha256 TEXT,
+                    review_status TEXT,
+                    manually_verified INTEGER,
+                    is_active INTEGER,
+                    updated_at DATETIME
+                )"""
+            )
+            conn.commit()
+            conn.close()
+
+            settings = {
+                "kategoriler": {
+                    category: {
+                        "sablonlar": {
+                            name: {}
+                            for name in templates
+                        }
+                    }
+                }
+            }
+
+            fake_analysis = {
+                "source_asset_sha256": "hash",
+                "analyzer_version": "same-quality-engine",
+                "rule": {
+                    "product_class": "test",
+                    "print_policy": "full_bleed",
+                },
+                "orientation": "H",
+                "nominal_aspect": "1.5",
+                "surface_quad": [
+                    [1, 1], [20, 1], [20, 20], [1, 20]
+                ],
+                "outer_quad": None,
+                "confidence_total": 0.75,
+                "component_confidences": {},
+                "review_status": "REVIEW_REQUIRED",
+            }
+            worker_results = {
+                name: {
+                    "template": name,
+                    "status": "ANALYZED",
+                    "analysis": dict(fake_analysis),
+                }
+                for name in templates
+            }
+            saved = []
+
+            def fake_worker(cat, name):
+                self.assertEqual(cat, category)
+                return worker_results[name]
+
+            def fake_save(path, profile):
+                self.assertEqual(path, db_path)
+                saved.append(profile["template_uid"])
+
+            app.app.config["TESTING"] = True
+            client = app.app.test_client()
+            with (
+                patch("app.BASE_DIR", runtime_root),
+                patch("app.get_all_ayarlar", return_value=settings),
+                patch(
+                    "app._analyze_template_for_batch",
+                    side_effect=fake_worker,
+                ),
+                patch(
+                    "app.save_template_profile",
+                    side_effect=fake_save,
+                ),
+            ):
+                response = client.post(
+                    "/api/templates/batch_analyze",
+                    json={
+                        "category": category,
+                        "templates": templates,
+                        "workers": 2,
+                    },
+                )
+
+            self.assertEqual(
+                response.status_code,
+                200,
+                response.get_json(),
+            )
+            payload = response.get_json()
+            self.assertEqual(payload["analyzed_count"], 2)
+            self.assertEqual(payload["workers_used"], 2)
+            self.assertEqual(
+                payload["quality_algorithm"],
+                "UNCHANGED",
+            )
+            self.assertEqual(
+                payload["db_writes"],
+                "SEQUENTIAL",
+            )
+            self.assertEqual(
+                saved,
+                [
+                    category + "_" + templates[0],
+                    category + "_" + templates[1],
+                ],
+            )
+
+    def test_fast_scan_frontend_uses_small_batches_and_two_workers(self):
+        js_path = os.path.join(
+            BASE_DIR,
+            "SABLON_V2_MIMARI",
+            "static",
+            "js",
+            "main.js",
+        )
+        with open(js_path, "r", encoding="utf-8") as handle:
+            js = handle.read()
+
+        self.assertIn("const chunkSize = 4;", js)
+        self.assertIn("workers: 2", js)
+        self.assertIn(
+            "'/api/templates/batch_analyze'",
+            js,
+        )
+        self.assertIn(
+            "approvedProtectedCount",
+            js,
+        )
+        self.assertIn(
+            "batchAnalyzeInFlightTemplates",
+            js,
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
