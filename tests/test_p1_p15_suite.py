@@ -1157,5 +1157,140 @@ class TestOrphanTemplateRetirement(unittest.TestCase):
                 self.assertEqual(active_profile_count, 0)
 
 
+class TestTemplateAssetHealth(unittest.TestCase):
+    def test_health_scan_classifies_missing_and_flat_assets_without_deleting(self):
+        import app
+
+        with tempfile.TemporaryDirectory() as runtime_root:
+            working_root = os.path.join(runtime_root, "2_SABLON_HAVUZU")
+            backup_root = os.path.join(
+                runtime_root,
+                "2_SABLON_HAVUZU_ORIJINAL_YEDEK",
+            )
+            category = "02_Cam_Tablo_Dikey"
+            os.makedirs(
+                os.path.join(working_root, category),
+                exist_ok=True,
+            )
+            os.makedirs(
+                os.path.join(backup_root, category),
+                exist_ok=True,
+            )
+
+            settings = {
+                "kategoriler": {
+                    category: {
+                        "sablonlar": {
+                            "ok.png": {},
+                            "missing_work.png": {},
+                            "both_missing.png": {},
+                            "flat.png": {},
+                        }
+                    }
+                }
+            }
+
+            normal = np.zeros((48, 64, 3), dtype=np.uint8)
+            normal[:, :32] = (30, 80, 160)
+            normal[:, 32:] = (220, 180, 90)
+            flat = np.full((48, 64, 3), 12, dtype=np.uint8)
+
+            cv2.imwrite(
+                os.path.join(working_root, category, "ok.png"),
+                normal,
+            )
+            cv2.imwrite(
+                os.path.join(backup_root, category, "ok.png"),
+                normal,
+            )
+            cv2.imwrite(
+                os.path.join(backup_root, category, "missing_work.png"),
+                normal,
+            )
+            cv2.imwrite(
+                os.path.join(working_root, category, "flat.png"),
+                flat,
+            )
+            cv2.imwrite(
+                os.path.join(backup_root, category, "flat.png"),
+                flat,
+            )
+            cv2.imwrite(
+                os.path.join(working_root, category, "extra.png"),
+                normal,
+            )
+
+            with (
+                patch("app.BASE_DIR", runtime_root),
+                patch("app.get_all_ayarlar", return_value=settings),
+            ):
+                report = app._template_asset_health_report(deep=True)
+
+            items = report["templates"][category]
+            self.assertEqual(items["ok.png"]["severity"], "OK")
+            self.assertEqual(
+                items["missing_work.png"]["code"],
+                "WORKING_MISSING",
+            )
+            self.assertTrue(
+                items["missing_work.png"]["can_restore_from_backup"]
+            )
+            self.assertEqual(
+                items["both_missing.png"]["code"],
+                "WORKING_AND_BACKUP_MISSING",
+            )
+            self.assertEqual(
+                items["both_missing.png"]["severity"],
+                "CRITICAL",
+            )
+
+            # Near-uniform black/white-like images are review-only, never
+            # auto-declared broken and never deleted by this scanner.
+            self.assertEqual(
+                items["flat.png"]["code"],
+                "VISUAL_REVIEW_REQUIRED",
+            )
+            self.assertEqual(
+                items["flat.png"]["severity"],
+                "WARNING",
+            )
+            self.assertTrue(report["read_only"])
+            self.assertEqual(report["auto_deleted"], 0)
+
+            extras = {
+                (item["category"], item["filename"])
+                for item in report["filesystem_only_working"]
+            }
+            self.assertIn((category, "extra.png"), extras)
+
+    def test_review_js_refreshes_from_working_image_not_backup_first_route(self):
+        js_path = os.path.join(
+            BASE_DIR,
+            "SABLON_V2_MIMARI",
+            "static",
+            "js",
+            "main.js",
+        )
+        with open(js_path, "r", encoding="utf-8") as handle:
+            js = handle.read()
+
+        self.assertIn(
+            "'/working-image/' +",
+            js,
+        )
+        self.assertNotIn(
+            "tempImg.src = '/image/'",
+            js,
+        )
+        self.assertIn(
+            "batchAnalyzeExternalPause",
+            js,
+        )
+        self.assertIn(
+            "runTemplateHealthScan",
+            js,
+        )
+
+
 if __name__ == "__main__":
     unittest.main()
