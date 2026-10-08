@@ -530,10 +530,7 @@ def _retire_template_safely(active_cat: str, active_tmpl: str) -> dict:
             canonical_name=active_tmpl,
             source="review_center_delete",
         )
-    if not os.path.isfile(src_img):
-        raise RuntimeError(
-            "Şablon kaynak görseli bulunamadı; güvenli silme yapılamaz."
-        )
+    source_was_missing = not os.path.isfile(src_img)
 
     trash_dir = os.path.join(BASE_DIR, "SILINEN_SABLONLAR_COP_KUTUSU")
     os.makedirs(trash_dir, exist_ok=True)
@@ -541,11 +538,14 @@ def _retire_template_safely(active_cat: str, active_tmpl: str) -> dict:
     token = uuid.uuid4().hex[:8]
     safe_stem = Path(active_tmpl).stem
 
-    trash_image_name = (
-        f"{active_cat}__{safe_stem}__{stamp}_{token}"
-        f"{Path(active_tmpl).suffix}"
-    )
-    trash_img = os.path.join(trash_dir, trash_image_name)
+    trash_image_name = None
+    trash_img = None
+    if not source_was_missing:
+        trash_image_name = (
+            f"{active_cat}__{safe_stem}__{stamp}_{token}"
+            f"{Path(active_tmpl).suffix}"
+        )
+        trash_img = os.path.join(trash_dir, trash_image_name)
 
     backup_src = _find_template_backup_asset(active_cat, active_tmpl)
     backup_trash_name = None
@@ -591,7 +591,10 @@ def _retire_template_safely(active_cat: str, active_tmpl: str) -> dict:
             "trash_image_name": trash_image_name,
             "backup_trash_name": backup_trash_name,
             "deactivated_profile_rowids": deactivated_rowids,
-            "source_sha256": _sha256_file(src_img),
+            "source_sha256": (
+                None if source_was_missing else _sha256_file(src_img)
+            ),
+            "source_was_missing": bool(source_was_missing),
             "deleted_at": stamp,
         }
 
@@ -602,8 +605,9 @@ def _retire_template_safely(active_cat: str, active_tmpl: str) -> dict:
             os.fsync(handle.fileno())
         os.replace(tmp_meta, meta_path)
 
-        shutil.move(src_img, trash_img)
-        moved_pairs.append((trash_img, src_img))
+        if not source_was_missing and trash_img:
+            shutil.move(src_img, trash_img)
+            moved_pairs.append((trash_img, src_img))
 
         if backup_src and backup_trash_path:
             shutil.move(backup_src, backup_trash_path)
@@ -649,6 +653,8 @@ def _retire_template_safely(active_cat: str, active_tmpl: str) -> dict:
         "trash_record": os.path.basename(meta_path),
         "deactivated_profiles": len(deactivated_rowids),
         "backup_archived": bool(backup_src),
+        "source_was_missing": bool(source_was_missing),
+        "orphan_retired": bool(source_was_missing),
     }
 
 
@@ -763,7 +769,10 @@ def api_sablon_sil_geri_al():
         cat = meta.get('kategori')
         tmpl = meta.get('sablon')
         conf = meta.get('conf', {})
-        trash_image_name = meta.get('trash_image_name') or tmpl
+        source_was_missing = bool(meta.get("source_was_missing"))
+        trash_image_name = meta.get('trash_image_name')
+        if not source_was_missing and not trash_image_name:
+            trash_image_name = tmpl
         backup_trash_name = meta.get('backup_trash_name')
         deactivated_rowids = [
             int(value)
@@ -779,11 +788,14 @@ def api_sablon_sil_geri_al():
                 "error": "Çöp meta verisi bozuk",
             }), 422
 
-        source_in_trash = _safe_under_root(
-            trash_dir,
-            trash_image_name,
-            label="cop kutusu",
-        )
+        source_in_trash = None
+        if not source_was_missing:
+            source_in_trash = _safe_under_root(
+                trash_dir,
+                trash_image_name,
+                label="cop kutusu",
+            )
+
         restore_path = _safe_template_path(cat, tmpl)
         restore_dir = os.path.dirname(restore_path)
         os.makedirs(restore_dir, exist_ok=True)
@@ -795,7 +807,10 @@ def api_sablon_sil_geri_al():
                     "Aynı isimde aktif şablon zaten var; üzerine yazılmadı."
                 ),
             }), 409
-        if not os.path.isfile(source_in_trash):
+        if (
+            not source_was_missing
+            and not os.path.isfile(source_in_trash)
+        ):
             return jsonify({
                 "success": False,
                 "error": (
@@ -851,8 +866,9 @@ def api_sablon_sil_geri_al():
         db_path = os.path.join(BASE_DIR, "SABLON_V2_MIMARI", "ayarlar.db")
         conn = sqlite3.connect(db_path)
         try:
-            shutil.move(source_in_trash, restore_path)
-            moved_back.append((restore_path, source_in_trash))
+            if not source_was_missing and source_in_trash:
+                shutil.move(source_in_trash, restore_path)
+                moved_back.append((restore_path, source_in_trash))
 
             if (
                 backup_source_in_trash
@@ -867,7 +883,9 @@ def api_sablon_sil_geri_al():
                     (restored_backup, backup_source_in_trash)
                 )
 
-            restored_hash = _sha256_file(restore_path)
+            restored_hash = (
+                "" if source_was_missing else _sha256_file(restore_path)
+            )
             conn.execute(
                 """INSERT INTO templates (category_id, filename, data)
                    VALUES (?, ?, ?)
@@ -920,6 +938,8 @@ def api_sablon_sil_geri_al():
             "restored_tmpl": tmpl,
             "reactivated_profiles": reactivated,
             "backup_restored": bool(restored_backup),
+            "source_restored": not source_was_missing,
+            "restored_as_orphan": bool(source_was_missing),
         })
     except Exception as e:
         logger.exception("Sablon geri alma hatasi")
