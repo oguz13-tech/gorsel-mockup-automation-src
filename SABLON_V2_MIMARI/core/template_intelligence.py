@@ -768,11 +768,28 @@ class CandidateGenerators:
                 center = np.mean(canonical, axis=0)
                 cy = float(center[1]) / float(h_img)
 
-                if (
-                    str(category_folder) == "05_Ocak_Arkasi"
-                    and cy > 0.67
-                ):
-                    continue
+                area_ratio = float(
+                    abs(cv2.contourArea(canonical.astype(np.float32)))
+                    / max(float(w_img * h_img), 1.0)
+                )
+                xs = canonical[:, 0]
+                ys = canonical[:, 1]
+                bbox_w_ratio = float(
+                    (float(np.max(xs)) - float(np.min(xs)))
+                    / max(float(w_img), 1.0)
+                )
+                bbox_h_ratio = float(
+                    (float(np.max(ys)) - float(np.min(ys)))
+                    / max(float(h_img), 1.0)
+                )
+
+                if str(category_folder) == "05_Ocak_Arkasi":
+                    if cy > 0.67 or cy < 0.10:
+                        continue
+                    if area_ratio > 0.48:
+                        continue
+                    if bbox_w_ratio > 0.94 or bbox_h_ratio > 0.62:
+                        continue
 
                 top_w = np.linalg.norm(canonical[1] - canonical[0])
                 bottom_w = np.linalg.norm(canonical[2] - canonical[3])
@@ -853,7 +870,7 @@ class CandidateGenerators:
 
 class TemplateAnalyzer:
     def __init__(self):
-        self.version = "v2.6"
+        self.version = "v2.7"
         self.auto_approval_enabled = False
         
     @staticmethod
@@ -1075,6 +1092,80 @@ class TemplateAnalyzer:
         return 0.0
 
     @staticmethod
+    def is_category_auto_candidate_plausible(
+        category_folder: str,
+        quad: np.ndarray,
+        img_w: int,
+        img_h: int,
+    ) -> Tuple[bool, str]:
+        """Apply category-only guards to AUTO proposals, never manual geometry.
+
+        Ocak Arkasi is a horizontal glass panel mounted behind/above the
+        cooktop. Strong cabinet, ceiling, wall, and full-scene rectangles are
+        common false positives and are not valid automatic product surfaces.
+        """
+        if str(category_folder) != "05_Ocak_Arkasi":
+            return True, "category-unconstrained"
+        if img_w <= 0 or img_h <= 0:
+            return False, "invalid-image-dimensions"
+
+        pts = GeometryValidator.canonical_sort(
+            np.asarray(quad, dtype=np.float32)
+        )
+        area = float(abs(cv2.contourArea(pts)))
+        image_area = float(img_w * img_h)
+        if image_area <= 0:
+            return False, "invalid-image-area"
+
+        area_ratio = area / image_area
+        center = np.mean(pts, axis=0)
+        cx = float(center[0]) / float(img_w)
+        cy = float(center[1]) / float(img_h)
+
+        top_w = float(np.linalg.norm(pts[1] - pts[0]))
+        bottom_w = float(np.linalg.norm(pts[2] - pts[3]))
+        left_h = float(np.linalg.norm(pts[3] - pts[0]))
+        right_h = float(np.linalg.norm(pts[2] - pts[1]))
+        avg_w = max(1.0, (top_w + bottom_w) * 0.5)
+        avg_h = max(1.0, (left_h + right_h) * 0.5)
+        projected_aspect = avg_w / avg_h
+
+        xs = pts[:, 0]
+        ys = pts[:, 1]
+        bbox_w_ratio = float(
+            (float(np.max(xs)) - float(np.min(xs)))
+            / max(float(img_w), 1.0)
+        )
+        bbox_h_ratio = float(
+            (float(np.max(ys)) - float(np.min(ys)))
+            / max(float(img_h), 1.0)
+        )
+
+        # Product-scale guard: a backsplash may be prominent, but it is not
+        # the entire photographed kitchen/wall.
+        if area_ratio < 0.025:
+            return False, "too-small-for-ocak-arkasi"
+        if area_ratio > 0.48:
+            return False, "too-large-full-scene"
+        if bbox_w_ratio > 0.94 or bbox_h_ratio > 0.62:
+            return False, "scene-spanning-rectangle"
+
+        # Location guard: lower cabinet fronts are not the print surface.
+        if cy > 0.68:
+            return False, "below-backsplash-zone"
+        if cy < 0.10:
+            return False, "above-backsplash-zone"
+        if cx < 0.08 or cx > 0.92:
+            return False, "off-center-backsplash-zone"
+
+        # Physical product is horizontal. Perspective can compress it, so the
+        # lower bound remains permissive while eliminating tall room/wall boxes.
+        if projected_aspect < 0.82 or projected_aspect > 5.0:
+            return False, "implausible-projected-aspect"
+
+        return True, "plausible"
+
+    @staticmethod
     def score_category_spatial_prior(
         category_folder: str,
         quad: np.ndarray,
@@ -1240,6 +1331,17 @@ class TemplateAnalyzer:
                     continue
 
                 canonical = GeometryValidator.canonical_sort(cand).astype(np.float32)
+                category_ok, _category_reason = (
+                    self.is_category_auto_candidate_plausible(
+                        category_folder,
+                        canonical,
+                        w,
+                        h,
+                    )
+                )
+                if not category_ok:
+                    continue
+
                 key = tuple(
                     int(round(float(value)))
                     for point in canonical
@@ -1428,10 +1530,25 @@ class TemplateAnalyzer:
                     )
                     center = np.mean(quad_arr, axis=0)
                     cy = float(center[1]) / max(float(h), 1.0)
+                    area_ratio = float(
+                        abs(cv2.contourArea(quad_arr))
+                        / max(float(w * h), 1.0)
+                    )
+                    category_ok, _ = (
+                        self.is_category_auto_candidate_plausible(
+                            category_folder,
+                            quad_arr,
+                            w,
+                            h,
+                        )
+                    )
+                    if not category_ok:
+                        continue
                     if (
                         str(category_folder) == "05_Ocak_Arkasi"
                         and (
                             cy > 0.67
+                            or area_ratio > 0.48
                             or record["spatial_prior"] < 0.46
                         )
                     ):
