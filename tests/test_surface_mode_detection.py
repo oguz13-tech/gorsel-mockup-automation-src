@@ -3,7 +3,7 @@ import unittest
 import cv2
 import numpy as np
 
-from core.template_intelligence import CandidateGenerators, TemplateAnalyzer
+from core.template_intelligence import CandidateGenerators, GeometryValidator, TemplateAnalyzer
 
 
 class SurfaceModeDetectionTests(unittest.TestCase):
@@ -19,6 +19,53 @@ class SurfaceModeDetectionTests(unittest.TestCase):
         image = np.full((self.h, self.w, 3), 128, dtype=np.uint8)
         cv2.rectangle(image, (58, 43), (262, 197), (70, 70, 70), 3)
         return image
+
+    def test_quad_outside_source_image_is_rejected(self):
+        outside = np.array(
+            [[-8, 45], [260, 45], [260, 195], [60, 195]],
+            dtype=np.float32,
+        )
+        valid, reason = GeometryValidator.is_valid_quad(
+            outside,
+            self.w,
+            self.h,
+        )
+        self.assertFalse(valid)
+        self.assertEqual(reason, "Outside source image bounds")
+
+    def test_strong_dark_glass_evidence_precedes_black(self):
+        image = np.full(
+            (self.h, self.w, 3),
+            (30, 30, 30),
+            dtype=np.uint8,
+        )
+        cv2.fillConvexPoly(
+            image,
+            self.quad.astype(np.int32),
+            (28, 28, 28),
+        )
+        cv2.polylines(
+            image,
+            [self.quad.astype(np.int32)],
+            True,
+            (24, 24, 24),
+            2,
+        )
+
+        mode, confidence, metrics = (
+            TemplateAnalyzer.classify_candidate_surface(
+                image,
+                self.quad,
+                category_folder="05_Ocak_Arkasi",
+            )
+        )
+
+        self.assertEqual(mode, "TRANSPARENT_GLASS")
+        self.assertGreaterEqual(confidence, 0.70)
+        self.assertGreaterEqual(
+            metrics["transparent_optical_score"],
+            0.72,
+        )
 
     def test_black_surface_is_classified(self):
         image = self._base_image()
