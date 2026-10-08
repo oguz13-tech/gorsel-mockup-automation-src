@@ -870,7 +870,7 @@ class CandidateGenerators:
 
 class TemplateAnalyzer:
     def __init__(self):
-        self.version = "v2.7"
+        self.version = "v2.8"
         self.auto_approval_enabled = False
         
     @staticmethod
@@ -1252,6 +1252,189 @@ class TemplateAnalyzer:
         }
         return float(np.clip(confidence, 0.0, 1.0)), components
         
+    def select_ocak_arkasi_special_candidate(
+        self,
+        image_cv: np.ndarray,
+        candidates: List[np.ndarray],
+        alpha_channel: Optional[np.ndarray] = None,
+    ) -> Optional[dict]:
+        """Pick the real backsplash panel without changing generic detectors.
+
+        This selector is intentionally scoped to 05_Ocak_Arkasi only. It may
+        accept either optically transparent glass or a white/opaque-looking
+        glass panel, because real mockups can show the same physical product in
+        both states. Strong cabinet/wall rectangles are penalized by product
+        scale, aspect, texture and boundary evidence.
+        """
+        h, w = image_cv.shape[:2]
+        if not candidates or h <= 0 or w <= 0:
+            return None
+
+        records = []
+        seen = set()
+        for candidate in candidates:
+            quad = GeometryValidator.canonical_sort(
+                np.asarray(candidate, dtype=np.float32)
+            )
+            valid, _ = GeometryValidator.is_valid_quad(quad, w, h)
+            if not valid:
+                continue
+
+            plausible, _ = self.is_category_auto_candidate_plausible(
+                "05_Ocak_Arkasi",
+                quad,
+                w,
+                h,
+            )
+            if not plausible:
+                continue
+
+            key = tuple(
+                int(round(float(value) / 3.0))
+                for point in quad
+                for value in point
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+
+            area = float(abs(cv2.contourArea(quad)))
+            area_ratio = area / max(float(w * h), 1.0)
+
+            top_w = float(np.linalg.norm(quad[1] - quad[0]))
+            bottom_w = float(np.linalg.norm(quad[2] - quad[3]))
+            left_h = float(np.linalg.norm(quad[3] - quad[0]))
+            right_h = float(np.linalg.norm(quad[2] - quad[1]))
+            avg_w = max(1.0, (top_w + bottom_w) * 0.5)
+            avg_h = max(1.0, (left_h + right_h) * 0.5)
+            aspect = avg_w / avg_h
+
+            center = np.mean(quad, axis=0)
+            cx = float(center[0]) / float(w)
+            cy = float(center[1]) / float(h)
+
+            mode, mode_conf, metrics = self.classify_candidate_surface(
+                image_cv,
+                quad,
+                alpha_channel=alpha_channel,
+                category_folder="05_Ocak_Arkasi",
+            )
+
+            mean_luma = float(metrics.get("mean_luma", 0.0))
+            std_luma = float(metrics.get("std_luma", 255.0))
+            mean_sat = float(metrics.get("mean_saturation", 255.0))
+            optical = float(
+                metrics.get("transparent_optical_score", 0.0)
+            )
+            edge_density = float(metrics.get("edge_density", 1.0))
+
+            transparent_score = (
+                float(mode_conf)
+                if mode == "TRANSPARENT_GLASS"
+                else optical * 0.90
+            )
+            white_glass_score = float(
+                np.clip((mean_luma - 150.0) / 95.0, 0.0, 1.0)
+                * np.clip((125.0 - mean_sat) / 125.0, 0.0, 1.0)
+                * np.clip((85.0 - std_luma) / 85.0, 0.0, 1.0)
+            )
+            surface_score = max(
+                transparent_score,
+                white_glass_score,
+            )
+
+            # Ocak-arkasi mockups are normally a moderate horizontal panel,
+            # not a full room/wall rectangle. These are soft scores so genuine
+            # perspective remains possible.
+            area_score = float(
+                np.exp(-((area_ratio - 0.17) / 0.14) ** 2)
+            )
+            aspect_score = float(
+                np.exp(-((aspect - 1.55) / 1.10) ** 2)
+            )
+            position_score = float(
+                np.clip(
+                    1.0
+                    - (abs(cy - 0.43) / 0.36)
+                    - (0.35 * abs(cx - 0.52)),
+                    0.0,
+                    1.0,
+                )
+            )
+            low_texture_score = float(
+                np.clip((0.13 - edge_density) / 0.13, 0.0, 1.0)
+            )
+            boundary_score = float(
+                self.measure_edge_contrast(image_cv, quad)
+            )
+
+            xs = quad[:, 0]
+            ys = quad[:, 1]
+            bbox_w_ratio = float(
+                (float(np.max(xs)) - float(np.min(xs)))
+                / max(float(w), 1.0)
+            )
+            bbox_h_ratio = float(
+                (float(np.max(ys)) - float(np.min(ys)))
+                / max(float(h), 1.0)
+            )
+            scene_penalty = 0.0
+            if area_ratio > 0.38:
+                scene_penalty += min(0.35, (area_ratio - 0.38) * 1.7)
+            if bbox_w_ratio > 0.86:
+                scene_penalty += min(
+                    0.25,
+                    (bbox_w_ratio - 0.86) * 1.5,
+                )
+            if bbox_h_ratio > 0.50:
+                scene_penalty += min(
+                    0.25,
+                    (bbox_h_ratio - 0.50) * 1.5,
+                )
+
+            score = (
+                (surface_score * 0.34)
+                + (area_score * 0.18)
+                + (aspect_score * 0.16)
+                + (position_score * 0.14)
+                + (low_texture_score * 0.10)
+                + (boundary_score * 0.08)
+                - scene_penalty
+            )
+            score = float(np.clip(score, 0.0, 1.0))
+
+            records.append({
+                "quad": quad,
+                "score": score,
+                "mode": mode,
+                "mode_confidence": float(mode_conf),
+                "surface_score": float(surface_score),
+                "metrics": metrics,
+                "area_ratio": float(area_ratio),
+                "aspect": float(aspect),
+                "position_score": float(position_score),
+                "boundary_score": float(boundary_score),
+            })
+
+        if not records:
+            return None
+
+        chosen = max(records, key=lambda item: item["score"])
+
+        # Keep the special mode conservative. If the candidate is not clearly
+        # panel-like, fall back to the existing generic pipeline instead of
+        # forcing another wrong rectangle.
+        if chosen["score"] < 0.57:
+            return None
+        if chosen["surface_score"] < 0.42:
+            return None
+        if chosen["area_ratio"] > 0.42:
+            return None
+        if not (0.90 <= chosen["aspect"] <= 4.25):
+            return None
+
+        return chosen
+
     def analyze(self, filepath: str, category_folder: str, manual_geometry_prior: dict = None) -> dict:
         raw = cv2.imdecode(
             np.fromfile(filepath, dtype=np.uint8),
@@ -1297,6 +1480,55 @@ class TemplateAnalyzer:
                     "manual_prior": 1.0
                 }
                 provenance = "MANUAL_PRIOR"
+        if (
+            best_quad is None
+            and str(category_folder) == "05_Ocak_Arkasi"
+        ):
+            ocak_special_candidates = (
+                CandidateGenerators.generate_low_contrast_glass_quads(
+                    img,
+                    category_folder,
+                )
+            )
+            ocak_special = self.select_ocak_arkasi_special_candidate(
+                img,
+                ocak_special_candidates,
+                alpha_channel=alpha_channel,
+            )
+            if ocak_special is not None:
+                best_quad = (
+                    np.asarray(
+                        ocak_special["quad"],
+                        dtype=np.float32,
+                    )
+                    .astype(float)
+                    .tolist()
+                )
+                best_conf = float(ocak_special["score"])
+                best_surface_mode = str(ocak_special["mode"])
+                best_surface_mode_confidence = float(
+                    ocak_special["mode_confidence"]
+                )
+                best_components = {
+                    "ocak_arkasi_special_mode": 1.0,
+                    "surface_mode_score": float(
+                        ocak_special["surface_score"]
+                    ),
+                    "category_spatial_prior": float(
+                        ocak_special["position_score"]
+                    ),
+                    "line_score": float(
+                        ocak_special["boundary_score"]
+                    ),
+                    "area_ratio": float(
+                        ocak_special["area_ratio"]
+                    ),
+                    "special_candidate_score": float(
+                        ocak_special["score"]
+                    ),
+                }
+                provenance = "AUTO_OCAK_ARKASI_SPECIAL"
+
         if best_quad is None:
             # Pipeline: Generators -> Validator -> Scorer.
             # An invalid manual prior must never suppress automatic recovery.
