@@ -178,6 +178,8 @@ window.onerror = function(msg, url, line, col, error) {
     let currentCat = null;
     let currentTmpl = null;
     let currentImg = null;
+    let templateHealthSnapshot = null;
+    let templateLoadToken = 0;
     
     // Zoom & Pan vars
     let baseScale = 1;
@@ -388,10 +390,36 @@ window.onerror = function(msg, url, line, col, error) {
             return;
         }
 
+        const currentlyAnalyzed = selected.filter(([cat, tmpl]) =>
+            isBatchAnalyzingTemplate(cat, tmpl)
+        );
+        const safeSelected = selected.filter(([cat, tmpl]) =>
+            !isBatchAnalyzingTemplate(cat, tmpl)
+        );
+
+        if (safeSelected.length === 0) {
+            alert(
+                'Seçtiğiniz şablon şu anda toplu tarama tarafından işleniyor. ' +
+                'Birkaç saniye sonra tekrar deneyin.'
+            );
+            return;
+        }
+
+        const scanNote = currentlyAnalyzed.length
+            ? '\n\nNot: Şu anda taranan ' + currentlyAnalyzed.length +
+              ' şablon bu işlemde atlanacak ve seçili kalacak.'
+            : '';
+
         if (!confirm(
-            selected.length +
-            ' şablon aktif kullanımdan çıkarılıp geri alınabilir çöp alanına taşınacak. Devam edilsin mi?'
+            safeSelected.length +
+            ' şablon aktif kullanımdan çıkarılıp geri alınabilir çöp alanına taşınacak.' +
+            scanNote +
+            '\n\nDevam edilsin mi?'
         )) return;
+
+        if (batchAnalyzeRunning) {
+            batchAnalyzeExternalPause = true;
+        }
 
         const button = document.getElementById('bulkDeleteButton');
         const countLabel = document.getElementById('bulkSelectedCount');
@@ -403,7 +431,7 @@ window.onerror = function(msg, url, line, col, error) {
         }
         if (countLabel) {
             countLabel.textContent =
-                selected.length + ' şablon işleniyor...';
+                safeSelected.length + ' şablon işleniyor...';
         }
 
         try {
@@ -411,7 +439,7 @@ window.onerror = function(msg, url, line, col, error) {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify({
-                    items: selected.map(([category, template]) => ({
+                    items: safeSelected.map(([category, template]) => ({
                         category,
                         template
                     }))
@@ -464,17 +492,140 @@ window.onerror = function(msg, url, line, col, error) {
                 (failed.length
                     ? '\n' + failed.length + ' şablon silinemedi.'
                     : '') +
-                failedText
+                failedText +
+                (currentlyAnalyzed.length
+                    ? '\n\n' + currentlyAnalyzed.length +
+                      ' şablon o anda tarandığı için atlandı; seçili bırakıldı.'
+                    : '')
             );
+            refreshTemplateHealth(false, false);
         } catch (err) {
             alert('Toplu silme başarısız: ' + err.message);
         } finally {
+            batchAnalyzeExternalPause = false;
             if (button) {
                 button.textContent =
                     originalText || '🗑️ Seçilenleri Çöpe At';
                 button.disabled = bulkSelectedTemplates.size === 0;
             }
             updateBulkSelectedCount();
+        }
+    }
+
+    function getTemplateHealth(cat, tmpl) {
+        return (
+            templateHealthSnapshot
+            && templateHealthSnapshot.templates
+            && templateHealthSnapshot.templates[cat]
+            && templateHealthSnapshot.templates[cat][tmpl]
+        ) || null;
+    }
+
+    function formatTemplateHealthReport(data) {
+        const summary = data?.summary || {};
+        const lines = [
+            'HAM / ÇALIŞMA DOSYASI SAĞLIK TARAMASI',
+            '',
+            'Toplam kayıt: ' + Number(summary.total_records || 0),
+            'Sağlam: ' + Number(summary.ok || 0),
+            'Uyarı / insan kontrolü: ' + Number(summary.warning || 0),
+            'Kritik: ' + Number(summary.critical || 0),
+            'DB kaydı olmayan çalışma dosyası: ' +
+                Number(summary.filesystem_only_working || 0),
+            'DB kaydı olmayan ham yedek: ' +
+                Number(summary.filesystem_only_backup || 0),
+            '',
+            'NOT: Siyah/beyaz veya çok düz görüntüler otomatik bozuk sayılmaz; ' +
+                'yalnız insan kontrolüne işaretlenir. Hiçbir dosya otomatik silinmez.',
+            '',
+            'SORUNLU / KONTROL EDİLECEK KAYITLAR:'
+        ];
+
+        let issueCount = 0;
+        const templates = data?.templates || {};
+        Object.keys(templates).sort().forEach(cat => {
+            Object.keys(templates[cat] || {}).sort().forEach(tmpl => {
+                const info = templates[cat][tmpl];
+                if (!info || info.severity === 'OK') return;
+                issueCount += 1;
+                lines.push(
+                    '[' + info.severity + '] ' +
+                    cat + ' / ' + tmpl + ' — ' +
+                    (info.label || info.code || 'Kontrol gerekli')
+                );
+                (info.details || []).forEach(detail => {
+                    lines.push('  • ' + detail);
+                });
+            });
+        });
+
+        if (issueCount === 0) lines.push('Yok.');
+
+        const extraWorking = data?.filesystem_only_working || [];
+        const extraBackup = data?.filesystem_only_backup || [];
+
+        lines.push('', 'DB KAYDI OLMAYAN ÇALIŞMA DOSYALARI:');
+        if (extraWorking.length) {
+            extraWorking.forEach(item => {
+                lines.push('  • ' + item.category + ' / ' + item.filename);
+            });
+        } else {
+            lines.push('Yok.');
+        }
+
+        lines.push('', 'DB KAYDI OLMAYAN HAM YEDEKLER:');
+        if (extraBackup.length) {
+            extraBackup.forEach(item => {
+                lines.push('  • ' + item.category + ' / ' + item.filename);
+            });
+        } else {
+            lines.push('Yok.');
+        }
+
+        return lines.join('\n');
+    }
+
+    async function refreshTemplateHealth(deep = false, showReport = false) {
+        try {
+            const response = await fetch(
+                '/api/template-health?deep=' + (deep ? '1' : '0')
+            );
+            const data = await response.json();
+            if (!response.ok || !data.success) {
+                throw new Error(data.error || ('HTTP ' + response.status));
+            }
+            templateHealthSnapshot = data;
+            if (ayarlar) renderSidebar();
+            if (showReport) {
+                showCopyableReport(
+                    'Ham Dosya Sağlık Taraması',
+                    formatTemplateHealthReport(data)
+                );
+            }
+            return data;
+        } catch (err) {
+            if (showReport) {
+                alert('Ham dosya sağlık taraması başarısız: ' + err.message);
+            }
+            return null;
+        }
+    }
+
+    async function runTemplateHealthScan() {
+        const button = document.getElementById('templateHealthScanButton');
+        const originalText = button ? button.textContent : '';
+        if (button) {
+            button.disabled = true;
+            button.textContent = '⏳ Ham dosyalar kontrol ediliyor...';
+        }
+        try {
+            await refreshTemplateHealth(true, true);
+        } finally {
+            if (button) {
+                button.disabled = false;
+                button.textContent =
+                    originalText || '🩺 Ham Dosya Sağlık Taraması';
+            }
         }
     }
 
@@ -487,6 +638,7 @@ window.onerror = function(msg, url, line, col, error) {
         .then(data => {
             ayarlar = data;
             renderSidebar();
+            refreshTemplateHealth(false, false);
         })
         .catch(err => alert("FETCH ERROR: " + err.message));
     
@@ -502,7 +654,21 @@ window.onerror = function(msg, url, line, col, error) {
             const templateCount = Object.keys(
                 ayarlar?.kategoriler?.[cat]?.sablonlar || {}
             ).length;
-            title.textContent = cat + ' (' + templateCount + ')';
+            const categoryHealth =
+                templateHealthSnapshot?.categories?.[cat] || null;
+            const healthIssueCount = Number(
+                categoryHealth?.issue_count || 0
+            );
+            title.textContent =
+                cat + ' (' + templateCount + ')' +
+                (healthIssueCount > 0
+                    ? '  ⚠️ ' + healthIssueCount
+                    : '');
+            if (healthIssueCount > 0) {
+                title.title =
+                    healthIssueCount +
+                    ' dosya sağlığı uyarısı var. Ham Dosya Sağlık Taraması ile detayları görebilirsiniz.';
+            }
             const list = document.createElement('div');
             list.className = 'template-list';
             if (cat === currentCat) {
@@ -575,6 +741,34 @@ window.onerror = function(msg, url, line, col, error) {
                     item.title = 'Henüz incelenmedi.';
                 }
 
+                const healthInfo = getTemplateHealth(cat, tmpl);
+                if (healthInfo && healthInfo.severity !== 'OK') {
+                    const healthPrefix = healthInfo.severity === 'CRITICAL'
+                        ? '🛑 '
+                        : '⚠️ ';
+                    label.textContent =
+                        healthPrefix +
+                        (healthInfo.label || 'Dosya kontrolü') +
+                        ' · ' +
+                        label.textContent;
+
+                    const previousTitle = item.title
+                        ? item.title + '\n'
+                        : '';
+                    item.title =
+                        previousTitle +
+                        'Dosya Sağlığı: ' +
+                        (healthInfo.label || healthInfo.code || 'Kontrol gerekli');
+
+                    if (healthInfo.severity === 'CRITICAL') {
+                        item.style.backgroundColor = 'rgba(220,53,69,0.35)';
+                        item.style.color = '#ffb3b3';
+                    } else if (!item.style.backgroundColor) {
+                        item.style.backgroundColor = 'rgba(255,193,7,0.18)';
+                        item.style.color = '#ffe08a';
+                    }
+                }
+
                 item.appendChild(checkbox);
                 item.appendChild(label);
 
@@ -642,12 +836,17 @@ window.onerror = function(msg, url, line, col, error) {
     }
     
     function loadTemplate(cat, tmpl, elem) {
+        const loadToken = ++templateLoadToken;
         document.querySelectorAll('.template-item').forEach(el => el.classList.remove('active'));
         if(elem) elem.classList.add('active');
         
         currentCat = cat;
         bulkTargetCategory = cat;
         currentTmpl = tmpl;
+        currentImg = null;
+        originalImgObj = null;
+        pts = [];
+        draggingPoint = -1;
         const data = ayarlar.kategoriler[cat].sablonlar[tmpl];
         
         // Every template is permanently perspective geometry.
@@ -674,6 +873,11 @@ window.onerror = function(msg, url, line, col, error) {
 
         const img = new Image();
         img.onload = () => {
+            if (
+                loadToken !== templateLoadToken
+                || cat !== currentCat
+                || tmpl !== currentTmpl
+            ) return;
             currentImg = img;
             originalImgObj = img;
             sourceViewMode = 'working';
@@ -682,6 +886,14 @@ window.onerror = function(msg, url, line, col, error) {
             draw();
         };
         img.onerror = () => {
+            if (
+                loadToken !== templateLoadToken
+                || cat !== currentCat
+                || tmpl !== currentTmpl
+            ) return;
+            currentImg = null;
+            originalImgObj = null;
+            pts = [];
             sourceViewMode = 'working';
             updateSourceViewStatus();
             alert(
@@ -1281,6 +1493,7 @@ window.onerror = function(msg, url, line, col, error) {
                 }
 
                 loadSourceImage('working', () => {
+                    refreshTemplateHealth(false, false);
                     alert(
                         'Ham orijinal çalışma kopyasına geri yüklendi. ' +
                         'Dört köşeyi kontrol edin; gerekirse çok küçük bir düzeltme yapın ve ' +
@@ -1319,6 +1532,7 @@ window.onerror = function(msg, url, line, col, error) {
                 // Remove from ayarlar and UI
                 delete ayarlar.kategoriler[currentCat].sablonlar[currentTmpl];
                 renderSidebar();
+                refreshTemplateHealth(false, false);
                 // Load next template
                 const keys = Object.keys(ayarlar.kategoriler[currentCat].sablonlar);
                 if (keys.length > 0) {
@@ -1352,7 +1566,23 @@ window.onerror = function(msg, url, line, col, error) {
                     .then(data => {
                         ayarlar = data;
                         renderSidebar();
-                        alert("Şablon geri getirildi: " + res.restored_tmpl);
+                        refreshTemplateHealth(false, false);
+                        if (res.restored_as_orphan) {
+                            alert(
+                                'Yetim kayıt geri getirildi: ' +
+                                res.restored_tmpl +
+                                '\n\nBu kaydın çalışma görseli silinmeden önce de yoktu; ' +
+                                'sistem olmayan bir çalışma görseli üretmedi.' +
+                                (res.backup_restored
+                                    ? '\nHam/orijinal yedek geri getirildi.'
+                                    : '\nHam/orijinal yedek de bulunmuyordu.')
+                            );
+                        } else {
+                            alert(
+                                'Şablon geri getirildi: ' +
+                                res.restored_tmpl
+                            );
+                        }
                     });
             } else {
                 alert("Geri alma başarısız: " + (res.error || 'Çöpte dosya yok.'));
@@ -1400,18 +1630,24 @@ window.onerror = function(msg, url, line, col, error) {
                 return false;
             }
 
-            // Sadece manuel kaydetmede görseli yenile.
+            // Sadece manuel kaydetmede AKTİF çalışma görselini yenile.
+            // Legacy /image rotası ham yedeği öncelediği için burada kullanılmaz.
             if (saveCat && saveTmpl && !silent) {
-                const stem = saveTmpl.replace(/\.[^.]+$/, '');
                 const tempImg = new Image();
                 tempImg.onload = () => {
                     if (saveCat === currentCat && saveTmpl === currentTmpl) {
                         currentImg = tempImg;
+                        originalImgObj = tempImg;
+                        sourceViewMode = 'working';
+                        updateSourceViewStatus();
                         draw();
                     }
                 };
-                tempImg.src = '/image/' + encodeURIComponent(saveCat) + '/' +
-                    encodeURIComponent(stem + '.png') + '?t=' + Date.now();
+                tempImg.src =
+                    '/working-image/' +
+                    encodeURIComponent(saveCat) + '/' +
+                    encodeURIComponent(saveTmpl) +
+                    '?t=' + Date.now();
             }
             if (!silent) {
                 alert('Değişiklikler aktif şablon veritabanına başarıyla kaydedildi.');
@@ -1477,6 +1713,7 @@ let batchAnalyzeStopRequested = false;
 let batchAnalyzeCurrentCategory = null;
 let batchAnalyzeCurrentTemplate = null;
 let batchAnalyzeCompact = false;
+let batchAnalyzeExternalPause = false;
 
 function isBatchAnalyzingTemplate(category, template) {
     return Boolean(
@@ -1825,6 +2062,19 @@ async function batchAnalyze() {
         );
 
         for (let i = 0; i < templates.length; i++) {
+            while (
+                batchAnalyzeExternalPause
+                && !batchAnalyzeStopRequested
+            ) {
+                updateBatchAnalyzeProgress(
+                    processedCount,
+                    templates.length,
+                    '',
+                    'Başka bir güvenli dosya işlemi tamamlanana kadar tarama bekliyor...'
+                );
+                await new Promise(resolve => setTimeout(resolve, 150));
+            }
+
             if (batchAnalyzeStopRequested) {
                 stopped = true;
                 break;
@@ -1923,6 +2173,7 @@ async function batchAnalyze() {
         batchAnalyzeStopRequested = false;
         batchAnalyzeCurrentCategory = null;
         batchAnalyzeCurrentTemplate = null;
+        batchAnalyzeExternalPause = false;
         if (button) {
             button.disabled = false;
             button.style.opacity = '1';
