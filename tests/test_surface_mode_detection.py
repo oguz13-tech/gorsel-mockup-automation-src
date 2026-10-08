@@ -50,6 +50,68 @@ class SurfaceModeDetectionTests(unittest.TestCase):
         self.assertEqual(mode, "WHITE")
         self.assertGreaterEqual(confidence, 0.60)
 
+    def test_optical_clear_glass_on_light_wall_precedes_white(self):
+        image = np.full(
+            (self.h, self.w, 3),
+            (222, 222, 222),
+            dtype=np.uint8,
+        )
+        # Clear glass keeps the wall visible: interior tone is intentionally
+        # close to the immediate outside, with only a subtle glass border.
+        cv2.fillConvexPoly(
+            image,
+            self.quad.astype(np.int32),
+            (216, 216, 216),
+        )
+        cv2.polylines(
+            image,
+            [self.quad.astype(np.int32)],
+            True,
+            (192, 192, 192),
+            3,
+        )
+
+        mode, confidence, metrics = (
+            TemplateAnalyzer.classify_candidate_surface(
+                image,
+                self.quad,
+                category_folder="05_Ocak_Arkasi",
+            )
+        )
+
+        self.assertEqual(mode, "TRANSPARENT_GLASS")
+        self.assertGreaterEqual(confidence, 0.60)
+        self.assertGreaterEqual(
+            metrics["transparent_optical_score"],
+            0.52,
+        )
+
+    def test_ocak_arkasi_prior_prefers_back_wall_over_lower_cabinet(self):
+        glass_quad = np.array(
+            [[85, 55], [235, 55], [235, 135], [85, 135]],
+            dtype=np.float32,
+        )
+        cabinet_quad = np.array(
+            [[20, 165], [300, 165], [300, 230], [20, 230]],
+            dtype=np.float32,
+        )
+
+        glass_score = TemplateAnalyzer.score_category_spatial_prior(
+            "05_Ocak_Arkasi",
+            glass_quad,
+            self.w,
+            self.h,
+        )
+        cabinet_score = TemplateAnalyzer.score_category_spatial_prior(
+            "05_Ocak_Arkasi",
+            cabinet_quad,
+            self.w,
+            self.h,
+        )
+
+        self.assertGreater(glass_score, cabinet_score)
+        self.assertGreaterEqual(glass_score - cabinet_score, 0.35)
+
     def test_true_alpha_surface_is_classified_as_transparent(self):
         image = self._base_image()
         alpha = np.full((self.h, self.w), 255, dtype=np.uint8)
