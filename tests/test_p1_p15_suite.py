@@ -1263,6 +1263,117 @@ class TestTemplateAssetHealth(unittest.TestCase):
             }
             self.assertIn((category, "extra.png"), extras)
 
+    def test_manual_health_scan_persists_and_quick_refresh_does_not_overwrite(self):
+        import app
+
+        with tempfile.TemporaryDirectory() as runtime_root:
+            category = "01_Wifi_Kutusu"
+            filename = "Wifi_Kutusu_001.png"
+            working_dir = os.path.join(
+                runtime_root,
+                "2_SABLON_HAVUZU",
+                category,
+            )
+            backup_dir = os.path.join(
+                runtime_root,
+                "2_SABLON_HAVUZU_ORIJINAL_YEDEK",
+                category,
+            )
+            os.makedirs(working_dir, exist_ok=True)
+            os.makedirs(backup_dir, exist_ok=True)
+
+            image = np.zeros((32, 48, 3), dtype=np.uint8)
+            image[:, :24] = (25, 80, 150)
+            image[:, 24:] = (210, 170, 90)
+            cv2.imwrite(os.path.join(working_dir, filename), image)
+            cv2.imwrite(os.path.join(backup_dir, filename), image)
+
+            manual_settings = {
+                "kategoriler": {
+                    category: {
+                        "sablonlar": {
+                            filename: {},
+                        }
+                    }
+                }
+            }
+            empty_settings = {"kategoriler": {}}
+
+            app.app.config["TESTING"] = True
+            client = app.app.test_client()
+
+            with (
+                patch("app.BASE_DIR", runtime_root),
+                patch(
+                    "app.get_all_ayarlar",
+                    return_value=manual_settings,
+                ),
+            ):
+                saved_response = client.get(
+                    "/api/template-health?deep=1&save=1"
+                )
+
+            self.assertEqual(
+                saved_response.status_code,
+                200,
+                saved_response.get_json(),
+            )
+            saved_payload = saved_response.get_json()
+            self.assertTrue(saved_payload["saved_report"])
+            self.assertTrue(saved_payload["saved_at"])
+            self.assertEqual(
+                saved_payload["summary"]["total_records"],
+                1,
+            )
+
+            saved_path = os.path.join(
+                runtime_root,
+                "SABLON_V2_MIMARI",
+                "reports",
+                "son_ham_dosya_saglik_raporu.json",
+            )
+            self.assertTrue(os.path.isfile(saved_path))
+
+            # Automatic/lightweight live refresh must never replace the
+            # user's last completed manual full report.
+            with (
+                patch("app.BASE_DIR", runtime_root),
+                patch(
+                    "app.get_all_ayarlar",
+                    return_value=empty_settings,
+                ),
+            ):
+                quick_response = client.get(
+                    "/api/template-health?deep=0&save=0"
+                )
+                last_response = client.get(
+                    "/api/template-health/last"
+                )
+
+            self.assertEqual(
+                quick_response.status_code,
+                200,
+                quick_response.get_json(),
+            )
+            self.assertEqual(
+                quick_response.get_json()["summary"]["total_records"],
+                0,
+            )
+            self.assertEqual(
+                last_response.status_code,
+                200,
+                last_response.get_json(),
+            )
+            last_payload = last_response.get_json()
+            self.assertEqual(
+                last_payload["summary"]["total_records"],
+                1,
+            )
+            self.assertEqual(
+                last_payload["saved_at"],
+                saved_payload["saved_at"],
+            )
+
     def test_review_js_refreshes_from_working_image_not_backup_first_route(self):
         js_path = os.path.join(
             BASE_DIR,
@@ -1288,6 +1399,18 @@ class TestTemplateAssetHealth(unittest.TestCase):
         )
         self.assertIn(
             "runTemplateHealthScan",
+            js,
+        )
+        self.assertIn(
+            "&save=",
+            js,
+        )
+        self.assertIn(
+            "openLastTemplateHealthReport",
+            js,
+        )
+        self.assertIn(
+            "/api/template-health/last",
             js,
         )
 
