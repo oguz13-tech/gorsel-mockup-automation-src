@@ -932,6 +932,72 @@ def _path_within_root(root: str, candidate: str) -> bool:
         return False
 
 
+def _find_image_asset(root: str, category: str, template_name: str):
+    """Resolve one image by exact name or same stem without leaving root."""
+    import urllib.parse
+
+    category = urllib.parse.unquote(str(category or ""))
+    template_name = urllib.parse.unquote(str(template_name or ""))
+    safe_root = os.path.abspath(root)
+    stem = Path(template_name).stem
+
+    candidates = [template_name]
+    candidates.extend(
+        stem + ext
+        for ext in (".png", ".jpg", ".jpeg", ".webp", ".avif")
+        if stem + ext != template_name
+    )
+    for name in candidates:
+        candidate = os.path.abspath(
+            os.path.join(safe_root, category, name)
+        )
+        if (
+            _path_within_root(safe_root, candidate)
+            and os.path.isfile(candidate)
+        ):
+            return candidate
+    return None
+
+
+def _send_image_no_cache(path: str):
+    import hashlib
+
+    file_stat = os.stat(path)
+    etag = hashlib.md5(
+        f"{path}:{file_stat.st_mtime}:{file_stat.st_size}".encode()
+    ).hexdigest()
+    client_etag = request.headers.get("If-None-Match", "")
+    if client_etag == f'"{etag}"':
+        return "", 304
+
+    response = send_file(path)
+    response.set_etag(etag)
+    response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
+@app.route('/working-image/<cat>/<tmpl>')
+def serve_working_image(cat, tmpl):
+    """Serve only the active working copy; never silently substitute backup."""
+    working_root = os.path.abspath(
+        os.path.join(BASE_DIR, "2_SABLON_HAVUZU")
+    )
+    img_path = _find_image_asset(working_root, cat, tmpl)
+    if img_path is None:
+        return "Calisma gorseli bulunamadi", 404
+    return _send_image_no_cache(img_path)
+
+
+@app.route('/original-image/<cat>/<tmpl>')
+def serve_original_image(cat, tmpl):
+    """Serve only the immutable/raw original backup for visual inspection."""
+    backup_root = os.path.abspath(YEDEK_IMG_DIR)
+    img_path = _find_image_asset(backup_root, cat, tmpl)
+    if img_path is None:
+        return "Ham orijinal yedek bulunamadi", 404
+    return _send_image_no_cache(img_path)
+
+
 @app.route('/image/<cat>/<tmpl>')
 def serve_image(cat, tmpl):
     import urllib.parse
