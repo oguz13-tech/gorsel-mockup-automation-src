@@ -160,9 +160,21 @@ class GeometryValidator:
         if len(pts) != 4:
             return False, "Not 4 points"
             
+        if img_w <= 0 or img_h <= 0:
+            return False, "Invalid source image dimensions"
+
+        # EPIC-3 invariant: geometry is evaluated only inside the real source
+        # image. UI/canvas padding (often rendered as black) is not image data
+        # and must never contribute to surface classification or scoring.
+        max_x = float(img_w - 1)
+        max_y = float(img_h - 1)
         for p in pts:
-            if p[0] < -img_w*0.5 or p[0] > img_w * 1.5 or p[1] < -img_h*0.5 or p[1] > img_h * 1.5:
-                return False, "Out of bounds"
+            x = float(p[0])
+            y = float(p[1])
+            if not np.isfinite(x) or not np.isfinite(y):
+                return False, "Non-finite point"
+            if x < 0.0 or x > max_x or y < 0.0 or y > max_y:
+                return False, "Outside source image bounds"
                 
         # Canonical sort for consistent edges FIRST
         sorted_pts = GeometryValidator.canonical_sort(pts)
@@ -773,18 +785,34 @@ class TemplateAnalyzer:
             )
             return "TRANSPARENT_GLASS", confidence, metrics
 
-        # Preserve the proven black path before any optical-glass inference.
+        # Strong glass evidence has first priority in glass-capable categories.
+        # This is intentionally checked before BLACK/WHITE so a dark or bright
+        # scene seen through clear glass is not mislabeled by its background.
+        # The threshold is stricter here to preserve the proven solid-black path.
+        if (
+            glass_category
+            and ring_delta <= 24.0
+            and edge_density <= 0.095
+            and transparent_optical_score >= 0.72
+        ):
+            confidence = float(
+                0.60 + (0.35 * transparent_optical_score)
+            )
+            return (
+                "TRANSPARENT_GLASS",
+                min(0.97, confidence),
+                metrics,
+            )
+
         if mean_luma <= 78.0 and std_luma <= 72.0:
             darkness = np.clip((95.0 - mean_luma) / 95.0, 0.0, 1.0)
             uniformity = np.clip((90.0 - std_luma) / 90.0, 0.0, 1.0)
             confidence = float(0.60 + 0.25 * darkness + 0.15 * uniformity)
             return "BLACK", min(1.0, confidence), metrics
 
-        # Clear glass often looks almost identical to the scene behind it.
-        # That means "inside similar to immediate outside + low internal edge
-        # density" is stronger evidence than raw brightness. Evaluate this
-        # BEFORE WHITE so a clear panel on a white wall is not mislabeled as
-        # a plain white insert.
+        # Weaker optical glass evidence still precedes WHITE. This catches
+        # clear panels on light walls without letting ambiguous dark regions
+        # steal the solid-black classification.
         if (
             glass_category
             and ring_delta <= 36.0
