@@ -1929,6 +1929,279 @@ def api_templates_update_corners():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+def _inspect_template_asset(path, deep=False):
+    """Return read-only health facts for one image asset."""
+    if not path or not os.path.isfile(path):
+        return {
+            "exists": False,
+            "readable": False,
+            "size_bytes": 0,
+            "suspicious_flat": False,
+        }
+
+    try:
+        size_bytes = int(os.path.getsize(path))
+    except OSError:
+        size_bytes = 0
+
+    result = {
+        "exists": True,
+        "readable": size_bytes > 0,
+        "size_bytes": size_bytes,
+        "suspicious_flat": False,
+    }
+    if not deep or size_bytes <= 0:
+        return result
+
+    try:
+        raw = np.fromfile(path, dtype=np.uint8)
+        image = cv2.imdecode(raw, cv2.IMREAD_UNCHANGED)
+    except Exception:
+        image = None
+
+    if image is None or image.size == 0:
+        result["readable"] = False
+        return result
+
+    result["readable"] = True
+    result["width"] = int(image.shape[1])
+    result["height"] = int(image.shape[0])
+
+    # Uniform black/white images can be legitimate products. Never call these
+    # "broken" automatically; only flag them for human review.
+    try:
+        if image.ndim == 3 and image.shape[2] >= 3:
+            sample = cv2.cvtColor(image[:, :, :3], cv2.COLOR_BGR2GRAY)
+        elif image.ndim == 2:
+            sample = image
+        else:
+            sample = image[..., 0]
+        stddev = float(np.std(sample))
+        mean_luma = float(np.mean(sample))
+        result["stddev_luma"] = round(stddev, 3)
+        result["mean_luma"] = round(mean_luma, 3)
+        result["suspicious_flat"] = bool(stddev < 2.0)
+    except Exception:
+        result["suspicious_flat"] = False
+
+    return result
+
+
+def _template_asset_health_report(deep=False):
+    """Inspect active DB records and template pools without mutating anything."""
+    settings = get_all_ayarlar()
+    categories = settings.get("kategoriler", {})
+    working_root = os.path.abspath(
+        os.path.join(BASE_DIR, "2_SABLON_HAVUZU")
+    )
+    backup_root = os.path.abspath(
+        os.path.join(BASE_DIR, "2_SABLON_HAVUZU_ORIJINAL_YEDEK")
+    )
+    image_exts = {".png", ".jpg", ".jpeg", ".webp", ".avif"}
+
+    templates_report = {}
+    category_report = {}
+    registered_stems = set()
+
+    summary = {
+        "total_records": 0,
+        "ok": 0,
+        "warning": 0,
+        "critical": 0,
+        "filesystem_only_working": 0,
+        "filesystem_only_backup": 0,
+    }
+
+    for category, category_data in categories.items():
+        templates = (
+            category_data.get("sablonlar", {})
+            if isinstance(category_data, dict)
+            else {}
+        )
+        if not isinstance(templates, dict):
+            templates = {}
+
+        cat_items = {}
+        cat_warning = 0
+        cat_critical = 0
+
+        for template_name in templates:
+            summary["total_records"] += 1
+            registered_stems.add((str(category), Path(template_name).stem))
+
+            working_path = _find_image_asset(
+                working_root,
+                category,
+                template_name,
+            )
+            backup_path = _find_image_asset(
+                backup_root,
+                category,
+                template_name,
+            )
+            working = _inspect_template_asset(working_path, deep=deep)
+            backup = _inspect_template_asset(backup_path, deep=deep)
+
+            severity = "OK"
+            code = "OK"
+            label = "Dosyalar sağlam görünüyor"
+            details = []
+
+            if not working["exists"] and not backup["exists"]:
+                severity = "CRITICAL"
+                code = "WORKING_AND_BACKUP_MISSING"
+                label = "Çalışma ve ham yedek eksik"
+                details.append("Aktif çalışma görseli bulunamadı.")
+                details.append("Ham/orijinal yedek de bulunamadı.")
+            elif not working["exists"]:
+                severity = "WARNING"
+                code = "WORKING_MISSING"
+                label = "Çalışma dosyası eksik"
+                details.append(
+                    "Aktif çalışma görseli yok; ham yedek mevcut."
+                )
+            elif not working["readable"]:
+                severity = "CRITICAL"
+                code = "WORKING_UNREADABLE"
+                label = "Çalışma dosyası okunamıyor"
+                details.append(
+                    "Aktif çalışma dosyası var ancak görüntü olarak okunamıyor."
+                )
+            elif not backup["exists"]:
+                severity = "WARNING"
+                code = "BACKUP_MISSING"
+                label = "Ham yedek eksik"
+                details.append(
+                    "Çalışma görseli mevcut; korunmuş ham/orijinal yedek yok."
+                )
+            elif not backup["readable"]:
+                severity = "WARNING"
+                code = "BACKUP_UNREADABLE"
+                label = "Ham yedek okunamıyor"
+                details.append(
+                    "Ham/orijinal yedek var ancak görüntü olarak okunamıyor."
+                )
+            elif deep and (
+                working.get("suspicious_flat")
+                or backup.get("suspicious_flat")
+            ):
+                severity = "WARNING"
+                code = "VISUAL_REVIEW_REQUIRED"
+                label = "Gözle kontrol önerilir"
+                details.append(
+                    "Görüntü çok düşük varyasyonlu. Siyah/beyaz ürün olabilir; "
+                    "otomatik bozuk sayılmadı ve hiçbir dosya silinmedi."
+                )
+
+            if severity == "CRITICAL":
+                summary["critical"] += 1
+                cat_critical += 1
+            elif severity == "WARNING":
+                summary["warning"] += 1
+                cat_warning += 1
+            else:
+                summary["ok"] += 1
+
+            cat_items[template_name] = {
+                "severity": severity,
+                "code": code,
+                "label": label,
+                "details": details,
+                "working": working,
+                "backup": backup,
+                "can_restore_from_backup": bool(
+                    backup["exists"] and backup["readable"]
+                ),
+                "orphan_record": bool(not working["exists"]),
+            }
+
+        templates_report[category] = cat_items
+        category_report[category] = {
+            "template_count": len(templates),
+            "warning_count": cat_warning,
+            "critical_count": cat_critical,
+            "issue_count": cat_warning + cat_critical,
+        }
+
+    def _scan_filesystem_only(root):
+        extras = []
+        if not os.path.isdir(root):
+            return extras
+        for category_name in os.listdir(root):
+            category_path = os.path.join(root, category_name)
+            if not os.path.isdir(category_path):
+                continue
+            for filename in os.listdir(category_path):
+                path = os.path.join(category_path, filename)
+                if (
+                    not os.path.isfile(path)
+                    or Path(filename).suffix.lower() not in image_exts
+                ):
+                    continue
+                key = (str(category_name), Path(filename).stem)
+                if key not in registered_stems:
+                    extras.append({
+                        "category": category_name,
+                        "filename": filename,
+                    })
+        return extras
+
+    filesystem_only_working = _scan_filesystem_only(working_root)
+    filesystem_only_backup = _scan_filesystem_only(backup_root)
+    summary["filesystem_only_working"] = len(filesystem_only_working)
+    summary["filesystem_only_backup"] = len(filesystem_only_backup)
+
+    for item in filesystem_only_working:
+        cat = item["category"]
+        category_report.setdefault(cat, {
+            "template_count": 0,
+            "warning_count": 0,
+            "critical_count": 0,
+            "issue_count": 0,
+        })
+        category_report[cat]["warning_count"] += 1
+        category_report[cat]["issue_count"] += 1
+
+    for item in filesystem_only_backup:
+        cat = item["category"]
+        category_report.setdefault(cat, {
+            "template_count": 0,
+            "warning_count": 0,
+            "critical_count": 0,
+            "issue_count": 0,
+        })
+        category_report[cat]["warning_count"] += 1
+        category_report[cat]["issue_count"] += 1
+
+    return {
+        "success": True,
+        "deep": bool(deep),
+        "summary": summary,
+        "categories": category_report,
+        "templates": templates_report,
+        "filesystem_only_working": filesystem_only_working,
+        "filesystem_only_backup": filesystem_only_backup,
+        "read_only": True,
+        "auto_deleted": 0,
+    }
+
+
+@app.route('/api/template-health')
+def api_template_health():
+    """Read-only template/raw asset health scan for cleanup review."""
+    try:
+        deep = str(request.args.get("deep", "0")).strip().lower() in {
+            "1", "true", "yes", "on"
+        }
+        return jsonify(_template_asset_health_report(deep=deep))
+    except Exception as exc:
+        logger.exception("Sablon dosya saglik taramasi basarisiz")
+        return jsonify({
+            "success": False,
+            "error": str(exc),
+        }), 500
+
+
 @app.route('/api/saglik_durumu')
 def api_saglik_durumu():
     """Return a live, read-only workspace integrity snapshot.
