@@ -645,7 +645,7 @@ class CandidateGenerators:
 
 class TemplateAnalyzer:
     def __init__(self):
-        self.version = "v2.4"
+        self.version = "v2.5"
         self.auto_approval_enabled = False
         
     @staticmethod
@@ -736,6 +736,25 @@ class TemplateAnalyzer:
                             - float(np.mean(ring_alpha))
                         )
 
+        glass_category = (
+            "Cam" in str(category_folder)
+            or "Ocak_Arkasi" in str(category_folder)
+        )
+        optical_similarity = float(
+            np.clip((42.0 - ring_delta) / 42.0, 0.0, 1.0)
+        )
+        low_texture = float(
+            np.clip((0.14 - edge_density) / 0.14, 0.0, 1.0)
+        )
+        transparent_optical_score = float(
+            np.clip(
+                (optical_similarity * 0.62)
+                + (low_texture * 0.38),
+                0.0,
+                1.0,
+            )
+        )
+
         metrics = {
             "mean_luma": mean_luma,
             "std_luma": std_luma,
@@ -744,6 +763,7 @@ class TemplateAnalyzer:
             "ring_luma_delta": float(ring_delta),
             "alpha_partial_ratio": alpha_partial,
             "alpha_delta": float(alpha_delta),
+            "transparent_optical_score": transparent_optical_score,
         }
 
         if alpha_partial >= 0.08:
@@ -753,11 +773,32 @@ class TemplateAnalyzer:
             )
             return "TRANSPARENT_GLASS", confidence, metrics
 
+        # Preserve the proven black path before any optical-glass inference.
         if mean_luma <= 78.0 and std_luma <= 72.0:
             darkness = np.clip((95.0 - mean_luma) / 95.0, 0.0, 1.0)
             uniformity = np.clip((90.0 - std_luma) / 90.0, 0.0, 1.0)
             confidence = float(0.60 + 0.25 * darkness + 0.15 * uniformity)
             return "BLACK", min(1.0, confidence), metrics
+
+        # Clear glass often looks almost identical to the scene behind it.
+        # That means "inside similar to immediate outside + low internal edge
+        # density" is stronger evidence than raw brightness. Evaluate this
+        # BEFORE WHITE so a clear panel on a white wall is not mislabeled as
+        # a plain white insert.
+        if (
+            glass_category
+            and ring_delta <= 36.0
+            and edge_density <= 0.115
+            and transparent_optical_score >= 0.52
+        ):
+            confidence = float(
+                0.52 + (0.43 * transparent_optical_score)
+            )
+            return (
+                "TRANSPARENT_GLASS",
+                min(0.95, confidence),
+                metrics,
+            )
 
         if (
             mean_luma >= 182.0
@@ -770,19 +811,6 @@ class TemplateAnalyzer:
                 0.58 + 0.24 * brightness + 0.18 * neutrality
             )
             return "WHITE", min(1.0, confidence), metrics
-
-        glass_category = (
-            "Cam" in str(category_folder)
-            or "Ocak_Arkasi" in str(category_folder)
-        )
-        if (
-            glass_category
-            and ring_delta <= 24.0
-            and std_luma >= 18.0
-        ):
-            similarity = np.clip((30.0 - ring_delta) / 30.0, 0.0, 1.0)
-            confidence = float(0.55 + 0.35 * similarity)
-            return "TRANSPARENT_GLASS", min(0.92, confidence), metrics
 
         texture = np.clip(std_luma / 75.0, 0.0, 1.0)
         edges = np.clip(edge_density / 0.12, 0.0, 1.0)
@@ -821,6 +849,59 @@ class TemplateAnalyzer:
         if ar < 0.95:
             return 0.50 * (1.0 - ((ar - 0.80) / 0.15))
         return 0.0
+
+    @staticmethod
+    def score_category_spatial_prior(
+        category_folder: str,
+        quad: np.ndarray,
+        img_w: int,
+        img_h: int,
+    ) -> float:
+        """Weak domain prior used only to break visually ambiguous ties.
+
+        Ocak-arkasi product surfaces are physically behind/above the cooktop.
+        Cabinet doors below the worktop are a common strong-edge distractor.
+        The prior stays deliberately weak so geometry/visual evidence still
+        dominates and unusual compositions remain reviewable.
+        """
+        if img_w <= 0 or img_h <= 0:
+            return 0.5
+
+        pts = GeometryValidator.canonical_sort(
+            np.asarray(quad, dtype=np.float32)
+        )
+        center = np.mean(pts, axis=0)
+        cx = float(center[0]) / float(img_w)
+        cy = float(center[1]) / float(img_h)
+
+        if str(category_folder) == "05_Ocak_Arkasi":
+            x_score = float(
+                np.clip(1.0 - (abs(cx - 0.5) / 0.5), 0.0, 1.0)
+            )
+            if cy <= 0.62:
+                y_score = float(
+                    np.clip(
+                        1.0 - (abs(cy - 0.42) / 0.42),
+                        0.0,
+                        1.0,
+                    )
+                )
+                y_score = max(0.55, y_score)
+            elif cy < 0.82:
+                y_score = float(
+                    np.clip((0.82 - cy) / 0.20, 0.0, 1.0)
+                ) * 0.55
+            else:
+                y_score = 0.0
+            return float(
+                np.clip(
+                    (x_score * 0.35) + (y_score * 0.65),
+                    0.0,
+                    1.0,
+                )
+            )
+
+        return 0.5
 
     @classmethod
     def score_candidate(
@@ -1013,7 +1094,7 @@ class TemplateAnalyzer:
                     orientation_score=orient_score,
                 )
 
-                surface_mode, surface_mode_conf, _surface_metrics = (
+                surface_mode, surface_mode_conf, surface_metrics = (
                     self.classify_candidate_surface(
                         img,
                         cand1,
@@ -1021,19 +1102,51 @@ class TemplateAnalyzer:
                         category_folder=category_folder,
                     )
                 )
-                # A small mode-evidence bonus breaks ties in favor of candidates
-                # whose interior actually behaves like one of our four known
-                # surface families. Geometry/edge evidence remains dominant.
-                mode_weight = (
-                    0.10
-                    if surface_mode in ("BLACK", "WHITE", "TRANSPARENT_GLASS")
-                    else 0.05
+
+                is_glass_category = (
+                    "Cam" in str(category_folder)
+                    or "Ocak_Arkasi" in str(category_folder)
                 )
+                if (
+                    is_glass_category
+                    and surface_mode == "TRANSPARENT_GLASS"
+                ):
+                    mode_weight = 0.22
+                elif surface_mode in ("BLACK", "WHITE"):
+                    mode_weight = 0.10
+                else:
+                    mode_weight = 0.04
+
+                spatial_prior = self.score_category_spatial_prior(
+                    category_folder,
+                    cand1,
+                    w,
+                    h,
+                )
+                spatial_weight = (
+                    0.14
+                    if str(category_folder) == "05_Ocak_Arkasi"
+                    else 0.0
+                )
+
                 conf = min(
                     1.0,
-                    conf + (mode_weight * float(surface_mode_conf)),
+                    conf
+                    + (mode_weight * float(surface_mode_conf))
+                    + (spatial_weight * float(spatial_prior)),
                 )
-                comp_conf["surface_mode_score"] = float(surface_mode_conf)
+                comp_conf["surface_mode_score"] = float(
+                    surface_mode_conf
+                )
+                comp_conf["category_spatial_prior"] = float(
+                    spatial_prior
+                )
+                comp_conf["transparent_optical_score"] = float(
+                    surface_metrics.get(
+                        "transparent_optical_score",
+                        0.0,
+                    )
+                )
 
                 if conf > best_conf:
                     best_conf = conf
