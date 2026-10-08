@@ -1531,18 +1531,128 @@ function finishBatchAnalyzeProgress(total, successCount, failureCount, failures)
     overlay.style.display = 'flex';
 }
 
+function chooseBatchAnalyzeCategory() {
+    const categories = Object.keys(ayarlar?.kategoriler || {});
+    if (categories.length === 0) {
+        alert('Yeniden taranacak kategori bulunamadı.');
+        return Promise.resolve(null);
+    }
+
+    return new Promise(resolve => {
+        let overlay = document.getElementById('batch-category-chooser');
+        if (overlay) overlay.remove();
+
+        overlay = document.createElement('div');
+        overlay.id = 'batch-category-chooser';
+        overlay.style.cssText = [
+            'position:fixed',
+            'inset:0',
+            'z-index:21000',
+            'display:flex',
+            'align-items:center',
+            'justify-content:center',
+            'padding:24px',
+            'background:rgba(0,0,0,.72)'
+        ].join(';');
+
+        const dialog = document.createElement('div');
+        dialog.style.cssText = [
+            'width:min(560px,94vw)',
+            'background:#202124',
+            'color:#f1f3f4',
+            'border:1px solid #555',
+            'border-radius:12px',
+            'padding:20px',
+            'box-shadow:0 18px 60px rgba(0,0,0,.45)'
+        ].join(';');
+
+        const title = document.createElement('div');
+        title.textContent = 'Hangi kategoriyi yeniden taramak istiyorsunuz?';
+        title.style.cssText = 'font-size:18px;font-weight:700;margin-bottom:8px;';
+
+        const note = document.createElement('div');
+        note.innerHTML =
+            'Yalnızca seçtiğiniz kategorinin otomatik 4 köşe tespiti yeniden çalıştırılır. ' +
+            'Ham/orijinal görseller değişmez. Daha önce insan olarak onayladığınız ' +
+            '<b>APPROVED</b> manuel geometri korunur.';
+        note.style.cssText =
+            'font-size:12px;line-height:1.5;color:#c7c7c7;margin-bottom:14px;';
+
+        const select = document.createElement('select');
+        select.style.cssText =
+            'width:100%;padding:11px;border-radius:7px;background:#111315;color:#fff;' +
+            'border:1px solid #666;font-size:14px;box-sizing:border-box;';
+
+        categories.forEach(cat => {
+            const option = document.createElement('option');
+            const count = Object.keys(
+                ayarlar?.kategoriler?.[cat]?.sablonlar || {}
+            ).length;
+            option.value = cat;
+            option.textContent = cat + ' — ' + count + ' şablon';
+            if (cat === currentCat) option.selected = true;
+            select.appendChild(option);
+        });
+
+        const actions = document.createElement('div');
+        actions.style.cssText =
+            'display:flex;justify-content:flex-end;gap:10px;margin-top:16px;';
+
+        const cancel = document.createElement('button');
+        cancel.type = 'button';
+        cancel.textContent = 'İptal';
+        cancel.style.cssText =
+            'padding:10px 16px;background:#555;color:white;border:0;border-radius:7px;cursor:pointer;';
+
+        const confirmButton = document.createElement('button');
+        confirmButton.type = 'button';
+        confirmButton.textContent = '🔍 Bu Kategoriyi Tara';
+        confirmButton.style.cssText =
+            'padding:10px 16px;background:#0d6efd;color:white;border:0;border-radius:7px;' +
+            'font-weight:700;cursor:pointer;';
+
+        const finish = value => {
+            overlay.remove();
+            resolve(value);
+        };
+
+        cancel.onclick = () => finish(null);
+        confirmButton.onclick = () => finish(select.value || null);
+        overlay.onclick = event => {
+            if (event.target === overlay) finish(null);
+        };
+
+        actions.appendChild(cancel);
+        actions.appendChild(confirmButton);
+        dialog.appendChild(title);
+        dialog.appendChild(note);
+        dialog.appendChild(select);
+        dialog.appendChild(actions);
+        overlay.appendChild(dialog);
+        document.body.appendChild(overlay);
+
+        setTimeout(() => select.focus(), 0);
+    });
+}
+
 async function batchAnalyze() {
-    if(!currentCat) return alert("Kategori seçili değil!");
     if(batchAnalyzeRunning) return;
 
+    const category = await chooseBatchAnalyzeCategory();
+    if(!category) return;
+
     const templates = Object.keys(
-        ayarlar?.kategoriler?.[currentCat]?.sablonlar || {}
+        ayarlar?.kategoriler?.[category]?.sablonlar || {}
     );
-    if(templates.length === 0) return alert("Bu kategoride analiz edilecek şablon bulunamadı.");
+    if(templates.length === 0) {
+        return alert("Seçtiğiniz kategoride analiz edilecek şablon bulunamadı.");
+    }
 
     if(!confirm(
-        currentCat + " kategorisindeki " + templates.length +
-        " şablon yeniden analiz edilecek. Bu gelişmiş işlem normalde gerekli değildir. Devam edilsin mi?"
+        category + " kategorisindeki " + templates.length +
+        " şablonun otomatik 4 köşe tespiti yeniden çalıştırılacak.\n\n" +
+        "Ham/orijinal görseller değişmez. Daha önce insan olarak onayladığınız " +
+        "APPROVED manuel geometri korunur.\n\nDevam edilsin mi?"
     )) return;
 
     batchAnalyzeRunning = true;
@@ -1558,7 +1668,6 @@ async function batchAnalyze() {
     document.getElementById('batchAnalyzeClose').style.display = 'none';
     document.getElementById('batchAnalyzeErrors').style.display = 'none';
 
-    const category = currentCat;
     let successCount = 0;
     let failureCount = 0;
     const failures = [];
