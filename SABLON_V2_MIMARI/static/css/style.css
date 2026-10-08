@@ -198,3 +198,87 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background:
         .tools-center-note {
             margin: 0 2px 10px 2px;
         }
+
+
+/* Copyable Factory Doctor report */
+.copyable-report-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 20000;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgba(0, 0, 0, 0.68);
+}
+
+.copyable-report-dialog {
+    width: min(760px, 94vw);
+    max-height: 86vh;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 18px;
+    border: 1px solid #555;
+    border-radius: 12px;
+    background: #202124;
+    color: #f4f4f4;
+    box-shadow: 0 18px 60px rgba(0, 0, 0, 0.45);
+}
+
+.copyable-report-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.copyable-report-title {
+    font-size: 18px;
+    font-weight: 700;
+}
+
+.copyable-report-close {
+    min-width: 38px;
+    min-height: 34px;
+    font-size: 24px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.copyable-report-text {
+    width: 100%;
+    min-height: 280px;
+    max-height: 58vh;
+    resize: vertical;
+    box-sizing: border-box;
+    padding: 14px;
+    border: 1px solid #5f6368;
+    border-radius: 8px;
+    background: #111315;
+    color: #f1f3f4;
+    font: 14px/1.55 Consolas, "Courier New", monospace;
+    white-space: pre-wrap;
+    user-select: text;
+}
+
+.copyable-report-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.copyable-report-status {
+    margin-right: auto;
+    font-size: 12px;
+    font-weight: 400;
+    color: #bdc1c6;
+}
+
+.copyable-report-copy,
+.copyable-report-ok {
+    padding: 9px 14px;
+    cursor: pointer;
+}
