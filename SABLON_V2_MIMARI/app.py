@@ -1586,18 +1586,90 @@ def api_templates_update_corners():
 
                 current_hash = _sha256_file(source_path)
                 if current_hash != source_hash:
-                    return jsonify({
-                        "success": False,
-                        "error": (
-                            "Kaynak gorsel degismis. Koseleri kaydetmeden once "
-                            "yeniden analiz gerekli."
-                        ),
-                        "code": "STALE_SOURCE_CHANGED",
-                    }), 409
+                    # The user may have intentionally restored/replaced the
+                    # working source from the protected original backup. If
+                    # they are now manually reviewing four corners, the
+                    # submitted geometry must be allowed to create a fresh
+                    # source-hash-bound manual profile instead of forcing a
+                    # separate analyzer click first.
+                    if not req_category or not req_template:
+                        return jsonify({
+                            "success": False,
+                            "error": (
+                                "Kaynak gorsel degismis. Yeni kaynaga manuel "
+                                "onay icin category/template bilgisi gerekli."
+                            ),
+                            "code": "STALE_SOURCE_CHANGED",
+                        }), 409
 
-                category_name, template_name = (
-                    str(relative_path).replace("\\", "/").split("/", 1)
-                )
+                    expected_uid = f"{req_category}_{req_template}"
+                    if uid != expected_uid:
+                        return jsonify({
+                            "success": False,
+                            "error": (
+                                "Template kimligi yeni kaynak kategori/dosya "
+                                "bilgisi ile uyusmuyor."
+                            ),
+                        }), 409
+
+                    replacement_path = _safe_template_path(
+                        req_category,
+                        req_template,
+                    )
+                    if not os.path.isfile(replacement_path):
+                        return jsonify({
+                            "success": False,
+                            "error": "Yeni kaynak gorsel bulunamadi.",
+                        }), 404
+
+                    replacement_hash = _sha256_file(replacement_path)
+
+                    # Retire every active profile for this UID that belongs to
+                    # older bytes. Never carry stale occlusion/mask evidence
+                    # into a newly restored source.
+                    conn.execute(
+                        """UPDATE template_profiles
+                           SET is_active=0,
+                               review_status='STALE_SOURCE_CHANGED',
+                               manually_verified=0,
+                               updated_at=CURRENT_TIMESTAMP
+                           WHERE template_uid=? AND is_active=1
+                             AND (
+                                 source_asset_sha256 IS NULL
+                                 OR source_asset_sha256<>?
+                             )""",
+                        (uid, replacement_hash),
+                    )
+
+                    matching_row = conn.execute(
+                        """SELECT rowid AS profile_rowid, has_occlusion
+                           FROM template_profiles
+                           WHERE template_uid=? AND is_active=1
+                             AND source_asset_sha256=?
+                           ORDER BY updated_at DESC, rowid DESC
+                           LIMIT 1""",
+                        (uid, replacement_hash),
+                    ).fetchone()
+
+                    source_path = replacement_path
+                    source_hash = replacement_hash
+                    relative_path = f"{req_category}/{req_template}"
+                    category_name = req_category
+                    template_name = req_template
+                    existing_has_occlusion = False
+                    profile_id = (
+                        int(matching_row["profile_rowid"])
+                        if matching_row
+                        else None
+                    )
+                    if matching_row:
+                        existing_has_occlusion = bool(
+                            matching_row["has_occlusion"]
+                        )
+                else:
+                    category_name, template_name = (
+                        str(relative_path).replace("\\", "/").split("/", 1)
+                    )
             else:
                 if not req_category or not req_template:
                     return jsonify({
