@@ -45,6 +45,84 @@ window.onerror = function(msg, url, line, col, error) {
         return originalFetch.apply(this, args);
     };
 
+    function showCopyableReport(title, text) {
+        let overlay = document.getElementById('copyable-report-overlay');
+        if (!overlay) {
+            overlay = document.createElement('div');
+            overlay.id = 'copyable-report-overlay';
+            overlay.className = 'copyable-report-overlay';
+            overlay.innerHTML = `
+                <div class="copyable-report-dialog" role="dialog" aria-modal="true" aria-labelledby="copyable-report-title">
+                    <div class="copyable-report-header">
+                        <div id="copyable-report-title" class="copyable-report-title"></div>
+                        <button type="button" class="copyable-report-close" aria-label="Kapat">×</button>
+                    </div>
+                    <textarea class="copyable-report-text" readonly spellcheck="false"></textarea>
+                    <div class="copyable-report-actions">
+                        <span class="copyable-report-status" aria-live="polite"></span>
+                        <button type="button" class="copyable-report-copy">📋 Tümünü Kopyala</button>
+                        <button type="button" class="copyable-report-ok">Tamam</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(overlay);
+
+            const closeReport = () => {
+                overlay.style.display = 'none';
+            };
+            overlay.querySelector('.copyable-report-close').onclick = closeReport;
+            overlay.querySelector('.copyable-report-ok').onclick = closeReport;
+            overlay.addEventListener('click', event => {
+                if (event.target === overlay) closeReport();
+            });
+            document.addEventListener('keydown', event => {
+                if (event.key === 'Escape' && overlay.style.display !== 'none') {
+                    closeReport();
+                }
+            });
+
+            overlay.querySelector('.copyable-report-copy').onclick = async () => {
+                const area = overlay.querySelector('.copyable-report-text');
+                const status = overlay.querySelector('.copyable-report-status');
+                const reportText = area.value;
+                let copied = false;
+
+                try {
+                    if (navigator.clipboard && window.isSecureContext) {
+                        await navigator.clipboard.writeText(reportText);
+                        copied = true;
+                    }
+                } catch (err) {
+                    copied = false;
+                }
+
+                if (!copied) {
+                    area.focus();
+                    area.select();
+                    try {
+                        copied = document.execCommand('copy');
+                    } catch (err) {
+                        copied = false;
+                    }
+                    area.setSelectionRange(0, 0);
+                }
+
+                status.textContent = copied
+                    ? '✅ Metin panoya kopyalandı.'
+                    : 'Metni seçip Ctrl+C ile kopyalayabilirsiniz.';
+            };
+        }
+
+        overlay.querySelector('.copyable-report-title').textContent = title;
+        const area = overlay.querySelector('.copyable-report-text');
+        area.value = String(text || '');
+        area.scrollTop = 0;
+        area.setSelectionRange(0, 0);
+        overlay.querySelector('.copyable-report-status').textContent =
+            'Metni fareyle seçebilir veya Ctrl+A / Ctrl+C kullanabilirsiniz.';
+        overlay.style.display = 'flex';
+    }
+
     // SISTEM SAĞLIK KONTROLÜ
     fetch('/api/saglik_durumu')
         .then(res => res.json())
@@ -77,11 +155,13 @@ window.onerror = function(msg, url, line, col, error) {
                 let details = document.createElement("button");
                 details.innerText = "Detaylar";
                 details.style.marginLeft = "15px";
-                details.onclick = () => alert(
-                    "KRİTİK SORUNLAR:\n" + (data.sorunlar || []).join("\n") +
-                    "\n\nUYARILAR:\n" + (data.uyarilar || []).join("\n") +
-                    "\n\nÇÖZÜLENLER:\n" + (data.cozulenler || []).join("\n")
-                );
+                details.onclick = () => {
+                    const reportText =
+                        "KRİTİK SORUNLAR:\n" + (data.sorunlar || []).join("\n") +
+                        "\n\nUYARILAR:\n" + (data.uyarilar || []).join("\n") +
+                        "\n\nÇÖZÜLENLER:\n" + (data.cozulenler || []).join("\n");
+                    showCopyableReport("Factory Doctor Detayları", reportText);
+                };
                 banner.appendChild(details);
                 
                 let mainDiv = document.getElementById("main");
