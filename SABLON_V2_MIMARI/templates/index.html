@@ -123,6 +123,9 @@
             <button type="button" onclick="restoreOriginal()" style="background:#d97706; width:100%; padding:11px 10px; margin-top:5px; text-align:left; font-weight:bold;">🔄 Ham Orijinali Geri Yükle</button>
             <div class="tool-note"><b>Dosyayı değiştirir.</b> Ham yedek sağlamsa onu çalışma kopyasının yerine güvenli şekilde yazar. Bundan sonra köşeleri yeniden kontrol edip şablonu tekrar onaylamanız gerekebilir.</div>
 
+            <button type="button" id="templateHealthScanButton" onclick="runTemplateHealthScan()" style="background:#0f766e; width:100%; padding:11px 10px; margin-top:5px; text-align:left; font-weight:bold;">🩺 Ham Dosya Sağlık Taraması</button>
+            <div class="tool-note"><b>Sadece kontrol eder; hiçbir dosyayı silmez.</b> Çalışma dosyası eksik, ham yedek eksik/okunamıyor, DB kaydı olmayan dosya ve benzeri sorunları tarar. Çok siyah/beyaz-düz görselleri otomatik bozuk saymaz; yalnız insan kontrolüne işaretler. Sonuçlar sol listedeki şablonlara ve kategori başlıklarına da yansır.</div>
+
             <div class="tool-divider"></div>
             <h3 class="tool-section-title">Kontrol ve Onay</h3>
 
