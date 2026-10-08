@@ -690,17 +690,141 @@ def run_watcher():
             "otomatik kurtarılamadı."
         )
 
+    # FAST SAFE BATCH MODE:
+    # - No parallel DB/file writes: templates are still ingested sequentially.
+    # - One short settle check is shared by the whole batch instead of sleeping
+    #   one second for every image.
+    # - Failed/conflicting files are temporarily backed off so one bad file
+    #   cannot create a hot retry loop.
+    poll_seconds = float(os.environ.get("MOCKUP_WATCH_POLL_SECONDS", "0.75"))
+    settle_seconds = float(os.environ.get("MOCKUP_FILE_SETTLE_SECONDS", "0.35"))
+    retry_seconds = float(os.environ.get("MOCKUP_FAILED_RETRY_SECONDS", "15"))
+    batch_limit = max(
+        1,
+        int(os.environ.get("MOCKUP_WATCH_BATCH_LIMIT", "250")),
+    )
+    retry_after = {}
+
+    logger.info(
+        "⚡ HIZLI TOPLU TARAMA MODU AKTİF "
+        "(batch=%s, poll=%.2fs, settle=%.2fs, paralel_yazma=kapalı)",
+        batch_limit,
+        poll_seconds,
+        settle_seconds,
+    )
+
     try:
         while True:
-            time.sleep(2.5)
-            for f in STAGING_DIR.rglob("*.*"):
-                if f.is_file() and f.suffix.lower() in VALID_EXTS:
-                    if "-düzenleme-yapıldı" in f.stem or "-beyazlatilmis-onizleme" in f.stem or f.suffix == ".processing":
-                        continue
-                        
-                    time.sleep(1.0)
-                    logger.info(f"🚨 YENİ HAM GÖRSEL YAKALANDI: {f.name} (Klasör: {f.parent.name})")
-                    process_from_staging(f)
+            scan_now = time.time()
+            candidates = []
+
+            for candidate in sorted(STAGING_DIR.rglob("*.*")):
+                if not candidate.is_file():
+                    continue
+                if candidate.suffix.lower() not in VALID_EXTS:
+                    continue
+                if (
+                    "-düzenleme-yapıldı" in candidate.stem
+                    or "-beyazlatilmis-onizleme" in candidate.stem
+                    or candidate.suffix == ".processing"
+                ):
+                    continue
+
+                try:
+                    stat = candidate.stat()
+                except OSError:
+                    continue
+
+                signature = (int(stat.st_size), int(stat.st_mtime_ns))
+                retry_state = retry_after.get(str(candidate))
+                if (
+                    retry_state is not None
+                    and retry_state[0] == signature
+                    and scan_now < retry_state[1]
+                ):
+                    continue
+
+                candidates.append((candidate, signature))
+                if len(candidates) >= batch_limit:
+                    break
+
+            if not candidates:
+                time.sleep(poll_seconds)
+                continue
+
+            # Files may still be copying/syncing (especially under OneDrive).
+            # Check the whole batch once after a short settle window.
+            time.sleep(settle_seconds)
+            ready = []
+            for candidate, first_signature in candidates:
+                try:
+                    stat = candidate.stat()
+                except OSError:
+                    continue
+                second_signature = (
+                    int(stat.st_size),
+                    int(stat.st_mtime_ns),
+                )
+                if (
+                    second_signature == first_signature
+                    and second_signature[0] > 0
+                ):
+                    ready.append((candidate, second_signature))
+
+            if not ready:
+                time.sleep(poll_seconds)
+                continue
+
+            logger.info(
+                "⚡ Toplu tarama: %s hazır görsel sırayla işlenecek.",
+                len(ready),
+            )
+
+            completed = 0
+            failed = 0
+            for candidate, signature in ready:
+                logger.info(
+                    "🚨 YENİ HAM GÖRSEL YAKALANDI: %s (Klasör: %s)",
+                    candidate.name,
+                    candidate.parent.name,
+                )
+                ok = process_from_staging(candidate)
+                if ok:
+                    completed += 1
+                    retry_after.pop(str(candidate), None)
+                    continue
+
+                failed += 1
+                if candidate.exists():
+                    try:
+                        current = candidate.stat()
+                        current_signature = (
+                            int(current.st_size),
+                            int(current.st_mtime_ns),
+                        )
+                    except OSError:
+                        current_signature = signature
+                    retry_after[str(candidate)] = (
+                        current_signature,
+                        time.time() + retry_seconds,
+                    )
+                else:
+                    retry_after.pop(str(candidate), None)
+
+            # Keep retry bookkeeping bounded if users frequently rename/remove
+            # conflicting files while the watcher is running.
+            if len(retry_after) > 1000:
+                retry_after = {
+                    key: value
+                    for key, value in retry_after.items()
+                    if Path(key).exists()
+                }
+
+            logger.info(
+                "⚡ Toplu tur tamamlandı: başarılı=%s, bekleyen/hatalı=%s",
+                completed,
+                failed,
+            )
     except KeyboardInterrupt:
         logger.info("İzleyici durduruldu.")
 
