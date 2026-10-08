@@ -603,6 +603,202 @@ class CandidateGenerators:
         return candidates
 
     @staticmethod
+    def generate_low_contrast_glass_quads(
+        image_cv: np.ndarray,
+        category_folder: str = "",
+    ) -> List[np.ndarray]:
+        """Recover faint rectangular glass panels from weak border/reflection lines.
+
+        Glass is often nearly the same tone as the wall behind it. Generic
+        contour ranking then favors cabinets, counters, or tiles whose edges are
+        much stronger. This generator enhances local contrast, keeps many long
+        line segments, and forms quads from compatible horizontal/vertical line
+        pairs before normal scoring/classification.
+        """
+        h_img, w_img = image_cv.shape[:2]
+        if h_img < 40 or w_img < 40:
+            return []
+
+        # Ocak-arkasi panels physically live behind/above the cooktop. Excluding
+        # the lower cabinet-heavy strip prevents strong cabinet edges from
+        # dominating Hough voting while preserving normal compositions.
+        roi_h = h_img
+        if str(category_folder) == "05_Ocak_Arkasi":
+            roi_h = max(40, int(round(h_img * 0.72)))
+        roi = image_cv[:roi_h, :]
+
+        gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+        clahe = cv2.createCLAHE(
+            clipLimit=2.2,
+            tileGridSize=(8, 8),
+        ).apply(gray)
+        smooth = cv2.GaussianBlur(clahe, (5, 5), 0)
+
+        edge_union = np.zeros_like(smooth)
+        for low, high in ((8, 28), (14, 42), (24, 70)):
+            edge_union = cv2.bitwise_or(
+                edge_union,
+                cv2.Canny(smooth, low, high),
+            )
+        edge_union = cv2.morphologyEx(
+            edge_union,
+            cv2.MORPH_CLOSE,
+            cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3)),
+        )
+
+        min_dim = min(w_img, roi_h)
+        min_len = max(35, int(round(min_dim * 0.16)))
+        lines = cv2.HoughLinesP(
+            edge_union,
+            1,
+            np.pi / 180.0,
+            threshold=max(22, int(round(min_dim * 0.055))),
+            minLineLength=min_len,
+            maxLineGap=max(10, int(round(min_dim * 0.04))),
+        )
+        if lines is None:
+            return []
+
+        horizontal = []
+        vertical = []
+        for line in lines:
+            x1, y1, x2, y2 = map(float, line.flatten()[:4])
+            dx = x2 - x1
+            dy = y2 - y1
+            length = float(np.hypot(dx, dy))
+            if length < min_len:
+                continue
+            angle = abs(float(np.degrees(np.arctan2(dy, dx))))
+            angle = min(angle, abs(180.0 - angle))
+            item = {
+                "pts": (x1, y1, x2, y2),
+                "length": length,
+                "mid_x": (x1 + x2) * 0.5,
+                "mid_y": (y1 + y2) * 0.5,
+            }
+            if angle <= 18.0:
+                horizontal.append(item)
+            elif abs(angle - 90.0) <= 18.0:
+                vertical.append(item)
+
+        horizontal = sorted(
+            horizontal,
+            key=lambda item: item["length"],
+            reverse=True,
+        )[:24]
+        vertical = sorted(
+            vertical,
+            key=lambda item: item["length"],
+            reverse=True,
+        )[:24]
+        if len(horizontal) < 2 or len(vertical) < 2:
+            return []
+
+        def _line_intersection(a, b):
+            x1, y1, x2, y2 = a["pts"]
+            x3, y3, x4, y4 = b["pts"]
+            den = ((x1 - x2) * (y3 - y4)) - (
+                (y1 - y2) * (x3 - x4)
+            )
+            if abs(den) < 1e-6:
+                return None
+            det1 = (x1 * y2) - (y1 * x2)
+            det2 = (x3 * y4) - (y3 * x4)
+            px = (
+                (det1 * (x3 - x4))
+                - ((x1 - x2) * det2)
+            ) / den
+            py = (
+                (det1 * (y3 - y4))
+                - ((y1 - y2) * det2)
+            ) / den
+            return np.array([px, py], dtype=np.float32)
+
+        h_pairs = []
+        for i in range(len(horizontal)):
+            for j in range(i + 1, len(horizontal)):
+                a = horizontal[i]
+                b = horizontal[j]
+                sep = abs(a["mid_y"] - b["mid_y"])
+                if sep < roi_h * 0.10 or sep > roi_h * 0.62:
+                    continue
+                top, bottom = (
+                    (a, b)
+                    if a["mid_y"] <= b["mid_y"]
+                    else (b, a)
+                )
+                h_pairs.append((top, bottom))
+
+        v_pairs = []
+        for i in range(len(vertical)):
+            for j in range(i + 1, len(vertical)):
+                a = vertical[i]
+                b = vertical[j]
+                sep = abs(a["mid_x"] - b["mid_x"])
+                if sep < w_img * 0.12 or sep > w_img * 0.82:
+                    continue
+                left, right = (
+                    (a, b)
+                    if a["mid_x"] <= b["mid_x"]
+                    else (b, a)
+                )
+                v_pairs.append((left, right))
+
+        candidates = []
+        seen = set()
+        for top, bottom in h_pairs:
+            for left, right in v_pairs:
+                tl = _line_intersection(top, left)
+                tr = _line_intersection(top, right)
+                br = _line_intersection(bottom, right)
+                bl = _line_intersection(bottom, left)
+                if any(point is None for point in (tl, tr, br, bl)):
+                    continue
+
+                quad = np.asarray([tl, tr, br, bl], dtype=np.float32)
+                valid, _ = GeometryValidator.is_valid_quad(
+                    quad,
+                    w_img,
+                    h_img,
+                )
+                if not valid:
+                    continue
+
+                canonical = GeometryValidator.canonical_sort(quad)
+                center = np.mean(canonical, axis=0)
+                cy = float(center[1]) / float(h_img)
+
+                if (
+                    str(category_folder) == "05_Ocak_Arkasi"
+                    and cy > 0.67
+                ):
+                    continue
+
+                top_w = np.linalg.norm(canonical[1] - canonical[0])
+                bottom_w = np.linalg.norm(canonical[2] - canonical[3])
+                left_h = np.linalg.norm(canonical[3] - canonical[0])
+                right_h = np.linalg.norm(canonical[2] - canonical[1])
+                avg_w = float((top_w + bottom_w) * 0.5)
+                avg_h = float((left_h + right_h) * 0.5)
+                if avg_h <= 1.0 or (avg_w / avg_h) < 0.85:
+                    continue
+
+                key = tuple(
+                    int(round(float(value) / 3.0))
+                    for point in canonical
+                    for value in point
+                )
+                if key in seen:
+                    continue
+                seen.add(key)
+                candidates.append(canonical.astype(np.float32))
+
+                if len(candidates) >= 120:
+                    return candidates
+
+        return candidates
+
+    @staticmethod
     def generate_texture_robust_quads(image_cv: np.ndarray) -> List[np.ndarray]:
         """Suppress interior artwork/detail and recover the outer product border.
 
@@ -657,7 +853,7 @@ class CandidateGenerators:
 
 class TemplateAnalyzer:
     def __init__(self):
-        self.version = "v2.5"
+        self.version = "v2.6"
         self.auto_approval_enabled = False
         
     @staticmethod
@@ -1021,6 +1217,12 @@ class TemplateAnalyzer:
                 CandidateGenerators.generate_extreme_tone_quads(img)
             )
             candidates.extend(
+                CandidateGenerators.generate_low_contrast_glass_quads(
+                    img,
+                    category_folder,
+                )
+            )
+            candidates.extend(
                 CandidateGenerators.generate_texture_robust_quads(img)
             )
             candidates.extend(
@@ -1076,6 +1278,7 @@ class TemplateAnalyzer:
             # candidate). This preserves the previous distance definition but
             # performs the pairwise work in NumPy instead of a Python O(N^2)
             # inner loop.
+            scored_candidates = []
             for i, cand1 in enumerate(valid_cands):
                 diffs = candidate_stack - cand1
                 distances = np.sqrt(np.sum(diffs * diffs, axis=(1, 2))) / max(float(w), 1.0)
@@ -1176,12 +1379,90 @@ class TemplateAnalyzer:
                     )
                 )
 
+                scored_candidates.append({
+                    "quad": cand1,
+                    "confidence": float(conf),
+                    "components": dict(comp_conf),
+                    "surface_mode": surface_mode,
+                    "surface_mode_confidence": float(surface_mode_conf),
+                    "surface_metrics": dict(surface_metrics),
+                    "spatial_prior": float(spatial_prior),
+                })
+
                 if conf > best_conf:
                     best_conf = conf
                     best_quad = cand1.tolist()
                     best_components = comp_conf
                     best_surface_mode = surface_mode
                     best_surface_mode_confidence = float(surface_mode_conf)
+
+            # User/domain contract: in glass-capable categories, a trustworthy
+            # transparent/glass candidate wins before solid black/white/textured
+            # candidates. This is a tiered selection rule, not merely a small
+            # score bonus. It prevents strong cabinet/door edges from stealing
+            # Ocak-Arkasi selections when a faint real glass panel exists.
+            glass_capable = bool(rule.get("has_reflection")) or (
+                "Cam" in str(category_folder)
+                or "Ocak_Arkasi" in str(category_folder)
+            )
+            if glass_capable and scored_candidates:
+                glass_candidates = []
+                for record in scored_candidates:
+                    if record["surface_mode"] != "TRANSPARENT_GLASS":
+                        continue
+                    metrics = record["surface_metrics"]
+                    optical = float(
+                        metrics.get("transparent_optical_score", 0.0)
+                    )
+                    alpha_ratio = float(
+                        metrics.get("alpha_partial_ratio", 0.0)
+                    )
+                    if record["surface_mode_confidence"] < 0.62:
+                        continue
+                    if max(optical, alpha_ratio) < 0.50:
+                        continue
+
+                    quad_arr = np.asarray(
+                        record["quad"],
+                        dtype=np.float32,
+                    )
+                    center = np.mean(quad_arr, axis=0)
+                    cy = float(center[1]) / max(float(h), 1.0)
+                    if (
+                        str(category_folder) == "05_Ocak_Arkasi"
+                        and (
+                            cy > 0.67
+                            or record["spatial_prior"] < 0.46
+                        )
+                    ):
+                        continue
+                    glass_candidates.append(record)
+
+                if glass_candidates:
+                    chosen = max(
+                        glass_candidates,
+                        key=lambda record: (
+                            record["confidence"]
+                            + (0.24 * record["spatial_prior"])
+                            + (
+                                0.10
+                                * float(
+                                    record["surface_metrics"].get(
+                                        "transparent_optical_score",
+                                        0.0,
+                                    )
+                                )
+                            )
+                        ),
+                    )
+                    best_conf = float(chosen["confidence"])
+                    best_quad = chosen["quad"].tolist()
+                    best_components = dict(chosen["components"])
+                    best_components["glass_priority_selected"] = 1.0
+                    best_surface_mode = "TRANSPARENT_GLASS"
+                    best_surface_mode_confidence = float(
+                        chosen["surface_mode_confidence"]
+                    )
                 
         if best_quad and best_surface_mode == "UNKNOWN":
             (
