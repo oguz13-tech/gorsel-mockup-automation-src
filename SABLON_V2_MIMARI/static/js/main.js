@@ -235,8 +235,14 @@ window.onerror = function(msg, url, line, col, error) {
 
     function loadSourceImage(mode, onSuccess = null) {
         if (!currentCat || !currentTmpl) return;
+        const requestCat = currentCat;
+        const requestTmpl = currentTmpl;
         const img = new Image();
         img.onload = () => {
+            if (
+                requestCat !== currentCat
+                || requestTmpl !== currentTmpl
+            ) return;
             currentImg = img;
             originalImgObj = img;
             sourceViewMode = mode;
@@ -246,6 +252,10 @@ window.onerror = function(msg, url, line, col, error) {
             if (typeof onSuccess === 'function') onSuccess();
         };
         img.onerror = () => {
+            if (
+                requestCat !== currentCat
+                || requestTmpl !== currentTmpl
+            ) return;
             const label = mode === 'original'
                 ? 'Ham orijinal yedek'
                 : 'Çalışma görseli';
@@ -685,6 +695,9 @@ window.onerror = function(msg, url, line, col, error) {
                 item.className = 'template-item';
                 item.dataset.category = cat;
                 item.dataset.template = tmpl;
+                if (cat === currentCat && tmpl === currentTmpl) {
+                    item.classList.add('active');
+                }
 
                 const checkbox = document.createElement('input');
                 checkbox.type = 'checkbox';
