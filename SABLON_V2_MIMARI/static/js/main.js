@@ -217,6 +217,58 @@ window.onerror = function(msg, url, line, col, error) {
     }
     
     let originalImgObj = null; // Ham orjinal gorseli hafizada tutar
+    let sourceViewMode = 'working';
+
+    function updateSourceViewStatus() {
+        const el = document.getElementById('source-view-status');
+        if (!el) return;
+        if (sourceViewMode === 'original') {
+            el.innerHTML = '🟣 <b>HAM ORİJİNAL önizleniyor.</b> Bu sadece görüntülemedir; dosya değişmedi.';
+            el.style.borderColor = '#8b5cf6';
+        } else {
+            el.innerHTML = '🟢 <b>Çalışma görseli gösteriliyor.</b> Sistem işlemlerinde kullanılan aktif kopya budur.';
+            el.style.borderColor = '#2e7d32';
+        }
+    }
+
+    function loadSourceImage(mode, onSuccess = null) {
+        if (!currentCat || !currentTmpl) return;
+        const img = new Image();
+        img.onload = () => {
+            currentImg = img;
+            originalImgObj = img;
+            sourceViewMode = mode;
+            updateSourceViewStatus();
+            resetView();
+            draw();
+            if (typeof onSuccess === 'function') onSuccess();
+        };
+        img.onerror = () => {
+            const label = mode === 'original'
+                ? 'Ham orijinal yedek'
+                : 'Çalışma görseli';
+            alert(
+                label + ' bulunamadı veya okunamadı. Dosya üzerinde hiçbir değişiklik yapılmadı.'
+            );
+        };
+        const route = mode === 'original'
+            ? '/original-image/'
+            : '/working-image/';
+        img.src =
+            route +
+            encodeURIComponent(currentCat) + '/' +
+            encodeURIComponent(currentTmpl) +
+            '?t=' + new Date().getTime();
+    }
+
+    function showOriginalPreview() {
+        loadSourceImage('original');
+    }
+
+    function showWorkingPreview() {
+        loadSourceImage('working');
+    }
+
     
     let allTemplates = [];
     let bulkSelectionMode = false;
@@ -621,15 +673,26 @@ window.onerror = function(msg, url, line, col, error) {
         img.onload = () => {
             currentImg = img;
             originalImgObj = img;
+            sourceViewMode = 'working';
+            updateSourceViewStatus();
             initPoints(data);
             draw();
         };
         img.onerror = () => {
-            alert('HATA: "' + tmpl + '" görseli diskinizde (2_SABLON_HAVUZU veya YEDEK klasöründe) bulunamadı! Lütfen dosyanın klasörde gerçekten var olduğundan emin olun.');
+            sourceViewMode = 'working';
+            updateSourceViewStatus();
+            alert(
+                'HATA: "' + tmpl + '" çalışma görseli 2_SABLON_HAVUZU içinde bulunamadı veya okunamadı. ' +
+                'Ham yedeği kontrol etmek için “Ham Orijinali Göster” butonunu kullanabilirsiniz.'
+            );
             currentImg = null;
             draw();
         };
-        img.src = '/image/' + encodeURIComponent(cat) + '/' + encodeURIComponent(tmpl);
+        img.src =
+            '/working-image/' +
+            encodeURIComponent(cat) + '/' +
+            encodeURIComponent(tmpl) +
+            '?t=' + new Date().getTime();
     }
     
     function resetView() {
@@ -1154,6 +1217,13 @@ window.onerror = function(msg, url, line, col, error) {
 
     function restoreOriginal() {
         if (!currentCat || !currentTmpl) return;
+        if (!confirm(
+            'Bu işlem sadece görüntüleme değildir.\n\n' +
+            'Korunmuş ham orijinal, aktif çalışma kopyasının yerine yazılacak. ' +
+            'Mevcut onay/geometri kaydı yeniden kontrol gerektirebilir.\n\n' +
+            'Devam edilsin mi?'
+        )) return;
+
         fetch('/api/orijinal_yukle', {
             method: 'POST',
             headers: {
@@ -1163,16 +1233,20 @@ window.onerror = function(msg, url, line, col, error) {
             }
         }).then(r => r.json()).then(res => {
             if(res.success) {
-                const tempImg = new Image();
-                tempImg.onload = () => {
-                    currentImg = tempImg;
-                    originalImgObj = tempImg;
-                    draw();
-                };
-                tempImg.src = '/image/' + encodeURIComponent(currentCat) + '/' + encodeURIComponent(currentTmpl) + '?t=' + new Date().getTime();
+                loadSourceImage('working', () => {
+                    alert(
+                        'Ham orijinal çalışma kopyasına geri yüklendi. ' +
+                        'Şimdi dört köşeyi yeniden kontrol edin ve doğruysa şablonu tekrar onaylayın.'
+                    );
+                });
             } else {
-                alert("Orijinal yükleme başarısız: " + (res.error || 'Bu görselin eski bir kopyası (orijinal yedek) bulunamadı.'));
+                alert(
+                    "Orijinal yükleme başarısız: " +
+                    (res.error || 'Bu görselin korunmuş ham yedeği bulunamadı.')
+                );
             }
+        }).catch(err => {
+            alert('Orijinal yükleme bağlantı hatası: ' + err.message);
         });
     }
 
