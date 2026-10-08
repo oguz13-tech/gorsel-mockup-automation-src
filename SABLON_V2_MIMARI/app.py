@@ -12,6 +12,7 @@ from pathlib import Path
 from flask import Flask, render_template, request, jsonify, send_file
 import threading
 import webbrowser
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Code comes from the checked-out source tree; mutable templates/DB/assets
 # may live in a separate production workspace.
@@ -1219,6 +1220,97 @@ def _load_matching_manual_prior(db_path, uid, img_path):
         return None
 
 
+def _is_source_matching_approved(db_path, uid, img_path):
+    """Fast batch preflight for immutable human-approved geometry.
+
+    Query first so non-approved templates do not pay a file-hash cost. Only
+    source-matching, manually verified APPROVED profiles are skipped.
+    """
+    conn = sqlite3.connect(db_path)
+    try:
+        row = conn.execute(
+            """SELECT source_asset_sha256
+               FROM template_profiles
+               WHERE template_uid=? AND is_active=1
+                 AND manually_verified=1
+                 AND review_status='APPROVED'
+               ORDER BY updated_at DESC, rowid DESC
+               LIMIT 1""",
+            (uid,),
+        ).fetchone()
+    finally:
+        conn.close()
+
+    if not row or not row[0] or not os.path.isfile(img_path):
+        return False
+
+    return str(row[0]) == _sha256_file(img_path)
+
+
+def _profile_data_from_analysis(category, template_name, analysis):
+    return {
+        "template_uid": f"{category}_{template_name}",
+        "category": category,
+        "source_relative_path": f"{category}/{template_name}",
+        "source_asset_sha256": analysis.get("source_asset_sha256"),
+        "profile_version": "v2",
+        "analyzer_version": analysis.get("analyzer_version"),
+        "product_class": analysis.get("rule", {}).get(
+            "product_class",
+            "Bilinmeyen",
+        ),
+        "orientation": analysis.get("orientation", "UNKNOWN"),
+        "nominal_aspect": analysis.get("nominal_aspect", "UNKNOWN"),
+        "print_policy": analysis.get("rule", {}).get(
+            "print_policy",
+            "full_bleed",
+        ),
+        "surface_quad": analysis.get("surface_quad"),
+        "outer_quad": analysis.get("outer_quad"),
+        "confidence_total": analysis.get("confidence_total", 0.0),
+        "component_confidences": analysis.get(
+            "component_confidences",
+            {},
+        ),
+        "review_status": analysis.get(
+            "review_status",
+            "UNANALYZED",
+        ),
+        "manually_verified": False,
+    }
+
+
+def _analyze_template_for_batch(category, template_name):
+    """CPU-heavy, read-only stage for one batch item."""
+    img_path = _safe_template_path(category, template_name)
+    if not os.path.isfile(img_path):
+        return {
+            "template": template_name,
+            "status": "MISSING",
+            "error": "Görsel bulunamadı",
+        }
+
+    try:
+        # One analyzer per worker avoids shared mutable state. The actual
+        # quality algorithm is exactly TemplateAnalyzer.analyze().
+        analysis = TemplateAnalyzer().analyze(
+            img_path,
+            category,
+            manual_geometry_prior=None,
+        )
+        return {
+            "template": template_name,
+            "status": "ANALYZED",
+            "analysis": analysis,
+        }
+    except Exception as exc:
+        return {
+            "template": template_name,
+            "status": "FAILED",
+            "error": str(exc),
+        }
+
+
 @app.route('/api/templates/foreground_detect', methods=['POST'])
 def api_templates_foreground_detect():
     """Suggest automatic foreground object boxes using Grounding-DINO + SAM.
@@ -1355,24 +1447,11 @@ def api_templates_analyze():
         db_path = os.path.join(BASE_DIR, "SABLON_V2_MIMARI", "ayarlar.db")
         uid = f"{active_cat}_{active_tmpl}"
         
-        profile_data = {
-            "template_uid": uid,
-            "category": active_cat,
-            "source_relative_path": f"{active_cat}/{active_tmpl}",
-            "source_asset_sha256": result.get("source_asset_sha256"),
-            "profile_version": "v2",
-            "analyzer_version": result.get("analyzer_version"),
-            "product_class": result.get("rule", {}).get("product_class", "Bilinmeyen"),
-            "orientation": result.get("orientation", "UNKNOWN"),
-            "nominal_aspect": result.get("nominal_aspect", "UNKNOWN"),
-            "print_policy": result.get("rule", {}).get("print_policy", "full_bleed"),
-            "surface_quad": result.get("surface_quad"),
-            "outer_quad": result.get("outer_quad"),
-            "confidence_total": result.get("confidence_total", 0.0),
-            "component_confidences": result.get("component_confidences", {}),
-            "review_status": result.get("review_status", "UNANALYZED"),
-            "manually_verified": False
-        }
+        profile_data = _profile_data_from_analysis(
+            active_cat,
+            active_tmpl,
+            result,
+        )
         
         save_template_profile(db_path, profile_data)
         
@@ -1490,49 +1569,220 @@ def api_templates_approve():
 
 @app.route('/api/templates/batch_analyze', methods=['POST'])
 def api_templates_batch_analyze():
+    """Analyze a small batch without changing geometry quality.
+
+    CPU-only image analysis may use two workers. SQLite profile writes remain
+    strictly sequential in this request. Source-matching human APPROVED
+    profiles are preserved and skipped before image decoding.
+    """
     try:
-        req = request.json
-        category = req.get("category")
+        req = request.get_json(silent=True) or {}
+        category = str(req.get("category") or "").strip()
+        requested_templates = req.get("templates")
         if not category:
-            return jsonify({"success": False, "error": "Kategori eksik"}), 400
-            
-        ayarlar = get_all_ayarlar()
-        sablonlar = ayarlar.get("kategoriler", {}).get(category, {}).get("sablonlar", {})
-        
-        analyzer = TemplateAnalyzer()
-        db_path = os.path.join(BASE_DIR, "SABLON_V2_MIMARI", "ayarlar.db")
-        
-        results = []
-        for tmpl in sablonlar.keys():
-            img_path = _safe_template_path(category, tmpl)
-            if os.path.exists(img_path):
-                uid = f"{category}_{tmpl}"
-                manual_prior = _load_matching_manual_prior(db_path, uid, img_path)
-                res = analyzer.analyze(img_path, category, manual_geometry_prior=manual_prior)
-                profile_data = {
-                    "template_uid": uid,
-                    "category": category,
-                    "source_relative_path": f"{category}/{tmpl}",
-                    "source_asset_sha256": res.get("source_asset_sha256"),
-                    "profile_version": "v2",
-                    "analyzer_version": res.get("analyzer_version"),
-                    "product_class": res.get("rule", {}).get("product_class", "Bilinmeyen"),
-                    "orientation": res.get("orientation", "UNKNOWN"),
-                    "nominal_aspect": res.get("nominal_aspect", "UNKNOWN"),
-                    "print_policy": res.get("rule", {}).get("print_policy", "full_bleed"),
-                    "surface_quad": res.get("surface_quad"),
-                    "outer_quad": res.get("outer_quad"),
-                    "confidence_total": res.get("confidence_total", 0.0),
-                    "component_confidences": res.get("component_confidences", {}),
-                    "review_status": res.get("review_status", "UNANALYZED"),
-                    "manually_verified": False
+            return jsonify({
+                "success": False,
+                "error": "Kategori eksik",
+            }), 400
+
+        settings = get_all_ayarlar()
+        registered = (
+            settings.get("kategoriler", {})
+            .get(category, {})
+            .get("sablonlar", {})
+        )
+        if not isinstance(registered, dict):
+            registered = {}
+
+        if isinstance(requested_templates, list):
+            templates = []
+            seen = set()
+            for value in requested_templates[:12]:
+                template_name = str(value or "").strip()
+                if (
+                    template_name
+                    and template_name not in seen
+                    and template_name in registered
+                ):
+                    templates.append(template_name)
+                    seen.add(template_name)
+        else:
+            # Legacy compatibility. UI now sends small explicit batches.
+            templates = list(registered.keys())[:12]
+
+        if not templates:
+            return jsonify({
+                "success": True,
+                "results": [],
+                "analyzed_count": 0,
+                "approved_preserved_count": 0,
+                "missing_count": 0,
+                "failed_count": 0,
+                "quality_algorithm": "UNCHANGED",
+            })
+
+        try:
+            requested_workers = int(req.get("workers", 2) or 2)
+        except (TypeError, ValueError):
+            requested_workers = 2
+        worker_count = max(1, min(2, requested_workers))
+
+        db_path = os.path.join(
+            BASE_DIR,
+            "SABLON_V2_MIMARI",
+            "ayarlar.db",
+        )
+
+        results_by_name = {}
+        to_analyze = []
+
+        # Cheap/safe preflight. Human-approved geometry with matching bytes
+        # does not need image decoding or CV analysis again.
+        for template_name in templates:
+            img_path = _safe_template_path(category, template_name)
+            if not os.path.isfile(img_path):
+                results_by_name[template_name] = {
+                    "template": template_name,
+                    "status": "MISSING",
+                    "error": "Görsel bulunamadı",
                 }
-                save_template_profile(db_path, profile_data)
-                results.append({"template": tmpl, "status": res.get("review_status")})
-                
-        return jsonify({"success": True, "results": results})
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+                continue
+
+            uid = f"{category}_{template_name}"
+            if _is_source_matching_approved(
+                db_path,
+                uid,
+                img_path,
+            ):
+                results_by_name[template_name] = {
+                    "template": template_name,
+                    "status": "SKIPPED_APPROVED",
+                    "review_status": "APPROVED",
+                    "preserved": True,
+                }
+                continue
+
+            to_analyze.append(template_name)
+
+        analysis_results = {}
+        if to_analyze:
+            if worker_count == 1 or len(to_analyze) == 1:
+                for template_name in to_analyze:
+                    analysis_results[template_name] = (
+                        _analyze_template_for_batch(
+                            category,
+                            template_name,
+                        )
+                    )
+            else:
+                # Analysis is read-only and independent per image. Keep worker
+                # count at two to avoid CPU/RAM oversubscription on desktop PCs.
+                with ThreadPoolExecutor(
+                    max_workers=worker_count,
+                    thread_name_prefix="quad-scan",
+                ) as executor:
+                    future_map = {
+                        executor.submit(
+                            _analyze_template_for_batch,
+                            category,
+                            template_name,
+                        ): template_name
+                        for template_name in to_analyze
+                    }
+                    for future in as_completed(future_map):
+                        template_name = future_map[future]
+                        try:
+                            analysis_results[template_name] = future.result()
+                        except Exception as exc:
+                            analysis_results[template_name] = {
+                                "template": template_name,
+                                "status": "FAILED",
+                                "error": str(exc),
+                            }
+
+        # IMPORTANT: DB writes stay sequential even though CPU analysis above
+        # may overlap. This preserves the existing SQLite safety model.
+        for template_name in to_analyze:
+            item = analysis_results.get(template_name) or {
+                "template": template_name,
+                "status": "FAILED",
+                "error": "Analiz sonucu alınamadı",
+            }
+
+            if item.get("status") == "ANALYZED":
+                analysis = item.get("analysis") or {}
+                try:
+                    save_template_profile(
+                        db_path,
+                        _profile_data_from_analysis(
+                            category,
+                            template_name,
+                            analysis,
+                        ),
+                    )
+                    results_by_name[template_name] = {
+                        "template": template_name,
+                        "status": "ANALYZED",
+                        "review_status": analysis.get(
+                            "review_status",
+                            "UNANALYZED",
+                        ),
+                    }
+                except Exception as exc:
+                    results_by_name[template_name] = {
+                        "template": template_name,
+                        "status": "FAILED",
+                        "error": str(exc),
+                    }
+            else:
+                results_by_name[template_name] = item
+
+        ordered_results = [
+            results_by_name.get(
+                template_name,
+                {
+                    "template": template_name,
+                    "status": "FAILED",
+                    "error": "Sonuç bulunamadı",
+                },
+            )
+            for template_name in templates
+        ]
+
+        return jsonify({
+            "success": True,
+            "results": ordered_results,
+            "analyzed_count": sum(
+                1
+                for item in ordered_results
+                if item.get("status") == "ANALYZED"
+            ),
+            "approved_preserved_count": sum(
+                1
+                for item in ordered_results
+                if item.get("status") == "SKIPPED_APPROVED"
+            ),
+            "missing_count": sum(
+                1
+                for item in ordered_results
+                if item.get("status") == "MISSING"
+            ),
+            "failed_count": sum(
+                1
+                for item in ordered_results
+                if item.get("status") == "FAILED"
+            ),
+            "workers_used": worker_count,
+            "quality_algorithm": "UNCHANGED",
+            "db_writes": "SEQUENTIAL",
+        })
+    except Exception as exc:
+        logger.exception("Toplu sablon analizi hatasi")
+        return jsonify({
+            "success": False,
+            "error": str(exc),
+        }), 500
+
 
 @app.route('/api/templates/update_corners', methods=['POST'])
 def api_templates_update_corners():
