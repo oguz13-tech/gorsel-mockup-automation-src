@@ -2426,6 +2426,7 @@ def _template_asset_health_report(deep=False):
     return {
         "success": True,
         "deep": bool(deep),
+        "generated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
         "summary": summary,
         "categories": category_report,
         "templates": templates_report,
@@ -2436,6 +2437,64 @@ def _template_asset_health_report(deep=False):
     }
 
 
+def _template_health_saved_report_path():
+    report_dir = os.path.join(
+        BASE_DIR,
+        "SABLON_V2_MIMARI",
+        "reports",
+    )
+    return os.path.join(
+        report_dir,
+        "son_ham_dosya_saglik_raporu.json",
+    )
+
+
+def _save_template_health_report(report):
+    """Atomically persist only an explicitly requested full health report."""
+    if not isinstance(report, dict) or not report.get("success"):
+        raise ValueError("Kaydedilecek sağlık raporu geçersiz.")
+
+    report_to_save = dict(report)
+    report_to_save["saved_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+    report_to_save["saved_report"] = True
+
+    target = _template_health_saved_report_path()
+    os.makedirs(os.path.dirname(target), exist_ok=True)
+    tmp_path = target + "." + uuid.uuid4().hex + ".tmp"
+    try:
+        with open(tmp_path, "w", encoding="utf-8") as handle:
+            json.dump(
+                report_to_save,
+                handle,
+                ensure_ascii=False,
+                indent=2,
+            )
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp_path, target)
+    finally:
+        if os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+
+    return report_to_save
+
+
+def _load_saved_template_health_report():
+    target = _template_health_saved_report_path()
+    if not os.path.isfile(target):
+        return None
+
+    with open(target, "r", encoding="utf-8") as handle:
+        report = json.load(handle)
+
+    if not isinstance(report, dict) or not report.get("success"):
+        raise ValueError("Kaydedilmiş sağlık raporu bozuk veya geçersiz.")
+    return report
+
+
 @app.route('/api/template-health')
 def api_template_health():
     """Read-only template/raw asset health scan for cleanup review."""
@@ -2443,13 +2502,51 @@ def api_template_health():
         deep = str(request.args.get("deep", "0")).strip().lower() in {
             "1", "true", "yes", "on"
         }
-        return jsonify(_template_asset_health_report(deep=deep))
+        persist = str(request.args.get("save", "0")).strip().lower() in {
+            "1", "true", "yes", "on"
+        }
+
+        report = _template_asset_health_report(deep=deep)
+        if persist:
+            if not deep:
+                return jsonify({
+                    "success": False,
+                    "error": (
+                        "Kalıcı son rapor yalnız tam (deep) sağlık "
+                        "taramasından kaydedilebilir."
+                    ),
+                    "code": "DEEP_SCAN_REQUIRED_FOR_SAVE",
+                }), 400
+            report = _save_template_health_report(report)
+
+        return jsonify(report)
     except Exception as exc:
         logger.exception("Sablon dosya saglik taramasi basarisiz")
         return jsonify({
             "success": False,
             "error": str(exc),
         }), 500
+
+
+@app.route('/api/template-health/last')
+def api_template_health_last():
+    """Return the last explicitly saved full health report."""
+    try:
+        report = _load_saved_template_health_report()
+        if report is None:
+            return jsonify({
+                "success": False,
+                "error": "Henüz kaydedilmiş bir Ham Dosya Sağlık Raporu yok.",
+                "code": "NO_SAVED_HEALTH_REPORT",
+            }), 404
+        return jsonify(report)
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        logger.exception("Kaydedilmiş sağlık raporu okunamadı")
+        return jsonify({
+            "success": False,
+            "error": str(exc),
+            "code": "SAVED_HEALTH_REPORT_INVALID",
+        }), 422
 
 
 @app.route('/api/saglik_durumu')
