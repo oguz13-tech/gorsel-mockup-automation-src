@@ -461,13 +461,334 @@ class CandidateGenerators:
 
         return candidates
 
+    @staticmethod
+    def _quads_from_binary_mask(
+        mask: np.ndarray,
+        img_area: float,
+        *,
+        max_contours: int = 40,
+    ) -> List[np.ndarray]:
+        """Convert a binary surface mask into perspective quad proposals."""
+        if mask is None or mask.size == 0:
+            return []
+        work = np.asarray(mask, dtype=np.uint8)
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+        work = cv2.morphologyEx(work, cv2.MORPH_CLOSE, kernel)
+        work = cv2.morphologyEx(
+            work,
+            cv2.MORPH_OPEN,
+            cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3)),
+        )
+        contours, _ = cv2.findContours(
+            work,
+            cv2.RETR_LIST,
+            cv2.CHAIN_APPROX_SIMPLE,
+        )
+        contours = sorted(
+            contours,
+            key=cv2.contourArea,
+            reverse=True,
+        )[:max_contours]
+
+        candidates = []
+        for contour in contours:
+            area = float(abs(cv2.contourArea(contour)))
+            if area < img_area * 0.025 or area > img_area * 0.985:
+                continue
+            hull = cv2.convexHull(contour)
+            peri = cv2.arcLength(hull, True)
+            if peri <= 0:
+                continue
+
+            for epsilon_ratio in (0.012, 0.02, 0.035, 0.055):
+                approx = cv2.approxPolyDP(
+                    hull,
+                    epsilon_ratio * peri,
+                    True,
+                )
+                if len(approx) == 4 and cv2.isContourConvex(approx):
+                    candidates.append(approx.reshape(4, 2))
+
+            rect = cv2.minAreaRect(hull.astype(np.float32))
+            box = cv2.boxPoints(rect)
+            if abs(cv2.contourArea(box.astype(np.float32))) >= img_area * 0.05:
+                candidates.append(np.round(box).astype(np.int32))
+        return candidates
+
+    @staticmethod
+    def generate_extreme_tone_quads(image_cv: np.ndarray) -> List[np.ndarray]:
+        """Specialized proposals for very dark and very bright print surfaces.
+
+        These masks are intentionally separate from generic Otsu segmentation.
+        A black or white insert can be nearly textureless, so its outer tone
+        transition is often more reliable than internal edges.
+        """
+        gray = cv2.cvtColor(image_cv, cv2.COLOR_BGR2GRAY)
+        hsv = cv2.cvtColor(image_cv, cv2.COLOR_BGR2HSV)
+        sat = hsv[:, :, 1]
+        img_area = float(image_cv.shape[0] * image_cv.shape[1])
+
+        masks = []
+        for upper in (45, 70, 95):
+            masks.append(
+                np.where(gray <= upper, 255, 0).astype(np.uint8)
+            )
+
+        for lower, max_sat in ((175, 95), (200, 110), (225, 135)):
+            masks.append(
+                np.where(
+                    (gray >= lower) & (sat <= max_sat),
+                    255,
+                    0,
+                ).astype(np.uint8)
+            )
+
+        candidates = []
+        for mask in masks:
+            candidates.extend(
+                CandidateGenerators._quads_from_binary_mask(
+                    mask,
+                    img_area,
+                )
+            )
+        return candidates
+
+    @staticmethod
+    def generate_alpha_quads(alpha_channel: Optional[np.ndarray]) -> List[np.ndarray]:
+        """Generate surface proposals from true PNG alpha when it exists."""
+        if alpha_channel is None or alpha_channel.size == 0:
+            return []
+        alpha = np.asarray(alpha_channel, dtype=np.uint8)
+        img_area = float(alpha.shape[0] * alpha.shape[1])
+        if int(alpha.min()) == int(alpha.max()):
+            return []
+
+        masks = []
+        partial = np.where(
+            (alpha > 8) & (alpha < 247),
+            255,
+            0,
+        ).astype(np.uint8)
+        if np.count_nonzero(partial):
+            masks.append(partial)
+
+        for threshold in (24, 80, 144, 208):
+            masks.append(
+                np.where(alpha >= threshold, 255, 0).astype(np.uint8)
+            )
+            masks.append(
+                np.where(alpha < threshold, 255, 0).astype(np.uint8)
+            )
+
+        candidates = []
+        for mask in masks:
+            candidates.extend(
+                CandidateGenerators._quads_from_binary_mask(
+                    mask,
+                    img_area,
+                )
+            )
+        return candidates
+
+    @staticmethod
+    def generate_texture_robust_quads(image_cv: np.ndarray) -> List[np.ndarray]:
+        """Suppress interior artwork/detail and recover the outer product border.
+
+        Strong blur removes most text/design strokes before edge extraction.
+        This is deliberately complementary to normal Canny/Hough generators.
+        """
+        gray = cv2.cvtColor(image_cv, cv2.COLOR_BGR2GRAY)
+        smooth = cv2.GaussianBlur(gray, (15, 15), 0)
+        img_area = float(image_cv.shape[0] * image_cv.shape[1])
+        candidates = []
+
+        masks = []
+        for low, high in ((15, 55), (30, 95)):
+            edge = cv2.Canny(smooth, low, high)
+            edge = cv2.morphologyEx(
+                edge,
+                cv2.MORPH_CLOSE,
+                cv2.getStructuringElement(cv2.MORPH_RECT, (7, 7)),
+            )
+            masks.append(edge)
+
+        grad = cv2.morphologyEx(
+            smooth,
+            cv2.MORPH_GRADIENT,
+            cv2.getStructuringElement(cv2.MORPH_RECT, (7, 7)),
+        )
+        _, grad_mask = cv2.threshold(
+            grad,
+            0,
+            255,
+            cv2.THRESH_BINARY + cv2.THRESH_OTSU,
+        )
+        masks.append(grad_mask)
+
+        for mask in masks:
+            candidates.extend(
+                CandidateGenerators._quads_from_binary_mask(
+                    mask,
+                    img_area,
+                )
+            )
+
+        # Reuse the line-pair geometry on a smoothed BGR image so high-frequency
+        # artwork strokes cannot dominate Hough voting.
+        smooth_bgr = cv2.cvtColor(smooth, cv2.COLOR_GRAY2BGR)
+        candidates.extend(
+            CandidateGenerators.generate_hough_lines_quad(smooth_bgr)
+        )
+        return candidates
+
     # Removed heuristic generate_manual_prior_quad
 
 class TemplateAnalyzer:
     def __init__(self):
-        self.version = "v2.3"
+        self.version = "v2.4"
         self.auto_approval_enabled = False
         
+    @staticmethod
+    def classify_candidate_surface(
+        image_cv: np.ndarray,
+        quad: np.ndarray,
+        alpha_channel: Optional[np.ndarray] = None,
+        category_folder: str = "",
+    ) -> Tuple[str, float, Dict[str, float]]:
+        """Classify the candidate's printable interior into four surface modes.
+
+        Modes are intentionally coarse and operational:
+        BLACK, WHITE, TRANSPARENT_GLASS, DESIGNED_TEXTURED.
+        """
+        h, w = image_cv.shape[:2]
+        canonical = GeometryValidator.canonical_sort(
+            np.asarray(quad, dtype=np.float32)
+        )
+        mask = np.zeros((h, w), dtype=np.uint8)
+        cv2.fillConvexPoly(mask, canonical.astype(np.int32), 255)
+
+        area = int(np.count_nonzero(mask))
+        if area <= 0:
+            return "DESIGNED_TEXTURED", 0.0, {}
+
+        # Ignore a thin border when measuring the interior so frame/shadow
+        # pixels do not turn a white/black panel into a false textured surface.
+        shrink = max(3, int(round(min(h, w) * 0.012)))
+        kernel_size = (shrink * 2) + 1
+        inner = cv2.erode(
+            mask,
+            cv2.getStructuringElement(
+                cv2.MORPH_ELLIPSE,
+                (kernel_size, kernel_size),
+            ),
+        )
+        if np.count_nonzero(inner) < max(64, area * 0.30):
+            inner = mask
+
+        gray = cv2.cvtColor(image_cv, cv2.COLOR_BGR2GRAY)
+        hsv = cv2.cvtColor(image_cv, cv2.COLOR_BGR2HSV)
+        pix = gray[inner > 0]
+        sat_pix = hsv[:, :, 1][inner > 0]
+
+        mean_luma = float(np.mean(pix))
+        std_luma = float(np.std(pix))
+        mean_sat = float(np.mean(sat_pix))
+
+        edge_map = cv2.Canny(gray, 40, 120)
+        edge_density = float(
+            np.count_nonzero(edge_map[inner > 0])
+            / max(1, np.count_nonzero(inner))
+        )
+
+        ring_size = max(5, int(round(min(h, w) * 0.02)))
+        ring_kernel = cv2.getStructuringElement(
+            cv2.MORPH_ELLIPSE,
+            ((ring_size * 2) + 1, (ring_size * 2) + 1),
+        )
+        outer = cv2.dilate(mask, ring_kernel)
+        ring = cv2.subtract(outer, mask)
+        ring_pix = gray[ring > 0]
+        ring_delta = (
+            abs(mean_luma - float(np.mean(ring_pix)))
+            if ring_pix.size
+            else 255.0
+        )
+
+        alpha_partial = 0.0
+        alpha_delta = 0.0
+        if (
+            alpha_channel is not None
+            and alpha_channel.shape[:2] == (h, w)
+        ):
+            alpha = np.asarray(alpha_channel, dtype=np.uint8)
+            inside_alpha = alpha[inner > 0]
+            if inside_alpha.size:
+                alpha_partial = float(
+                    np.count_nonzero(
+                        (inside_alpha > 8) & (inside_alpha < 247)
+                    ) / inside_alpha.size
+                )
+                if ring_pix.size:
+                    ring_alpha = alpha[ring > 0]
+                    if ring_alpha.size:
+                        alpha_delta = abs(
+                            float(np.mean(inside_alpha))
+                            - float(np.mean(ring_alpha))
+                        )
+
+        metrics = {
+            "mean_luma": mean_luma,
+            "std_luma": std_luma,
+            "mean_saturation": mean_sat,
+            "edge_density": edge_density,
+            "ring_luma_delta": float(ring_delta),
+            "alpha_partial_ratio": alpha_partial,
+            "alpha_delta": float(alpha_delta),
+        }
+
+        if alpha_partial >= 0.08:
+            confidence = min(
+                1.0,
+                0.70 + (alpha_partial * 0.30),
+            )
+            return "TRANSPARENT_GLASS", confidence, metrics
+
+        if mean_luma <= 78.0 and std_luma <= 72.0:
+            darkness = np.clip((95.0 - mean_luma) / 95.0, 0.0, 1.0)
+            uniformity = np.clip((90.0 - std_luma) / 90.0, 0.0, 1.0)
+            confidence = float(0.60 + 0.25 * darkness + 0.15 * uniformity)
+            return "BLACK", min(1.0, confidence), metrics
+
+        if (
+            mean_luma >= 182.0
+            and mean_sat <= 105.0
+            and std_luma <= 78.0
+        ):
+            brightness = np.clip((mean_luma - 165.0) / 90.0, 0.0, 1.0)
+            neutrality = np.clip((125.0 - mean_sat) / 125.0, 0.0, 1.0)
+            confidence = float(
+                0.58 + 0.24 * brightness + 0.18 * neutrality
+            )
+            return "WHITE", min(1.0, confidence), metrics
+
+        glass_category = (
+            "Cam" in str(category_folder)
+            or "Ocak_Arkasi" in str(category_folder)
+        )
+        if (
+            glass_category
+            and ring_delta <= 24.0
+            and std_luma >= 18.0
+        ):
+            similarity = np.clip((30.0 - ring_delta) / 30.0, 0.0, 1.0)
+            confidence = float(0.55 + 0.35 * similarity)
+            return "TRANSPARENT_GLASS", min(0.92, confidence), metrics
+
+        texture = np.clip(std_luma / 75.0, 0.0, 1.0)
+        edges = np.clip(edge_density / 0.12, 0.0, 1.0)
+        confidence = float(0.50 + 0.30 * texture + 0.20 * edges)
+        return "DESIGNED_TEXTURED", min(1.0, confidence), metrics
+
     def measure_edge_contrast(self, image_cv: np.ndarray, quad: np.ndarray) -> float:
         gray = cv2.cvtColor(image_cv, cv2.COLOR_BGR2GRAY)
         mask = np.zeros_like(gray)
@@ -536,10 +857,24 @@ class TemplateAnalyzer:
         return float(np.clip(confidence, 0.0, 1.0)), components
         
     def analyze(self, filepath: str, category_folder: str, manual_geometry_prior: dict = None) -> dict:
-        img = cv2.imdecode(np.fromfile(filepath, dtype=np.uint8), cv2.IMREAD_COLOR)
-        if img is None:
+        raw = cv2.imdecode(
+            np.fromfile(filepath, dtype=np.uint8),
+            cv2.IMREAD_UNCHANGED,
+        )
+        if raw is None:
             raise ValueError(f"Could not read image {filepath}")
-            
+
+        alpha_channel = None
+        if raw.ndim == 2:
+            img = cv2.cvtColor(raw, cv2.COLOR_GRAY2BGR)
+        elif raw.ndim == 3 and raw.shape[2] == 4:
+            alpha_channel = raw[:, :, 3].copy()
+            img = raw[:, :, :3].copy()
+        elif raw.ndim == 3 and raw.shape[2] >= 3:
+            img = raw[:, :, :3].copy()
+        else:
+            raise ValueError(f"Unsupported image shape {raw.shape} for {filepath}")
+
         h, w = img.shape[:2]
         try:
             rule = CategoryRuleEngine.get_rule_by_folder(category_folder)
@@ -549,6 +884,8 @@ class TemplateAnalyzer:
         best_quad = None
         best_conf = 0.0
         best_components = {}
+        best_surface_mode = "UNKNOWN"
+        best_surface_mode_confidence = 0.0
         
         provenance = "AUTO"
         if manual_geometry_prior and "surface_quad" in manual_geometry_prior:
@@ -571,6 +908,15 @@ class TemplateAnalyzer:
             candidates.extend(CandidateGenerators.generate_canny_contours(img))
             candidates.extend(CandidateGenerators.generate_hough_lines_quad(img))
             candidates.extend(CandidateGenerators.generate_color_region_quad(img))
+            candidates.extend(
+                CandidateGenerators.generate_extreme_tone_quads(img)
+            )
+            candidates.extend(
+                CandidateGenerators.generate_texture_robust_quads(img)
+            )
+            candidates.extend(
+                CandidateGenerators.generate_alpha_quads(alpha_channel)
+            )
             
             # Deduplicate and validate candidates. Multi-scale generators can
             # rediscover the same quad; duplicates must not artificially boost
@@ -666,12 +1012,51 @@ class TemplateAnalyzer:
                     candidate_agreement=candidate_agreement,
                     orientation_score=orient_score,
                 )
-                
+
+                surface_mode, surface_mode_conf, _surface_metrics = (
+                    self.classify_candidate_surface(
+                        img,
+                        cand1,
+                        alpha_channel=alpha_channel,
+                        category_folder=category_folder,
+                    )
+                )
+                # A small mode-evidence bonus breaks ties in favor of candidates
+                # whose interior actually behaves like one of our four known
+                # surface families. Geometry/edge evidence remains dominant.
+                mode_weight = (
+                    0.10
+                    if surface_mode in ("BLACK", "WHITE", "TRANSPARENT_GLASS")
+                    else 0.05
+                )
+                conf = min(
+                    1.0,
+                    conf + (mode_weight * float(surface_mode_conf)),
+                )
+                comp_conf["surface_mode_score"] = float(surface_mode_conf)
+
                 if conf > best_conf:
                     best_conf = conf
                     best_quad = cand1.tolist()
                     best_components = comp_conf
+                    best_surface_mode = surface_mode
+                    best_surface_mode_confidence = float(surface_mode_conf)
                 
+        if best_quad and best_surface_mode == "UNKNOWN":
+            (
+                best_surface_mode,
+                best_surface_mode_confidence,
+                _surface_metrics,
+            ) = self.classify_candidate_surface(
+                img,
+                np.asarray(best_quad, dtype=np.float32),
+                alpha_channel=alpha_channel,
+                category_folder=category_folder,
+            )
+            best_components["surface_mode_score"] = float(
+                best_surface_mode_confidence
+            )
+
         # Physical orientation/aspect metadata must never be inferred from
         # projected image geometry. A perspective quad may look wider than tall
         # even when the real product is physically vertical.
@@ -729,6 +1114,8 @@ class TemplateAnalyzer:
             "surface_quad": best_quad,
             "confidence_total": best_conf,
             "component_confidences": best_components,
+            "surface_mode": best_surface_mode,
+            "surface_mode_confidence": float(best_surface_mode_confidence),
             "review_status": status,
             "rule": rule,
             "orientation": orientation,
