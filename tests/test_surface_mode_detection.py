@@ -205,6 +205,49 @@ class SurfaceModeDetectionTests(unittest.TestCase):
         self.assertEqual(mode, "DESIGNED_TEXTURED")
         self.assertGreaterEqual(confidence, 0.50)
 
+    def test_ocak_arkasi_rejects_full_scene_and_lower_cabinet_auto_quads(self):
+        full_scene = np.array(
+            [[10, 20], [310, 20], [310, 220], [10, 220]],
+            dtype=np.float32,
+        )
+        lower_cabinet = np.array(
+            [[20, 165], [300, 165], [300, 230], [20, 230]],
+            dtype=np.float32,
+        )
+        real_panel = np.array(
+            [[85, 55], [235, 55], [235, 135], [85, 135]],
+            dtype=np.float32,
+        )
+
+        full_ok, full_reason = (
+            TemplateAnalyzer.is_category_auto_candidate_plausible(
+                "05_Ocak_Arkasi",
+                full_scene,
+                self.w,
+                self.h,
+            )
+        )
+        cabinet_ok, cabinet_reason = (
+            TemplateAnalyzer.is_category_auto_candidate_plausible(
+                "05_Ocak_Arkasi",
+                lower_cabinet,
+                self.w,
+                self.h,
+            )
+        )
+        panel_ok, panel_reason = (
+            TemplateAnalyzer.is_category_auto_candidate_plausible(
+                "05_Ocak_Arkasi",
+                real_panel,
+                self.w,
+                self.h,
+            )
+        )
+
+        self.assertFalse(full_ok, full_reason)
+        self.assertFalse(cabinet_ok, cabinet_reason)
+        self.assertTrue(panel_ok, panel_reason)
+
     def test_low_contrast_glass_beats_strong_lower_cabinet(self):
         h, w = 600, 480
         image = np.full((h, w, 3), 222, dtype=np.uint8)
