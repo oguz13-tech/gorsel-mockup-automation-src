@@ -499,7 +499,10 @@ window.onerror = function(msg, url, line, col, error) {
             div.className = 'category';
             const title = document.createElement('div');
             title.className = 'category-title';
-            title.textContent = cat;
+            const templateCount = Object.keys(
+                ayarlar?.kategoriler?.[cat]?.sablonlar || {}
+            ).length;
+            title.textContent = cat + ' (' + templateCount + ')';
             const list = document.createElement('div');
             list.className = 'template-list';
             if (cat === currentCat) {
