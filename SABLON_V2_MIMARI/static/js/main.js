@@ -1727,12 +1727,16 @@ let batchAnalyzeCurrentCategory = null;
 let batchAnalyzeCurrentTemplate = null;
 let batchAnalyzeCompact = false;
 let batchAnalyzeExternalPause = false;
+let batchAnalyzeInFlightTemplates = new Set();
 
 function isBatchAnalyzingTemplate(category, template) {
-    return Boolean(
-        batchAnalyzeRunning
-        && batchAnalyzeCurrentCategory === category
-        && batchAnalyzeCurrentTemplate === template
+    if (!batchAnalyzeRunning || batchAnalyzeCurrentCategory !== category) {
+        return false;
+    }
+    const key = bulkTemplateKey(category, template);
+    return (
+        batchAnalyzeInFlightTemplates.has(key)
+        || batchAnalyzeCurrentTemplate === template
     );
 }
 
@@ -1740,7 +1744,7 @@ function blockIfCurrentBatchTemplate(category, template, actionLabel) {
     if (!isBatchAnalyzingTemplate(category, template)) return false;
     alert(
         (actionLabel || 'Bu işlem') +
-        ' şu anda mümkün değil çünkü bu şablon toplu tarama tarafından işleniyor.\n\n' +
+        ' şu anda mümkün değil çünkü bu şablon hızlı toplu tarama paketinde işleniyor.\n\n' +
         'Birkaç saniye sonra tekrar deneyin. Diğer şablonlarda çalışmaya devam edebilirsiniz.'
     );
     return true;
@@ -1828,11 +1832,11 @@ function ensureBatchAnalyzeProgressModal() {
         const stopButton = document.getElementById('batchAnalyzeStop');
         if (stopButton) {
             stopButton.disabled = true;
-            stopButton.textContent = '⏳ Mevcut dosya bitsin, sonra duracak';
+            stopButton.textContent = '⏳ Mevcut küçük paket bitsin, sonra duracak';
             stopButton.style.opacity = '0.65';
         }
         document.getElementById('batchAnalyzeSummary').textContent =
-            'Durdurma istendi. İşlenen dosya tamamlanınca tarama duracak...';
+            'Durdurma istendi. İşlenen küçük paket tamamlanınca tarama duracak...';
     });
     document.getElementById('batchAnalyzeClose').addEventListener('click', () => {
         overlay.style.display = 'none';
@@ -1840,7 +1844,7 @@ function ensureBatchAnalyzeProgressModal() {
     return overlay;
 }
 
-function updateBatchAnalyzeProgress(done, total, filename, statusText) {
+function updateBatchAnalyzeProgress(done, total, currentText, statusText) {
     const overlay = ensureBatchAnalyzeProgressModal();
     const percent = total > 0 ? Math.round((done / total) * 100) : 0;
     document.getElementById('batchAnalyzeBar').style.width = percent + '%';
@@ -1848,8 +1852,8 @@ function updateBatchAnalyzeProgress(done, total, filename, statusText) {
     document.getElementById('batchAnalyzePercent').textContent = '%' + percent;
     document.getElementById('batchAnalyzeSummary').textContent =
         statusText || 'Analiz devam ediyor...';
-    document.getElementById('batchAnalyzeCurrent').textContent = filename
-        ? 'İşlenen dosya: ' + filename
+    document.getElementById('batchAnalyzeCurrent').textContent = currentText
+        ? 'İşlenen: ' + currentText
         : 'Hazırlanıyor...';
     overlay.style.display = 'flex';
 }
@@ -1858,6 +1862,7 @@ function finishBatchAnalyzeProgress(
     total,
     processedCount,
     successCount,
+    approvedProtectedCount,
     failureCount,
     skippedCount,
     failures,
@@ -1878,7 +1883,8 @@ function finishBatchAnalyzeProgress(
 
     document.getElementById('batchAnalyzeSummary').textContent =
         processedCount + ' dosya işlendi • ' +
-        successCount + ' başarılı • ' +
+        successCount + ' analiz edildi • ' +
+        approvedProtectedCount + ' onaylı korundu • ' +
         skippedCount + ' atlandı • ' +
         failureCount + ' hatalı';
 
@@ -1886,7 +1892,7 @@ function finishBatchAnalyzeProgress(
         ? 'O ana kadar tamamlanan analizler kaydedildi. Kalan şablonlar taranmadı.'
         : (
             failureCount === 0
-                ? 'Kategori taraması tamamlandı.'
+                ? 'Kategori taraması tamamlandı. 4 köşe kalite algoritması değiştirilmedi.'
                 : 'Tarama tamamlandı; bazı dosyalar ayrıca kontrol edilmeli.'
         );
 
@@ -1947,8 +1953,9 @@ function chooseBatchAnalyzeCategory() {
         const note = document.createElement('div');
         note.innerHTML =
             'Yalnızca seçtiğiniz kategorinin otomatik 4 köşe tespiti yeniden çalıştırılır. ' +
-            'Ham/orijinal görseller değişmez. Daha önce insan olarak onayladığınız ' +
-            '<b>APPROVED</b> manuel geometri korunur. Tarama başladıktan sonra ' +
+            '<b>Kalite algoritması değiştirilmez.</b> Kaynağı değişmemiş insan onaylı ' +
+            '<b>APPROVED</b> şablonlar ağır analizden atlanır ve aynen korunur. ' +
+            'Onaysız şablonlar mevcut motorla analiz edilir. ' +
             '<b>Arka Planda Sürdür</b> ile diğer şablonlarda çalışabilirsiniz.';
         note.style.cssText =
             'font-size:12px;line-height:1.5;color:#c7c7c7;margin-bottom:14px;';
@@ -1981,7 +1988,7 @@ function chooseBatchAnalyzeCategory() {
 
         const confirmButton = document.createElement('button');
         confirmButton.type = 'button';
-        confirmButton.textContent = '🔍 Bu Kategoriyi Tara';
+        confirmButton.textContent = '⚡ Bu Kategoriyi Hızlı Tara';
         confirmButton.style.cssText =
             'padding:10px 16px;background:#0d6efd;color:white;border:0;border-radius:7px;' +
             'font-weight:700;cursor:pointer;';
@@ -2025,17 +2032,19 @@ async function batchAnalyze() {
 
     if(!confirm(
         category + " kategorisindeki " + templates.length +
-        " şablonun otomatik 4 köşe tespiti yeniden çalıştırılacak.\n\n" +
-        "Ham/orijinal görseller değişmez. Daha önce insan olarak onayladığınız " +
-        "APPROVED manuel geometri korunur.\n\n" +
-        "Tarama sırasında “Arka Planda Sürdür” ile diğer şablonlarda çalışabilirsiniz.\n\n" +
-        "Devam edilsin mi?"
+        " şablon taranacak.\n\n" +
+        "4 köşe kalite algoritması DEĞİŞMEDİ. Kaynağı değişmemiş insan onaylı " +
+        "APPROVED şablonlar ağır analizden atlanıp aynen korunacak. " +
+        "Onaysız/değişmiş şablonlarda mevcut tam kalite motoru çalışacak.\n\n" +
+        "Hız için iki farklı görsel aynı anda hesaplanabilir; veritabanı kayıtları " +
+        "yine tek sıra yapılır.\n\nDevam edilsin mi?"
     )) return;
 
     batchAnalyzeRunning = true;
     batchAnalyzeStopRequested = false;
     batchAnalyzeCurrentCategory = category;
     batchAnalyzeCurrentTemplate = null;
+    batchAnalyzeInFlightTemplates.clear();
 
     const button = document.getElementById('batchAnalyzeButton');
     if (button) {
@@ -2047,7 +2056,7 @@ async function batchAnalyze() {
     const overlay = ensureBatchAnalyzeProgressModal();
     setBatchAnalyzeCompact(false);
     document.getElementById('batchAnalyzeTitle').textContent =
-        'Şablonlar analiz ediliyor';
+        '⚡ Hızlı kalite-korumalı tarama';
     document.getElementById('batchAnalyzeClose').style.display = 'none';
     document.getElementById('batchAnalyzeErrors').style.display = 'none';
     const runActions = document.getElementById('batchAnalyzeRunActions');
@@ -2060,21 +2069,23 @@ async function batchAnalyze() {
     }
 
     let successCount = 0;
+    let approvedProtectedCount = 0;
     let failureCount = 0;
     let skippedCount = 0;
     let processedCount = 0;
     let stopped = false;
     const failures = [];
+    const chunkSize = 4;
 
     try {
         updateBatchAnalyzeProgress(
             0,
             templates.length,
             '',
-            'Tarama başlatılıyor...'
+            'Hızlı tarama başlatılıyor...'
         );
 
-        for (let i = 0; i < templates.length; i++) {
+        for (let index = 0; index < templates.length; index += chunkSize) {
             while (
                 batchAnalyzeExternalPause
                 && !batchAnalyzeStopRequested
@@ -2093,76 +2104,117 @@ async function batchAnalyze() {
                 break;
             }
 
-            const tmpl = templates[i];
+            const snapshotChunk = templates.slice(
+                index,
+                index + chunkSize
+            );
+            const activeChunk = [];
 
-            // The list is a start-time snapshot. If the user deletes a future
-            // template while the scan is running, skip it instead of treating
-            // the missing source as a scan failure.
-            if (!ayarlar?.kategoriler?.[category]?.sablonlar?.[tmpl]) {
-                skippedCount += 1;
-                processedCount += 1;
+            for (const tmpl of snapshotChunk) {
+                if (!ayarlar?.kategoriler?.[category]?.sablonlar?.[tmpl]) {
+                    skippedCount += 1;
+                    processedCount += 1;
+                } else {
+                    activeChunk.push(tmpl);
+                }
+            }
+
+            if (activeChunk.length === 0) {
                 updateBatchAnalyzeProgress(
                     processedCount,
                     templates.length,
-                    tmpl,
-                    'Atlandı — şablon artık mevcut değil.'
+                    '',
+                    'Silinmiş/kaldırılmış şablonlar atlandı.'
                 );
                 continue;
             }
 
-            batchAnalyzeCurrentTemplate = tmpl;
+            batchAnalyzeCurrentTemplate = activeChunk[0];
+            batchAnalyzeInFlightTemplates = new Set(
+                activeChunk.map(tmpl => bulkTemplateKey(category, tmpl))
+            );
+
             updateBatchAnalyzeProgress(
                 processedCount,
                 templates.length,
-                tmpl,
-                'Analiz ediliyor... Arka planda diğer şablonlarda çalışabilirsiniz.'
+                activeChunk.length + ' dosyalık küçük paket',
+                'Tam kalite motoru çalışıyor • en fazla 2 görsel aynı anda hesaplanıyor...'
             );
 
             try {
-                const res = await fetch('/api/templates/analyze', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-Active-Category': category,
-                        'X-Active-Template': tmpl
-                    },
-                    body: JSON.stringify({})
-                });
-                const data = await res.json();
+                const response = await fetch(
+                    '/api/templates/batch_analyze',
+                    {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            category,
+                            templates: activeChunk,
+                            workers: 2
+                        })
+                    }
+                );
+                const data = await response.json();
 
-                if (res.ok && data.success) {
-                    successCount += 1;
-                } else if (
-                    res.status === 404
-                    || data.code === 'SOURCE_IMAGE_MISSING'
-                ) {
-                    skippedCount += 1;
-                } else {
-                    failureCount += 1;
-                    failures.push(
-                        tmpl + ': ' + (data.error || ('HTTP ' + res.status))
+                if (!response.ok || !data.success) {
+                    throw new Error(
+                        data.error || ('HTTP ' + response.status)
                     );
                 }
+
+                const returned = new Map(
+                    (data.results || []).map(item => [
+                        String(item.template || ''),
+                        item
+                    ])
+                );
+
+                for (const tmpl of activeChunk) {
+                    const item = returned.get(tmpl) || {
+                        status: 'FAILED',
+                        error: 'Sonuç bulunamadı'
+                    };
+                    const status = String(
+                        item.status || 'FAILED'
+                    ).toUpperCase();
+
+                    if (status === 'ANALYZED') {
+                        successCount += 1;
+                    } else if (status === 'SKIPPED_APPROVED') {
+                        approvedProtectedCount += 1;
+                    } else if (status === 'MISSING') {
+                        skippedCount += 1;
+                    } else {
+                        failureCount += 1;
+                        failures.push(
+                            tmpl + ': ' +
+                            (item.error || 'Bilinmeyen hata')
+                        );
+                    }
+                    processedCount += 1;
+                }
             } catch (err) {
-                // A concurrent delete can close the source between the local
-                // existence check and the request. Treat only ordinary request
-                // failures as errors; future deleted entries are skipped above.
-                failureCount += 1;
-                failures.push(tmpl + ': ' + String(err));
+                failureCount += activeChunk.length;
+                processedCount += activeChunk.length;
+                activeChunk.forEach(tmpl => {
+                    failures.push(tmpl + ': ' + String(err));
+                });
             } finally {
-                processedCount += 1;
                 batchAnalyzeCurrentTemplate = null;
+                batchAnalyzeInFlightTemplates.clear();
             }
 
             updateBatchAnalyzeProgress(
                 processedCount,
                 templates.length,
-                tmpl,
+                '',
                 batchAnalyzeStopRequested
-                    ? 'Mevcut dosya tamamlandı. Tarama durduruluyor...'
+                    ? 'Mevcut küçük paket tamamlandı. Tarama durduruluyor...'
                     : (
                         'İlerleme: ' + processedCount +
-                        ' / ' + templates.length
+                        ' / ' + templates.length +
+                        ' • ' + approvedProtectedCount +
+                        ' onaylı şablon ağır analizden atlandı'
                     )
             );
 
@@ -2172,10 +2224,22 @@ async function batchAnalyze() {
             }
         }
 
+        // Refresh review badges because some analyzed profiles changed state.
+        try {
+            const refresh = await fetch('/api/ayarlar');
+            if (refresh.ok) {
+                ayarlar = await refresh.json();
+                renderSidebar();
+            }
+        } catch (err) {
+            console.warn('Tarama sonrası liste yenilenemedi:', err);
+        }
+
         finishBatchAnalyzeProgress(
             templates.length,
             processedCount,
             successCount,
+            approvedProtectedCount,
             failureCount,
             skippedCount,
             failures,
@@ -2186,6 +2250,7 @@ async function batchAnalyze() {
         batchAnalyzeStopRequested = false;
         batchAnalyzeCurrentCategory = null;
         batchAnalyzeCurrentTemplate = null;
+        batchAnalyzeInFlightTemplates.clear();
         batchAnalyzeExternalPause = false;
         if (button) {
             button.disabled = false;
