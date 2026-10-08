@@ -174,7 +174,7 @@ class TestT1DeleteUndoIntegrity(unittest.TestCase):
         
         conn.close()
 
-    def test_delete_blocks_when_source_image_is_missing(self):
+    def test_missing_source_is_retired_as_recoverable_orphan(self):
         os.remove(self.img_path)
 
         res = self.client.post('/api/sablon_sil', headers={
@@ -182,8 +182,41 @@ class TestT1DeleteUndoIntegrity(unittest.TestCase):
             "X-Active-Template": "test_tmpl.png",
         })
 
-        self.assertEqual(res.status_code, 409)
-        self.assertEqual(res.get_json().get("code"), "SOURCE_IMAGE_MISSING")
+        self.assertEqual(res.status_code, 200, res.get_json())
+        payload = res.get_json()
+        self.assertTrue(payload.get("success"))
+        self.assertTrue(payload.get("source_was_missing"))
+        self.assertTrue(payload.get("orphan_retired"))
+
+        conn = db_core.get_db_connection()
+        try:
+            row = conn.execute(
+                "SELECT data FROM templates WHERE category_id=? AND filename=?",
+                ("test_cat", "test_tmpl.png"),
+            ).fetchone()
+            self.assertIsNone(
+                row,
+                "Orphan record should leave the active template list",
+            )
+        finally:
+            conn.close()
+
+        trash_dir = os.path.join(
+            self.test_dir,
+            "SILINEN_SABLONLAR_COP_KUTUSU",
+        )
+        meta_path = os.path.join(trash_dir, payload["trash_record"])
+        self.assertTrue(os.path.isfile(meta_path))
+        with open(meta_path, "r", encoding="utf-8") as handle:
+            recovery = json.load(handle)
+        self.assertTrue(recovery.get("source_was_missing"))
+        self.assertIsNone(recovery.get("trash_image_name"))
+
+        restored = self.client.post('/api/sablon_sil_geri_al')
+        self.assertEqual(restored.status_code, 200, restored.get_json())
+        restored_payload = restored.get_json()
+        self.assertTrue(restored_payload.get("restored_as_orphan"))
+        self.assertFalse(restored_payload.get("source_restored"))
 
         conn = db_core.get_db_connection()
         try:
@@ -193,7 +226,7 @@ class TestT1DeleteUndoIntegrity(unittest.TestCase):
             ).fetchone()
             self.assertIsNotNone(
                 row,
-                "DB row must remain when reversible delete cannot preserve image",
+                "Undo should restore the orphan metadata record",
             )
         finally:
             conn.close()
