@@ -1233,10 +1233,26 @@ window.onerror = function(msg, url, line, col, error) {
             }
         }).then(r => r.json()).then(res => {
             if(res.success) {
+                // A restored source is a new source identity. Never carry
+                // foreground/mask evidence from the previous pixels.
+                foregroundMask = {
+                    object_boxes: [],
+                    feather: 1.2,
+                    grabcut_iterations: 5
+                };
+                const tmplObj = ayarlar?.kategoriler?.[currentCat]?.sablonlar?.[currentTmpl];
+                if (tmplObj) {
+                    delete tmplObj.on_plan;
+                    delete tmplObj.on_plan_source_sha256;
+                    tmplObj._review_status = 'STALE_SOURCE_CHANGED';
+                    tmplObj._manually_verified = false;
+                }
+
                 loadSourceImage('working', () => {
                     alert(
                         'Ham orijinal çalışma kopyasına geri yüklendi. ' +
-                        'Şimdi dört köşeyi yeniden kontrol edin ve doğruysa şablonu tekrar onaylayın.'
+                        'Dört köşeyi kontrol edin; gerekirse çok küçük bir düzeltme yapın ve ' +
+                        '“Bu Şablonu Onayla”ya basın. Sistem onayı yeni görsele bağlayacak.'
                     );
                 });
             } else {
