@@ -466,6 +466,10 @@ def api_auto_detect_corners():
             "engine": engine,
             "confidence": float(analysis.get("confidence_total", 0.0) or 0.0),
             "component_confidences": analysis.get("component_confidences", {}),
+            "surface_mode": analysis.get("surface_mode", "UNKNOWN"),
+            "surface_mode_confidence": float(
+                analysis.get("surface_mode_confidence", 0.0) or 0.0
+            ),
             "review_status": "REVIEW_REQUIRED",
             "nominal_aspect": analysis.get("nominal_aspect", "UNKNOWN"),
         })
