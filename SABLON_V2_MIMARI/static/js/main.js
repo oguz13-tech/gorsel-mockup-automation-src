@@ -1203,7 +1203,26 @@ window.onerror = function(msg, url, line, col, error) {
                 pts = res.corners.map(p => ({x: p[0], y: p[1]}));
                 updateDataFromPoints();
                 draw();
-                alert('Yeni köşe önerisi hazır. Kırmızı noktaları kontrol edin; doğruysa “Bu Şablonu Onayla”ya basın.');
+
+                const modeLabels = {
+                    BLACK: 'Siyah yüzey',
+                    WHITE: 'Beyaz yüzey',
+                    TRANSPARENT_GLASS: 'Şeffaf / saydam yüzey',
+                    DESIGNED_TEXTURED: 'Desenli / tasarımlı yüzey',
+                    UNKNOWN: 'Belirsiz yüzey'
+                };
+                const detectedMode = String(res.surface_mode || 'UNKNOWN');
+                const modeLabel = modeLabels[detectedMode] || detectedMode;
+                const modeConfidence = Number(res.surface_mode_confidence || 0);
+
+                alert(
+                    'Yeni köşe önerisi hazır.\n\n' +
+                    'Algılanan zemin: ' + modeLabel +
+                    (modeConfidence > 0
+                        ? ' (güven: %' + Math.round(modeConfidence * 100) + ')'
+                        : '') +
+                    '\n\nKırmızı noktaları kontrol edin; doğruysa “Bu Şablonu Onayla”ya basın.'
+                );
             } else {
                 alert("Köşeler otomatik bulunamadı: " + (res.error || "Kırmızı noktaları “Köşeleri Elle Ayarla” ile yerleştirin."));
             }
