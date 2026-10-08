@@ -1,3 +1,5 @@
+import os
+import tempfile
 import unittest
 
 import cv2
@@ -202,6 +204,71 @@ class SurfaceModeDetectionTests(unittest.TestCase):
         )
         self.assertEqual(mode, "DESIGNED_TEXTURED")
         self.assertGreaterEqual(confidence, 0.50)
+
+    def test_low_contrast_glass_beats_strong_lower_cabinet(self):
+        h, w = 600, 480
+        image = np.full((h, w, 3), 222, dtype=np.uint8)
+
+        # Faint clear glass panel on a similarly bright wall.
+        glass = np.array(
+            [[128, 180], [360, 180], [360, 338], [128, 338]],
+            dtype=np.int32,
+        )
+        cv2.fillConvexPoly(image, glass, (216, 216, 216))
+        cv2.polylines(image, [glass], True, (191, 191, 191), 2)
+
+        # Strong lower cabinet distractor: much stronger edges than the glass.
+        cv2.rectangle(image, (28, 402), (452, 548), (112, 92, 72), -1)
+        cv2.rectangle(image, (28, 402), (452, 548), (35, 35, 35), 4)
+        for x in (110, 210, 320, 410):
+            cv2.line(image, (x, 404), (x, 546), (45, 45, 45), 3)
+        for y in (445, 492):
+            cv2.line(image, (30, y), (450, y), (55, 55, 55), 3)
+
+        glass_candidates = (
+            CandidateGenerators.generate_low_contrast_glass_quads(
+                image,
+                "05_Ocak_Arkasi",
+            )
+        )
+        self.assertTrue(glass_candidates)
+
+        def center_distance(quad):
+            center = np.mean(np.asarray(quad, dtype=np.float32), axis=0)
+            return float(np.linalg.norm(center - np.array([244.0, 259.0])))
+
+        self.assertLess(
+            min(center_distance(quad) for quad in glass_candidates),
+            55.0,
+        )
+
+        fd, path = tempfile.mkstemp(suffix=".png")
+        os.close(fd)
+        try:
+            self.assertTrue(cv2.imwrite(path, image))
+            result = TemplateAnalyzer().analyze(
+                path,
+                "05_Ocak_Arkasi",
+            )
+        finally:
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+
+        self.assertEqual(
+            result["surface_mode"],
+            "TRANSPARENT_GLASS",
+        )
+        selected = np.asarray(result["surface_quad"], dtype=np.float32)
+        center = np.mean(selected, axis=0)
+        self.assertLess(float(center[1]) / float(h), 0.67)
+        self.assertEqual(
+            result["component_confidences"].get(
+                "glass_priority_selected"
+            ),
+            1.0,
+        )
 
     def test_specialized_generators_emit_candidates(self):
         black = np.full((self.h, self.w, 3), 170, dtype=np.uint8)
