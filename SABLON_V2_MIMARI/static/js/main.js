@@ -2389,6 +2389,33 @@ window.onerror = function(msg, url, line, col, error) {
         });
     }
 
+    function formatLifecycleFileEvidence(item) {
+        const dims = (
+            item?.width && item?.height
+                ? String(item.width) + 'x' + String(item.height)
+                : 'boyut-okunamadı'
+        );
+        const alpha = item?.has_alpha
+            ? (
+                'alpha=' +
+                String(item.alpha_min ?? '?') +
+                '..' +
+                String(item.alpha_max ?? '?')
+            )
+            : 'alpha=YOK';
+        return [
+            String(item?.name || ''),
+            'bytes=' + Number(item?.size_bytes || 0),
+            'piksel=' + dims,
+            'kanal=' + String(item?.channels ?? '?'),
+            alpha,
+            'SHA256=' + String(item?.sha256 || ''),
+            'PIXEL_SHA256=' +
+                String(item?.decoded_pixel_sha256 || 'OKUNAMADI'),
+            'mtime=' + String(item?.modified_at || '')
+        ].join(' | ');
+    }
+
     function formatLifecycleCenter(data, focus = 'all') {
         const summary = data?.summary || {};
         const lines = [
@@ -2431,9 +2458,19 @@ window.onerror = function(msg, url, line, col, error) {
                         String(row.category || '') + ' / ' +
                         String(row.identity || '')
                     );
+                    lines.push('  Dosyalar:');
+                    (row.files || []).forEach(item => {
+                        lines.push(
+                            '    - ' + formatLifecycleFileEvidence(item)
+                        );
+                    });
                     lines.push(
-                        '  Dosyalar: ' +
-                        (row.files || []).map(item => item.name).join(', ')
+                        '  Byte olarak aynı: ' +
+                        (row.byte_equivalent ? 'EVET' : 'HAYIR')
+                    );
+                    lines.push(
+                        '  Decode edilmiş piksel olarak aynı: ' +
+                        (row.pixel_equivalent ? 'EVET' : 'HAYIR')
                     );
                     lines.push(
                         '  Aktif DB dosyası: ' +
@@ -2443,6 +2480,12 @@ window.onerror = function(msg, url, line, col, error) {
                         '  Güvenli koruma önerisi: ' +
                         String(row.recommended_keep || 'ELLE SEÇİM GEREKİYOR')
                     );
+                    if (row.manual_choice_reason) {
+                        lines.push(
+                            '  İnceleme nedeni: ' +
+                            String(row.manual_choice_reason)
+                        );
+                    }
                 });
             }
 
@@ -2455,10 +2498,13 @@ window.onerror = function(msg, url, line, col, error) {
             } else {
                 workingOrphans.forEach(row => {
                     lines.push(
-                        '• ' + row.category + ' / ' + row.identity +
-                        ' — ' +
-                        (row.files || []).map(item => item.name).join(', ')
+                        '• ' + row.category + ' / ' + row.identity
                     );
+                    (row.files || []).forEach(item => {
+                        lines.push(
+                            '    - ' + formatLifecycleFileEvidence(item)
+                        );
+                    });
                 });
             }
 
@@ -2937,9 +2983,7 @@ window.onerror = function(msg, url, line, col, error) {
             }
             duplicates.forEach(row => {
                 const files = (row.files || [])
-                    .map(item => (
-                        item.name + '\n    SHA256=' + item.sha256
-                    ))
+                    .map(item => formatLifecycleFileEvidence(item))
                     .join('\n');
                 const item = reconciliationRow(
                     '[' + row.area + '] ' +
@@ -2947,11 +2991,21 @@ window.onerror = function(msg, url, line, col, error) {
                     'Dosyalar:\n' + files +
                     '\nAktif DB dosyası: ' +
                         String(row.active_template || 'YOK') +
+                    '\nByte olarak aynı: ' +
+                        (row.byte_equivalent ? 'EVET' : 'HAYIR') +
+                    '\nPiksel olarak aynı: ' +
+                        (row.pixel_equivalent ? 'EVET' : 'HAYIR') +
                     '\nKoruma önerisi: ' +
                         String(
                             row.recommended_keep ||
                             'GÜVENLİ OTOMATİK SEÇİM YOK'
-                        ),
+                        ) +
+                    (
+                        row.manual_choice_reason
+                            ? '\nİnceleme nedeni: ' +
+                              String(row.manual_choice_reason)
+                            : ''
+                    ),
                     row.safe_recommendation ? 'warning' : 'critical'
                 );
                 if (
@@ -2989,10 +3043,9 @@ window.onerror = function(msg, url, line, col, error) {
             orphans.forEach(row => {
                 const item = reconciliationRow(
                     row.category + ' / ' + row.identity,
-                    'Aktif DB kaydı yok.\nDosyalar: ' +
+                    'Aktif DB kaydı yok.\nDosyalar:\n' +
                         (row.files || []).map(
-                            file => file.name +
-                                ' | SHA256=' + file.sha256
+                            file => formatLifecycleFileEvidence(file)
                         ).join('\n'),
                     'warning'
                 );
