@@ -1791,6 +1791,104 @@ class TestOriginalRestoreExactBackupSelection(unittest.TestCase):
             self.assertGreater(g, 240)
             self.assertLess(b, 10)
             self.assertLess(r, 10)
+            self.assertTrue(payload["png_byte_exact_restore"])
+            self.assertEqual(
+                payload["backup_source_sha256"],
+                payload["destination_after_sha256"],
+            )
+
+    def test_restore_preserves_png_alpha_byte_for_byte(self):
+        import app
+
+        with tempfile.TemporaryDirectory() as runtime_root:
+            category = "03_Ahsap_Tablo"
+            template = "AhsapTablo_016.png"
+            backup_dir = os.path.join(
+                runtime_root,
+                "2_SABLON_HAVUZU_ORIJINAL_YEDEK",
+                category,
+            )
+            working_dir = os.path.join(
+                runtime_root,
+                "2_SABLON_HAVUZU",
+                category,
+            )
+            os.makedirs(backup_dir, exist_ok=True)
+            os.makedirs(working_dir, exist_ok=True)
+
+            rgba = np.zeros((20, 30, 4), dtype=np.uint8)
+            rgba[:, :, 0] = 10
+            rgba[:, :, 1] = 120
+            rgba[:, :, 2] = 230
+            rgba[:, :, 3] = np.tile(
+                np.arange(30, dtype=np.uint8),
+                (20, 1),
+            ) * 8
+            source_path = os.path.join(backup_dir, template)
+            cv2.imwrite(source_path, rgba)
+
+            working = np.full((20, 30, 3), 77, dtype=np.uint8)
+            cv2.imwrite(
+                os.path.join(working_dir, template),
+                working,
+            )
+
+            with (
+                patch("app.BASE_DIR", runtime_root),
+                patch(
+                    "app.YEDEK_IMG_DIR",
+                    os.path.join(
+                        runtime_root,
+                        "2_SABLON_HAVUZU_ORIJINAL_YEDEK",
+                    ),
+                ),
+                patch(
+                    "app._invalidate_stale_profiles_for_source",
+                    return_value=1,
+                ),
+            ):
+                with app.app.test_request_context(
+                    "/api/orijinal_yukle",
+                    method="POST",
+                    headers={
+                        "X-Active-Category": category,
+                        "X-Active-Template": template,
+                    },
+                ):
+                    response = (
+                        app.api_orijinal_yukle.__wrapped__()
+                    )
+
+            self.assertEqual(response.status_code, 200)
+            payload = response.get_json()
+            self.assertTrue(payload["png_byte_exact_restore"])
+            self.assertEqual(
+                payload["backup_source_sha256"],
+                payload["destination_after_sha256"],
+            )
+
+            restored_path = os.path.join(
+                working_dir,
+                template,
+            )
+            with open(source_path, "rb") as source_handle:
+                source_bytes = source_handle.read()
+            with open(restored_path, "rb") as restored_handle:
+                restored_bytes = restored_handle.read()
+            self.assertEqual(source_bytes, restored_bytes)
+
+            restored = cv2.imread(
+                restored_path,
+                cv2.IMREAD_UNCHANGED,
+            )
+            self.assertIsNotNone(restored)
+            self.assertEqual(restored.shape[2], 4)
+            self.assertTrue(
+                np.array_equal(
+                    restored[:, :, 3],
+                    rgba[:, :, 3],
+                )
+            )
 
 
 
