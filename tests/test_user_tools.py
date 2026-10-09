@@ -5,8 +5,14 @@ from pathlib import Path
 from PIL import Image
 
 from SABLON_V2_MIMARI.tools_runner import (
+    convert_folder_to_png_recursive,
     convert_images,
     rename_images,
+)
+from SABLON_V2_MIMARI.core.path_registry import (
+    PATHS,
+    registry_snapshot,
+    runtime_path,
 )
 
 
@@ -135,6 +141,93 @@ class TestIndependentUserTools(unittest.TestCase):
                 )
 
             self.assertTrue(source.is_file())
+
+    def test_recursive_png_preserves_subfolders_skips_png_and_never_overwrites(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "incoming"
+            nested = source / "A" / "B"
+            nested.mkdir(parents=True)
+
+            jpg = source / "one.jpg"
+            webp = nested / "two.webp"
+            already_png = nested / "keep.png"
+            self._image(jpg)
+            self._image(webp)
+            self._image(already_png, mode="RGBA")
+            png_before = already_png.read_bytes()
+
+            output = root / "converted"
+            existing_output = output / "A" / "B" / "two.png"
+            existing_output.parent.mkdir(parents=True)
+            self._image(existing_output, mode="RGBA")
+            existing_before = existing_output.read_bytes()
+
+            report = convert_folder_to_png_recursive(
+                source,
+                output_dir=output,
+                runtime_root=root / "runtime",
+            )
+
+            self.assertEqual(report["scanned_image_count"], 3)
+            self.assertEqual(report["converted_count"], 1)
+            self.assertEqual(report["skipped_png_count"], 1)
+            self.assertEqual(report["skipped_existing_count"], 1)
+            self.assertEqual(report["failed_count"], 0)
+            self.assertTrue((output / "one.png").is_file())
+            self.assertEqual(
+                existing_output.read_bytes(),
+                existing_before,
+            )
+            self.assertEqual(
+                already_png.read_bytes(),
+                png_before,
+            )
+            self.assertTrue(jpg.is_file())
+            self.assertTrue(webp.is_file())
+
+    def test_recursive_png_is_blocked_inside_live_template_roots(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            runtime = Path(tmp) / "runtime"
+            source = (
+                runtime
+                / "2_SABLON_HAVUZU"
+                / "01_Wifi_Kutusu"
+            )
+            source.mkdir(parents=True)
+            self._image(source / "sample.jpg")
+
+            with self.assertRaises(ValueError):
+                convert_folder_to_png_recursive(
+                    source,
+                    runtime_root=runtime,
+                )
+
+            self.assertTrue((source / "sample.jpg").is_file())
+
+    def test_path_registry_resolves_canonical_runtime_folders(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            runtime = Path(tmp)
+            self.assertEqual(
+                runtime_path("WORKING_POOL", runtime),
+                (runtime / "2_SABLON_HAVUZU").resolve(),
+            )
+            self.assertEqual(
+                runtime_path("ORIGINAL_ARCHIVE", runtime),
+                (
+                    runtime
+                    / "2_SABLON_HAVUZU_ORIJINAL_YEDEK"
+                ).resolve(),
+            )
+            snapshot = registry_snapshot(runtime)
+            self.assertEqual(
+                set(snapshot),
+                set(PATHS),
+            )
+            self.assertIn(
+                "PRIMARY_RENDER_OUTPUT",
+                snapshot,
+            )
 
     def test_format_converter_keeps_originals_and_writes_separate_folder(self):
         with tempfile.TemporaryDirectory() as tmp:
