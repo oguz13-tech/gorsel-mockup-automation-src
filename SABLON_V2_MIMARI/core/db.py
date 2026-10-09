@@ -20,6 +20,7 @@ RUNTIME_ROOT = resolve_runtime_root()
 DB_PATH = os.fspath(RUNTIME_ROOT / "SABLON_V2_MIMARI" / "ayarlar.db")
 
 def get_db_connection():
+    Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
