@@ -756,11 +756,11 @@ def workspace_consistency_report(
     }
     kaggle_folders = [
         row for row in folders
-        if row["role"] in kaggle_roles
+        if row["role"] in kaggle_roles and row.get("exists")
     ]
     mockup_folders = [
         row for row in folders
-        if row["role"] in mockup_roles
+        if row["role"] in mockup_roles and row.get("exists")
     ]
     unclassified_folders = [
         row for row in folders
