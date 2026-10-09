@@ -64,6 +64,14 @@ from core.workspace_consistency import (
     load_latest_workspace_report,
     workspace_report_history,
 )
+from core.lifecycle_reconciliation import (
+    LifecycleSafetyError,
+    lifecycle_center_report,
+    archive_duplicate_variants,
+    archive_working_orphan,
+    replace_original_and_working,
+    undo_lifecycle_operation,
+)
 import hashlib
 import uuid
 from functools import wraps
@@ -498,6 +506,277 @@ def api_orijinal_yukle():
         return jsonify({"success": False, "error": str(exc)}), 400
     except Exception as exc:
         logger.exception("Orijinal sablon geri yukleme hatasi")
+        return jsonify({"success": False, "error": str(exc)}), 500
+
+
+
+@app.route('/api/lifecycle/center')
+def api_lifecycle_center():
+    """Read-only reconciliation/trash/recovery inventory."""
+    try:
+        limit = int(request.args.get("limit", 50) or 50)
+        report = lifecycle_center_report(
+            BASE_DIR,
+            get_all_ayarlar(),
+            limit=max(1, min(200, limit)),
+        )
+        return jsonify(report)
+    except Exception as exc:
+        logger.exception("Lifecycle merkezi raporu hazırlanamadı")
+        return jsonify({
+            "success": False,
+            "error": str(exc),
+        }), 500
+
+
+@app.route('/api/lifecycle/resolve-duplicate', methods=['POST'])
+def api_lifecycle_resolve_duplicate():
+    """Move non-kept duplicate variants to recoverable lifecycle storage."""
+    payload = request.get_json(silent=True) or {}
+    category = str(payload.get("category") or "").strip()
+    identity = str(payload.get("identity") or "").strip()
+    area = str(payload.get("area") or "").strip()
+    keep_filename = str(payload.get("keep_filename") or "").strip()
+    if not category or not identity or not area or not keep_filename:
+        return jsonify({
+            "success": False,
+            "error": "Duplicate çözümü için alan/kategori/kimlik/korunacak dosya eksik.",
+        }), 400
+
+    lock_name = str(payload.get("template") or keep_filename or identity)
+    try:
+        with template_operation_lock(
+            category,
+            lock_name,
+            "resolve-duplicate",
+            wait_seconds=0.25,
+        ):
+            result = archive_duplicate_variants(
+                BASE_DIR,
+                get_all_ayarlar(),
+                area=area,
+                category=category,
+                identity=identity,
+                keep_filename=keep_filename,
+            )
+        return jsonify({
+            "success": True,
+            "operation": result,
+        })
+    except LifecycleSafetyError as exc:
+        return jsonify({
+            "success": False,
+            "error": str(exc),
+            "code": "LIFECYCLE_SAFETY_BLOCK",
+        }), 409
+    except TemplateBusyError as exc:
+        return jsonify({
+            "success": False,
+            "error": str(exc),
+            "code": "TEMPLATE_BUSY",
+        }), 409
+    except Exception as exc:
+        logger.exception("Duplicate recovery işlemi başarısız")
+        return jsonify({"success": False, "error": str(exc)}), 500
+
+
+@app.route('/api/lifecycle/archive-working-orphan', methods=['POST'])
+def api_lifecycle_archive_working_orphan():
+    """Archive one DB-less working identity without permanent deletion."""
+    payload = request.get_json(silent=True) or {}
+    category = str(payload.get("category") or "").strip()
+    identity = str(payload.get("identity") or "").strip()
+    if not category or not identity:
+        return jsonify({
+            "success": False,
+            "error": "Kategori veya çalışma yetimi kimliği eksik.",
+        }), 400
+
+    try:
+        with template_operation_lock(
+            category,
+            identity,
+            "archive-working-orphan",
+            wait_seconds=0.25,
+        ):
+            result = archive_working_orphan(
+                BASE_DIR,
+                get_all_ayarlar(),
+                category=category,
+                identity=identity,
+            )
+        return jsonify({
+            "success": True,
+            "operation": result,
+        })
+    except LifecycleSafetyError as exc:
+        return jsonify({
+            "success": False,
+            "error": str(exc),
+            "code": "LIFECYCLE_SAFETY_BLOCK",
+        }), 409
+    except TemplateBusyError as exc:
+        return jsonify({
+            "success": False,
+            "error": str(exc),
+            "code": "TEMPLATE_BUSY",
+        }), 409
+    except Exception as exc:
+        logger.exception("Çalışma yetimi recovery işlemi başarısız")
+        return jsonify({"success": False, "error": str(exc)}), 500
+
+
+@app.route('/api/lifecycle/retire-db-orphan', methods=['POST'])
+def api_lifecycle_retire_db_orphan():
+    """Retire an active DB record only after proving both file sources are absent."""
+    payload = request.get_json(silent=True) or {}
+    category = str(payload.get("category") or "").strip()
+    template = str(payload.get("template") or "").strip()
+    if not category or not template:
+        return jsonify({
+            "success": False,
+            "error": "Kategori veya şablon eksik.",
+        }), 400
+
+    working_root = os.path.join(BASE_DIR, "2_SABLON_HAVUZU")
+    backup_root = os.path.join(
+        BASE_DIR,
+        "2_SABLON_HAVUZU_ORIJINAL_YEDEK",
+    )
+    if (
+        _find_image_asset(working_root, category, template) is not None
+        or _find_image_asset(backup_root, category, template) is not None
+    ):
+        return jsonify({
+            "success": False,
+            "error": (
+                "Bu kayıt gerçek DB-yetimi değil; çalışma veya ham dosyası mevcut. "
+                "Otomatik retire engellendi."
+            ),
+            "code": "NOT_DB_ORPHAN",
+        }), 409
+
+    try:
+        result = _retire_template_safely(category, template)
+        return jsonify({"success": True, **result})
+    except (ValueError, FileNotFoundError) as exc:
+        return jsonify({"success": False, "error": str(exc)}), 400
+    except TemplateBusyError as exc:
+        return jsonify({
+            "success": False,
+            "error": str(exc),
+            "code": "TEMPLATE_BUSY",
+        }), 409
+    except Exception as exc:
+        logger.exception("DB yetimi retire işlemi başarısız")
+        return jsonify({"success": False, "error": str(exc)}), 500
+
+
+@app.route('/api/lifecycle/undo', methods=['POST'])
+def api_lifecycle_undo():
+    """Undo the latest recoverable duplicate/orphan archive operation."""
+    payload = request.get_json(silent=True) or {}
+    operation_id = str(payload.get("operation_id") or "").strip() or None
+    try:
+        result = undo_lifecycle_operation(
+            BASE_DIR,
+            operation_id=operation_id,
+        )
+        return jsonify({
+            "success": True,
+            "operation": result,
+        })
+    except LifecycleSafetyError as exc:
+        return jsonify({
+            "success": False,
+            "error": str(exc),
+            "code": "LIFECYCLE_SAFETY_BLOCK",
+        }), 409
+    except Exception as exc:
+        logger.exception("Lifecycle geri alma başarısız")
+        return jsonify({"success": False, "error": str(exc)}), 500
+
+
+@app.route('/api/templates/replace-original', methods=['POST'])
+@template_guard('replace-original', source='headers', wait_seconds=0.25)
+def api_replace_original():
+    """Replace raw source + working copy while archiving all previous bytes."""
+    active_cat = str(
+        request.headers.get("X-Active-Category", "")
+    ).strip()
+    active_tmpl = str(
+        request.headers.get("X-Active-Template", "")
+    ).strip()
+    if not active_cat or not active_tmpl:
+        return jsonify({
+            "success": False,
+            "error": "Kategori veya şablon eksik.",
+        }), 400
+
+    upload = request.files.get("file")
+    if upload is None or not upload.filename:
+        return jsonify({
+            "success": False,
+            "error": "Yeni ham görsel seçilmedi.",
+        }), 400
+
+    settings = get_all_ayarlar()
+    active_templates = (
+        settings.get("kategoriler", {})
+        .get(active_cat, {})
+        .get("sablonlar", {})
+    )
+    if active_tmpl not in active_templates:
+        return jsonify({
+            "success": False,
+            "error": "Aktif şablon DB kaydı bulunamadı.",
+        }), 404
+
+    try:
+        payload = upload.read()
+        result = replace_original_and_working(
+            BASE_DIR,
+            category=active_cat,
+            template=active_tmpl,
+            upload_filename=upload.filename,
+            upload_bytes=payload,
+        )
+
+        current_hash = str(result.get("new_working_sha256") or "")
+        stale_count = _invalidate_stale_profiles_for_source(
+            active_cat,
+            active_tmpl,
+            str(result.get("new_working_filename") or active_tmpl),
+            current_hash,
+        )
+
+        legacy_conf = dict(active_templates.get(active_tmpl) or {})
+        legacy_conf["review_status"] = "STALE_SOURCE_CHANGED"
+        legacy_conf["supheli"] = True
+        legacy_conf["source_replace_operation"] = result.get("operation_id")
+        legacy_conf["source_asset_sha256"] = current_hash
+        save_template(active_cat, active_tmpl, legacy_conf)
+
+        return jsonify({
+            "success": True,
+            "operation_id": result.get("operation_id"),
+            "backup_source_absolute": result.get("new_backup_absolute"),
+            "working_absolute": result.get("new_working_absolute"),
+            "backup_sha256": result.get("new_backup_sha256"),
+            "working_sha256": current_hash,
+            "profiles_marked_stale": stale_count,
+            "review_status": "STALE_SOURCE_CHANGED",
+            "previous_bytes_archived": len(result.get("moved", []) or []),
+            "recovery_operation": result,
+        })
+    except LifecycleSafetyError as exc:
+        return jsonify({
+            "success": False,
+            "error": str(exc),
+            "code": "LIFECYCLE_SAFETY_BLOCK",
+        }), 409
+    except Exception as exc:
+        logger.exception("Ham kaynak değiştirme başarısız")
         return jsonify({"success": False, "error": str(exc)}), 500
 
 
