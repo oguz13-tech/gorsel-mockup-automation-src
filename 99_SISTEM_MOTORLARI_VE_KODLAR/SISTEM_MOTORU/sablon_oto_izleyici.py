@@ -52,6 +52,12 @@ YEDEK_DIR = BASE_DIR / "2_SABLON_HAVUZU_ORIJINAL_YEDEK"
 STAGING_DIR = BASE_DIR / "YENI-BOS MOCKUP SABLON HAVUZU"
 RUNTIME_ENGINE_DIR = BASE_DIR / "99_SISTEM_MOTORLARI_VE_KODLAR" / "SISTEM_MOTORU"
 REGISTRY_PATH = RUNTIME_ENGINE_DIR / "logs" / "whitened_registry.json"
+STAGING_TXN_DIR = (
+    BASE_DIR
+    / "SABLON_V2_MIMARI"
+    / "recovery"
+    / "staging_transactions"
+)
 
 SOURCE_ENGINE_DIR = SOURCE_ROOT / "99_SISTEM_MOTORLARI_VE_KODLAR" / "SISTEM_MOTORU"
 SOURCE_ARCH_DIR = SOURCE_ROOT / "SABLON_V2_MIMARI"
@@ -103,6 +109,127 @@ def save_registry(registry: set):
             json.dump(list(registry), f, ensure_ascii=False, indent=2)
     except Exception as e:
         logger.warning(f"Registry kaydedilemedi: {e}")
+
+def _write_json_atomic(path: Path, payload: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    try:
+        with open(tmp, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, ensure_ascii=False, indent=2)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp, path)
+    finally:
+        try:
+            if tmp.exists():
+                tmp.unlink()
+        except OSError:
+            pass
+
+
+def _begin_staging_txn(
+    original_path: Path,
+    processing_path: Path,
+) -> tuple[Path, dict]:
+    STAGING_TXN_DIR.mkdir(parents=True, exist_ok=True)
+    txn_id = (
+        time.strftime("%Y%m%d_%H%M%S")
+        + "_"
+        + original_path.stem
+        + "_"
+        + hashlib.sha256(
+            (str(original_path) + str(time.time_ns())).encode("utf-8")
+        ).hexdigest()[:10]
+    )
+    txn_path = STAGING_TXN_DIR / f"{txn_id}.json"
+    payload = {
+        "transaction_id": txn_id,
+        "state": "PROCESSING_OWNED",
+        "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "updated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+        "original_staging_path": str(original_path),
+        "processing_path": str(processing_path),
+        "category": processing_path.parent.name,
+        "canonical_name": None,
+        "backup_path": None,
+        "working_path": None,
+        "source_sha256": None,
+        "error": None,
+    }
+    _write_json_atomic(txn_path, payload)
+    return txn_path, payload
+
+
+def _update_staging_txn(
+    txn_path: Path | None,
+    payload: dict | None,
+    **changes,
+) -> None:
+    if txn_path is None or payload is None:
+        return
+    payload.update(changes)
+    payload["updated_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+    _write_json_atomic(txn_path, payload)
+
+
+def reconcile_staging_transaction_journals() -> dict:
+    """Classify crash-leftover ingest journals without mutating user files."""
+    result = {
+        "committed": 0,
+        "recovered": 0,
+        "recovery_required": 0,
+        "failed": 0,
+    }
+    if not STAGING_TXN_DIR.is_dir():
+        return result
+
+    for txn_path in sorted(STAGING_TXN_DIR.glob("*.json")):
+        try:
+            payload = json.loads(txn_path.read_text(encoding="utf-8"))
+            state = str(payload.get("state") or "")
+            if state in {"COMMITTED", "ROLLED_BACK", "RECOVERED"}:
+                if state == "COMMITTED":
+                    result["committed"] += 1
+                elif state in {"ROLLED_BACK", "RECOVERED"}:
+                    result["recovered"] += 1
+                continue
+
+            original = Path(str(payload.get("original_staging_path") or ""))
+            processing = Path(str(payload.get("processing_path") or ""))
+            backup = Path(str(payload.get("backup_path") or "")) if payload.get("backup_path") else None
+            working = Path(str(payload.get("working_path") or "")) if payload.get("working_path") else None
+
+            partial_exists = bool(
+                (backup and backup.exists())
+                or (working and working.exists())
+                or processing.exists()
+            )
+            if original.exists() and not partial_exists:
+                _update_staging_txn(
+                    txn_path,
+                    payload,
+                    state="RECOVERED",
+                    error=None,
+                )
+                result["recovered"] += 1
+            else:
+                _update_staging_txn(
+                    txn_path,
+                    payload,
+                    state="RECOVERY_REQUIRED",
+                    error=(
+                        "Önceki ingest yarım kaldı; dosya durumları insan "
+                        "incelemesi gerektiriyor."
+                    ),
+                )
+                result["recovery_required"] += 1
+        except Exception:
+            result["failed"] += 1
+            logger.exception(
+                f"Staging transaction journal okunamadı: {txn_path}"
+            )
+    return result
+
 
 def detect_frame_auto(img_cv: np.ndarray) -> dict:
     """
@@ -449,11 +576,27 @@ def process_from_staging(staging_path: Path, thread_lock=None) -> bool:
     processing_path = staging_path.with_suffix(
         staging_path.suffix + ".processing"
     )
+    txn_path = None
+    txn = None
+    committed = False
+    planned_backup_path = None
+    planned_working_path = None
+
     try:
         staging_path.rename(processing_path)
     except Exception:
         # Another process may already own the file.
         return False
+
+    try:
+        txn_path, txn = _begin_staging_txn(
+            original_staging_path,
+            processing_path,
+        )
+    except Exception as exc:
+        logger.warning(
+            f"Staging transaction journal başlatılamadı: {exc}"
+        )
 
     cat_key = processing_path.parent.name
     if cat_key not in KNOWN_CATEGORIES:
@@ -461,6 +604,12 @@ def process_from_staging(staging_path: Path, thread_lock=None) -> bool:
             f"Bilinmeyen staging kategorisi; dosya geri bırakıldı: {cat_key}"
         )
         _restore_processing_file(processing_path, original_staging_path)
+        _update_staging_txn(
+            txn_path,
+            txn,
+            state="ROLLED_BACK",
+            error=f"Bilinmeyen staging kategorisi: {cat_key}",
+        )
         return False
 
     prefixes = {
@@ -541,6 +690,17 @@ def process_from_staging(staging_path: Path, thread_lock=None) -> bool:
         new_name = f"{prefix}_{new_idx:03d}.png"
         backup_path = YEDEK_DIR / cat_key / new_name
         working_path = SABLON_DIR / cat_key / new_name
+        planned_backup_path = backup_path
+        planned_working_path = working_path
+        _update_staging_txn(
+            txn_path,
+            txn,
+            state="PLANNED",
+            canonical_name=new_name,
+            backup_path=str(backup_path),
+            working_path=str(working_path),
+            source_sha256=_sha256_file(processing_path),
+        )
 
         if backup_path.exists() or working_path.exists():
             logger.error(
@@ -559,6 +719,12 @@ def process_from_staging(staging_path: Path, thread_lock=None) -> bool:
             logger.error(f"Orijinal yedek yazılamadı: {backup_path}")
             _restore_processing_file(processing_path, original_staging_path)
             return False
+        _update_staging_txn(
+            txn_path,
+            txn,
+            state="BACKUP_WRITTEN",
+            backup_sha256=_sha256_file(backup_path),
+        )
 
         # 2) Working copy may later be transformed, but starts byte-equivalent
         #    in pixel content to the durable original backup.
@@ -572,6 +738,12 @@ def process_from_staging(staging_path: Path, thread_lock=None) -> bool:
                 )
             _restore_processing_file(processing_path, original_staging_path)
             return False
+        _update_staging_txn(
+            txn_path,
+            txn,
+            state="WORKING_WRITTEN",
+            working_sha256=_sha256_file(working_path),
+        )
 
         # 3) First-pass automatic corner proposal runs exactly once for this
         #    newly ingested template. It remains REVIEW_REQUIRED and never
@@ -607,6 +779,11 @@ def process_from_staging(staging_path: Path, thread_lock=None) -> bool:
                 canonical_name=new_name,
                 source="staging_ingest",
             )
+            _update_staging_txn(
+                txn_path,
+                txn,
+                state="DB_REGISTERED",
+            )
         except Exception as exc:
             logger.error(f"Şablon review DB'ye kaydedilemedi: {exc}")
             try:
@@ -635,6 +812,13 @@ def process_from_staging(staging_path: Path, thread_lock=None) -> bool:
                 f"Şablon güvenle kaydedildi ancak staging kopyası silinemedi: {exc}"
             )
 
+        committed = True
+        _update_staging_txn(
+            txn_path,
+            txn,
+            state="COMMITTED",
+            completed_at=time.strftime("%Y-%m-%d %H:%M:%S"),
+        )
         logger.info(
             f"📦 Orijinal korundu: {backup_path}"
         )
@@ -647,7 +831,43 @@ def process_from_staging(staging_path: Path, thread_lock=None) -> bool:
     except Exception as exc:
         logger.exception(f"Şablon staging işlemi başarısız: {exc}")
         _restore_processing_file(processing_path, original_staging_path)
+        _update_staging_txn(
+            txn_path,
+            txn,
+            error=str(exc),
+        )
         return False
+    finally:
+        if txn_path is not None and txn is not None and not committed:
+            original_restored = original_staging_path.exists()
+            processing_left = processing_path.exists()
+            backup_left = bool(
+                planned_backup_path
+                and planned_backup_path.exists()
+            )
+            working_left = bool(
+                planned_working_path
+                and planned_working_path.exists()
+            )
+            clean_rollback = bool(
+                original_restored
+                and not processing_left
+                and not backup_left
+                and not working_left
+            )
+            _update_staging_txn(
+                txn_path,
+                txn,
+                state=(
+                    "ROLLED_BACK"
+                    if clean_rollback
+                    else "RECOVERY_REQUIRED"
+                ),
+                rollback_original_restored=original_restored,
+                rollback_processing_left=processing_left,
+                rollback_backup_left=backup_left,
+                rollback_working_left=working_left,
+            )
 
 
 def run_watcher():
@@ -674,6 +894,12 @@ def run_watcher():
 
     STAGING_DIR.mkdir(parents=True, exist_ok=True)
     recovery = recover_stale_processing_files()
+    txn_recovery = reconcile_staging_transaction_journals()
+    if txn_recovery["recovery_required"]:
+        logger.error(
+            "⚠️ %s staging transaction kaydı insan incelemesi gerektiriyor.",
+            txn_recovery["recovery_required"],
+        )
     recovered_count = (
         len(recovery["restored"])
         + len(recovery["deduplicated"])
