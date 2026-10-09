@@ -52,12 +52,6 @@ YEDEK_DIR = BASE_DIR / "2_SABLON_HAVUZU_ORIJINAL_YEDEK"
 STAGING_DIR = BASE_DIR / "YENI-BOS MOCKUP SABLON HAVUZU"
 RUNTIME_ENGINE_DIR = BASE_DIR / "99_SISTEM_MOTORLARI_VE_KODLAR" / "SISTEM_MOTORU"
 REGISTRY_PATH = RUNTIME_ENGINE_DIR / "logs" / "whitened_registry.json"
-STAGING_TXN_DIR = (
-    BASE_DIR
-    / "SABLON_V2_MIMARI"
-    / "recovery"
-    / "staging_transactions"
-)
 
 SOURCE_ENGINE_DIR = SOURCE_ROOT / "99_SISTEM_MOTORLARI_VE_KODLAR" / "SISTEM_MOTORU"
 SOURCE_ARCH_DIR = SOURCE_ROOT / "SABLON_V2_MIMARI"
@@ -110,6 +104,15 @@ def save_registry(registry: set):
     except Exception as e:
         logger.warning(f"Registry kaydedilemedi: {e}")
 
+def _staging_txn_dir() -> Path:
+    return (
+        BASE_DIR
+        / "SABLON_V2_MIMARI"
+        / "recovery"
+        / "staging_transactions"
+    )
+
+
 def _write_json_atomic(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".tmp")
@@ -131,7 +134,7 @@ def _begin_staging_txn(
     original_path: Path,
     processing_path: Path,
 ) -> tuple[Path, dict]:
-    STAGING_TXN_DIR.mkdir(parents=True, exist_ok=True)
+    _staging_txn_dir().mkdir(parents=True, exist_ok=True)
     txn_id = (
         time.strftime("%Y%m%d_%H%M%S")
         + "_"
@@ -141,7 +144,7 @@ def _begin_staging_txn(
             (str(original_path) + str(time.time_ns())).encode("utf-8")
         ).hexdigest()[:10]
     )
-    txn_path = STAGING_TXN_DIR / f"{txn_id}.json"
+    txn_path = _staging_txn_dir() / f"{txn_id}.json"
     payload = {
         "transaction_id": txn_id,
         "state": "PROCESSING_OWNED",
@@ -180,10 +183,10 @@ def reconcile_staging_transaction_journals() -> dict:
         "recovery_required": 0,
         "failed": 0,
     }
-    if not STAGING_TXN_DIR.is_dir():
+    if not _staging_txn_dir().is_dir():
         return result
 
-    for txn_path in sorted(STAGING_TXN_DIR.glob("*.json")):
+    for txn_path in sorted(_staging_txn_dir().glob("*.json")):
         try:
             payload = json.loads(txn_path.read_text(encoding="utf-8"))
             state = str(payload.get("state") or "")
