@@ -1,5 +1,5 @@
 window.onerror = function(msg, url, line, col, error) {
-        alert("JS ERROR: " + msg + "\\nLine: " + line);
+        showMessage("JS ERROR: " + msg + "\\nLine: " + line);
         return false;
     };
     
@@ -121,6 +121,13 @@ window.onerror = function(msg, url, line, col, error) {
         overlay.querySelector('.copyable-report-status').textContent =
             'Metni fareyle seçebilir veya Ctrl+A / Ctrl+C kullanabilirsiniz.';
         overlay.style.display = 'flex';
+    }
+
+    function showMessage(message, title = 'Bilgi / Uyarı') {
+        showCopyableReport(
+            String(title || 'Bilgi / Uyarı'),
+            String(message ?? '')
+        );
     }
 
     // SISTEM SAĞLIK KONTROLÜ
@@ -261,7 +268,7 @@ window.onerror = function(msg, url, line, col, error) {
             const label = mode === 'original'
                 ? 'Ham orijinal yedek'
                 : 'Çalışma görseli';
-            alert(
+            showMessage(
                 label + ' bulunamadı veya okunamadı. Dosya üzerinde hiçbir değişiklik yapılmadı.'
             );
         };
@@ -376,7 +383,7 @@ window.onerror = function(msg, url, line, col, error) {
     function selectAllInCurrentCategory() {
         const targetCategory = bulkTargetCategory || currentCat;
         if (!targetCategory) {
-            alert('Önce soldan bir kategori başlığına veya şablona tıklayın.');
+            showMessage('Önce soldan bir kategori başlığına veya şablona tıklayın.');
             return;
         }
         allTemplates
@@ -398,7 +405,7 @@ window.onerror = function(msg, url, line, col, error) {
             ));
 
         if (selected.length === 0) {
-            alert('Önce çöpe atılacak şablonları işaretleyin.');
+            showMessage('Önce çöpe atılacak şablonları işaretleyin.');
             return;
         }
 
@@ -410,7 +417,7 @@ window.onerror = function(msg, url, line, col, error) {
         );
 
         if (safeSelected.length === 0) {
-            alert(
+            showMessage(
                 'Seçtiğiniz şablon şu anda toplu tarama tarafından işleniyor. ' +
                 'Birkaç saniye sonra tekrar deneyin.'
             );
@@ -497,7 +504,7 @@ window.onerror = function(msg, url, line, col, error) {
                   ).join('\n')
                 : '';
 
-            alert(
+            showMessage(
                 'Toplu işlem tamamlandı.\n' +
                 Number(data.deleted_count || deleted.length) +
                 ' şablon çöpe taşındı.' +
@@ -512,7 +519,7 @@ window.onerror = function(msg, url, line, col, error) {
             );
             refreshTemplateHealth(false, false);
         } catch (err) {
-            alert('Toplu silme başarısız: ' + err.message);
+            showMessage('Toplu silme başarısız: ' + err.message);
         } finally {
             batchAnalyzeExternalPause = false;
             if (button) {
@@ -966,7 +973,7 @@ window.onerror = function(msg, url, line, col, error) {
             return data;
         } catch (err) {
             if (showReport) {
-                alert('Ham dosya sağlık taraması başarısız: ' + err.message);
+                showMessage('Ham dosya sağlık taraması başarısız: ' + err.message);
             }
             return null;
         }
@@ -1076,7 +1083,7 @@ window.onerror = function(msg, url, line, col, error) {
                 true
             );
         } catch (err) {
-            alert(
+            showMessage(
                 'Ham dosya sağlık taraması başarısız: ' +
                 err.message
             );
@@ -1099,7 +1106,7 @@ window.onerror = function(msg, url, line, col, error) {
             const data = await response.json();
             if (!response.ok || !data.success) {
                 if (data.code === 'NO_SAVED_HEALTH_REPORT') {
-                    alert(
+                    showMessage(
                         'Henüz kaydedilmiş Ham Dosya Sağlık Raporu yok.\n\n' +
                         'Önce “Ham Dosya Sağlık Taraması” butonuna basın. ' +
                         'Tamamlanan rapor bundan sonra burada kalıcı olarak saklanır.'
@@ -1117,7 +1124,7 @@ window.onerror = function(msg, url, line, col, error) {
                 formatTemplateHealthReport(data)
             );
         } catch (err) {
-            alert(
+            showMessage(
                 'Son sağlık raporu açılamadı: ' +
                 err.message
             );
@@ -1264,7 +1271,7 @@ window.onerror = function(msg, url, line, col, error) {
             }
             await monitorWorkspaceAuditJob(data.job.id, true);
         } catch (err) {
-            alert(
+            showMessage(
                 'Klasör Tutarlılık Taraması başarısız: ' +
                 err.message
             );
@@ -1274,7 +1281,7 @@ window.onerror = function(msg, url, line, col, error) {
     async function openLastWorkspaceConsistencyReport() {
         const data = await loadLastWorkspaceConsistency(false);
         if (!data) {
-            alert(
+            showMessage(
                 'Henüz kayıtlı Klasör Tutarlılık Raporu yok. ' +
                 'Önce “Klasör Tutarlılık Taraması” çalıştırın.'
             );
@@ -1303,7 +1310,7 @@ window.onerror = function(msg, url, line, col, error) {
                 formatWorkspaceHistory(data)
             );
         } catch (err) {
-            alert(
+            showMessage(
                 'Tutarlılık rapor geçmişi açılamadı: ' +
                 err.message
             );
@@ -1326,7 +1333,7 @@ window.onerror = function(msg, url, line, col, error) {
                 formatTemplateHealthHistory(data)
             );
         } catch (err) {
-            alert(
+            showMessage(
                 'Sağlık rapor geçmişi açılamadı: ' +
                 err.message
             );
@@ -1410,7 +1417,7 @@ window.onerror = function(msg, url, line, col, error) {
             loadLastWorkspaceConsistency(true);
             resumePersistentJobs();
         })
-        .catch(err => alert("FETCH ERROR: " + err.message));
+        .catch(err => showMessage("FETCH ERROR: " + err.message));
     
     function renderSidebar() {
         const catDiv = document.getElementById('categories');
@@ -1652,7 +1659,7 @@ window.onerror = function(msg, url, line, col, error) {
         if (currentCat && currentTmpl) {
             const saved = await saveAll(true);
             if (!saved) {
-                alert('Mevcut şablon kaydedilemedi. Veri kaybını önlemek için geçiş iptal edildi.');
+                showMessage('Mevcut şablon kaydedilemedi. Veri kaybını önlemek için geçiş iptal edildi.');
                 return;
             }
         }
@@ -1748,7 +1755,7 @@ window.onerror = function(msg, url, line, col, error) {
             pts = [];
             sourceViewMode = 'working';
             updateSourceViewStatus();
-            alert(
+            showMessage(
                 'HATA: "' + tmpl + '" çalışma görseli 2_SABLON_HAVUZU içinde bulunamadı veya okunamadı. ' +
                 'Ham yedeği kontrol etmek için “Ham Orijinali Göster” butonunu kullanabilirsiniz.'
             );
@@ -2183,11 +2190,11 @@ window.onerror = function(msg, url, line, col, error) {
 
     async function autoDetectForeground() {
         if (!currentCat || !currentTmpl || !currentImg) {
-            alert("Lütfen önce bir şablon seçin.");
+            showMessage("Lütfen önce bir şablon seçin.");
             return;
         }
         if (!pts || pts.length !== 4) {
-            alert("AI ön plan analizi için önce 4 baskı köşesini doğrulayın.");
+            showMessage("AI ön plan analizi için önce 4 baskı köşesini doğrulayın.");
             return;
         }
 
@@ -2221,17 +2228,17 @@ window.onerror = function(msg, url, line, col, error) {
             draw();
 
             if (detectedBoxes.length === 0) {
-                alert('Baskının önünde korunması gereken güvenilir bir nesne bulunmadı.');
+                showMessage('Baskının önünde korunması gereken güvenilir bir nesne bulunmadı.');
             } else {
                 const confidence = Number(data.confidence || 0);
-                alert(
+                showMessage(
                     detectedBoxes.length + ' ön plan nesnesi otomatik bulundu. ' +
                     'Yeşil kutuları gözle kontrol edin. Güven: ' +
                     confidence.toFixed(2)
                 );
             }
         } catch (err) {
-            alert('AI ön plan analizi kullanılamadı: ' + err.message);
+            showMessage('AI ön plan analizi kullanılamadı: ' + err.message);
         } finally {
             if (btn) {
                 btn.disabled = false;
@@ -2242,7 +2249,7 @@ window.onerror = function(msg, url, line, col, error) {
 
     function autoDetectCorners() {
         if (!currentCat || !currentTmpl) {
-            alert("Önce soldaki listeden bir şablon seçin.");
+            showMessage("Önce soldaki listeden bir şablon seçin.");
             return;
         }
         if (blockIfCurrentBatchTemplate(
@@ -2287,7 +2294,7 @@ window.onerror = function(msg, url, line, col, error) {
                 const modeLabel = modeLabels[detectedMode] || detectedMode;
                 const modeConfidence = Number(res.surface_mode_confidence || 0);
 
-                alert(
+                showMessage(
                     'Yeni köşe önerisi hazır.\n\n' +
                     'Algılanan zemin: ' + modeLabel +
                     (modeConfidence > 0
@@ -2296,13 +2303,13 @@ window.onerror = function(msg, url, line, col, error) {
                     '\n\nKırmızı noktaları kontrol edin; doğruysa “Bu Şablonu Onayla”ya basın.'
                 );
             } else {
-                alert("Köşeler otomatik bulunamadı: " + (res.error || "Kırmızı noktaları “Köşeleri Elle Ayarla” ile yerleştirin."));
+                showMessage("Köşeler otomatik bulunamadı: " + (res.error || "Kırmızı noktaları “Köşeleri Elle Ayarla” ile yerleştirin."));
             }
         })
         .catch(err => {
             btn.innerHTML = origText;
             btn.disabled = false;
-            alert("Sunucu baglanti hatasi: " + err);
+            showMessage("Sunucu baglanti hatasi: " + err);
         });
     }
 
@@ -2364,7 +2371,7 @@ window.onerror = function(msg, url, line, col, error) {
                         '\nPNG birebir kopya doğrulaması: ' +
                         (res.png_byte_exact_restore ? 'EVET' : 'HAYIR / DÖNÜŞTÜRÜLDÜ');
 
-                    alert(
+                    showMessage(
                         'Ham orijinal çalışma kopyasına geri yüklendi.' +
                         sourceInfo +
                         '\n\nDört köşeyi kontrol edin; gerekirse çok küçük bir düzeltme yapın ve ' +
@@ -2372,14 +2379,462 @@ window.onerror = function(msg, url, line, col, error) {
                     );
                 });
             } else {
-                alert(
+                showMessage(
                     "Orijinal yükleme başarısız: " +
                     (res.error || 'Bu görselin korunmuş ham yedeği bulunamadı.')
                 );
             }
         }).catch(err => {
-            alert('Orijinal yükleme bağlantı hatası: ' + err.message);
+            showMessage('Orijinal yükleme bağlantı hatası: ' + err.message);
         });
+    }
+
+    function formatLifecycleCenter(data, focus = 'all') {
+        const summary = data?.summary || {};
+        const lines = [
+            'GÜVENLİ EŞİTLEME / TRASH / RECOVERY MERKEZİ',
+            'Tarama: ' + String(data?.generated_at || ''),
+            'Runtime: ' + String(data?.runtime_root || ''),
+            '',
+            'GÜVENLİK POLİTİKASI:',
+            '• Kalıcı otomatik silme: KAPALI',
+            '• Duplicate çözümü: silmek yerine recovery alanına taşı',
+            '• Çalışma yetimi: yalnız kullanıcı onayıyla recovery alanına taşı',
+            '• Ham dosya değişimi: eski ham + eski çalışma bytes recovery kaydında korunur',
+            '',
+            'ÖZET:',
+            'Duplicate kimlik: ' + Number(summary.duplicate_identity_count || 0),
+            'Güvenli önerisi olan duplicate: ' + Number(summary.safe_duplicate_count || 0),
+            'Elle seçim gerektiren duplicate: ' + Number(summary.manual_duplicate_count || 0),
+            'Çalışma yetimi: ' + Number(summary.working_orphan_count || 0),
+            'Aktif ama dosyası eksik kayıt: ' + Number(summary.active_missing_count || 0),
+            'Geri alınabilir çöp kaydı: ' + Number(summary.trash_record_count || 0),
+            'Lifecycle recovery operasyonu: ' + Number(summary.lifecycle_recovery_count || 0),
+            '.processing recovery dosyası: ' + Number(summary.processing_recovery_count || 0),
+            ''
+        ];
+
+        if (focus !== 'recovery') {
+            lines.push('DUPLICATE KİMLİKLER:');
+            const duplicates = Array.isArray(data?.duplicates)
+                ? data.duplicates
+                : [];
+            if (!duplicates.length) {
+                lines.push('Yok.');
+            } else {
+                duplicates.forEach(row => {
+                    lines.push(
+                        '• [' + String(row.area || '') + '] ' +
+                        String(row.category || '') + ' / ' +
+                        String(row.identity || '')
+                    );
+                    lines.push(
+                        '  Dosyalar: ' +
+                        (row.files || []).map(item => item.name).join(', ')
+                    );
+                    lines.push(
+                        '  Aktif DB dosyası: ' +
+                        String(row.active_template || 'YOK')
+                    );
+                    lines.push(
+                        '  Güvenli koruma önerisi: ' +
+                        String(row.recommended_keep || 'ELLE SEÇİM GEREKİYOR')
+                    );
+                });
+            }
+
+            lines.push('', 'ÇALIŞMA HAVUZU YETİMLERİ:');
+            const workingOrphans = Array.isArray(data?.working_orphans)
+                ? data.working_orphans
+                : [];
+            if (!workingOrphans.length) {
+                lines.push('Yok.');
+            } else {
+                workingOrphans.forEach(row => {
+                    lines.push(
+                        '• ' + row.category + ' / ' + row.identity +
+                        ' — ' +
+                        (row.files || []).map(item => item.name).join(', ')
+                    );
+                });
+            }
+
+            lines.push('', 'AKTİF DB AMA DOSYA EKSİK:');
+            const activeMissing = Array.isArray(data?.active_missing)
+                ? data.active_missing
+                : [];
+            if (!activeMissing.length) {
+                lines.push('Yok.');
+            } else {
+                activeMissing.forEach(row => {
+                    lines.push(
+                        '• ' + row.category + ' / ' + row.template +
+                        ' | çalışma=' + (row.working_exists ? 'VAR' : 'YOK') +
+                        ' | ham=' + (row.backup_exists ? 'VAR' : 'YOK') +
+                        ' | öneri=' + String(row.recommended_action || '')
+                    );
+                });
+            }
+        }
+
+        lines.push('', 'SON ÇÖP KAYITLARI:');
+        const trash = Array.isArray(data?.trash_records)
+            ? data.trash_records
+            : [];
+        if (!trash.length) {
+            lines.push('Yok.');
+        } else {
+            trash.slice(0, 20).forEach(row => {
+                lines.push(
+                    '• ' + String(row.created_at || '') + ' — ' +
+                    String(row.category || '') + ' / ' +
+                    String(row.template || '') +
+                    (row.source_was_missing ? ' [DOSYA ZATEN EKSİKTİ]' : '')
+                );
+            });
+        }
+
+        lines.push('', 'SON LIFECYCLE RECOVERY OPERASYONLARI:');
+        const recovery = Array.isArray(data?.lifecycle_recovery)
+            ? data.lifecycle_recovery
+            : [];
+        if (!recovery.length) {
+            lines.push('Yok.');
+        } else {
+            recovery.slice(0, 20).forEach(row => {
+                lines.push(
+                    '• ' + String(row.created_at || '') +
+                    ' | ' + String(row.kind || '') +
+                    ' | ' + String(row.state || '') +
+                    ' | ' + String(row.category || '') +
+                    ' / ' + String(row.identity || row.template || '') +
+                    ' | geri alınabilir=' +
+                    (row.undo_supported ? 'EVET' : 'HAYIR') +
+                    ' | taşınan=' + Number(row.moved_count || 0) +
+                    ' | id=' + String(row.operation_id || '')
+                );
+            });
+        }
+
+        lines.push('', '.PROCESSING RECOVERY:');
+        const processing = Array.isArray(data?.processing_recovery)
+            ? data.processing_recovery
+            : [];
+        if (!processing.length) {
+            lines.push('Yok.');
+        } else {
+            processing.slice(0, 20).forEach(row => {
+                lines.push(
+                    '• ' + String(row.relative_path || '') +
+                    ' | bytes=' + Number(row.size_bytes || 0)
+                );
+            });
+        }
+
+        lines.push(
+            '',
+            'NOT: Bu merkez kendi kendine toplu düzeltme yapmaz. Riskli aksiyonlar ayrıca kullanıcı onayı ister.'
+        );
+        return lines.join('\n');
+    }
+
+    async function fetchLifecycleCenter() {
+        const response = await fetch('/api/lifecycle/center?limit=100');
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+            throw new Error(
+                data.error || ('HTTP ' + response.status)
+            );
+        }
+        return data;
+    }
+
+    async function openLifecycleCenter(focus = 'all') {
+        try {
+            const data = await fetchLifecycleCenter();
+            showCopyableReport(
+                focus === 'recovery'
+                    ? 'Trash / Recovery Merkezi'
+                    : 'Güvenli Eşitleme Merkezi',
+                formatLifecycleCenter(data, focus)
+            );
+        } catch (err) {
+            showMessage(
+                'Lifecycle merkezi açılamadı: ' + err.message,
+                'Lifecycle Merkezi Hatası'
+            );
+        }
+    }
+
+    function chooseReplacementOriginal() {
+        if (!currentCat || !currentTmpl) {
+            showMessage('Önce soldan bir şablon seçin.');
+            return;
+        }
+        if (blockIfCurrentBatchTemplate(
+            currentCat,
+            currentTmpl,
+            'Ham dosyayı yenisiyle değiştirme'
+        )) return;
+
+        const input = document.getElementById(
+            'replaceOriginalFileInput'
+        );
+        if (!input) {
+            showMessage('Yeni ham dosya seçici bulunamadı.');
+            return;
+        }
+        input.value = '';
+        input.click();
+    }
+
+    async function replaceOriginalSelectedFile(input) {
+        const file = input?.files?.[0];
+        if (!file || !currentCat || !currentTmpl) return;
+
+        const requestCat = currentCat;
+        const requestTmpl = currentTmpl;
+        const ok = confirm(
+            'HAM DOSYA DEĞİŞECEK.\n\n' +
+            requestCat + ' / ' + requestTmpl + '\n' +
+            'Yeni dosya: ' + file.name + '\n\n' +
+            'Eski ham ve eski çalışma kopyaları kalıcı silinmeyecek; ' +
+            'Recovery operasyonuna taşınacak. Yeni kaynak sonrası önceki onay ' +
+            'STALE_SOURCE_CHANGED olacak ve yeniden kontrol gerekecek.\n\n' +
+            'Devam edilsin mi?'
+        );
+        if (!ok) {
+            input.value = '';
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('file', file, file.name);
+
+        try {
+            const response = await fetch(
+                '/api/templates/replace-original',
+                {
+                    method: 'POST',
+                    headers: {
+                        'X-Active-Category': requestCat,
+                        'X-Active-Template': requestTmpl
+                    },
+                    body: formData
+                }
+            );
+            const data = await response.json();
+            if (!response.ok || !data.success) {
+                throw new Error(
+                    data.error || ('HTTP ' + response.status)
+                );
+            }
+
+            showCopyableReport(
+                'Ham Dosya Güvenle Değiştirildi',
+                [
+                    'Şablon: ' + requestCat + ' / ' + requestTmpl,
+                    'Yeni ham: ' + String(data.backup_source_absolute || ''),
+                    'Yeni çalışma: ' + String(data.working_absolute || ''),
+                    'Ham SHA256: ' + String(data.backup_sha256 || ''),
+                    'Çalışma SHA256: ' + String(data.working_sha256 || ''),
+                    'Recovery operasyonu: ' + String(data.operation_id || ''),
+                    'Recovery’ye alınan eski dosya: ' +
+                        Number(data.previous_bytes_archived || 0),
+                    'STALE yapılan profil: ' +
+                        Number(data.profiles_marked_stale || 0),
+                    'Yeni review durumu: ' +
+                        String(data.review_status || '')
+                ].join('\n')
+            );
+
+            const settingsResponse = await fetch('/api/ayarlar');
+            ayarlar = await settingsResponse.json();
+            renderSidebar();
+            refreshTemplateHealth(false, false);
+            loadLastWorkspaceConsistency(true);
+
+            if (
+                requestCat === currentCat
+                && requestTmpl === currentTmpl
+            ) {
+                const row = allTemplates.find(
+                    item => (
+                        item.cat === requestCat
+                        && item.tmpl === requestTmpl
+                    )
+                );
+                loadTemplate(
+                    requestCat,
+                    requestTmpl,
+                    row?.elem || null
+                );
+            }
+        } catch (err) {
+            showMessage(
+                'Ham dosya değiştirilemedi: ' + err.message,
+                'Ham Dosya Değiştirme Hatası'
+            );
+        } finally {
+            input.value = '';
+        }
+    }
+
+    async function resolveCurrentTemplateDuplicates() {
+        if (!currentCat || !currentTmpl) {
+            showMessage('Önce soldan bir şablon seçin.');
+            return;
+        }
+        if (blockIfCurrentBatchTemplate(
+            currentCat,
+            currentTmpl,
+            'Duplicate çözme'
+        )) return;
+
+        try {
+            const center = await fetchLifecycleCenter();
+            const identity = currentTmpl
+                .replace(/\.[^.]+$/, '')
+                .toLowerCase();
+
+            const rows = (center.duplicates || []).filter(row => (
+                row.category === currentCat
+                && String(row.identity || '').toLowerCase() === identity
+            ));
+
+            if (!rows.length) {
+                showMessage(
+                    'Bu aktif şablon için duplicate kimlik bulunmadı.',
+                    'Duplicate Kontrolü'
+                );
+                return;
+            }
+
+            const safeRows = rows.filter(
+                row => row.safe_recommendation && row.recommended_keep
+            );
+            const manualRows = rows.filter(
+                row => !row.safe_recommendation
+            );
+
+            if (!safeRows.length) {
+                showCopyableReport(
+                    'Duplicate — Elle İnceleme Gerekli',
+                    formatLifecycleCenter(center, 'all')
+                );
+                return;
+            }
+
+            const planText = safeRows.map(row => (
+                '[' + row.area + '] ' +
+                row.category + ' / ' + row.identity +
+                '\nKorunacak: ' + row.recommended_keep +
+                '\nRecovery’ye taşınacak: ' +
+                (row.files || [])
+                    .map(item => item.name)
+                    .filter(name => name !== row.recommended_keep)
+                    .join(', ')
+            )).join('\n\n');
+
+            if (!confirm(
+                'Duplicate dosyalar KALICI SİLİNMEYECEK.\n\n' +
+                planText +
+                '\n\nDiğer varyantlar recovery alanına taşınsın mı?'
+            )) return;
+
+            const results = [];
+            for (const row of safeRows) {
+                const response = await fetch(
+                    '/api/lifecycle/resolve-duplicate',
+                    {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({
+                            area: row.area,
+                            category: row.category,
+                            identity: row.identity,
+                            keep_filename: row.recommended_keep,
+                            template: currentTmpl
+                        })
+                    }
+                );
+                const data = await response.json();
+                if (!response.ok || !data.success) {
+                    throw new Error(
+                        '[' + row.area + '] ' +
+                        (data.error || ('HTTP ' + response.status))
+                    );
+                }
+                results.push(data.operation);
+            }
+
+            showCopyableReport(
+                'Duplicate Çözümü Tamamlandı',
+                results.map(op => (
+                    'Operasyon: ' + String(op.operation_id || '') +
+                    '\nAlan: ' + String(op.area || '') +
+                    '\nKorunan: ' + String(op.keep_filename || '') +
+                    '\nRecovery’ye taşınan: ' +
+                    (op.moved || []).map(item => item.name).join(', ')
+                )).join('\n\n') +
+                (
+                    manualRows.length
+                        ? '\n\nNot: ' + manualRows.length +
+                          ' duplicate kümesi güvenli otomatik seçim yapılamadığı için dokunulmadan bırakıldı.'
+                        : ''
+                )
+            );
+
+            refreshTemplateHealth(false, false);
+            loadLastWorkspaceConsistency(true);
+        } catch (err) {
+            showMessage(
+                'Duplicate çözümü başarısız: ' + err.message,
+                'Duplicate Çözüm Hatası'
+            );
+        }
+    }
+
+    async function undoLastLifecycleOperation() {
+        if (!confirm(
+            'Son geri alınabilir duplicate/yetim arşiv işlemi eski yerine taşınacak.\n\n' +
+            'Hedefte aynı isimde dosya varsa sistem geri almayı engelleyecek.\n\n' +
+            'Devam edilsin mi?'
+        )) return;
+
+        try {
+            const response = await fetch('/api/lifecycle/undo', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({})
+            });
+            const data = await response.json();
+            if (!response.ok || !data.success) {
+                throw new Error(
+                    data.error || ('HTTP ' + response.status)
+                );
+            }
+            const op = data.operation || {};
+            showCopyableReport(
+                'Lifecycle İşlemi Geri Alındı',
+                [
+                    'Operasyon: ' + String(op.operation_id || ''),
+                    'Tür: ' + String(op.kind || ''),
+                    'Durum: ' + String(op.state || ''),
+                    'Geri gelen dosyalar:',
+                    ...(op.restored || []).map(
+                        item => '• ' + item.absolute_path
+                    )
+                ].join('\n')
+            );
+            refreshTemplateHealth(false, false);
+            loadLastWorkspaceConsistency(true);
+        } catch (err) {
+            showMessage(
+                'Lifecycle geri alma başarısız: ' + err.message,
+                'Recovery Hatası'
+            );
+        }
     }
 
     function deleteTemplate() {
@@ -2421,7 +2876,7 @@ window.onerror = function(msg, url, line, col, error) {
                     draw();
                 }
             } else {
-                alert("Silme başarısız: " + (res.error || 'Bilinmeyen hata'));
+                showMessage("Silme başarısız: " + (res.error || 'Bilinmeyen hata'));
             }
         });
     }
@@ -2439,7 +2894,7 @@ window.onerror = function(msg, url, line, col, error) {
                         renderSidebar();
                         refreshTemplateHealth(false, false);
                         if (res.restored_as_orphan) {
-                            alert(
+                            showMessage(
                                 'Yetim kayıt geri getirildi: ' +
                                 res.restored_tmpl +
                                 '\n\nBu kaydın çalışma görseli silinmeden önce de yoktu; ' +
@@ -2449,14 +2904,14 @@ window.onerror = function(msg, url, line, col, error) {
                                     : '\nHam/orijinal yedek de bulunmuyordu.')
                             );
                         } else {
-                            alert(
+                            showMessage(
                                 'Şablon geri getirildi: ' +
                                 res.restored_tmpl
                             );
                         }
                     });
             } else {
-                alert("Geri alma başarısız: " + (res.error || 'Çöpte dosya yok.'));
+                showMessage("Geri alma başarısız: " + (res.error || 'Çöpte dosya yok.'));
             }
         });
     }
@@ -2496,7 +2951,7 @@ window.onerror = function(msg, url, line, col, error) {
             const res = await response.json();
             if (!res.success) {
                 if (!silent) {
-                    alert('Kaydetme hatası: ' + (res.error || 'Bilinmeyen hata'));
+                    showMessage('Kaydetme hatası: ' + (res.error || 'Bilinmeyen hata'));
                 }
                 return false;
             }
@@ -2521,11 +2976,11 @@ window.onerror = function(msg, url, line, col, error) {
                     '?t=' + Date.now();
             }
             if (!silent) {
-                alert('Değişiklikler aktif şablon veritabanına başarıyla kaydedildi.');
+                showMessage('Değişiklikler aktif şablon veritabanına başarıyla kaydedildi.');
             }
             return true;
         } catch (err) {
-            if (!silent) alert('Kaydetme hatası: ' + err);
+            if (!silent) showMessage('Kaydetme hatası: ' + err);
             return false;
         }
     }
@@ -2602,7 +3057,7 @@ function isBatchAnalyzingTemplate(category, template) {
 
 function blockIfCurrentBatchTemplate(category, template, actionLabel) {
     if (!isBatchAnalyzingTemplate(category, template)) return false;
-    alert(
+    showMessage(
         (actionLabel || 'Bu işlem') +
         ' şu anda mümkün değil çünkü bu şablon hızlı toplu tarama paketinde işleniyor.\n\n' +
         'Birkaç saniye sonra tekrar deneyin. Diğer şablonlarda çalışmaya devam edebilirsiniz.'
@@ -2785,7 +3240,7 @@ function finishBatchAnalyzeProgress(
 function chooseBatchAnalyzeCategory() {
     const categories = Object.keys(ayarlar?.kategoriler || {});
     if (categories.length === 0) {
-        alert('Yeniden taranacak kategori bulunamadı.');
+        showMessage('Yeniden taranacak kategori bulunamadı.');
         return Promise.resolve(null);
     }
 
@@ -3056,7 +3511,7 @@ async function batchAnalyze() {
         ayarlar?.kategoriler?.[category]?.sablonlar || {}
     );
     if(templates.length === 0) {
-        return alert("Seçtiğiniz kategoride analiz edilecek şablon bulunamadı.");
+        return showMessage("Seçtiğiniz kategoride analiz edilecek şablon bulunamadı.");
     }
 
     if(!confirm(
@@ -3094,7 +3549,7 @@ async function batchAnalyze() {
             Boolean(data.reused_active_job)
         );
     } catch (err) {
-        alert('Kalıcı kategori taraması başlatılamadı: ' + err.message);
+        showMessage('Kalıcı kategori taraması başlatılamadı: ' + err.message);
     }
 }
 
@@ -3108,7 +3563,7 @@ async function approveTemplate() {
     )) return;
     let uid = currentCat + "_" + currentTmpl;
     // Use the global pts array from the canvas editor
-    if (!pts || pts.length !== 4) return alert("Geçerli 4 köşe yok!");
+    if (!pts || pts.length !== 4) return showMessage("Geçerli 4 köşe yok!");
     // Convert {x,y} objects to [[x,y],...] canonical format for DB/profile
     let canonicalCorners = pts.map(p => [p.x, p.y]);
     let physicalOrientation = '';
@@ -3118,7 +3573,7 @@ async function approveTemplate() {
             orientationSelect ? orientationSelect.value : ''
         ).toUpperCase();
         if (physicalOrientation !== 'H' && physicalOrientation !== 'V') {
-            return alert("Cam Doğrama için onaydan önce fiziksel yönü Yatay (H) veya Dikey (V) seçin.");
+            return showMessage("Cam Doğrama için onaydan önce fiziksel yönü Yatay (H) veya Dikey (V) seçin.");
         }
     }
     
@@ -3157,12 +3612,12 @@ async function approveTemplate() {
                 currentItem.elem.style.backgroundColor = '';
                 currentItem.elem.style.color = '';
             }
-            alert("Şablon onaylandı. Artık üretimde kullanılabilir.");
+            showMessage("Şablon onaylandı. Artık üretimde kullanılabilir.");
         } else {
-            alert("Hata: " + data.error);
+            showMessage("Hata: " + data.error);
         }
     } catch(e) {
-        alert("Bağlantı hatası: " + e);
+        showMessage("Bağlantı hatası: " + e);
     }
 }
 
