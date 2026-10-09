@@ -121,8 +121,14 @@ class TestLifecycleReconciliation(unittest.TestCase):
             )
             png = backup / "AhsapTablo_011.png"
             jpeg = backup / "AhsapTablo_011.jpeg"
-            _write_image(png, 77, ".png")
-            _write_image(jpeg, 77, ".jpg")
+            backup.mkdir(parents=True, exist_ok=True)
+            same_rgb = np.full((48, 64, 3), 77, dtype=np.uint8)
+            ok_png, encoded_png = cv2.imencode(".png", same_rgb)
+            ok_jpg, encoded_jpg = cv2.imencode(".jpg", same_rgb)
+            self.assertTrue(ok_png)
+            self.assertTrue(ok_jpg)
+            png.write_bytes(encoded_png.tobytes())
+            jpeg.write_bytes(encoded_jpg.tobytes())
 
             report = lifecycle_center_report(
                 root,
