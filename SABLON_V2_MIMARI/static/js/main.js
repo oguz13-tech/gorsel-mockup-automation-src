@@ -2411,6 +2411,9 @@ window.onerror = function(msg, url, line, col, error) {
             'Geri alınabilir çöp kaydı: ' + Number(summary.trash_record_count || 0),
             'Lifecycle recovery operasyonu: ' + Number(summary.lifecycle_recovery_count || 0),
             '.processing recovery dosyası: ' + Number(summary.processing_recovery_count || 0),
+            'Staging transaction kaydı: ' + Number(summary.staging_transaction_count || 0),
+            'İnsan incelemesi isteyen staging transaction: ' +
+                Number(summary.staging_recovery_required_count || 0),
             ''
         ];
 
@@ -2528,6 +2531,27 @@ window.onerror = function(msg, url, line, col, error) {
                     '• ' + String(row.relative_path || '') +
                     ' | bytes=' + Number(row.size_bytes || 0)
                 );
+            });
+        }
+
+        lines.push('', 'STAGING TRANSACTION JOURNALLARI:');
+        const txns = Array.isArray(data?.staging_transactions)
+            ? data.staging_transactions
+            : [];
+        if (!txns.length) {
+            lines.push('Yok.');
+        } else {
+            txns.slice(0, 30).forEach(row => {
+                lines.push(
+                    '• ' + String(row.updated_at || row.created_at || '') +
+                    ' | ' + String(row.state || '') +
+                    ' | ' + String(row.category || '') +
+                    ' / ' + String(row.canonical_name || '-') +
+                    ' | id=' + String(row.transaction_id || '')
+                );
+                if (row.error) {
+                    lines.push('  Hata: ' + String(row.error));
+                }
             });
         }
 
