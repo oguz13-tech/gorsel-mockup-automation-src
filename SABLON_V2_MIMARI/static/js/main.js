@@ -1418,7 +1418,7 @@ window.onerror = function(msg, url, line, col, error) {
                 workspaceConsistencySnapshot?.saved_at || '';
             title.title = auditCategory
                 ? (
-                    'Son tutarlılık audit'i +
+                    "Son tutarlılık audit'i" +
                     (auditTime ? ' (' + auditTime + ')' : '') +
                     ': DB=' + Number(auditCategory.db_count || 0) +
                     ', Çalışma=' +
