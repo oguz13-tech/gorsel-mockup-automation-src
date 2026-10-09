@@ -74,6 +74,14 @@ class TestWorkspaceConsistencyAudit(unittest.TestCase):
 
         write_bytes(
             root
+            / "2_SABLON_HAVUZU_ORIJINAL_YEDEK"
+            / category
+            / "AhsapTablo_777.png",
+            b"legacy-backup-only",
+        )
+
+        write_bytes(
+            root
             / "YENI-BOS MOCKUP SABLON HAVUZU"
             / category
             / "AhsapTablo_003.png",
@@ -94,11 +102,12 @@ class TestWorkspaceConsistencyAudit(unittest.TestCase):
         )
 
         for name in (
+            "0_KAGGLE_ONAY_BEKLEYENLER",
             "1_GELEN_KAGGLE_BASKILARI",
-            "KAGGLE_CIKTILARI",
-            "Mockup_Arsivi",
-            "Mockup_Hazirlama",
-            "Mockup_Export",
+            "3_URETILEN_MOCKUPLAR",
+            "MOCKUP A HAZIR GÖRSELLER",
+            "Mockup_Magaza_Klasorleri",
+            "BILINMEYEN_ESKI_KLASOR",
         ):
             write_bytes(root / name / "sample.txt", name.encode("utf-8"))
 
@@ -125,7 +134,9 @@ class TestWorkspaceConsistencyAudit(unittest.TestCase):
                 source / "tool.py",
                 (
                     b'KAGGLE="1_GELEN_KAGGLE_BASKILARI"\n'
-                    b'MOCKUP="Mockup_Hazirlama"\n'
+                    b'OUTPUT="3_URETILEN_MOCKUPLAR"\n'
+                    b'MANUAL="MOCKUP A HAZIR GÖRSELLER"\n'
+                    b'MULTI="Mockup_Magaza_Klasorleri"\n'
                     b'WORK="2_SABLON_HAVUZU"\n'
                 ),
             )
@@ -154,6 +165,14 @@ class TestWorkspaceConsistencyAudit(unittest.TestCase):
             self.assertEqual(summary["active_mismatch_total"], 2)
             self.assertEqual(summary["kaggle_folder_count"], 2)
             self.assertEqual(summary["mockup_folder_count"], 3)
+            self.assertEqual(summary["active_integrity_issue_count"], 2)
+            self.assertEqual(summary["archive_inventory_count"], 1)
+            self.assertEqual(summary["working_hygiene_count"], 1)
+            self.assertEqual(summary["duplicate_hygiene_count"], 1)
+            self.assertGreaterEqual(
+                summary["unclassified_top_level_count"],
+                1,
+            )
 
             category_row = report["categories"][category]
             self.assertEqual(category_row["db_count"], 3)
@@ -167,17 +186,54 @@ class TestWorkspaceConsistencyAudit(unittest.TestCase):
             self.assertIn("WORKING_WITHOUT_DB", codes)
             self.assertIn("WORKING_DUPLICATE_IDENTITY", codes)
             self.assertIn("ACTIVE_IDENTITY_STILL_IN_STAGING", codes)
+            self.assertIn("BACKUP_WITHOUT_DB", codes)
+
+            archive_issue = next(
+                item for item in report["issues"]
+                if item["code"] == "BACKUP_WITHOUT_DB"
+            )
+            self.assertEqual(
+                archive_issue["scope"],
+                "ARCHIVE_INVENTORY",
+            )
+            self.assertEqual(archive_issue["severity"], "INFO")
 
             kaggle = {row["folder"]: row for row in report["kaggle_folders"]}
+            self.assertEqual(
+                kaggle["0_KAGGLE_ONAY_BEKLEYENLER"]["role"],
+                "LEGACY_KAGGLE_APPROVAL_INBOX",
+            )
+            self.assertEqual(
+                kaggle["1_GELEN_KAGGLE_BASKILARI"]["role"],
+                "MASTER_DESIGN_INPUT",
+            )
             self.assertGreater(
-                kaggle["1_GELEN_KAGGLE_BASKILARI"]["code_reference_count"],
+                kaggle["1_GELEN_KAGGLE_BASKILARI"][
+                    "runtime_code_reference_count"
+                ],
                 0,
             )
+
             mockup = {row["folder"]: row for row in report["mockup_folders"]}
-            self.assertGreater(
-                mockup["Mockup_Hazirlama"]["code_reference_count"],
-                0,
+            self.assertEqual(
+                mockup["3_URETILEN_MOCKUPLAR"]["role"],
+                "PRIMARY_RENDER_OUTPUT",
             )
+            self.assertEqual(
+                mockup["MOCKUP A HAZIR GÖRSELLER"]["role"],
+                "MANUAL_RENDER_INPUT",
+            )
+            self.assertEqual(
+                mockup["Mockup_Magaza_Klasorleri"]["role"],
+                "MULTI_STORE_OUTPUT",
+            )
+
+            unclassified = {
+                row["folder"]
+                for row in report["unclassified_top_level_folders"]
+                if row["exists"]
+            }
+            self.assertIn("BILINMEYEN_ESKI_KLASOR", unclassified)
 
             self.assertTrue(progress_rows)
             self.assertEqual(progress_rows[-1][0], 8)
