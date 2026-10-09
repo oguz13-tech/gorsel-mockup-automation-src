@@ -135,6 +135,86 @@ ROLE_SPECS = [
         "expected": "Sistem iç klasörüdür; kullanıcı şablon eşitliğine dahil değildir.",
         "active_equality_member": False,
     },
+    {
+        "role": "VERSION_CONTROL_METADATA",
+        "folder": ".git",
+        "label": "Git sürüm kontrolü metadata klasörü",
+        "expected": (
+            "Kaynak kod sürüm geçmişidir. Kullanıcı görsel havuzuna dahil değildir; "
+            "otomatik silinmez, taşınmaz veya yeniden adlandırılmaz."
+        ),
+        "active_equality_member": False,
+    },
+    {
+        "role": "DEV_WORKTREE_METADATA",
+        "folder": ".kilo",
+        "label": "Geliştirme/worktree metadata klasörü",
+        "expected": (
+            "Geliştirme araçlarının çalışma metadata alanıdır. Üretim görsel "
+            "havuzuna dahil değildir; otomatik silinmez."
+        ),
+        "active_equality_member": False,
+    },
+    {
+        "role": "PYTHON_CACHE",
+        "folder": "__pycache__",
+        "label": "Python bytecode cache",
+        "expected": (
+            "Python tarafından yeniden üretilebilen cache alanıdır. Şablon veya "
+            "kullanıcı verisi değildir; normal audit eşitliğine dahil değildir."
+        ),
+        "active_equality_member": False,
+    },
+    {
+        "role": "QUALITY_ENHANCEMENT_ASSETS",
+        "folder": "AI_Kalite_Artirici",
+        "label": "AI kalite artırma motoru/model varlıkları",
+        "expected": (
+            "Kalite artırma otomasyonu ve üretim motorunun kullandığı yardımcı "
+            "varlıkları içerir. Aktif şablon havuzuyla eşitlenmez ve otomatik silinmez."
+        ),
+        "active_equality_member": False,
+    },
+    {
+        "role": "RUNTIME_LOGS",
+        "folder": "logs",
+        "label": "Runtime log/iz kayıtları",
+        "expected": (
+            "Çalışma günlükleri ve tanılama kayıtları içindir. Kullanıcı görsel "
+            "havuzuna dahil değildir."
+        ),
+        "active_equality_member": False,
+    },
+    {
+        "role": "TEST_SANDBOX",
+        "folder": "TEST_ENV",
+        "label": "Test/sandbox çalışma alanı",
+        "expected": (
+            "Test amaçlı izole alandır. Aktif üretim havuzuna dahil değildir. "
+            "Referanssız görünse bile otomatik silinmez; Grup 4 legacy auditinde ele alınır."
+        ),
+        "active_equality_member": False,
+    },
+    {
+        "role": "LEGACY_CONTROL_CENTER",
+        "folder": "V2_KONTROL_MERKEZI",
+        "label": "Eski V2 kontrol merkezi",
+        "expected": (
+            "Eski kontrol merkezi bileşenidir. Güncel İnceleme Merkezi ile aynı "
+            "şey değildir; legacy audit tamamlanmadan silinmez veya taşınmaz."
+        ),
+        "active_equality_member": False,
+    },
+    {
+        "role": "USER_TOOL_PRODUCT_NAMER",
+        "folder": "ÜRÜN ADI YAZDIRMA BOTU",
+        "label": "Ürün adı yazdırma bağımsız kullanıcı aracı",
+        "expected": (
+            "Bağımsız/yardımcı kullanıcı aracıdır ve tools_runner üzerinden "
+            "erişilebilir. Grup 3 Araçlar Merkezi kapsamına alınacaktır."
+        ),
+        "active_equality_member": False,
+    },
 ]
 
 
@@ -259,11 +339,26 @@ def _source_reference_inventory(source_root: Path, names: List[str]) -> Dict[str
 
         rel = path.relative_to(source_root).as_posix()
         rel_parts = set(Path(rel).parts)
+
+        # The audit contract contains every canonical folder name by design.
+        # Counting this file as a reference would make unused/legacy folders
+        # look actively consumed by production code.
+        if rel == "SABLON_V2_MIMARI/core/workspace_consistency.py":
+            continue
+
+        non_runtime_names = {
+            "create_analysis_doc.py",
+            "epic3_validation_bundle.py",
+        }
+        is_test_source = bool(
+            path.name.casefold().startswith("test_")
+            or "tests" in rel_parts
+        )
         is_runtime_reference = bool(
             path.suffix.casefold() in runtime_exts
             and ".kilo" not in rel_parts
-            and "tests" not in rel_parts
-            and path.name not in {"create_analysis_doc.py"}
+            and not is_test_source
+            and path.name not in non_runtime_names
         )
 
         for name, needle in lowered.items():
