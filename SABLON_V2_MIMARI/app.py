@@ -58,6 +58,12 @@ from core.job_engine import (
     list_jobs,
     request_job_stop,
 )
+from core.workspace_consistency import (
+    workspace_consistency_report,
+    save_workspace_report,
+    load_latest_workspace_report,
+    workspace_report_history,
+)
 import hashlib
 import uuid
 from functools import wraps
@@ -2697,37 +2703,13 @@ def _template_health_saved_report_path():
     )
 
 
-def _save_template_health_report(report):
-    """Atomically persist only an explicitly requested full health report."""
-    if not isinstance(report, dict) or not report.get("success"):
-        raise ValueError("Kaydedilecek sağlık raporu geçersiz.")
-
-    report_to_save = dict(report)
-    report_to_save["saved_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
-    report_to_save["saved_report"] = True
-
-    target = _template_health_saved_report_path()
-    os.makedirs(os.path.dirname(target), exist_ok=True)
-    tmp_path = target + "." + uuid.uuid4().hex + ".tmp"
-    try:
-        with open(tmp_path, "w", encoding="utf-8") as handle:
-            json.dump(
-                report_to_save,
-                handle,
-                ensure_ascii=False,
-                indent=2,
-            )
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(tmp_path, target)
-    finally:
-        if os.path.exists(tmp_path):
-            try:
-                os.remove(tmp_path)
-            except OSError:
-                pass
-
-    return report_to_save
+def _template_health_history_dir():
+    return os.path.join(
+        BASE_DIR,
+        "SABLON_V2_MIMARI",
+        "reports",
+        "template_health_history",
+    )
 
 
 def _load_saved_template_health_report():
@@ -2741,6 +2723,117 @@ def _load_saved_template_health_report():
     if not isinstance(report, dict) or not report.get("success"):
         raise ValueError("Kaydedilmiş sağlık raporu bozuk veya geçersiz.")
     return report
+
+
+def _template_health_issue_keys(report):
+    keys = set()
+    templates = (report or {}).get("templates", {})
+    if not isinstance(templates, dict):
+        return keys
+    for category, category_items in templates.items():
+        if not isinstance(category_items, dict):
+            continue
+        for template_name, item in category_items.items():
+            if not isinstance(item, dict):
+                continue
+            severity = str(item.get("severity") or "OK").upper()
+            if severity == "OK":
+                continue
+            keys.add(
+                "|".join([
+                    str(category).casefold(),
+                    str(template_name).casefold(),
+                    str(item.get("code") or severity),
+                ])
+            )
+    return keys
+
+
+def _save_template_health_report(report):
+    """Persist full health report + immutable history + previous-scan diff."""
+    if not isinstance(report, dict) or not report.get("success"):
+        raise ValueError("Kaydedilecek sağlık raporu geçersiz.")
+
+    previous = _load_saved_template_health_report()
+    report_to_save = dict(report)
+    report_to_save["saved_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+    report_to_save["saved_report"] = True
+
+    old_keys = _template_health_issue_keys(previous)
+    new_keys = _template_health_issue_keys(report_to_save)
+    report_to_save["diff"] = {
+        "has_previous": previous is not None,
+        "previous_saved_at": (
+            previous.get("saved_at")
+            if isinstance(previous, dict)
+            else None
+        ),
+        "new_issue_count": len(new_keys - old_keys),
+        "resolved_issue_count": len(old_keys - new_keys),
+        "unchanged_issue_count": len(new_keys & old_keys),
+    }
+
+    target = _template_health_saved_report_path()
+    history_dir = _template_health_history_dir()
+    os.makedirs(os.path.dirname(target), exist_ok=True)
+    os.makedirs(history_dir, exist_ok=True)
+
+    stamp = time.strftime("%Y%m%d_%H%M%S")
+    history_target = os.path.join(
+        history_dir,
+        f"{stamp}_{uuid.uuid4().hex[:8]}.json",
+    )
+    serialized = json.dumps(
+        report_to_save,
+        ensure_ascii=False,
+        indent=2,
+    ).encode("utf-8")
+
+    for destination in (history_target, target):
+        tmp_path = destination + "." + uuid.uuid4().hex + ".tmp"
+        try:
+            with open(tmp_path, "wb") as handle:
+                handle.write(serialized)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(tmp_path, destination)
+        finally:
+            if os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except OSError:
+                    pass
+
+    return report_to_save
+
+
+def _template_health_history(limit=20):
+    history_dir = _template_health_history_dir()
+    if not os.path.isdir(history_dir):
+        return []
+    rows = []
+    files = sorted(
+        Path(history_dir).glob("*.json"),
+        key=lambda path: path.name,
+        reverse=True,
+    )[:max(1, min(100, int(limit)))]
+    for path in files:
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                data = json.load(handle)
+            summary = data.get("summary", {})
+            rows.append({
+                "file": path.name,
+                "saved_at": data.get("saved_at"),
+                "total_records": int(summary.get("total_records", 0)),
+                "ok": int(summary.get("ok", 0)),
+                "warning": int(summary.get("warning", 0)),
+                "critical": int(summary.get("critical", 0)),
+                "diff": data.get("diff", {}),
+            })
+        except (OSError, ValueError, json.JSONDecodeError):
+            continue
+    return rows
 
 
 def _job_batch_corner_scan(
@@ -2849,6 +2942,46 @@ def _job_raw_health_scan(
     }
 
 
+
+def _job_workspace_consistency_scan(
+    job_id,
+    payload,
+    progress,
+    should_stop,
+):
+    settings = get_all_ayarlar()
+    report = workspace_consistency_report(
+        BASE_DIR,
+        SOURCE_ROOT,
+        settings,
+        progress=progress,
+        should_stop=should_stop,
+    )
+    if report.get("cancelled") or should_stop():
+        return {
+            "completed": False,
+            "processed": 0,
+            "total": 8,
+            "read_only": True,
+        }
+    saved = save_workspace_report(BASE_DIR, report)
+    progress(
+        8,
+        8,
+        "Tutarlılık raporu kaydedildi. Hiçbir kullanıcı dosyası değiştirilmedi.",
+    )
+    return {
+        "completed": True,
+        "processed": 8,
+        "total": 8,
+        "read_only": True,
+        "assets_mutated": False,
+        "saved_at": saved.get("saved_at"),
+        "summary": saved.get("summary", {}),
+        "diff": saved.get("diff", {}),
+    }
+
+
 @app.route('/api/jobs', methods=['GET', 'POST'])
 def api_jobs():
     if request.method == 'GET':
@@ -2907,6 +3040,9 @@ def api_jobs():
     elif job_type == "RAW_HEALTH_SCAN":
         payload = {"deep": True, "save": True}
         total = 1
+    elif job_type == "WORKSPACE_CONSISTENCY_SCAN":
+        payload = {"read_only": True}
+        total = 8
     else:
         return jsonify({
             "success": False,
@@ -3034,6 +3170,58 @@ def api_template_health_last():
         }), 422
 
 
+@app.route('/api/template-health/history')
+def api_template_health_history():
+    try:
+        limit = int(request.args.get("limit", 20) or 20)
+        return jsonify({
+            "success": True,
+            "history": _template_health_history(limit),
+        })
+    except Exception as exc:
+        return jsonify({
+            "success": False,
+            "error": str(exc),
+        }), 500
+
+
+@app.route('/api/workspace-consistency/last')
+def api_workspace_consistency_last():
+    try:
+        report = load_latest_workspace_report(BASE_DIR)
+        if report is None:
+            return jsonify({
+                "success": False,
+                "error": "Henüz kaydedilmiş Klasör Tutarlılık Raporu yok.",
+                "code": "NO_SAVED_WORKSPACE_REPORT",
+            }), 404
+        return jsonify(report)
+    except Exception as exc:
+        logger.exception("Klasör tutarlılık raporu okunamadı")
+        return jsonify({
+            "success": False,
+            "error": str(exc),
+        }), 500
+
+
+@app.route('/api/workspace-consistency/history')
+def api_workspace_consistency_history():
+    try:
+        limit = int(request.args.get("limit", 20) or 20)
+        return jsonify({
+            "success": True,
+            "history": workspace_report_history(
+                BASE_DIR,
+                limit=limit,
+            ),
+        })
+    except Exception as exc:
+        return jsonify({
+            "success": False,
+            "error": str(exc),
+        }), 500
+
+
 @app.route('/api/saglik_durumu')
 def api_saglik_durumu():
     """Return a live, read-only workspace integrity snapshot.
@@ -3112,6 +3300,7 @@ if __name__ == '__main__':
         {
             "BATCH_CORNER_SCAN": _job_batch_corner_scan,
             "RAW_HEALTH_SCAN": _job_raw_health_scan,
+            "WORKSPACE_CONSISTENCY_SCAN": _job_workspace_consistency_scan,
         },
         max_workers=2,
     )
