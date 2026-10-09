@@ -29,6 +29,7 @@ try:
     from .core.template_identity import (
         TemplateNumberConflictError,
         category_for_prefix,
+        same_stem_files,
         validate_number_block,
     )
     from .core.path_registry import (
@@ -39,6 +40,7 @@ except ImportError:
     from core.template_identity import (
         TemplateNumberConflictError,
         category_for_prefix,
+        same_stem_files,
         validate_number_block,
     )
     from core.path_registry import (
@@ -172,9 +174,31 @@ def rename_images(
         raise ValueError("Yeni dosya adları kendi içinde çakışıyor.")
 
     for target in targets:
-        if target.exists() and target.resolve() not in selected_set:
+        stem_matches = same_stem_files(
+            target.parent,
+            target.name,
+            ignore_paths=selected_set,
+        )
+        if stem_matches:
+            existing = ", ".join(path.name for path in stem_matches)
+            existing_exts = sorted({
+                path.suffix.casefold()
+                for path in stem_matches
+            })
+            incoming_ext = target.suffix.casefold()
+            different_extension = any(
+                ext != incoming_ext
+                for ext in existing_exts
+            )
+            headline = (
+                "AYNI İSİM, FARKLI UZANTI"
+                if different_extension
+                else "AYNI İSİM / AYNI UZANTI"
+            )
             raise FileExistsError(
-                f"Hedef ad zaten kullanılıyor: {target.name}"
+                f"{headline}: hedef '{target.stem}' zaten kullanılıyor. "
+                f"Yeni hedef={target.name}; mevcut={existing}. "
+                "Dosyalar değiştirilmedi."
             )
 
     temp_pairs: list[tuple[Path, Path]] = []
