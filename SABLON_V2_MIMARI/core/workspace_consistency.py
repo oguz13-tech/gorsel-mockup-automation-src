@@ -12,6 +12,27 @@ IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".avif"}
 
 ROLE_SPECS = [
     {
+        "role": "LEGACY_KAGGLE_APPROVAL_INBOX",
+        "folder": "0_KAGGLE_ONAY_BEKLEYENLER",
+        "label": "Eski Kaggle insan-onay kuyruğu",
+        "expected": (
+            "Eski V2 akışında Kaggle çıktıları burada onay bekler, onaylananlar "
+            "1_GELEN_KAGGLE_BASKILARI'na aktarılırdı. Legacy ama amaçlıdır; "
+            "otomatik silinmez veya taşınmaz."
+        ),
+        "active_equality_member": False,
+    },
+    {
+        "role": "MASTER_DESIGN_INPUT",
+        "folder": "1_GELEN_KAGGLE_BASKILARI",
+        "label": "Aktif üretim master tasarım girişi",
+        "expected": (
+            "pc_master_factory FACTORY_DIR olarak doğrudan kullanır. H/V master "
+            "tasarımlar ve manifest burada bulunur; silinmez/yeniden adlandırılmaz."
+        ),
+        "active_equality_member": False,
+    },
+    {
         "role": "WORKING_POOL",
         "folder": "2_SABLON_HAVUZU",
         "label": "Aktif çalışma şablonları",
@@ -22,14 +43,61 @@ ROLE_SPECS = [
         "role": "ORIGINAL_ARCHIVE",
         "folder": "2_SABLON_HAVUZU_ORIJINAL_YEDEK",
         "label": "Ham / orijinal arşiv",
-        "expected": "Aktif DB kimlikleriyle 1:1 kimlik eşleşmesi gerekir.",
+        "expected": (
+            "Her aktif DB kimliğinin ham karşılığı burada bulunmalıdır. "
+            "DB dışı eski/legacy ham dosyalar aktif bütünlük hatası değil, "
+            "arşiv envanteri olarak raporlanır."
+        ),
         "active_equality_member": True,
+    },
+    {
+        "role": "PRIMARY_RENDER_OUTPUT",
+        "folder": "3_URETILEN_MOCKUPLAR",
+        "label": "Aktif ana mockup/render çıktıları",
+        "expected": (
+            "pc_master_factory ana render çıktısını buraya yazar. Aktif şablon "
+            "havuzuyla sayı eşitliği beklenmez."
+        ),
+        "active_equality_member": False,
+    },
+    {
+        "role": "EXCEL_EXPORT_OUTPUT",
+        "folder": "4_EXCEL_YUKLEME_LISTELERI",
+        "label": "Pazaryeri Excel çıktı alanı",
+        "expected": (
+            "Üretim sonrası yükleme listeleri burada tutulur; aktif şablon "
+            "havuzuyla eşit olmak zorunda değildir."
+        ),
+        "active_equality_member": False,
+    },
+    {
+        "role": "MANUAL_RENDER_INPUT",
+        "folder": "MOCKUP A HAZIR GÖRSELLER",
+        "label": "Manuel mockup motoru tasarım girişi",
+        "expected": (
+            "manuel_mockup_motoru bu klasördeki görselleri şablonlara giydirir. "
+            "Amaçlı aktif araç girişidir; otomatik silinmez."
+        ),
+        "active_equality_member": False,
+    },
+    {
+        "role": "MULTI_STORE_OUTPUT",
+        "folder": "Mockup_Magaza_Klasorleri",
+        "label": "Çoklu mağaza mockup çıktı alanı",
+        "expected": (
+            "pc_master_factory OUTPUT_COKLU_DIR olarak kullanır. Boş olması "
+            "gereksiz olduğu anlamına gelmez."
+        ),
+        "active_equality_member": False,
     },
     {
         "role": "INBOX_STAGING",
         "folder": "YENI-BOS MOCKUP SABLON HAVUZU",
         "label": "Yeni şablon gelen kutusu / staging",
-        "expected": "Aktif havuzla eşit olmak zorunda değildir; işlenmemiş/bekleyen dosyaları içerir.",
+        "expected": (
+            "Aktif havuzla eşit olmak zorunda değildir; işlenmemiş/bekleyen "
+            "dosyaları içerir."
+        ),
         "active_equality_member": False,
     },
     {
@@ -42,7 +110,7 @@ ROLE_SPECS = [
     {
         "role": "LEGACY_TRASH_CANDIDATE",
         "folder": "_COP_KUTUSU",
-        "label": "Eski/yardımcı çöp alanı adayı",
+        "label": "Eski/yardımcı çöp alanı",
         "expected": "Silinmez; audit ile kullanım/referans durumu belirlenir.",
         "active_equality_member": False,
     },
@@ -51,6 +119,20 @@ ROLE_SPECS = [
         "folder": "_KURTARMA_PROCESSING",
         "label": "Yarım kalan staging işlemleri kurtarma alanı",
         "expected": "Aktif havuzla eşit değildir; yalnız kurtarma kayıtları içerir.",
+        "active_equality_member": False,
+    },
+    {
+        "role": "SYSTEM_INTERNAL",
+        "folder": "99_SISTEM_MOTORLARI_VE_KODLAR",
+        "label": "Sistem motorları, loglar ve iç veriler",
+        "expected": "Sistem iç klasörüdür; kullanıcı şablon eşitliğine dahil değildir.",
+        "active_equality_member": False,
+    },
+    {
+        "role": "REVIEW_SYSTEM_DATA",
+        "folder": "SABLON_V2_MIMARI",
+        "label": "İnceleme Merkezi DB/rapor/runtime verileri",
+        "expected": "Sistem iç klasörüdür; kullanıcı şablon eşitliğine dahil değildir.",
         "active_equality_member": False,
     },
 ]
@@ -143,6 +225,8 @@ def _source_reference_inventory(source_root: Path, names: List[str]) -> Dict[str
         name: {
             "reference_count": 0,
             "files": [],
+            "runtime_reference_count": 0,
+            "runtime_reference_files": [],
         }
         for name in names
     }
@@ -153,6 +237,7 @@ def _source_reference_inventory(source_root: Path, names: List[str]) -> Dict[str
         ".py", ".ps1", ".bat", ".cmd", ".json", ".md", ".txt",
         ".html", ".js", ".yml", ".yaml", ".toml",
     }
+    runtime_exts = {".py", ".ps1", ".bat", ".cmd", ".html", ".js"}
     ignored_parts = {
         ".git", "__pycache__", ".venv", "venv", "node_modules",
     }
@@ -165,18 +250,34 @@ def _source_reference_inventory(source_root: Path, names: List[str]) -> Dict[str
         try:
             if path.stat().st_size > 2_000_000:
                 continue
-            text = path.read_text(encoding="utf-8", errors="ignore").casefold()
+            text_value = path.read_text(
+                encoding="utf-8",
+                errors="ignore",
+            ).casefold()
         except OSError:
             continue
 
         rel = path.relative_to(source_root).as_posix()
+        rel_parts = set(Path(rel).parts)
+        is_runtime_reference = bool(
+            path.suffix.casefold() in runtime_exts
+            and ".kilo" not in rel_parts
+            and "tests" not in rel_parts
+            and path.name not in {"create_analysis_doc.py"}
+        )
+
         for name, needle in lowered.items():
-            count = text.count(needle)
+            count = text_value.count(needle)
             if not count:
                 continue
             refs[name]["reference_count"] += int(count)
             if len(refs[name]["files"]) < 12:
                 refs[name]["files"].append(rel)
+
+            if is_runtime_reference:
+                refs[name]["runtime_reference_count"] += int(count)
+                if len(refs[name]["runtime_reference_files"]) < 12:
+                    refs[name]["runtime_reference_files"].append(rel)
     return refs
 
 
@@ -193,24 +294,47 @@ def _discover_named_folders(runtime_root: Path) -> List[Path]:
     return sorted(candidates, key=lambda p: p.name.casefold())
 
 
+def _discover_all_top_level_folders(runtime_root: Path) -> List[Path]:
+    if not runtime_root.is_dir():
+        return []
+    try:
+        return sorted(
+            [path for path in runtime_root.iterdir() if path.is_dir()],
+            key=lambda p: p.name.casefold(),
+        )
+    except OSError:
+        return []
+(runtime_root: Path) -> List[Path]:
+    if not runtime_root.is_dir():
+        return []
+    candidates = []
+    for path in runtime_root.iterdir():
+        if not path.is_dir():
+            continue
+        lowered = path.name.casefold()
+        if "kaggle" in lowered or "mockup" in lowered:
+            candidates.append(path)
+    return sorted(candidates, key=lambda p: p.name.casefold())
+
+
 def _folder_role_contract(runtime_root: Path, source_root: Path) -> List[dict]:
-    role_names = [item["folder"] for item in ROLE_SPECS]
-    special = _discover_named_folders(runtime_root)
-    special_names = [p.name for p in special]
+    known_by_folder = {item["folder"]: item for item in ROLE_SPECS}
+    top_level = _discover_all_top_level_folders(runtime_root)
+    known_names = list(known_by_folder)
+    top_names = [path.name for path in top_level]
     refs = _source_reference_inventory(
         source_root,
-        sorted(set(role_names + special_names)),
+        sorted(set(known_names + top_names)),
     )
 
-    rows = []
-    known_by_folder = {item["folder"]: item for item in ROLE_SPECS}
     all_paths: Dict[str, Path] = {
         item["folder"]: runtime_root / item["folder"]
         for item in ROLE_SPECS
     }
-    for path in special:
+    for path in top_level:
         all_paths.setdefault(path.name, path)
 
+    rows = []
     for name, path in sorted(
         all_paths.items(),
         key=lambda item: item[0].casefold(),
@@ -225,7 +349,16 @@ def _folder_role_contract(runtime_root: Path, source_root: Path) -> List[dict]:
             discovery = "CANONICAL_ROLE"
         elif "kaggle" in lower:
             role = "KAGGLE_FOLDER_CANDIDATE"
-            label = "Kaggle ile ilişkili klasör"
+            label = "Kaggle ile ilişkili sınıflandırılmamış klasör"
+            expected = (
+                "Görevi audit ile belirlenir. Otomatik silinmez, taşınmaz, "
+                "birleştirilmez veya yeniden adlandırılmaz."
+            )
+            equality = False
+            discovery = "NAME_DISCOVERY"
+        elif "mockup" in lower:
+            role = "MOCKUP_FOLDER_CANDIDATE"
+            label = "Mockup ile ilişkili sınıflandırılmamış klasör"
             expected = (
                 "Görevi audit ile belirlenir. Otomatik silinmez, taşınmaz, "
                 "birleştirilmez veya yeniden adlandırılmaz."
@@ -233,17 +366,17 @@ def _folder_role_contract(runtime_root: Path, source_root: Path) -> List[dict]:
             equality = False
             discovery = "NAME_DISCOVERY"
         else:
-            role = "MOCKUP_FOLDER_CANDIDATE"
-            label = "Mockup ile ilişkili klasör"
+            role = "UNCLASSIFIED_TOP_LEVEL"
+            label = "Henüz görev sözleşmesine alınmamış üst seviye klasör"
             expected = (
-                "Görevi audit ile belirlenir. Otomatik silinmez, taşınmaz, "
-                "birleştirilmez veya yeniden adlandırılmaz."
+                "Otomatik silinmez veya taşınmaz. Önce kullanım amacı ve kod "
+                "bağlantıları belirlenir."
             )
             equality = False
-            discovery = "NAME_DISCOVERY"
+            discovery = "TOP_LEVEL_DISCOVERY"
 
         inventory = _scan_top_level_folder(path)
-        reference = refs.get(name, {"reference_count": 0, "files": []})
+        reference = refs.get(name, {})
         rows.append({
             "folder": name,
             "absolute_path": str(path.resolve()),
@@ -254,13 +387,22 @@ def _folder_role_contract(runtime_root: Path, source_root: Path) -> List[dict]:
             "discovery": discovery,
             "exists": bool(inventory["exists"]),
             "inventory": inventory,
-            "code_reference_count": int(reference["reference_count"]),
-            "code_reference_files": list(reference["files"]),
+            "code_reference_count": int(
+                reference.get("reference_count", 0)
+            ),
+            "code_reference_files": list(
+                reference.get("files", [])
+            ),
+            "runtime_code_reference_count": int(
+                reference.get("runtime_reference_count", 0)
+            ),
+            "runtime_code_reference_files": list(
+                reference.get("runtime_reference_files", [])
+            ),
             "read_only_audit": True,
             "automatic_delete_allowed": False,
         })
     return rows
-
 
 def _db_inventory(settings: dict) -> Dict[str, Dict[str, str]]:
     result: Dict[str, Dict[str, str]] = {}
@@ -291,6 +433,16 @@ def _issue(
     label: str,
     details: str,
 ) -> dict:
+    scope = "ACTIVE_INTEGRITY"
+    if code == "BACKUP_WITHOUT_DB":
+        scope = "ARCHIVE_INVENTORY"
+    elif code == "WORKING_WITHOUT_DB":
+        scope = "WORKING_HYGIENE"
+    elif "DUPLICATE_IDENTITY" in code:
+        scope = "DUPLICATE_HYGIENE"
+    elif code == "ACTIVE_IDENTITY_STILL_IN_STAGING":
+        scope = "STAGING_INFO"
+
     return {
         "fingerprint": "|".join([
             str(code),
@@ -299,6 +451,7 @@ def _issue(
         ]),
         "code": code,
         "severity": severity,
+        "scope": scope,
         "category": category,
         "identity": identity,
         "label": label,
@@ -392,7 +545,7 @@ def _compare_active_sets(
             if backup_exists and not in_db:
                 item = _issue(
                     "BACKUP_WITHOUT_DB",
-                    "WARNING",
+                    "INFO",
                     category,
                     identity,
                     "Ham yedek var; aktif DB kaydı yok",
@@ -466,6 +619,22 @@ def _compare_active_sets(
             "staging_identity_count": len(staging_map),
             "fully_matched_active_count": matched,
             "issue_count": len(category_issues),
+            "active_integrity_issue_count": sum(
+                1 for item in category_issues
+                if item.get("scope") == "ACTIVE_INTEGRITY"
+            ),
+            "archive_inventory_count": sum(
+                1 for item in category_issues
+                if item.get("scope") == "ARCHIVE_INVENTORY"
+            ),
+            "working_hygiene_count": sum(
+                1 for item in category_issues
+                if item.get("scope") == "WORKING_HYGIENE"
+            ),
+            "duplicate_hygiene_count": sum(
+                1 for item in category_issues
+                if item.get("scope") == "DUPLICATE_HYGIENE"
+            ),
             "critical_count": sum(
                 1 for item in category_issues
                 if item["severity"] == "CRITICAL"
@@ -473,6 +642,10 @@ def _compare_active_sets(
             "warning_count": sum(
                 1 for item in category_issues
                 if item["severity"] == "WARNING"
+            ),
+            "info_count": sum(
+                1 for item in category_issues
+                if item["severity"] == "INFO"
             ),
         }
         templates[category] = cat_templates
@@ -594,13 +767,28 @@ def workspace_consistency_report(
 
     _safe_progress(progress, 6, total_steps, "Kaggle ve Mockup klasörleri keşfediliyor...")
     folders = _folder_role_contract(runtime, source)
+    kaggle_roles = {
+        "LEGACY_KAGGLE_APPROVAL_INBOX",
+        "MASTER_DESIGN_INPUT",
+        "KAGGLE_FOLDER_CANDIDATE",
+    }
+    mockup_roles = {
+        "PRIMARY_RENDER_OUTPUT",
+        "MANUAL_RENDER_INPUT",
+        "MULTI_STORE_OUTPUT",
+        "MOCKUP_FOLDER_CANDIDATE",
+    }
     kaggle_folders = [
         row for row in folders
-        if row["role"] == "KAGGLE_FOLDER_CANDIDATE"
+        if row["role"] in kaggle_roles
     ]
     mockup_folders = [
         row for row in folders
-        if row["role"] == "MOCKUP_FOLDER_CANDIDATE"
+        if row["role"] in mockup_roles
+    ]
+    unclassified_folders = [
+        row for row in folders
+        if row["role"] == "UNCLASSIFIED_TOP_LEVEL"
     ]
 
     _safe_progress(progress, 7, total_steps, "Özet hazırlanıyor...")
@@ -614,6 +802,22 @@ def workspace_consistency_report(
         "fully_matched_active_total": fully_matched,
         "active_mismatch_total": max(0, active_total - fully_matched),
         "issue_count": len(issues),
+        "active_integrity_issue_count": sum(
+            1 for item in issues
+            if item.get("scope") == "ACTIVE_INTEGRITY"
+        ),
+        "archive_inventory_count": sum(
+            1 for item in issues
+            if item.get("scope") == "ARCHIVE_INVENTORY"
+        ),
+        "working_hygiene_count": sum(
+            1 for item in issues
+            if item.get("scope") == "WORKING_HYGIENE"
+        ),
+        "duplicate_hygiene_count": sum(
+            1 for item in issues
+            if item.get("scope") == "DUPLICATE_HYGIENE"
+        ),
         "critical_count": sum(
             1 for item in issues if item["severity"] == "CRITICAL"
         ),
@@ -626,6 +830,12 @@ def workspace_consistency_report(
         "category_count": len(categories),
         "kaggle_folder_count": len(kaggle_folders),
         "mockup_folder_count": len(mockup_folders),
+        "top_level_folder_count": len(
+            [row for row in folders if row.get("exists")]
+        ),
+        "unclassified_top_level_count": len(
+            [row for row in unclassified_folders if row.get("exists")]
+        ),
         "trash_file_count": int(trash["file_count"]),
         "recovery_file_count": int(recovery["file_count"]),
     }
@@ -660,6 +870,7 @@ def workspace_consistency_report(
         "folders": folders,
         "kaggle_folders": kaggle_folders,
         "mockup_folders": mockup_folders,
+        "unclassified_top_level_folders": unclassified_folders,
         "trash": trash,
         "legacy_trash": legacy_trash,
         "recovery": recovery,
