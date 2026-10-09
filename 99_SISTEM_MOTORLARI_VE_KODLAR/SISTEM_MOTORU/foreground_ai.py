@@ -81,18 +81,36 @@ class ForegroundAIEngine:
 
             # 1. Grounding DINO (Hafif ve Hızlı ~170MB)
             dino_id = "IDEA-Research/grounding-dino-tiny"
-            logger.info(f"Grounding DINO yükleniyor: {dino_id}")
-            self.dino_proc = AutoProcessor.from_pretrained(dino_id)
-            self.dino_model = AutoModelForZeroShotObjectDetection.from_pretrained(dino_id).to(
+            dino_revision = "a2bb814"
+            logger.info(
+                f"Grounding DINO yükleniyor: {dino_id}@{dino_revision}"
+            )
+            self.dino_proc = AutoProcessor.from_pretrained(
+                dino_id,
+                revision=dino_revision,
+            )
+            self.dino_model = AutoModelForZeroShotObjectDetection.from_pretrained(
+                dino_id,
+                revision=dino_revision,
+            ).to(
                 device=self.device
             )
             self.dino_model.eval()
 
             # 2. SAM 2.1 Hiera Small (~180MB)
             sam_id = "facebook/sam2.1-hiera-small"
-            logger.info(f"SAM 2.1 yükleniyor: {sam_id}")
-            self.sam_proc = Sam2Processor.from_pretrained(sam_id)
-            self.sam_model = Sam2Model.from_pretrained(sam_id).to(
+            sam_revision = "ee5bba1"
+            logger.info(
+                f"SAM 2.1 yükleniyor: {sam_id}@{sam_revision}"
+            )
+            self.sam_proc = Sam2Processor.from_pretrained(
+                sam_id,
+                revision=sam_revision,
+            )
+            self.sam_model = Sam2Model.from_pretrained(
+                sam_id,
+                revision=sam_revision,
+            ).to(
                 device=self.device
             )
             self.sam_model.eval()
