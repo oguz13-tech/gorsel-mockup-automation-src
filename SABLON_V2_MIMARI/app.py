@@ -233,6 +233,7 @@ def tools_center():
 _ALLOWED_USER_TOOLS = {
     "rename",
     "convert",
+    "png_recursive",
     "watermark",
     "4k",
     "links",
