@@ -814,6 +814,44 @@ def process_from_staging(staging_path: Path, thread_lock=None) -> bool:
             logger.warning(
                 f"Şablon güvenle kaydedildi ancak staging kopyası silinemedi: {exc}"
             )
+            try:
+                recovery_dir = (
+                    BASE_DIR
+                    / "_KURTARMA_PROCESSING"
+                    / cat_key
+                )
+                recovery_dir.mkdir(parents=True, exist_ok=True)
+                recovery_target = recovery_dir / (
+                    f"{Path(new_name).stem}__COMMITTED_STAGING"
+                    f"__{time.strftime('%Y%m%d_%H%M%S')}"
+                    f"{original_staging_path.suffix}"
+                )
+                counter = 1
+                while recovery_target.exists():
+                    recovery_target = recovery_dir / (
+                        f"{Path(new_name).stem}__COMMITTED_STAGING"
+                        f"__{time.strftime('%Y%m%d_%H%M%S')}_{counter}"
+                        f"{original_staging_path.suffix}"
+                    )
+                    counter += 1
+                shutil.move(
+                    str(processing_path),
+                    str(recovery_target),
+                )
+                _update_staging_txn(
+                    txn_path,
+                    txn,
+                    committed_staging_recovery=str(recovery_target),
+                )
+                logger.warning(
+                    f"🛟 Commit edilmiş staging artığı recovery alanına taşındı: "
+                    f"{recovery_target}"
+                )
+            except Exception as recovery_exc:
+                logger.error(
+                    "KRİTİK: Commit edilmiş .processing dosyası watched "
+                    f"alandan çıkarılamadı: {recovery_exc}"
+                )
 
         committed = True
         _update_staging_txn(
