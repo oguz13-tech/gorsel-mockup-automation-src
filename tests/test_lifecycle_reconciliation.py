@@ -430,13 +430,24 @@ class TestLifecycleReconciliation(unittest.TestCase):
         self.assertIn("resolveCurrentTemplateDuplicates", js)
         self.assertIn("replaceOriginalSelectedFile", js)
         self.assertIn("openLifecycleCenter", js)
+        self.assertIn("openActionableReconciliationCenter", js)
+        self.assertIn("runReconciliationAction", js)
+        self.assertIn("RETIRE_DB_ORPHAN", js)
+        self.assertIn("RESTORE_WORKING", js)
+        self.assertIn("WORKING_ORPHAN", js)
         self.assertIn("undoLastLifecycleOperation", js)
+        self.assertNotIn("fixAllReconciliation", js)
+        self.assertNotIn("resolveAllReconciliation", js)
 
         self.assertIn(
             "🆕 Ham Dosyayı Yenisiyle Değiştir",
             html,
         )
         self.assertIn("🧭 Güvenli Eşitleme Merkezi", html)
+        self.assertIn(
+            "onclick=\"openActionableReconciliationCenter()\"",
+            html,
+        )
         self.assertIn("🗂️ Trash / Recovery Merkezi", html)
 
         self.assertIn("PROCESSING_OWNED", watcher)
