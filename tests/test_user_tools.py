@@ -107,6 +107,29 @@ class TestIndependentUserTools(unittest.TestCase):
             )
             self.assertTrue(source.is_file())
 
+    def test_rename_blocks_same_stem_with_different_extension(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source.png"
+            existing = root / "Tablo_001.jpg"
+            self._image(source, mode="RGBA")
+            self._image(existing)
+
+            with self.assertRaises(FileExistsError) as ctx:
+                rename_images(
+                    [source],
+                    "Tablo_",
+                    runtime_root=root / "runtime",
+                    start_number=1,
+                )
+
+            message = str(ctx.exception)
+            self.assertIn("AYNI İSİM, FARKLI UZANTI", message)
+            self.assertIn("Tablo_001.png", message)
+            self.assertIn("Tablo_001.jpg", message)
+            self.assertTrue(source.is_file())
+            self.assertTrue(existing.is_file())
+
     def test_rename_never_overwrites_unselected_target(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
