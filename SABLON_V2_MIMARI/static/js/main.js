@@ -186,11 +186,11 @@ window.onerror = function(msg, url, line, col, error) {
             '',
             'SONUÇ:',
             'Yeni şablon oluşturulmadı.',
-            'Gelen dosya silinmedi veya yeniden adlandırılmadı; staging klasöründe bırakıldı.',
-            '',
-            'Detay:',
-            String(collision?.error || '')
+            'Gelen dosya silinmedi veya yeniden adlandırılmadı; staging klasöründe bırakıldı.'
         );
+        if (!identity && !number && collision?.error) {
+            lines.push('', 'Detay:', String(collision.error));
+        }
         return lines.join('\n');
     }
 
@@ -203,10 +203,6 @@ window.onerror = function(msg, url, line, col, error) {
             if (!response.ok || !data.success || !data.collision) return;
 
             const collision = data.collision;
-            const age = Number(collision.age_seconds);
-            // Do not resurrect old historical warnings when the UI is opened.
-            if (Number.isFinite(age) && age > 180) return;
-
             const id = String(collision.transaction_id || '');
             if (!id) return;
 
