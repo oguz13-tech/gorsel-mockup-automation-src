@@ -373,17 +373,15 @@ def api_orijinal_yukle():
 
         stem = Path(active_tmpl).stem
         backup_root = os.path.abspath(YEDEK_IMG_DIR)
-        src_path = None
-        for ext in ('.jpg', '.jpeg', '.webp', '.png', '.avif'):
-            candidate = _safe_under_root(
-                backup_root,
-                active_cat,
-                stem + ext,
-                label="orijinal yedek",
-            )
-            if os.path.isfile(candidate):
-                src_path = candidate
-                break
+
+        # IMPORTANT: exact filename wins. If the active template is
+        # AhsapTablo_015.png and both 015.jpg + 015.png exist in the backup,
+        # restoring must use the exact 015.png the user replaced.
+        src_path = _find_image_asset(
+            backup_root,
+            active_cat,
+            active_tmpl,
+        )
         if src_path is None:
             return jsonify({
                 "success": False,
@@ -426,6 +424,7 @@ def api_orijinal_yukle():
                 except OSError:
                     pass
 
+        backup_source_hash = _sha256_file(src_path)
         current_hash = _sha256_file(dest_path)
         _invalidate_stale_profiles_for_source(
             active_cat,
@@ -433,9 +432,28 @@ def api_orijinal_yukle():
             stem + ".png",
             current_hash,
         )
+        backup_relative = os.path.relpath(
+            src_path,
+            backup_root,
+        ).replace("\\", "/")
+        working_root = os.path.abspath(
+            os.path.join(BASE_DIR, "2_SABLON_HAVUZU")
+        )
+        destination_relative = os.path.relpath(
+            dest_path,
+            working_root,
+        ).replace("\\", "/")
         return jsonify({
             "success": True,
             "source_sha256": current_hash,
+            "backup_source_sha256": backup_source_hash,
+            "backup_source_file": backup_relative,
+            "backup_source_exact_name": (
+                Path(src_path).name == Path(active_tmpl).name
+            ),
+            "destination_file": destination_relative,
+            "source_root": "2_SABLON_HAVUZU_ORIJINAL_YEDEK",
+            "destination_root": "2_SABLON_HAVUZU",
             "profiles_revalidation_required": True,
         })
     except ValueError as exc:
