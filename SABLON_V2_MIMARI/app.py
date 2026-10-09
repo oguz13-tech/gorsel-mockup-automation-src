@@ -70,6 +70,7 @@ from core.lifecycle_reconciliation import (
     archive_duplicate_variants,
     archive_working_orphan,
     replace_original_and_working,
+    rollback_replace_original,
     undo_lifecycle_operation,
 )
 import hashlib
@@ -743,19 +744,39 @@ def api_replace_original():
         )
 
         current_hash = str(result.get("new_working_sha256") or "")
-        stale_count = _invalidate_stale_profiles_for_source(
-            active_cat,
-            active_tmpl,
-            str(result.get("new_working_filename") or active_tmpl),
-            current_hash,
-        )
-
-        legacy_conf = dict(active_templates.get(active_tmpl) or {})
+        previous_conf = dict(active_templates.get(active_tmpl) or {})
+        legacy_conf = dict(previous_conf)
         legacy_conf["review_status"] = "STALE_SOURCE_CHANGED"
         legacy_conf["supheli"] = True
         legacy_conf["source_replace_operation"] = result.get("operation_id")
         legacy_conf["source_asset_sha256"] = current_hash
-        save_template(active_cat, active_tmpl, legacy_conf)
+
+        try:
+            save_template(active_cat, active_tmpl, legacy_conf)
+            stale_count = _invalidate_stale_profiles_for_source(
+                active_cat,
+                active_tmpl,
+                str(result.get("new_working_filename") or active_tmpl),
+                current_hash,
+            )
+        except Exception:
+            try:
+                rollback_replace_original(
+                    BASE_DIR,
+                    str(result.get("operation_id") or ""),
+                )
+            finally:
+                try:
+                    save_template(
+                        active_cat,
+                        active_tmpl,
+                        previous_conf,
+                    )
+                except Exception:
+                    logger.exception(
+                        "Kaynak değiştirme DB rollback config geri yüklenemedi"
+                    )
+            raise
 
         return jsonify({
             "success": True,
