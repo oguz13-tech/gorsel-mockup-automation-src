@@ -1713,9 +1713,20 @@ window.onerror = function(msg, url, line, col, error) {
 
                 loadSourceImage('working', () => {
                     refreshTemplateHealth(false, false);
+                    const sourceInfo =
+                        '\n\nKaynak: ' +
+                        (res.source_root || '2_SABLON_HAVUZU_ORIJINAL_YEDEK') +
+                        '/' +
+                        (res.backup_source_file || currentTmpl) +
+                        '\nHedef: ' +
+                        (res.destination_root || '2_SABLON_HAVUZU') +
+                        '/' +
+                        (res.destination_file || currentTmpl);
+
                     alert(
-                        'Ham orijinal çalışma kopyasına geri yüklendi. ' +
-                        'Dört köşeyi kontrol edin; gerekirse çok küçük bir düzeltme yapın ve ' +
+                        'Ham orijinal çalışma kopyasına geri yüklendi.' +
+                        sourceInfo +
+                        '\n\nDört köşeyi kontrol edin; gerekirse çok küçük bir düzeltme yapın ve ' +
                         '“Bu Şablonu Onayla”ya basın. Sistem onayı yeni görsele bağlayacak.'
                     );
                 });
