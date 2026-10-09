@@ -86,6 +86,395 @@ def extract_number(category: str, name: str) -> int | None:
         return None
 
 
+def canonical_identity(name: str) -> str:
+    """Extension-insensitive, case-insensitive filename identity."""
+    raw = str(name or "").strip()
+    if raw.endswith(".processing"):
+        raw = raw[: -len(".processing")]
+    return Path(raw).stem.casefold()
+
+
+def same_identity(name_a: str, name_b: str) -> bool:
+    return bool(
+        canonical_identity(name_a)
+        and canonical_identity(name_a) == canonical_identity(name_b)
+    )
+
+
+def same_stem_files(
+    directory: Path,
+    name: str,
+    *,
+    ignore_paths: Iterable[Path] | None = None,
+) -> list[Path]:
+    """Return image files with the same stem regardless of extension."""
+    directory = Path(directory)
+    if not directory.is_dir():
+        return []
+
+    identity = canonical_identity(name)
+    ignored: set[Path] = set()
+    for value in ignore_paths or []:
+        try:
+            ignored.add(Path(value).resolve())
+        except OSError:
+            ignored.add(Path(value))
+
+    matches: list[Path] = []
+    for path in directory.iterdir():
+        if not path.is_file():
+            continue
+        raw_name = path.name
+        is_processing = raw_name.endswith(".processing")
+        comparison_name = (
+            raw_name[: -len(".processing")]
+            if is_processing
+            else raw_name
+        )
+        suffix = Path(comparison_name).suffix.casefold()
+        if suffix not in IMAGE_EXTS:
+            continue
+        try:
+            resolved = path.resolve()
+        except OSError:
+            resolved = path
+        if resolved in ignored:
+            continue
+        if canonical_identity(comparison_name) == identity:
+            matches.append(path)
+    return sorted(matches, key=lambda item: item.name.casefold())
+
+
+def _identity_file_record(
+    path: Path,
+    *,
+    location: str,
+    runtime_root: Path,
+) -> dict:
+    raw_name = path.name
+    comparison_name = (
+        raw_name[: -len(".processing")]
+        if raw_name.endswith(".processing")
+        else raw_name
+    )
+    try:
+        relative = path.resolve().relative_to(runtime_root.resolve()).as_posix()
+    except Exception:
+        relative = str(path)
+    return {
+        "location": location,
+        "kind": "FILE",
+        "name": comparison_name,
+        "extension": Path(comparison_name).suffix.casefold(),
+        "path": relative,
+    }
+
+
+def collect_identity_conflicts(
+    runtime_root: Path,
+    category: str,
+    incoming_name: str,
+    *,
+    ignore_paths: Iterable[Path] | None = None,
+    include_staging: bool = True,
+) -> dict:
+    """Find same category+stem across active, backup, staging and history.
+
+    Extension is deliberately not part of identity. The report still retains
+    every extension so the UI/log can explain SAME NAME / DIFFERENT EXTENSION.
+    """
+    runtime_root = Path(runtime_root).resolve()
+    category = str(category or "")
+    identity = canonical_identity(incoming_name)
+    incoming_ext = Path(
+        str(incoming_name or "").replace(".processing", "")
+    ).suffix.casefold()
+
+    ignored: set[Path] = set()
+    for value in ignore_paths or []:
+        try:
+            ignored.add(Path(value).resolve())
+        except OSError:
+            ignored.add(Path(value))
+
+    records: list[dict] = []
+    physical_roots = [
+        ("WORKING", runtime_root / "2_SABLON_HAVUZU" / category),
+        (
+            "ORIGINAL_ARCHIVE",
+            runtime_root / "2_SABLON_HAVUZU_ORIJINAL_YEDEK" / category,
+        ),
+    ]
+    if include_staging:
+        physical_roots.append(
+            (
+                "STAGING",
+                runtime_root / "YENI-BOS MOCKUP SABLON HAVUZU" / category,
+            )
+        )
+
+    for location, directory in physical_roots:
+        for path in same_stem_files(
+            directory,
+            incoming_name,
+            ignore_paths=ignored,
+        ):
+            records.append(
+                _identity_file_record(
+                    path,
+                    location=location,
+                    runtime_root=runtime_root,
+                )
+            )
+
+    db_path = _db_path(runtime_root)
+    if db_path.is_file():
+        ensure_registry_table(runtime_root)
+        conn = sqlite3.connect(str(db_path), timeout=30)
+        try:
+            # Active template registry.
+            try:
+                for (filename,) in conn.execute(
+                    "SELECT filename FROM templates WHERE category_id=?",
+                    (category,),
+                ).fetchall():
+                    if filename and canonical_identity(filename) == identity:
+                        records.append({
+                            "location": "DB_ACTIVE",
+                            "kind": "DB",
+                            "name": str(filename),
+                            "extension": Path(str(filename)).suffix.casefold(),
+                            "path": None,
+                        })
+            except sqlite3.Error:
+                pass
+
+            # Durable number/name registry.
+            try:
+                rows = conn.execute(
+                    """SELECT canonical_name, template_number
+                       FROM template_number_registry
+                       WHERE category=?""",
+                    (category,),
+                ).fetchall()
+                for canonical_name, template_number in rows:
+                    if (
+                        canonical_name
+                        and canonical_identity(canonical_name) == identity
+                    ):
+                        records.append({
+                            "location": "NUMBER_REGISTRY",
+                            "kind": "HISTORY",
+                            "name": str(canonical_name),
+                            "extension": Path(
+                                str(canonical_name)
+                            ).suffix.casefold(),
+                            "path": None,
+                            "template_number": int(template_number),
+                        })
+            except sqlite3.Error:
+                pass
+
+            # Historical profile rows, including inactive records.
+            try:
+                rows = conn.execute(
+                    """SELECT source_relative_path
+                       FROM template_profiles
+                       WHERE category=?""",
+                    (category,),
+                ).fetchall()
+                for (relative_path,) in rows:
+                    if not relative_path:
+                        continue
+                    name = Path(str(relative_path)).name
+                    if canonical_identity(name) == identity:
+                        records.append({
+                            "location": "PROFILE_HISTORY",
+                            "kind": "HISTORY",
+                            "name": name,
+                            "extension": Path(name).suffix.casefold(),
+                            "path": str(relative_path),
+                        })
+            except sqlite3.Error:
+                pass
+        finally:
+            conn.close()
+
+    # Recoverable trash metadata keeps identity even after physical files move.
+    trash_dir = runtime_root / "SILINEN_SABLONLAR_COP_KUTUSU"
+    if trash_dir.is_dir():
+        for meta in trash_dir.glob("*_meta.json"):
+            try:
+                data = json.loads(meta.read_text(encoding="utf-8"))
+            except Exception:
+                continue
+            meta_category = str(
+                data.get("kategori")
+                or data.get("category")
+                or ""
+            )
+            if meta_category != category:
+                continue
+            name = str(
+                data.get("sablon")
+                or data.get("template")
+                or ""
+            )
+            if name and canonical_identity(name) == identity:
+                records.append({
+                    "location": "TRASH_HISTORY",
+                    "kind": "HISTORY",
+                    "name": name,
+                    "extension": Path(name).suffix.casefold(),
+                    "path": meta.name,
+                })
+
+    # Lifecycle recovery manifests may contain duplicate/orphan variants.
+    lifecycle_root = (
+        runtime_root
+        / "SABLON_V2_MIMARI"
+        / "recovery"
+        / "lifecycle"
+    )
+    if lifecycle_root.is_dir():
+        for manifest_path in lifecycle_root.glob("*/manifest.json"):
+            try:
+                data = json.loads(
+                    manifest_path.read_text(encoding="utf-8")
+                )
+            except Exception:
+                continue
+            if str(data.get("category") or "") != category:
+                continue
+            candidate_names = []
+            for moved in data.get("moved", []) or []:
+                if moved.get("name"):
+                    candidate_names.append(str(moved["name"]))
+            if data.get("template"):
+                candidate_names.append(str(data["template"]))
+            if data.get("keep_filename"):
+                candidate_names.append(str(data["keep_filename"]))
+            for name in candidate_names:
+                if canonical_identity(name) == identity:
+                    records.append({
+                        "location": "LIFECYCLE_RECOVERY",
+                        "kind": "RECOVERY",
+                        "name": name,
+                        "extension": Path(name).suffix.casefold(),
+                        "path": manifest_path.parent.name,
+                    })
+
+    # Deduplicate repeated DB/history evidence while preserving locations.
+    unique: list[dict] = []
+    seen = set()
+    for row in records:
+        key = (
+            row.get("location"),
+            row.get("kind"),
+            row.get("name"),
+            row.get("path"),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(row)
+
+    existing_exts = sorted({
+        str(row.get("extension") or "")
+        for row in unique
+        if row.get("extension")
+    })
+    different_extension = bool(
+        incoming_ext
+        and any(ext != incoming_ext for ext in existing_exts)
+    )
+    same_extension = bool(
+        incoming_ext
+        and incoming_ext in existing_exts
+    )
+    return {
+        "category": category,
+        "identity": identity,
+        "incoming_name": str(incoming_name),
+        "incoming_extension": incoming_ext,
+        "conflict": bool(unique),
+        "same_extension_present": same_extension,
+        "different_extension_present": different_extension,
+        "existing_extensions": existing_exts,
+        "matches": unique,
+    }
+
+
+def format_identity_conflict(report: dict) -> str:
+    if not report.get("conflict"):
+        return ""
+    if report.get("different_extension_present"):
+        headline = "⛔ AYNI İSİM, FARKLI UZANTI"
+    else:
+        headline = "⛔ AYNI İSİM / AYNI UZANTI"
+
+    lines = [
+        headline,
+        f"Gelen: {report.get('incoming_name')}",
+        (
+            "Kimlik: "
+            f"{report.get('category')} / {report.get('identity')}"
+        ),
+        (
+            "Gelen uzantı: "
+            f"{report.get('incoming_extension') or 'YOK'}"
+        ),
+        (
+            "Sistemde görülen uzantılar: "
+            + (
+                ", ".join(report.get("existing_extensions") or [])
+                or "YOK"
+            )
+        ),
+        "Eşleşmeler:",
+    ]
+    for row in report.get("matches", []) or []:
+        lines.append(
+            "  - "
+            f"{row.get('location')}: {row.get('name')}"
+            + (
+                f" [{row.get('path')}]"
+                if row.get("path")
+                else ""
+            )
+        )
+    lines.append(
+        "Sonuç: yeni şablon oluşturulmadı; gelen dosya değiştirilmeden bırakıldı."
+    )
+    return "\n".join(lines)
+
+
+class TemplateIdentityConflictError(ValueError):
+    def __init__(self, report: dict):
+        self.report = report
+        super().__init__(format_identity_conflict(report))
+
+
+def assert_identity_available(
+    runtime_root: Path,
+    category: str,
+    incoming_name: str,
+    *,
+    ignore_paths: Iterable[Path] | None = None,
+    include_staging: bool = True,
+) -> dict:
+    report = collect_identity_conflicts(
+        runtime_root,
+        category,
+        incoming_name,
+        ignore_paths=ignore_paths,
+        include_staging=include_staging,
+    )
+    if report.get("conflict"):
+        raise TemplateIdentityConflictError(report)
+    return report
+
+
 def _db_path(runtime_root: Path) -> Path:
     return runtime_root / "SABLON_V2_MIMARI" / "ayarlar.db"
 
