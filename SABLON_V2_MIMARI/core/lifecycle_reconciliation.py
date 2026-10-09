@@ -744,6 +744,101 @@ def replace_original_and_working(
         raise
 
 
+def rollback_replace_original(
+    runtime_root: str | Path,
+    operation_id: str,
+) -> dict:
+    """Restore pre-replacement bytes when the surrounding DB transaction fails."""
+    root = _recovery_root(runtime_root)
+    manifest_path = root / str(operation_id) / "manifest.json"
+    if not manifest_path.is_file():
+        raise LifecycleSafetyError(
+            "Kaynak değiştirme rollback manifesti bulunamadı."
+        )
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if manifest.get("kind") != "REPLACE_ORIGINAL":
+        raise LifecycleSafetyError(
+            "Bu recovery operasyonu kaynak değiştirme işlemi değil."
+        )
+    if manifest.get("state") != "COMMITTED":
+        raise LifecycleSafetyError(
+            "Kaynak değiştirme operasyonu rollback için COMMITTED durumda değil."
+        )
+
+    op_dir = manifest_path.parent
+    replacement_after = op_dir / "replacement_after"
+    replacement_after.mkdir(parents=True, exist_ok=True)
+
+    new_paths = []
+    for key, hash_key in (
+        ("new_backup_absolute", "new_backup_sha256"),
+        ("new_working_absolute", "new_working_sha256"),
+    ):
+        raw_path = manifest.get(key)
+        if not raw_path:
+            continue
+        path = Path(raw_path)
+        if not path.exists():
+            continue
+        expected_hash = str(manifest.get(hash_key) or "")
+        if expected_hash and sha256_file(path) != expected_hash:
+            raise LifecycleSafetyError(
+                f"Rollback engellendi; yeni dosya işlemden sonra değişmiş: {path.name}"
+            )
+        target = replacement_after / path.name
+        counter = 1
+        while target.exists():
+            target = replacement_after / (
+                f"{path.stem}_{counter}{path.suffix}"
+            )
+            counter += 1
+        shutil.move(str(path), str(target))
+        new_paths.append({
+            "from": str(path.resolve()),
+            "to": str(target.resolve()),
+            "sha256": expected_hash,
+        })
+
+    restored = []
+    try:
+        for item in reversed(list(manifest.get("moved", []) or [])):
+            original = Path(item["from"])
+            archived = Path(item["to"])
+            if original.exists():
+                raise LifecycleSafetyError(
+                    f"Rollback hedefinde dosya zaten var: {original.name}"
+                )
+            if not archived.is_file():
+                raise LifecycleSafetyError(
+                    f"Rollback recovery dosyası bulunamadı: {archived.name}"
+                )
+            if sha256_file(archived) != item.get("sha256"):
+                raise LifecycleSafetyError(
+                    f"Rollback recovery SHA256 değişmiş: {archived.name}"
+                )
+            original.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(archived), str(original))
+            restored.append(str(original.resolve()))
+    except Exception:
+        # Best-effort: put the new replacement bytes back if restoring old
+        # files could not be completed.
+        for item in new_paths:
+            original_new = Path(item["from"])
+            archived_new = Path(item["to"])
+            if archived_new.exists() and not original_new.exists():
+                original_new.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(archived_new), str(original_new))
+        raise
+
+    manifest["state"] = "ROLLED_BACK_AFTER_DB_FAILURE"
+    manifest["rolled_back_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+    manifest["rollback_restored"] = restored
+    manifest["replacement_after"] = new_paths
+    _write_manifest(op_dir, manifest)
+    return manifest
+
+
 def undo_lifecycle_operation(
     runtime_root: str | Path,
     operation_id: Optional[str] = None,
