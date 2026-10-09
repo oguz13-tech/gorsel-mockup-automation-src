@@ -1682,5 +1682,117 @@ class TestFastBatchCornerScan(unittest.TestCase):
         self.assertIn('"db_writes": "SEQUENTIAL"', app_source)
 
 
+class TestOriginalRestoreExactBackupSelection(unittest.TestCase):
+    def test_restore_prefers_exact_png_over_same_stem_jpg(self):
+        import app
+
+        with tempfile.TemporaryDirectory() as runtime_root:
+            category = "03_Ahsap_Tablo"
+            template = "AhsapTablo_015.png"
+            backup_dir = os.path.join(
+                runtime_root,
+                "2_SABLON_HAVUZU_ORIJINAL_YEDEK",
+                category,
+            )
+            working_dir = os.path.join(
+                runtime_root,
+                "2_SABLON_HAVUZU",
+                category,
+            )
+            os.makedirs(backup_dir, exist_ok=True)
+            os.makedirs(working_dir, exist_ok=True)
+
+            # Old alternate-format backup: red.
+            jpg = np.zeros((32, 48, 3), dtype=np.uint8)
+            jpg[:, :] = (0, 0, 255)
+            cv2.imwrite(
+                os.path.join(
+                    backup_dir,
+                    "AhsapTablo_015.jpg",
+                ),
+                jpg,
+            )
+
+            # Newly replaced exact-name PNG: green.
+            png = np.zeros((32, 48, 3), dtype=np.uint8)
+            png[:, :] = (0, 255, 0)
+            cv2.imwrite(
+                os.path.join(
+                    backup_dir,
+                    template,
+                ),
+                png,
+            )
+
+            # Existing working copy intentionally blue.
+            working = np.zeros((32, 48, 3), dtype=np.uint8)
+            working[:, :] = (255, 0, 0)
+            cv2.imwrite(
+                os.path.join(
+                    working_dir,
+                    template,
+                ),
+                working,
+            )
+
+            with (
+                patch("app.BASE_DIR", runtime_root),
+                patch(
+                    "app.YEDEK_IMG_DIR",
+                    os.path.join(
+                        runtime_root,
+                        "2_SABLON_HAVUZU_ORIJINAL_YEDEK",
+                    ),
+                ),
+                patch(
+                    "app._invalidate_stale_profiles_for_source",
+                    return_value=1,
+                ),
+            ):
+                with app.app.test_request_context(
+                    "/api/orijinal_yukle",
+                    method="POST",
+                    headers={
+                        "X-Active-Category": category,
+                        "X-Active-Template": template,
+                    },
+                ):
+                    response = (
+                        app.api_orijinal_yukle.__wrapped__()
+                    )
+
+            self.assertEqual(response.status_code, 200)
+            payload = response.get_json()
+            self.assertTrue(payload["success"])
+            self.assertTrue(
+                payload["backup_source_exact_name"]
+            )
+            self.assertEqual(
+                payload["backup_source_file"],
+                category + "/" + template,
+            )
+            self.assertEqual(
+                payload["source_root"],
+                "2_SABLON_HAVUZU_ORIJINAL_YEDEK",
+            )
+
+            restored = cv2.imread(
+                os.path.join(
+                    working_dir,
+                    template,
+                ),
+            )
+            self.assertIsNotNone(restored)
+            # Exact PNG is green; old JPG is red and old working copy blue.
+            b, g, r = [
+                int(x)
+                for x in restored[16, 24]
+            ]
+            self.assertGreater(g, 240)
+            self.assertLess(b, 10)
+            self.assertLess(r, 10)
+
+
+
 if __name__ == "__main__":
     unittest.main()
