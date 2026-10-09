@@ -123,6 +123,10 @@
             <button type="button" onclick="restoreOriginal()" style="background:#d97706; width:100%; padding:11px 10px; margin-top:5px; text-align:left; font-weight:bold;">🔄 Ham Orijinali Geri Yükle</button>
             <div class="tool-note"><b>Dosyayı değiştirir.</b> Ham yedek sağlamsa onu çalışma kopyasının yerine güvenli şekilde yazar. Bundan sonra köşeleri yeniden kontrol edip şablonu tekrar onaylamanız gerekebilir.</div>
 
+            <input type="file" id="replaceOriginalFileInput" accept=".png,.jpg,.jpeg,.webp,.avif,image/png,image/jpeg,image/webp,image/avif" onchange="replaceOriginalSelectedFile(this)" style="display:none;">
+            <button type="button" onclick="chooseReplacementOriginal()" style="background:#9a3412; width:100%; padding:11px 10px; margin-top:5px; text-align:left; font-weight:bold;">🆕 Ham Dosyayı Yenisiyle Değiştir</button>
+            <div class="tool-note"><b>Güvenli kaynak değişimi.</b> Yeni bir ham görsel seçersiniz. Eski ham ve eski çalışma dosyaları silinmez; recovery operasyonunda korunur. Yeni kaynak geldikten sonra eski onay otomatik olarak geçersizleşir ve şablon yeniden kontrol ister.</div>
+
             <button type="button" id="templateHealthScanButton" onclick="runTemplateHealthScan()" style="background:#0f766e; width:100%; padding:11px 10px; margin-top:5px; text-align:left; font-weight:bold;">🩺 Ham Dosya Sağlık Taraması</button>
             <div class="tool-note"><b>Sadece kontrol eder; hiçbir dosyayı silmez.</b> Çalışma dosyası eksik, ham yedek eksik/okunamıyor, DB kaydı olmayan dosya ve benzeri sorunları tarar. Çok siyah/beyaz-düz görselleri otomatik bozuk saymaz; yalnız insan kontrolüne işaretler. Tamamlanan bu manuel tarama ayrıca <b>son rapor</b> ve <b>geçmiş kaydı</b> olarak saklanır.</div>
 
@@ -170,6 +174,18 @@
             <details class="advanced-tools">
                 <summary>⚙️ Gelişmiş / Kurtarma Araçları</summary>
                 <div class="tool-note advanced-summary-note">Normal kullanımda bu bölümü açmanız gerekmez.</div>
+
+                <button type="button" onclick="openLifecycleCenter('all')" class="advanced-action" style="background:#1d4ed8;">🧭 Güvenli Eşitleme Merkezi</button>
+                <div class="tool-note">DB, çalışma, ham, duplicate, yetim dosya ve eksik aktif kayıtları tek yerde gösterir. <b>Kendi kendine toplu düzeltme yapmaz.</b></div>
+
+                <button type="button" onclick="resolveCurrentTemplateDuplicates()" class="advanced-action" style="background:#7c3aed;">🧹 Bu Şablondaki Duplicate'ları Güvenli Ayır</button>
+                <div class="tool-note">Yalnız aktif DB dosyası kesin olarak belirlenebiliyorsa çalışır. Korunan dosyaya dokunmaz; diğer uzantıları kalıcı silmek yerine recovery alanına taşır.</div>
+
+                <button type="button" onclick="openLifecycleCenter('recovery')" class="advanced-action" style="background:#475569;">🗂️ Trash / Recovery Merkezi</button>
+                <div class="tool-note">Geri alınabilir çöp kayıtlarını, duplicate/yetim recovery operasyonlarını ve .processing kurtarma alanını gösterir.</div>
+
+                <button type="button" onclick="undoLastLifecycleOperation()" class="advanced-action" style="background:#0f766e;">↩️ Son Lifecycle İşlemini Geri Al</button>
+                <div class="tool-note">Son geri alınabilir duplicate/yetim taşımasını eski yerine döndürür. Hedefte çakışma varsa güvenlik nedeniyle işlemi durdurur.</div>
 
                 <button type="button" id="batchAnalyzeButton" onclick="batchAnalyze()" class="advanced-action">⚡ Bir Kategoride Tüm Köşeleri Hızlı Tara</button>
                 <div class="tool-note"><b>Kalite algoritmasını değiştirmez.</b> Kaynağı değişmemiş insan onaylı <b>APPROVED</b> şablonları ağır analizden atlayıp aynen korur. Onaysız/değişmiş şablonlarda mevcut tam kalite 4 köşe motorunu çalıştırır. Hesaplamada en fazla 2 görsel paralel işlenir; veritabanı kayıtları tek sıra yapılır. Tarama başladıktan sonra <b>Arka Planda Sürdür</b> ile diğer şablonlarda çalışabilirsiniz. O anda işlenen küçük paketteki şablonlarda çakışan kayıt işlemleri kısa süreli engellenir. <b>Taramayı Durdur</b> derseniz mevcut küçük paket tamamlanır ve sonra durur; o ana kadar biten analizler korunur. Ham/orijinal görselleri silmez veya değiştirmez.</div>
