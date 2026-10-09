@@ -567,14 +567,26 @@ window.onerror = function(msg, url, line, col, error) {
                 Number(summary.fully_matched_active_total || 0),
             'Aktif eşleşme sorunu: ' +
                 Number(summary.active_mismatch_total || 0),
-            'Toplam bulgu: ' + Number(summary.issue_count || 0),
+            'Aktif bütünlük bulgusu: ' +
+                Number(summary.active_integrity_issue_count || 0),
+            'Çalışma havuzu hijyen bulgusu: ' +
+                Number(summary.working_hygiene_count || 0),
+            'Duplicate kimlik bulgusu: ' +
+                Number(summary.duplicate_hygiene_count || 0),
+            'Ham arşiv envanter fazlası: ' +
+                Number(summary.archive_inventory_count || 0),
+            'Toplam kayıtlı bulgu: ' + Number(summary.issue_count || 0),
             'Kritik: ' + Number(summary.critical_count || 0),
             'Uyarı: ' + Number(summary.warning_count || 0),
-            'Bilgi: ' + Number(summary.info_count || 0),
-            'Kaggle klasörü adayı: ' +
+            'Bilgi/envanter: ' + Number(summary.info_count || 0),
+            'Kaggle görevli klasörü: ' +
                 Number(summary.kaggle_folder_count || 0),
-            'Mockup klasörü adayı: ' +
+            'Mockup görevli klasörü: ' +
                 Number(summary.mockup_folder_count || 0),
+            'Tüm üst seviye klasör: ' +
+                Number(summary.top_level_folder_count || 0),
+            'Henüz sınıflandırılmamış üst klasör: ' +
+                Number(summary.unclassified_top_level_count || 0),
             'Çöp dosyası: ' + Number(summary.trash_file_count || 0),
             'Recovery dosyası: ' +
                 Number(summary.recovery_file_count || 0),
@@ -609,7 +621,15 @@ window.onerror = function(msg, url, line, col, error) {
                 ' | Ham=' + Number(row.backup_identity_count || 0) +
                 ' | Staging=' + Number(row.staging_identity_count || 0) +
                 ' | Tam=' + Number(row.fully_matched_active_count || 0) +
-                ' | Sorun=' + Number(row.issue_count || 0)
+                ' | AktifSorun=' +
+                    Number(row.active_integrity_issue_count || 0) +
+                ' | ArşivEkstra=' +
+                    Number(row.archive_inventory_count || 0) +
+                ' | Hijyen=' +
+                    (
+                        Number(row.working_hygiene_count || 0) +
+                        Number(row.duplicate_hygiene_count || 0)
+                    )
             );
         });
 
@@ -622,14 +642,16 @@ window.onerror = function(msg, url, line, col, error) {
                 ' | var=' + (row.exists ? 'EVET' : 'HAYIR') +
                 ' | dosya=' + Number(inv.file_count || 0) +
                 ' | görsel=' + Number(inv.image_count || 0) +
-                ' | kod referansı=' +
+                ' | aktif-kod-ref=' +
+                    Number(row.runtime_code_reference_count || 0) +
+                ' | tüm-ref=' +
                     Number(row.code_reference_count || 0)
             );
             lines.push('  Görev: ' + String(row.expected_contract || ''));
-            if ((row.code_reference_files || []).length) {
+            if ((row.runtime_code_reference_files || []).length) {
                 lines.push(
-                    '  Referans örnekleri: ' +
-                    row.code_reference_files.join(', ')
+                    '  Aktif kod örnekleri: ' +
+                    row.runtime_code_reference_files.join(', ')
                 );
             }
         });
@@ -639,10 +661,11 @@ window.onerror = function(msg, url, line, col, error) {
             data.kaggle_folders.forEach(row => {
                 lines.push(
                     '• ' + row.folder +
+                    ' [' + String(row.role || '') + ']' +
                     ' | dosya=' +
                     Number(row.inventory?.file_count || 0) +
-                    ' | kod referansı=' +
-                    Number(row.code_reference_count || 0)
+                    ' | aktif-kod-ref=' +
+                    Number(row.runtime_code_reference_count || 0)
                 );
             });
         } else {
@@ -654,24 +677,26 @@ window.onerror = function(msg, url, line, col, error) {
             data.mockup_folders.forEach(row => {
                 lines.push(
                     '• ' + row.folder +
+                    ' [' + String(row.role || '') + ']' +
                     ' | dosya=' +
                     Number(row.inventory?.file_count || 0) +
-                    ' | kod referansı=' +
-                    Number(row.code_reference_count || 0)
+                    ' | aktif-kod-ref=' +
+                    Number(row.runtime_code_reference_count || 0)
                 );
             });
         } else {
             lines.push('Bulunamadı.');
         }
 
-        lines.push('', 'TUTARSIZLIK / KONTROL BULGULARI:');
+        lines.push('', 'AKTİF BÜTÜNLÜK / HİJYEN / ENVANTER BULGULARI:');
         const issues = Array.isArray(data?.issues) ? data.issues : [];
         if (!issues.length) {
             lines.push('Yok.');
         } else {
             issues.forEach(item => {
                 lines.push(
-                    '[' + String(item.severity || 'INFO') + '] ' +
+                    '[' + String(item.severity || 'INFO') +
+                    ' / ' + String(item.scope || 'GENEL') + '] ' +
                     String(item.category || '-') + ' / ' +
                     String(item.identity || '-') + ' — ' +
                     String(item.label || item.code || '')
@@ -706,11 +731,18 @@ window.onerror = function(msg, url, line, col, error) {
                 ' | Aktif=' + Number(row.active_db_total || 0) +
                 ' | Tam=' +
                     Number(row.fully_matched_active_total || 0) +
-                ' | Sorun=' + Number(row.issue_count || 0) +
-                ' | Kritik=' + Number(row.critical_count || 0) +
-                ' | Uyarı=' + Number(row.warning_count || 0) +
+                ' | AktifSorun=' +
+                    Number(row.active_integrity_issue_count || 0) +
+                ' | Arşiv=' + Number(row.archive_inventory_count || 0) +
+                ' | Hijyen=' +
+                    (
+                        Number(row.working_hygiene_count || 0) +
+                        Number(row.duplicate_hygiene_count || 0)
+                    ) +
                 ' | Kaggle=' + Number(row.kaggle_folder_count || 0) +
-                ' | Mockup=' + Number(row.mockup_folder_count || 0)
+                ' | Mockup=' + Number(row.mockup_folder_count || 0) +
+                ' | Sınıfsız=' +
+                    Number(row.unclassified_top_level_count || 0)
             );
         });
         return lines.join('\n');
@@ -1400,8 +1432,14 @@ window.onerror = function(msg, url, line, col, error) {
             const auditCategory =
                 workspaceConsistencySnapshot?.categories?.[cat] || null;
             const auditIssueCount = Number(
-                auditCategory?.issue_count || 0
+                auditCategory?.active_integrity_issue_count || 0
             );
+            const auditArchiveCount = Number(
+                auditCategory?.archive_inventory_count || 0
+            );
+            const auditHygieneCount =
+                Number(auditCategory?.working_hygiene_count || 0) +
+                Number(auditCategory?.duplicate_hygiene_count || 0);
             const matchedCount = Number(
                 auditCategory?.fully_matched_active_count || 0
             );
@@ -1440,7 +1478,9 @@ window.onerror = function(msg, url, line, col, error) {
                     ', Ham=' +
                         Number(auditCategory.backup_identity_count || 0) +
                     ', Tam eşleşen=' + matchedCount +
-                    ', Sorun=' + auditIssueCount +
+                    ', Aktif bütünlük sorunu=' + auditIssueCount +
+                    ', Arşiv ekstra=' + auditArchiveCount +
+                    ', Hijyen=' + auditHygieneCount +
                     ', Staging=' + stagingCount
                 )
                 : (
