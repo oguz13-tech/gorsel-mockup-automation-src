@@ -1707,14 +1707,236 @@ def api_templates_approve():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+def _run_batch_analysis_core(
+    category,
+    requested_templates,
+    *,
+    workers=2,
+):
+    """Run one small analysis batch with unchanged CV quality."""
+    category = str(category or "").strip()
+    if not category:
+        raise ValueError("Kategori eksik")
+
+    settings = get_all_ayarlar()
+    registered = (
+        settings.get("kategoriler", {})
+        .get(category, {})
+        .get("sablonlar", {})
+    )
+    if not isinstance(registered, dict):
+        registered = {}
+
+    templates = []
+    seen = set()
+    for value in list(requested_templates or [])[:12]:
+        template_name = str(value or "").strip()
+        if (
+            template_name
+            and template_name not in seen
+            and template_name in registered
+        ):
+            templates.append(template_name)
+            seen.add(template_name)
+
+    worker_count = max(1, min(2, int(workers or 2)))
+    db_path = os.path.join(
+        BASE_DIR,
+        "SABLON_V2_MIMARI",
+        "ayarlar.db",
+    )
+
+    results_by_name = {}
+    to_analyze = []
+
+    for template_name in templates:
+        img_path = _safe_template_path(category, template_name)
+        if not os.path.isfile(img_path):
+            results_by_name[template_name] = {
+                "template": template_name,
+                "status": "MISSING",
+                "error": "Görsel bulunamadı",
+            }
+            continue
+
+        uid = f"{category}_{template_name}"
+        if _is_source_matching_approved(
+            db_path,
+            uid,
+            img_path,
+        ):
+            results_by_name[template_name] = {
+                "template": template_name,
+                "status": "SKIPPED_APPROVED",
+                "review_status": "APPROVED",
+                "preserved": True,
+            }
+            continue
+        to_analyze.append(template_name)
+
+    analysis_results = {}
+    if to_analyze:
+        if worker_count == 1 or len(to_analyze) == 1:
+            for template_name in to_analyze:
+                analysis_results[template_name] = (
+                    _analyze_template_for_batch(
+                        category,
+                        template_name,
+                    )
+                )
+        else:
+            with ThreadPoolExecutor(
+                max_workers=worker_count,
+                thread_name_prefix="quad-scan",
+            ) as executor:
+                future_map = {
+                    executor.submit(
+                        _analyze_template_for_batch,
+                        category,
+                        template_name,
+                    ): template_name
+                    for template_name in to_analyze
+                }
+                for future in as_completed(future_map):
+                    template_name = future_map[future]
+                    try:
+                        analysis_results[template_name] = future.result()
+                    except Exception as exc:
+                        analysis_results[template_name] = {
+                            "template": template_name,
+                            "status": "FAILED",
+                            "error": str(exc),
+                        }
+
+    # Writes remain deliberately sequential. Re-lock and re-check source bytes
+    # before saving so a restore/delete/edit between analysis and save cannot
+    # attach stale geometry to new bytes.
+    for template_name in to_analyze:
+        item = analysis_results.get(template_name) or {
+            "template": template_name,
+            "status": "FAILED",
+            "error": "Analiz sonucu alınamadı",
+        }
+        if item.get("status") != "ANALYZED":
+            results_by_name[template_name] = item
+            continue
+
+        analysis = item.get("analysis") or {}
+        try:
+            with template_operation_lock(
+                category,
+                template_name,
+                "batch-save-analysis",
+                wait_seconds=0.35,
+            ):
+                current_path = _safe_template_path(
+                    category,
+                    template_name,
+                )
+                if not os.path.isfile(current_path):
+                    results_by_name[template_name] = {
+                        "template": template_name,
+                        "status": "MISSING",
+                        "error": "Kaynak analiz sonrası kaldırıldı.",
+                    }
+                    continue
+                current_hash = _sha256_file(current_path)
+                if current_hash != str(
+                    analysis.get("source_asset_sha256") or ""
+                ):
+                    results_by_name[template_name] = {
+                        "template": template_name,
+                        "status": "SOURCE_CHANGED",
+                        "error": (
+                            "Kaynak analiz sırasında değişti; eski sonuç "
+                            "kaydedilmedi."
+                        ),
+                    }
+                    continue
+
+                save_template_profile(
+                    db_path,
+                    _profile_data_from_analysis(
+                        category,
+                        template_name,
+                        analysis,
+                    ),
+                )
+            results_by_name[template_name] = {
+                "template": template_name,
+                "status": "ANALYZED",
+                "review_status": analysis.get(
+                    "review_status",
+                    "UNANALYZED",
+                ),
+                "cache_hit": bool(item.get("cache_hit")),
+            }
+        except TemplateBusyError as exc:
+            results_by_name[template_name] = {
+                "template": template_name,
+                "status": "BUSY",
+                "error": str(exc),
+            }
+        except Exception as exc:
+            results_by_name[template_name] = {
+                "template": template_name,
+                "status": "FAILED",
+                "error": str(exc),
+            }
+
+    ordered_results = [
+        results_by_name.get(
+            template_name,
+            {
+                "template": template_name,
+                "status": "FAILED",
+                "error": "Sonuç bulunamadı",
+            },
+        )
+        for template_name in templates
+    ]
+
+    return {
+        "success": True,
+        "results": ordered_results,
+        "analyzed_count": sum(
+            1 for item in ordered_results
+            if item.get("status") == "ANALYZED"
+        ),
+        "cache_hit_count": sum(
+            1 for item in ordered_results
+            if item.get("status") == "ANALYZED"
+            and item.get("cache_hit")
+        ),
+        "approved_preserved_count": sum(
+            1 for item in ordered_results
+            if item.get("status") == "SKIPPED_APPROVED"
+        ),
+        "missing_count": sum(
+            1 for item in ordered_results
+            if item.get("status") == "MISSING"
+        ),
+        "busy_count": sum(
+            1 for item in ordered_results
+            if item.get("status") == "BUSY"
+        ),
+        "source_changed_count": sum(
+            1 for item in ordered_results
+            if item.get("status") == "SOURCE_CHANGED"
+        ),
+        "failed_count": sum(
+            1 for item in ordered_results
+            if item.get("status") == "FAILED"
+        ),
+        "workers_used": worker_count,
+        "quality_algorithm": "UNCHANGED",
+        "db_writes": "SEQUENTIAL",
+    }
+
+
 @app.route('/api/templates/batch_analyze', methods=['POST'])
 def api_templates_batch_analyze():
-    """Analyze a small batch without changing geometry quality.
-
-    CPU-only image analysis may use two workers. SQLite profile writes remain
-    strictly sequential in this request. Source-matching human APPROVED
-    profiles are preserved and skipped before image decoding.
-    """
+    """Compatibility endpoint; persistent UI uses the Job Engine."""
     try:
         req = request.get_json(silent=True) or {}
         category = str(req.get("category") or "").strip()
@@ -1735,187 +1957,22 @@ def api_templates_batch_analyze():
             registered = {}
 
         if isinstance(requested_templates, list):
-            templates = []
-            seen = set()
-            for value in requested_templates[:12]:
-                template_name = str(value or "").strip()
-                if (
-                    template_name
-                    and template_name not in seen
-                    and template_name in registered
-                ):
-                    templates.append(template_name)
-                    seen.add(template_name)
+            templates = requested_templates[:12]
         else:
-            # Legacy compatibility. UI now sends small explicit batches.
             templates = list(registered.keys())[:12]
 
-        if not templates:
-            return jsonify({
-                "success": True,
-                "results": [],
-                "analyzed_count": 0,
-                "approved_preserved_count": 0,
-                "missing_count": 0,
-                "failed_count": 0,
-                "quality_algorithm": "UNCHANGED",
-            })
-
-        try:
-            requested_workers = int(req.get("workers", 2) or 2)
-        except (TypeError, ValueError):
-            requested_workers = 2
-        worker_count = max(1, min(2, requested_workers))
-
-        db_path = os.path.join(
-            BASE_DIR,
-            "SABLON_V2_MIMARI",
-            "ayarlar.db",
-        )
-
-        results_by_name = {}
-        to_analyze = []
-
-        # Cheap/safe preflight. Human-approved geometry with matching bytes
-        # does not need image decoding or CV analysis again.
-        for template_name in templates:
-            img_path = _safe_template_path(category, template_name)
-            if not os.path.isfile(img_path):
-                results_by_name[template_name] = {
-                    "template": template_name,
-                    "status": "MISSING",
-                    "error": "Görsel bulunamadı",
-                }
-                continue
-
-            uid = f"{category}_{template_name}"
-            if _is_source_matching_approved(
-                db_path,
-                uid,
-                img_path,
-            ):
-                results_by_name[template_name] = {
-                    "template": template_name,
-                    "status": "SKIPPED_APPROVED",
-                    "review_status": "APPROVED",
-                    "preserved": True,
-                }
-                continue
-
-            to_analyze.append(template_name)
-
-        analysis_results = {}
-        if to_analyze:
-            if worker_count == 1 or len(to_analyze) == 1:
-                for template_name in to_analyze:
-                    analysis_results[template_name] = (
-                        _analyze_template_for_batch(
-                            category,
-                            template_name,
-                        )
-                    )
-            else:
-                # Analysis is read-only and independent per image. Keep worker
-                # count at two to avoid CPU/RAM oversubscription on desktop PCs.
-                with ThreadPoolExecutor(
-                    max_workers=worker_count,
-                    thread_name_prefix="quad-scan",
-                ) as executor:
-                    future_map = {
-                        executor.submit(
-                            _analyze_template_for_batch,
-                            category,
-                            template_name,
-                        ): template_name
-                        for template_name in to_analyze
-                    }
-                    for future in as_completed(future_map):
-                        template_name = future_map[future]
-                        try:
-                            analysis_results[template_name] = future.result()
-                        except Exception as exc:
-                            analysis_results[template_name] = {
-                                "template": template_name,
-                                "status": "FAILED",
-                                "error": str(exc),
-                            }
-
-        # IMPORTANT: DB writes stay sequential even though CPU analysis above
-        # may overlap. This preserves the existing SQLite safety model.
-        for template_name in to_analyze:
-            item = analysis_results.get(template_name) or {
-                "template": template_name,
-                "status": "FAILED",
-                "error": "Analiz sonucu alınamadı",
-            }
-
-            if item.get("status") == "ANALYZED":
-                analysis = item.get("analysis") or {}
-                try:
-                    save_template_profile(
-                        db_path,
-                        _profile_data_from_analysis(
-                            category,
-                            template_name,
-                            analysis,
-                        ),
-                    )
-                    results_by_name[template_name] = {
-                        "template": template_name,
-                        "status": "ANALYZED",
-                        "review_status": analysis.get(
-                            "review_status",
-                            "UNANALYZED",
-                        ),
-                    }
-                except Exception as exc:
-                    results_by_name[template_name] = {
-                        "template": template_name,
-                        "status": "FAILED",
-                        "error": str(exc),
-                    }
-            else:
-                results_by_name[template_name] = item
-
-        ordered_results = [
-            results_by_name.get(
-                template_name,
-                {
-                    "template": template_name,
-                    "status": "FAILED",
-                    "error": "Sonuç bulunamadı",
-                },
+        return jsonify(
+            _run_batch_analysis_core(
+                category,
+                templates,
+                workers=req.get("workers", 2),
             )
-            for template_name in templates
-        ]
-
+        )
+    except ValueError as exc:
         return jsonify({
-            "success": True,
-            "results": ordered_results,
-            "analyzed_count": sum(
-                1
-                for item in ordered_results
-                if item.get("status") == "ANALYZED"
-            ),
-            "approved_preserved_count": sum(
-                1
-                for item in ordered_results
-                if item.get("status") == "SKIPPED_APPROVED"
-            ),
-            "missing_count": sum(
-                1
-                for item in ordered_results
-                if item.get("status") == "MISSING"
-            ),
-            "failed_count": sum(
-                1
-                for item in ordered_results
-                if item.get("status") == "FAILED"
-            ),
-            "workers_used": worker_count,
-            "quality_algorithm": "UNCHANGED",
-            "db_writes": "SEQUENTIAL",
-        })
+            "success": False,
+            "error": str(exc),
+        }), 400
     except Exception as exc:
         logger.exception("Toplu sablon analizi hatasi")
         return jsonify({
@@ -2636,6 +2693,243 @@ def _load_saved_template_health_report():
     return report
 
 
+def _job_batch_corner_scan(
+    job_id,
+    payload,
+    progress,
+    should_stop,
+):
+    category = str(payload.get("category") or "").strip()
+    templates = [
+        str(name)
+        for name in (payload.get("templates") or [])
+        if str(name or "").strip()
+    ]
+    if not category or not templates:
+        raise ValueError("Kalıcı kategori taraması için kategori/şablon listesi gerekli.")
+
+    state = get_job(job_id) or {}
+    start_index = max(
+        0,
+        min(
+            len(templates),
+            int(state.get("progress_current") or 0),
+        ),
+    )
+    chunk_size = 4
+    counts = {
+        "analyzed_count": 0,
+        "cache_hit_count": 0,
+        "approved_preserved_count": 0,
+        "missing_count": 0,
+        "busy_count": 0,
+        "source_changed_count": 0,
+        "failed_count": 0,
+    }
+
+    index = start_index
+    while index < len(templates):
+        if should_stop():
+            return {
+                "completed": False,
+                "processed": index,
+                "total": len(templates),
+                **counts,
+            }
+
+        chunk = templates[index:index + chunk_size]
+        progress(
+            index,
+            len(templates),
+            "Tam kalite motoru: " + ", ".join(chunk),
+        )
+        result = _run_batch_analysis_core(
+            category,
+            chunk,
+            workers=2,
+        )
+        for key in counts:
+            counts[key] += int(result.get(key, 0) or 0)
+
+        index += len(chunk)
+        progress(
+            index,
+            len(templates),
+            (
+                f"{index}/{len(templates)} tamamlandı • "
+                f"cache {counts['cache_hit_count']} • "
+                f"onaylı korundu {counts['approved_preserved_count']}"
+            ),
+        )
+
+    return {
+        "completed": True,
+        "processed": len(templates),
+        "total": len(templates),
+        "category": category,
+        "quality_algorithm": "UNCHANGED",
+        "db_writes": "SEQUENTIAL",
+        "cache": cache_stats(),
+        **counts,
+    }
+
+
+def _job_raw_health_scan(
+    job_id,
+    payload,
+    progress,
+    should_stop,
+):
+    if should_stop():
+        return {
+            "completed": False,
+            "processed": 0,
+            "total": 1,
+        }
+    progress(0, 1, "Ham ve çalışma dosyaları kontrol ediliyor...")
+    report = _template_asset_health_report(deep=True)
+    saved = _save_template_health_report(report)
+    progress(1, 1, "Sağlık taraması tamamlandı ve son rapor kaydedildi.")
+    return {
+        "completed": True,
+        "processed": 1,
+        "total": 1,
+        "saved_at": saved.get("saved_at"),
+        "summary": saved.get("summary", {}),
+    }
+
+
+@app.route('/api/jobs', methods=['GET', 'POST'])
+def api_jobs():
+    if request.method == 'GET':
+        active_only = str(
+            request.args.get("active", "0")
+        ).strip().lower() in {"1", "true", "yes", "on"}
+        return jsonify({
+            "success": True,
+            "jobs": list_jobs(
+                limit=request.args.get("limit", 20),
+                active_only=active_only,
+            ),
+        })
+
+    req = request.get_json(silent=True) or {}
+    job_type = str(req.get("job_type") or "").strip().upper()
+    payload = req.get("payload") or {}
+    if not isinstance(payload, dict):
+        return jsonify({
+            "success": False,
+            "error": "Job payload nesne olmalı.",
+        }), 400
+
+    if job_type == "BATCH_CORNER_SCAN":
+        category = str(payload.get("category") or "").strip()
+        settings = get_all_ayarlar()
+        registered = (
+            settings.get("kategoriler", {})
+            .get(category, {})
+            .get("sablonlar", {})
+        )
+        if not category or not isinstance(registered, dict):
+            return jsonify({
+                "success": False,
+                "error": "Geçerli kategori bulunamadı.",
+            }), 400
+        requested = payload.get("templates")
+        if isinstance(requested, list):
+            templates = [
+                str(name)
+                for name in requested
+                if str(name) in registered
+            ]
+        else:
+            templates = list(registered.keys())
+        if not templates:
+            return jsonify({
+                "success": False,
+                "error": "Kategoride taranacak şablon yok.",
+            }), 400
+        payload = {
+            "category": category,
+            "templates": templates,
+        }
+        total = len(templates)
+    elif job_type == "RAW_HEALTH_SCAN":
+        payload = {"deep": True, "save": True}
+        total = 1
+    else:
+        return jsonify({
+            "success": False,
+            "error": "Desteklenmeyen job type.",
+        }), 400
+
+    # Avoid accidental duplicate long-running jobs of the same intent.
+    for active in list_jobs(limit=100, active_only=True):
+        if (
+            active.get("job_type") == job_type
+            and active.get("payload") == payload
+        ):
+            return jsonify({
+                "success": True,
+                "job": active,
+                "reused_active_job": True,
+            })
+
+    job_id = create_job(
+        job_type,
+        payload,
+        progress_total=total,
+    )
+    return jsonify({
+        "success": True,
+        "job": get_job(job_id),
+        "reused_active_job": False,
+    }), 202
+
+
+@app.route('/api/jobs/<job_id>')
+def api_job_detail(job_id):
+    job = get_job(job_id)
+    if job is None:
+        return jsonify({
+            "success": False,
+            "error": "Job bulunamadı.",
+        }), 404
+    return jsonify({
+        "success": True,
+        "job": job,
+    })
+
+
+@app.route('/api/jobs/<job_id>/stop', methods=['POST'])
+def api_job_stop(job_id):
+    if not request_job_stop(job_id):
+        job = get_job(job_id)
+        if job is None:
+            return jsonify({
+                "success": False,
+                "error": "Job bulunamadı.",
+            }), 404
+        return jsonify({
+            "success": False,
+            "error": "Job zaten tamamlanmış.",
+            "job": job,
+        }), 409
+    return jsonify({
+        "success": True,
+        "job": get_job(job_id),
+    })
+
+
+@app.route('/api/analysis-cache/stats')
+def api_analysis_cache_stats():
+    return jsonify({
+        "success": True,
+        **cache_stats(),
+        "analyzer_version": TemplateAnalyzer().version,
+    })
+
+
 @app.route('/api/template-health')
 def api_template_health():
     """Read-only template/raw asset health scan for cleanup review."""
@@ -2763,6 +3057,16 @@ if __name__ == '__main__':
         )
     except Exception as exc:
         print(f"UYARI: Sablon numara gecmisi backfill tamamlanamadi: {exc}")
+
+    job_engine = PersistentJobEngine(
+        {
+            "BATCH_CORNER_SCAN": _job_batch_corner_scan,
+            "RAW_HEALTH_SCAN": _job_raw_health_scan,
+        },
+        max_workers=2,
+    )
+    job_engine.start()
+    print("Kalıcı Job Engine aktif: 2 worker, restart-resume açık.")
 
     print("SABLON_V2_MIMARI (Flask MVC) Baslatiliyor... http://127.0.0.1:8080")
     auto_browser_disabled = str(
