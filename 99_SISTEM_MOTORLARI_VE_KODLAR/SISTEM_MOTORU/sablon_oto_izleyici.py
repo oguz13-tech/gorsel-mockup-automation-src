@@ -67,7 +67,9 @@ from sablon_beyazlatma_motoru import (
 from core.db import get_all_ayarlar, save_template, delete_template
 from core.template_intelligence import TemplateAnalyzer, save_template_profile
 from core.template_identity import (
+    TemplateIdentityConflictError,
     TemplateNumberConflictError,
+    assert_identity_available,
     backfill_registry,
     collect_reserved_numbers,
     find_next_contiguous_free_block,
@@ -632,6 +634,33 @@ def process_from_staging(staging_path: Path, thread_lock=None) -> bool:
             _restore_processing_file(processing_path, original_staging_path)
             return False
 
+        # Filename identity is category + extension-insensitive stem.
+        # Example: AhsapTablo_015.png / .jpg / .jpeg are ONE identity.
+        # Reject before number allocation and preserve the incoming file.
+        try:
+            assert_identity_available(
+                BASE_DIR,
+                cat_key,
+                original_staging_path.name,
+                ignore_paths=[processing_path],
+                include_staging=True,
+            )
+        except TemplateIdentityConflictError as exc:
+            message = str(exc)
+            logger.error(message.replace("\n", " | "))
+            _restore_processing_file(
+                processing_path,
+                original_staging_path,
+            )
+            _update_staging_txn(
+                txn_path,
+                txn,
+                state="ROLLED_BACK",
+                error=message,
+                identity_conflict=exc.report,
+            )
+            return False
+
         # A template number is a permanent identity across active files,
         # backups, DB history, trash and generated artifact history.
         reserved_nums = collect_reserved_numbers(
@@ -661,17 +690,31 @@ def process_from_staging(staging_path: Path, thread_lock=None) -> bool:
                     ignore_paths=[processing_path],
                 )
             except TemplateNumberConflictError as exc:
-                logger.error(
-                    "⛔ İSİM ÇAKIŞMASI: %s daha önce kullanılmış. "
-                    "Dosya işlenmedi ve adı değiştirilmeden geri bırakıldı. "
-                    "Önerilen yeni numara: %s. Görsel İsimlendirici ile "
-                    "yeni numara seçin.",
-                    requested_idx,
-                    exc.suggested_start,
+                message = (
+                    f"⛔ NUMARA KİMLİĞİ ÇAKIŞMASI: {requested_idx} daha önce "
+                    "bu kategoride kullanılmış. "
+                    f"Gelen dosya: {original_staging_path.name}. "
+                    "Uzantı farkı kimliği değiştirmez. "
+                    f"Önerilen yeni numara: {exc.suggested_start}. "
+                    "Dosya işlenmedi ve adı değiştirilmeden geri bırakıldı."
                 )
+                logger.error(message)
                 _restore_processing_file(
                     processing_path,
                     original_staging_path,
+                )
+                _update_staging_txn(
+                    txn_path,
+                    txn,
+                    state="ROLLED_BACK",
+                    error=message,
+                    number_conflict={
+                        "category": cat_key,
+                        "requested_number": requested_idx,
+                        "incoming_name": original_staging_path.name,
+                        "incoming_extension": original_staging_path.suffix.lower(),
+                        "suggested_number": exc.suggested_start,
+                    },
                 )
                 return False
             new_idx = requested_idx
