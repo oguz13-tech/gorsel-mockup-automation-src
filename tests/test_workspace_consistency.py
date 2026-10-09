@@ -337,6 +337,66 @@ class TestWorkspaceConsistencyAudit(unittest.TestCase):
                 self.assertFalse(row["automatic_delete_allowed"])
                 self.assertTrue(row["read_only_audit"])
 
+    def test_known_runtime_folders_are_classified_and_audit_self_reference_is_ignored(self):
+        with tempfile.TemporaryDirectory() as runtime_tmp, tempfile.TemporaryDirectory() as source_tmp:
+            runtime = Path(runtime_tmp)
+            source = Path(source_tmp)
+
+            expected_roles = {
+                ".git": "VERSION_CONTROL_METADATA",
+                ".kilo": "DEV_WORKTREE_METADATA",
+                "__pycache__": "PYTHON_CACHE",
+                "AI_Kalite_Artirici": "QUALITY_ENHANCEMENT_ASSETS",
+                "logs": "RUNTIME_LOGS",
+                "TEST_ENV": "TEST_SANDBOX",
+                "V2_KONTROL_MERKEZI": "LEGACY_CONTROL_CENTER",
+                "ÜRÜN ADI YAZDIRMA BOTU": "USER_TOOL_PRODUCT_NAMER",
+            }
+            for name in expected_roles:
+                write_bytes(
+                    runtime / name / "sample.txt",
+                    name.encode("utf-8"),
+                )
+
+            # The audit contract itself mentions canonical folder names.
+            # That must never make a legacy folder look actively used.
+            audit_source = (
+                source
+                / "SABLON_V2_MIMARI"
+                / "core"
+                / "workspace_consistency.py"
+            )
+            write_bytes(
+                audit_source,
+                (
+                    'LEGACY="0_KAGGLE_ONAY_BEKLEYENLER"\n'
+                    'TEST="TEST_ENV"\n'
+                    'TOOL="ÜRÜN ADI YAZDIRMA BOTU"\n'
+                ).encode("utf-8"),
+            )
+            write_bytes(
+                source / "test_fake_runtime.py",
+                b'LEGACY="0_KAGGLE_ONAY_BEKLEYENLER"\n',
+            )
+
+            report = workspace_consistency_report(
+                str(runtime),
+                str(source),
+                {"kategoriler": {}},
+            )
+            rows = {row["folder"]: row for row in report["folders"]}
+
+            for name, role in expected_roles.items():
+                self.assertEqual(rows[name]["role"], role)
+
+            self.assertEqual(
+                report["summary"]["unclassified_top_level_count"],
+                0,
+            )
+            legacy = rows["0_KAGGLE_ONAY_BEKLEYENLER"]
+            self.assertEqual(legacy["runtime_code_reference_count"], 0)
+            self.assertEqual(legacy["code_reference_count"], 0)
+
     def test_frontend_and_backend_expose_persistent_workspace_audit(self):
         js = (
             ROOT
