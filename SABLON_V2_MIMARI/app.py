@@ -37,8 +37,10 @@ from core.template_intelligence import TemplateAnalyzer, save_template_profile, 
 from core.factory_doctor import run_factory_doctor
 from core.template_identity import (
     backfill_registry,
+    canonical_identity,
     extract_number,
     reserve_number,
+    same_stem_files,
 )
 from core.operation_lock import (
     TemplateBusyError,
@@ -906,25 +908,37 @@ def api_auto_detect_corners():
         return jsonify({"success": False, "error": str(e)}), 500
 
 def _find_template_backup_asset(category: str, template_name: str):
-    """Find the original-backup asset that corresponds to one template."""
+    """Resolve raw backup only when the extension-insensitive identity is unique.
+
+    Destructive/restore operations must never silently pick one extension when
+    two files share the same stem.
+    """
     backup_root = os.path.abspath(
         os.path.join(BASE_DIR, "2_SABLON_HAVUZU_ORIJINAL_YEDEK")
     )
-    category_dir = _safe_under_root(
-        backup_root,
-        category,
-        label="orijinal yedek kategorisi",
-    )
-    stem = Path(template_name).stem
-    for ext in (".png", ".jpg", ".jpeg", ".webp", ".avif"):
-        candidate = _safe_under_root(
-            category_dir,
-            stem + ext,
-            label="orijinal yedek",
+    category_dir = Path(
+        _safe_under_root(
+            backup_root,
+            category,
+            label="orijinal yedek kategorisi",
         )
-        if os.path.isfile(candidate):
-            return candidate
-    return None
+    )
+    matches = same_stem_files(category_dir, template_name)
+    if not matches:
+        return None
+    if len(matches) > 1:
+        extensions = ", ".join(
+            sorted({path.suffix.casefold() for path in matches})
+        )
+        names = ", ".join(path.name for path in matches)
+        raise ValueError(
+            "⛔ AYNI İSİM, FARKLI UZANTI: kritik ham dosya işlemi "
+            "otomatik seçim yapmadı. "
+            f"Kimlik={category}/{canonical_identity(template_name)}; "
+            f"uzantılar={extensions}; dosyalar={names}. "
+            "Önce Güvenli Eşitleme Merkezi'nden duplicate kaydını çözün."
+        )
+    return str(matches[0])
 
 
 def _retire_template_safely_unlocked(active_cat: str, active_tmpl: str) -> dict:
@@ -1415,29 +1429,49 @@ def _path_within_root(root: str, candidate: str) -> bool:
 
 
 def _find_image_asset(root: str, category: str, template_name: str):
-    """Resolve one image by exact name or same stem without leaving root."""
+    """Resolve preview asset with exact-name precedence, otherwise unique stem.
+
+    Preview may show the exact DB-selected file even when legacy alternate
+    extensions still exist. If the exact file is missing and several same-stem
+    variants exist, guessing is forbidden.
+    """
     import urllib.parse
 
     category = urllib.parse.unquote(str(category or ""))
     template_name = urllib.parse.unquote(str(template_name or ""))
     safe_root = os.path.abspath(root)
-    stem = Path(template_name).stem
-
-    candidates = [template_name]
-    candidates.extend(
-        stem + ext
-        for ext in (".png", ".jpg", ".jpeg", ".webp", ".avif")
-        if stem + ext != template_name
-    )
-    for name in candidates:
-        candidate = os.path.abspath(
-            os.path.join(safe_root, category, name)
+    category_dir = Path(
+        _safe_under_root(
+            safe_root,
+            category,
+            label="gorsel kategorisi",
         )
-        if (
-            _path_within_root(safe_root, candidate)
-            and os.path.isfile(candidate)
-        ):
-            return candidate
+    )
+
+    exact = Path(
+        _safe_under_root(
+            str(category_dir),
+            template_name,
+            label="gorsel",
+        )
+    )
+    if exact.is_file():
+        return str(exact)
+
+    matches = same_stem_files(category_dir, template_name)
+    if len(matches) == 1:
+        return str(matches[0])
+    if len(matches) > 1:
+        extensions = ", ".join(
+            sorted({path.suffix.casefold() for path in matches})
+        )
+        names = ", ".join(path.name for path in matches)
+        raise ValueError(
+            "AYNI İSİM, FARKLI UZANTI belirsizliği: "
+            f"{category} / {canonical_identity(template_name)}. "
+            f"Uzantılar: {extensions}. Dosyalar: {names}. "
+            "Exact istenen dosya bulunmadığı için sistem seçim yapmadı."
+        )
     return None
 
 
@@ -1464,7 +1498,10 @@ def serve_working_image(cat, tmpl):
     working_root = os.path.abspath(
         os.path.join(BASE_DIR, "2_SABLON_HAVUZU")
     )
-    img_path = _find_image_asset(working_root, cat, tmpl)
+    try:
+        img_path = _find_image_asset(working_root, cat, tmpl)
+    except ValueError as exc:
+        return str(exc), 409
     if img_path is None:
         return "Calisma gorseli bulunamadi", 404
     return _send_image_no_cache(img_path)
@@ -1474,7 +1511,10 @@ def serve_working_image(cat, tmpl):
 def serve_original_image(cat, tmpl):
     """Serve only the immutable/raw original backup for visual inspection."""
     backup_root = os.path.abspath(YEDEK_IMG_DIR)
-    img_path = _find_image_asset(backup_root, cat, tmpl)
+    try:
+        img_path = _find_image_asset(backup_root, cat, tmpl)
+    except ValueError as exc:
+        return str(exc), 409
     if img_path is None:
         return "Ham orijinal yedek bulunamadi", 404
     return _send_image_no_cache(img_path)
