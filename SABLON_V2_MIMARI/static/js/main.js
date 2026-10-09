@@ -179,6 +179,8 @@ window.onerror = function(msg, url, line, col, error) {
     let currentTmpl = null;
     let currentImg = null;
     let templateHealthSnapshot = null;
+    let workspaceConsistencySnapshot = null;
+    let workspaceAuditJobId = null;
     let templateLoadToken = 0;
     
     // Zoom & Pan vars
@@ -531,6 +533,292 @@ window.onerror = function(msg, url, line, col, error) {
         ) || null;
     }
 
+    function getWorkspaceTemplateState(cat, tmpl) {
+        return (
+            workspaceConsistencySnapshot
+            && workspaceConsistencySnapshot.templates
+            && workspaceConsistencySnapshot.templates[cat]
+            && workspaceConsistencySnapshot.templates[cat][tmpl]
+        ) || null;
+    }
+
+    function formatWorkspaceConsistencyReport(data) {
+        const summary = data?.summary || {};
+        const diff = data?.diff || {};
+        const lines = [
+            'KLASÖR / DOSYA TUTARLILIK RAPORU — READ ONLY',
+            data?.saved_at
+                ? 'Kayıt zamanı: ' + data.saved_at
+                : (
+                    data?.generated_at
+                        ? 'Tarama zamanı: ' + data.generated_at
+                        : ''
+                ),
+            'Runtime: ' + String(data?.runtime_root || ''),
+            '',
+            'GÜVENLİK:',
+            '• Bu tarama kullanıcı görsellerini silmez, taşımaz, yeniden adlandırmaz veya değiştirmez.',
+            '• Aktif eşitlik kuralı: DB ↔ Çalışma ↔ Ham/Orijinal kimliği 1:1 olmalıdır.',
+            '• Staging, çöp ve recovery aktif eşitlik kümesine dahil değildir.',
+            '',
+            'ÖZET:',
+            'Aktif DB: ' + Number(summary.active_db_total || 0),
+            'Tam eşleşen aktif: ' +
+                Number(summary.fully_matched_active_total || 0),
+            'Aktif eşleşme sorunu: ' +
+                Number(summary.active_mismatch_total || 0),
+            'Toplam bulgu: ' + Number(summary.issue_count || 0),
+            'Kritik: ' + Number(summary.critical_count || 0),
+            'Uyarı: ' + Number(summary.warning_count || 0),
+            'Bilgi: ' + Number(summary.info_count || 0),
+            'Kaggle klasörü adayı: ' +
+                Number(summary.kaggle_folder_count || 0),
+            'Mockup klasörü adayı: ' +
+                Number(summary.mockup_folder_count || 0),
+            'Çöp dosyası: ' + Number(summary.trash_file_count || 0),
+            'Recovery dosyası: ' +
+                Number(summary.recovery_file_count || 0),
+            ''
+        ];
+
+        if (diff.has_previous) {
+            lines.push(
+                'ÖNCEKİ RAPORA GÖRE:',
+                'Önceki kayıt: ' + String(diff.previous_saved_at || ''),
+                'Yeni sorun: ' + Number(diff.new_issue_count || 0),
+                'Düzelen sorun: ' + Number(diff.resolved_issue_count || 0),
+                'Devam eden sorun: ' +
+                    Number(diff.unchanged_issue_count || 0),
+                ''
+            );
+        } else {
+            lines.push(
+                'ÖNCEKİ RAPORA GÖRE:',
+                'Bu ilk kayıtlı tutarlılık raporu.',
+                ''
+            );
+        }
+
+        lines.push('KATEGORİLER:');
+        Object.keys(data?.categories || {}).sort().forEach(cat => {
+            const row = data.categories[cat] || {};
+            lines.push(
+                '• ' + cat +
+                ' | DB=' + Number(row.db_count || 0) +
+                ' | Çalışma=' + Number(row.working_identity_count || 0) +
+                ' | Ham=' + Number(row.backup_identity_count || 0) +
+                ' | Staging=' + Number(row.staging_identity_count || 0) +
+                ' | Tam=' + Number(row.fully_matched_active_count || 0) +
+                ' | Sorun=' + Number(row.issue_count || 0)
+            );
+        });
+
+        lines.push('', 'KLASÖR GÖREV / REFERANS AUDITİ:');
+        (data?.folders || []).forEach(row => {
+            const inv = row.inventory || {};
+            lines.push(
+                '• ' + row.folder +
+                ' [' + row.role + ']' +
+                ' | var=' + (row.exists ? 'EVET' : 'HAYIR') +
+                ' | dosya=' + Number(inv.file_count || 0) +
+                ' | görsel=' + Number(inv.image_count || 0) +
+                ' | kod referansı=' +
+                    Number(row.code_reference_count || 0)
+            );
+            lines.push('  Görev: ' + String(row.expected_contract || ''));
+            if ((row.code_reference_files || []).length) {
+                lines.push(
+                    '  Referans örnekleri: ' +
+                    row.code_reference_files.join(', ')
+                );
+            }
+        });
+
+        lines.push('', 'KAGGLE KLASÖRLERİ:');
+        if ((data?.kaggle_folders || []).length) {
+            data.kaggle_folders.forEach(row => {
+                lines.push(
+                    '• ' + row.folder +
+                    ' | dosya=' +
+                    Number(row.inventory?.file_count || 0) +
+                    ' | kod referansı=' +
+                    Number(row.code_reference_count || 0)
+                );
+            });
+        } else {
+            lines.push('Bulunamadı.');
+        }
+
+        lines.push('', 'MOCKUP KLASÖRLERİ:');
+        if ((data?.mockup_folders || []).length) {
+            data.mockup_folders.forEach(row => {
+                lines.push(
+                    '• ' + row.folder +
+                    ' | dosya=' +
+                    Number(row.inventory?.file_count || 0) +
+                    ' | kod referansı=' +
+                    Number(row.code_reference_count || 0)
+                );
+            });
+        } else {
+            lines.push('Bulunamadı.');
+        }
+
+        lines.push('', 'TUTARSIZLIK / KONTROL BULGULARI:');
+        const issues = Array.isArray(data?.issues) ? data.issues : [];
+        if (!issues.length) {
+            lines.push('Yok.');
+        } else {
+            issues.forEach(item => {
+                lines.push(
+                    '[' + String(item.severity || 'INFO') + '] ' +
+                    String(item.category || '-') + ' / ' +
+                    String(item.identity || '-') + ' — ' +
+                    String(item.label || item.code || '')
+                );
+                if (item.details) {
+                    lines.push('  ' + String(item.details));
+                }
+            });
+        }
+
+        lines.push(
+            '',
+            'NOT: Bu rapor düzeltme yapmaz. Eşitleme işlemleri Grup 2’de ayrıca ve geri alınabilir olarak geliştirilecektir.'
+        );
+        return lines.join('\n');
+    }
+
+    function formatWorkspaceHistory(data) {
+        const rows = Array.isArray(data?.history) ? data.history : [];
+        const lines = [
+            'KLASÖR TUTARLILIK RAPOR GEÇMİŞİ',
+            ''
+        ];
+        if (!rows.length) {
+            lines.push('Henüz kayıtlı rapor yok.');
+            return lines.join('\n');
+        }
+        rows.forEach((row, index) => {
+            lines.push(
+                (index + 1) + '. ' +
+                String(row.saved_at || row.generated_at || row.file || '') +
+                ' | Aktif=' + Number(row.active_db_total || 0) +
+                ' | Tam=' +
+                    Number(row.fully_matched_active_total || 0) +
+                ' | Sorun=' + Number(row.issue_count || 0) +
+                ' | Kritik=' + Number(row.critical_count || 0) +
+                ' | Uyarı=' + Number(row.warning_count || 0) +
+                ' | Kaggle=' + Number(row.kaggle_folder_count || 0) +
+                ' | Mockup=' + Number(row.mockup_folder_count || 0)
+            );
+        });
+        return lines.join('\n');
+    }
+
+    function formatTemplateHealthHistory(data) {
+        const rows = Array.isArray(data?.history) ? data.history : [];
+        const lines = [
+            'HAM DOSYA SAĞLIK RAPOR GEÇMİŞİ',
+            ''
+        ];
+        if (!rows.length) {
+            lines.push('Henüz kayıtlı sağlık raporu yok.');
+            return lines.join('\n');
+        }
+        rows.forEach((row, index) => {
+            const diff = row.diff || {};
+            lines.push(
+                (index + 1) + '. ' + String(row.saved_at || row.file || '') +
+                ' | Toplam=' + Number(row.total_records || 0) +
+                ' | Sağlam=' + Number(row.ok || 0) +
+                ' | Uyarı=' + Number(row.warning || 0) +
+                ' | Kritik=' + Number(row.critical || 0) +
+                (
+                    diff.has_previous
+                        ? ' | Yeni=' + Number(diff.new_issue_count || 0) +
+                          ' | Düzelen=' +
+                            Number(diff.resolved_issue_count || 0)
+                        : ''
+                )
+            );
+        });
+        return lines.join('\n');
+    }
+
+    function ensureWorkspaceAuditProgress() {
+        let card = document.getElementById('workspace-audit-progress');
+        if (card) return card;
+
+        card = document.createElement('div');
+        card.id = 'workspace-audit-progress';
+        card.style.cssText = [
+            'position:fixed',
+            'right:18px',
+            'bottom:18px',
+            'z-index:22000',
+            'width:min(430px,calc(100vw - 36px))',
+            'background:#202124',
+            'color:#fff',
+            'border:1px solid #555',
+            'border-radius:10px',
+            'padding:14px',
+            'box-shadow:0 12px 40px rgba(0,0,0,.45)',
+            'display:none'
+        ].join(';');
+        card.innerHTML = `
+            <div style="font-weight:700;margin-bottom:8px;">🧭 Klasör Tutarlılık Taraması</div>
+            <div id="workspace-audit-message" style="font-size:12px;color:#ddd;margin-bottom:8px;">Hazırlanıyor...</div>
+            <div style="height:14px;background:#3b3b3b;border-radius:999px;overflow:hidden;">
+                <div id="workspace-audit-bar" style="height:100%;width:0%;background:#16a34a;transition:width .2s ease;"></div>
+            </div>
+            <div id="workspace-audit-count" style="font-size:11px;color:#bbb;margin-top:6px;">0 / 8</div>
+            <div style="display:flex;gap:8px;margin-top:10px;">
+                <button type="button" id="workspace-audit-stop" style="flex:1;padding:8px;background:#b02a37;color:white;border:0;border-radius:6px;cursor:pointer;">⏹ Durdur</button>
+                <button type="button" id="workspace-audit-hide" style="flex:1;padding:8px;background:#374151;color:white;border:0;border-radius:6px;cursor:pointer;">↘ Gizle</button>
+            </div>
+        `;
+        document.body.appendChild(card);
+
+        card.querySelector('#workspace-audit-hide').onclick = () => {
+            card.style.display = 'none';
+        };
+        card.querySelector('#workspace-audit-stop').onclick = async () => {
+            if (!workspaceAuditJobId) return;
+            const stop = card.querySelector('#workspace-audit-stop');
+            stop.disabled = true;
+            stop.textContent = '⏳ Durduruluyor...';
+            try {
+                await fetch(
+                    '/api/jobs/' +
+                    encodeURIComponent(workspaceAuditJobId) +
+                    '/stop',
+                    {method: 'POST'}
+                );
+            } catch (err) {
+                console.warn('Audit stop isteği gönderilemedi:', err);
+            }
+        };
+        return card;
+    }
+
+    function updateWorkspaceAuditProgress(job) {
+        const card = ensureWorkspaceAuditProgress();
+        const current = Number(job?.progress_current || 0);
+        const total = Math.max(1, Number(job?.progress_total || 8));
+        const percent = Math.max(
+            0,
+            Math.min(100, Math.round((current / total) * 100))
+        );
+        card.querySelector('#workspace-audit-bar').style.width =
+            percent + '%';
+        card.querySelector('#workspace-audit-count').textContent =
+            current + ' / ' + total + ' — %' + percent;
+        card.querySelector('#workspace-audit-message').textContent =
+            job?.progress_message || 'Read-only tarama devam ediyor...';
+        card.style.display = 'block';
+    }
+
     function formatTemplateHealthReport(data) {
         const summary = data?.summary || {};
         const lines = [
@@ -796,6 +1084,209 @@ window.onerror = function(msg, url, line, col, error) {
         }
     }
 
+    async function loadLastWorkspaceConsistency(render = true) {
+        try {
+            const response = await fetch('/api/workspace-consistency/last');
+            const data = await response.json();
+            if (!response.ok || !data.success) {
+                if (data.code === 'NO_SAVED_WORKSPACE_REPORT') return null;
+                throw new Error(data.error || ('HTTP ' + response.status));
+            }
+            workspaceConsistencySnapshot = data;
+            if (render && ayarlar) renderSidebar();
+            return data;
+        } catch (err) {
+            console.warn('Son klasör tutarlılık raporu yüklenemedi:', err);
+            return null;
+        }
+    }
+
+    async function monitorWorkspaceAuditJob(jobId, showReport = true) {
+        workspaceAuditJobId = jobId;
+        const button = document.getElementById(
+            'workspaceConsistencyScanButton'
+        );
+        const originalText = button ? button.textContent : '';
+        if (button) {
+            button.disabled = true;
+            button.textContent = '⏳ Tutarlılık taranıyor...';
+        }
+
+        try {
+            while (true) {
+                const response = await fetch(
+                    '/api/jobs/' + encodeURIComponent(jobId)
+                );
+                const data = await response.json();
+                if (!response.ok || !data.success || !data.job) {
+                    throw new Error(
+                        data.error || ('HTTP ' + response.status)
+                    );
+                }
+                const job = data.job;
+                updateWorkspaceAuditProgress(job);
+                const status = String(job.status || '').toUpperCase();
+
+                if (
+                    status === 'SUCCEEDED'
+                    || status === 'FAILED'
+                    || status === 'CANCELLED'
+                ) {
+                    const card = ensureWorkspaceAuditProgress();
+                    const stop = card.querySelector('#workspace-audit-stop');
+                    if (stop) {
+                        stop.disabled = true;
+                        stop.textContent =
+                            status === 'SUCCEEDED'
+                                ? '✅ Tamamlandı'
+                                : (
+                                    status === 'CANCELLED'
+                                        ? '⏹ Durduruldu'
+                                        : '⛔ Hata'
+                                );
+                    }
+
+                    if (status !== 'SUCCEEDED') {
+                        throw new Error(
+                            job.error_text ||
+                            (
+                                status === 'CANCELLED'
+                                    ? 'Tutarlılık taraması durduruldu.'
+                                    : 'Tutarlılık taraması başarısız.'
+                            )
+                        );
+                    }
+
+                    const saved = await loadLastWorkspaceConsistency(false);
+                    if (!saved) {
+                        throw new Error(
+                            'Kaydedilmiş tutarlılık raporu okunamadı.'
+                        );
+                    }
+                    workspaceConsistencySnapshot = saved;
+                    if (ayarlar) renderSidebar();
+                    if (showReport) {
+                        showCopyableReport(
+                            'Klasör Tutarlılık Raporu — READ ONLY',
+                            formatWorkspaceConsistencyReport(saved)
+                        );
+                    }
+                    return saved;
+                }
+                await waitMs(400);
+            }
+        } finally {
+            workspaceAuditJobId = null;
+            if (button) {
+                button.disabled = false;
+                button.textContent =
+                    originalText || '🧭 Klasör Tutarlılık Taraması';
+            }
+        }
+    }
+
+    async function runWorkspaceConsistencyScan() {
+        if (workspaceAuditJobId) {
+            ensureWorkspaceAuditProgress().style.display = 'block';
+            return;
+        }
+
+        const ok = confirm(
+            'Klasör Tutarlılık Doktoru yalnızca okuyacak.\n\n' +
+            'DB, çalışma, ham yedek, staging, çöp, recovery, Kaggle ve Mockup ' +
+            'klasörleri denetlenecek.\n\n' +
+            'Hiçbir görsel silinmeyecek, taşınmayacak, yeniden adlandırılmayacak ' +
+            'veya değiştirilmeyecek. Yalnız rapor kaydı oluşturulacak.\n\n' +
+            'Tarama başlatılsın mı?'
+        );
+        if (!ok) return;
+
+        try {
+            const response = await fetch('/api/jobs', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    job_type: 'WORKSPACE_CONSISTENCY_SCAN',
+                    payload: {}
+                })
+            });
+            const data = await response.json();
+            if (!response.ok || !data.success || !data.job) {
+                throw new Error(
+                    data.error || ('HTTP ' + response.status)
+                );
+            }
+            await monitorWorkspaceAuditJob(data.job.id, true);
+        } catch (err) {
+            alert(
+                'Klasör Tutarlılık Taraması başarısız: ' +
+                err.message
+            );
+        }
+    }
+
+    async function openLastWorkspaceConsistencyReport() {
+        const data = await loadLastWorkspaceConsistency(false);
+        if (!data) {
+            alert(
+                'Henüz kayıtlı Klasör Tutarlılık Raporu yok. ' +
+                'Önce “Klasör Tutarlılık Taraması” çalıştırın.'
+            );
+            return;
+        }
+        showCopyableReport(
+            'Son Klasör Tutarlılık Raporu' +
+                (data.saved_at ? ' — ' + data.saved_at : ''),
+            formatWorkspaceConsistencyReport(data)
+        );
+    }
+
+    async function openWorkspaceConsistencyHistory() {
+        try {
+            const response = await fetch(
+                '/api/workspace-consistency/history?limit=30'
+            );
+            const data = await response.json();
+            if (!response.ok || !data.success) {
+                throw new Error(
+                    data.error || ('HTTP ' + response.status)
+                );
+            }
+            showCopyableReport(
+                'Klasör Tutarlılık Rapor Geçmişi',
+                formatWorkspaceHistory(data)
+            );
+        } catch (err) {
+            alert(
+                'Tutarlılık rapor geçmişi açılamadı: ' +
+                err.message
+            );
+        }
+    }
+
+    async function openTemplateHealthHistory() {
+        try {
+            const response = await fetch(
+                '/api/template-health/history?limit=30'
+            );
+            const data = await response.json();
+            if (!response.ok || !data.success) {
+                throw new Error(
+                    data.error || ('HTTP ' + response.status)
+                );
+            }
+            showCopyableReport(
+                'Ham Dosya Sağlık Rapor Geçmişi',
+                formatTemplateHealthHistory(data)
+            );
+        } catch (err) {
+            alert(
+                'Sağlık rapor geçmişi açılamadı: ' +
+                err.message
+            );
+        }
+    }
+
     async function resumePersistentJobs() {
         try {
             const response = await fetch('/api/jobs?active=1&limit=20');
@@ -839,6 +1330,22 @@ window.onerror = function(msg, url, line, col, error) {
                     );
                 });
             }
+
+            const workspaceJob = jobs.find(
+                job => String(job.job_type || '').toUpperCase() ===
+                    'WORKSPACE_CONSISTENCY_SCAN'
+            );
+            if (workspaceJob && !workspaceAuditJobId) {
+                monitorWorkspaceAuditJob(
+                    workspaceJob.id,
+                    false
+                ).catch(err => {
+                    console.warn(
+                        'Aktif klasör audit job takibi başarısız:',
+                        err
+                    );
+                });
+            }
         } catch (err) {
             console.warn('Kalıcı işler yeniden bağlanamadı:', err);
         }
@@ -854,6 +1361,7 @@ window.onerror = function(msg, url, line, col, error) {
             ayarlar = data;
             renderSidebar();
             refreshTemplateHealth(false, false);
+            loadLastWorkspaceConsistency(true);
             resumePersistentJobs();
         })
         .catch(err => alert("FETCH ERROR: " + err.message));
@@ -875,16 +1383,58 @@ window.onerror = function(msg, url, line, col, error) {
             const healthIssueCount = Number(
                 categoryHealth?.issue_count || 0
             );
+            const auditCategory =
+                workspaceConsistencySnapshot?.categories?.[cat] || null;
+            const auditIssueCount = Number(
+                auditCategory?.issue_count || 0
+            );
+            const matchedCount = Number(
+                auditCategory?.fully_matched_active_count || 0
+            );
+            const stagingCount = Number(
+                auditCategory?.staging_identity_count || 0
+            );
+            const visibleIssueCount = auditCategory
+                ? auditIssueCount
+                : healthIssueCount;
+
             title.textContent =
                 cat + ' (' + templateCount + ')' +
-                (healthIssueCount > 0
-                    ? '  ⚠️ ' + healthIssueCount
-                    : '');
-            if (healthIssueCount > 0) {
-                title.title =
-                    healthIssueCount +
-                    ' dosya sağlığı uyarısı var. Ham Dosya Sağlık Taraması ile detayları görebilirsiniz.';
-            }
+                (auditCategory
+                    ? '  ✅' + matchedCount +
+                      (visibleIssueCount > 0
+                          ? ' ⚠️' + visibleIssueCount
+                          : '') +
+                      (stagingCount > 0
+                          ? ' 📥' + stagingCount
+                          : '')
+                    : (
+                        visibleIssueCount > 0
+                            ? '  ⚠️ ' + visibleIssueCount
+                            : ''
+                    ));
+
+            const auditTime =
+                workspaceConsistencySnapshot?.saved_at || '';
+            title.title = auditCategory
+                ? (
+                    'Son tutarlılık audit'i +
+                    (auditTime ? ' (' + auditTime + ')' : '') +
+                    ': DB=' + Number(auditCategory.db_count || 0) +
+                    ', Çalışma=' +
+                        Number(auditCategory.working_identity_count || 0) +
+                    ', Ham=' +
+                        Number(auditCategory.backup_identity_count || 0) +
+                    ', Tam eşleşen=' + matchedCount +
+                    ', Sorun=' + auditIssueCount +
+                    ', Staging=' + stagingCount
+                )
+                : (
+                    visibleIssueCount > 0
+                        ? visibleIssueCount +
+                          ' dosya sağlığı uyarısı var.'
+                        : 'Henüz klasör tutarlılık audit sonucu yok.'
+                );
             const list = document.createElement('div');
             list.className = 'template-list';
             if (cat === currentCat) {
@@ -988,8 +1538,37 @@ window.onerror = function(msg, url, line, col, error) {
                     }
                 }
 
-                item.appendChild(checkbox);
-                item.appendChild(label);
+                const lifecycle = getWorkspaceTemplateState(
+                    cat,
+                    tmpl
+                );
+                if (lifecycle) {
+                    const lifecycleBadge = document.createElement('span');
+                    lifecycleBadge.style.cssText =
+                        'margin-left:6px;font-size:10px;white-space:nowrap;opacity:.92;';
+                    lifecycleBadge.textContent =
+                        'D' + (lifecycle.db ? '✅' : '❌') +
+                        ' H' + (lifecycle.backup ? '✅' : '❌') +
+                        ' Ç' + (lifecycle.working ? '✅' : '❌');
+                    lifecycleBadge.title =
+                        'Dosya yaşam durumu: DB=' +
+                        (lifecycle.db ? 'VAR' : 'YOK') +
+                        ', Ham=' +
+                        (lifecycle.backup ? 'VAR' : 'YOK') +
+                        ', Çalışma=' +
+                        (lifecycle.working ? 'VAR' : 'YOK') +
+                        (
+                            lifecycle.staging
+                                ? ', Staging=VAR'
+                                : ', Staging=YOK'
+                        );
+                    item.appendChild(checkbox);
+                    item.appendChild(label);
+                    item.appendChild(lifecycleBadge);
+                } else {
+                    item.appendChild(checkbox);
+                    item.appendChild(label);
+                }
 
                 item.onclick = () => {
                     if (bulkSelectionMode) {
