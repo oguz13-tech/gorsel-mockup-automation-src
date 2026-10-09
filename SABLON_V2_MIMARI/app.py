@@ -570,7 +570,7 @@ def _find_template_backup_asset(category: str, template_name: str):
     return None
 
 
-def _retire_template_safely(active_cat: str, active_tmpl: str) -> dict:
+def _retire_template_safely_unlocked(active_cat: str, active_tmpl: str) -> dict:
     """Retire one template with reversible files + DB state."""
     active_cat = str(active_cat or "").strip()
     active_tmpl = str(active_tmpl or "").strip()
@@ -727,6 +727,19 @@ def _retire_template_safely(active_cat: str, active_tmpl: str) -> dict:
     }
 
 
+def _retire_template_safely(active_cat: str, active_tmpl: str) -> dict:
+    with template_operation_lock(
+        active_cat,
+        active_tmpl,
+        "delete",
+        wait_seconds=0.25,
+    ):
+        return _retire_template_safely_unlocked(
+            active_cat,
+            active_tmpl,
+        )
+
+
 @app.route('/api/sablon_sil', methods=['POST'])
 def api_sablon_sil():
     """Safely retire one template."""
@@ -740,6 +753,12 @@ def api_sablon_sil():
         return jsonify({"success": False, "error": str(exc)}), 400
     except FileNotFoundError as exc:
         return jsonify({"success": False, "error": str(exc)}), 404
+    except TemplateBusyError as exc:
+        return jsonify({
+            "success": False,
+            "error": str(exc),
+            "code": "TEMPLATE_BUSY",
+        }), 409
     except RuntimeError as exc:
         return jsonify({
             "success": False,
@@ -931,6 +950,12 @@ def api_sablon_sil_geri_al():
                     ),
                 }), 409
 
+        lock_token = acquire_template_lock(
+            cat,
+            tmpl,
+            "undo-delete",
+            wait_seconds=0.25,
+        )
         moved_back = []
         db_path = os.path.join(BASE_DIR, "SABLON_V2_MIMARI", "ayarlar.db")
         conn = sqlite3.connect(db_path)
@@ -1000,6 +1025,7 @@ def api_sablon_sil_geri_al():
             raise
         finally:
             conn.close()
+            release_template_lock(cat, tmpl, lock_token)
 
         os.remove(meta_path)
         return jsonify({
@@ -1010,6 +1036,12 @@ def api_sablon_sil_geri_al():
             "source_restored": not source_was_missing,
             "restored_as_orphan": bool(source_was_missing),
         })
+    except TemplateBusyError as e:
+        return jsonify({
+            "success": False,
+            "error": str(e),
+            "code": "TEMPLATE_BUSY",
+        }), 409
     except Exception as e:
         logger.exception("Sablon geri alma hatasi")
         return jsonify({"success": False, "error": str(e)}), 500
