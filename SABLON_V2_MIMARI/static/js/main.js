@@ -638,16 +638,78 @@ window.onerror = function(msg, url, line, col, error) {
         }
     }
 
-    async function runTemplateHealthScan() {
+    async function monitorHealthScanJob(jobId, showReport = true) {
+        healthScanJobId = jobId;
         const button = document.getElementById('templateHealthScanButton');
         const originalText = button ? button.textContent : '';
         if (button) {
             button.disabled = true;
             button.textContent = '⏳ Ham dosyalar kontrol ediliyor...';
         }
+
         try {
-            await refreshTemplateHealth(true, true, true);
+            while (true) {
+                const response = await fetch(
+                    '/api/jobs/' + encodeURIComponent(jobId)
+                );
+                const data = await response.json();
+                if (!response.ok || !data.success || !data.job) {
+                    throw new Error(
+                        data.error || ('HTTP ' + response.status)
+                    );
+                }
+
+                const job = data.job;
+                const status = String(job.status || '').toUpperCase();
+                if (button && job.progress_message) {
+                    button.textContent =
+                        '⏳ ' + job.progress_message;
+                }
+
+                if (
+                    status === 'SUCCEEDED'
+                    || status === 'FAILED'
+                    || status === 'CANCELLED'
+                ) {
+                    if (status !== 'SUCCEEDED') {
+                        throw new Error(
+                            job.error_text ||
+                            (
+                                status === 'CANCELLED'
+                                    ? 'Sağlık taraması durduruldu.'
+                                    : 'Sağlık taraması başarısız.'
+                            )
+                        );
+                    }
+
+                    const savedResponse = await fetch(
+                        '/api/template-health/last'
+                    );
+                    const saved = await savedResponse.json();
+                    if (
+                        !savedResponse.ok
+                        || !saved.success
+                    ) {
+                        throw new Error(
+                            saved.error ||
+                            'Kaydedilen sağlık raporu okunamadı.'
+                        );
+                    }
+                    templateHealthSnapshot = saved;
+                    if (ayarlar) renderSidebar();
+                    if (showReport) {
+                        showCopyableReport(
+                            'Ham Dosya Sağlık Taraması — Kaydedildi',
+                            formatTemplateHealthReport(saved)
+                        );
+                    }
+                    return saved;
+                }
+
+                await waitMs(450);
+            }
         } finally {
+            healthScanJobId = null;
             if (button) {
                 button.disabled = false;
                 button.textContent =
@@ -655,6 +717,38 @@ window.onerror = function(msg, url, line, col, error) {
             }
         }
     }
+
+    async function runTemplateHealthScan() {
+        if (healthScanJobId) {
+            return;
+        }
+        try {
+            const response = await fetch('/api/jobs', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    job_type: 'RAW_HEALTH_SCAN',
+                    payload: {}
+                })
+            });
+            const data = await response.json();
+            if (!response.ok || !data.success || !data.job) {
+                throw new Error(
+                    data.error || ('HTTP ' + response.status)
+                );
+            }
+            await monitorHealthScanJob(
+                data.job.id,
+                true
+            );
+        } catch (err) {
+            alert(
+                'Ham dosya sağlık taraması başarısız: ' +
+                err.message
+            );
+        }
+    }
+
 
     async function openLastTemplateHealthReport() {
         const button = document.getElementById(
@@ -702,6 +796,54 @@ window.onerror = function(msg, url, line, col, error) {
         }
     }
 
+    async function resumePersistentJobs() {
+        try {
+            const response = await fetch('/api/jobs?active=1&limit=20');
+            const data = await response.json();
+            if (!response.ok || !data.success) return;
+
+            const jobs = Array.isArray(data.jobs) ? data.jobs : [];
+            const batchJob = jobs.find(
+                job => String(job.job_type || '').toUpperCase() ===
+                    'BATCH_CORNER_SCAN'
+            );
+            if (batchJob && !batchAnalyzeRunning) {
+                const category = String(
+                    batchJob.payload?.category || ''
+                );
+                const total = Number(
+                    batchJob.progress_total ||
+                    batchJob.payload?.templates?.length ||
+                    0
+                );
+                monitorBatchAnalyzeJob(
+                    batchJob.id,
+                    category,
+                    total,
+                    true
+                );
+            }
+
+            const healthJob = jobs.find(
+                job => String(job.job_type || '').toUpperCase() ===
+                    'RAW_HEALTH_SCAN'
+            );
+            if (healthJob && !healthScanJobId) {
+                monitorHealthScanJob(
+                    healthJob.id,
+                    false
+                ).catch(err => {
+                    console.warn(
+                        'Aktif sağlık job takibi başarısız:',
+                        err
+                    );
+                });
+            }
+        } catch (err) {
+            console.warn('Kalıcı işler yeniden bağlanamadı:', err);
+        }
+    }
+
     // Load config
     fetch('/api/ayarlar')
         .then(r => {
@@ -712,6 +854,7 @@ window.onerror = function(msg, url, line, col, error) {
             ayarlar = data;
             renderSidebar();
             refreshTemplateHealth(false, false);
+            resumePersistentJobs();
         })
         .catch(err => alert("FETCH ERROR: " + err.message));
     
@@ -1791,6 +1934,8 @@ let batchAnalyzeCurrentTemplate = null;
 let batchAnalyzeCompact = false;
 let batchAnalyzeExternalPause = false;
 let batchAnalyzeInFlightTemplates = new Set();
+let batchAnalyzeJobId = null;
+let healthScanJobId = null;
 
 function isBatchAnalyzingTemplate(category, template) {
     if (!batchAnalyzeRunning || batchAnalyzeCurrentCategory !== category) {
@@ -1889,7 +2034,7 @@ function ensureBatchAnalyzeProgressModal() {
     document.getElementById('batchAnalyzeBackground').addEventListener('click', () => {
         setBatchAnalyzeCompact(!batchAnalyzeCompact);
     });
-    document.getElementById('batchAnalyzeStop').addEventListener('click', () => {
+    document.getElementById('batchAnalyzeStop').addEventListener('click', async () => {
         if (!batchAnalyzeRunning || batchAnalyzeStopRequested) return;
         batchAnalyzeStopRequested = true;
         const stopButton = document.getElementById('batchAnalyzeStop');
@@ -1900,6 +2045,17 @@ function ensureBatchAnalyzeProgressModal() {
         }
         document.getElementById('batchAnalyzeSummary').textContent =
             'Durdurma istendi. İşlenen küçük paket tamamlanınca tarama duracak...';
+
+        if (batchAnalyzeJobId) {
+            try {
+                await fetch(
+                    '/api/jobs/' + encodeURIComponent(batchAnalyzeJobId) + '/stop',
+                    {method: 'POST'}
+                );
+            } catch (err) {
+                console.warn('Kalıcı job durdurma isteği gönderilemedi:', err);
+            }
+        }
     });
     document.getElementById('batchAnalyzeClose').addEventListener('click', () => {
         overlay.style.display = 'none';
@@ -2080,6 +2236,164 @@ function chooseBatchAnalyzeCategory() {
     });
 }
 
+function waitMs(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function refreshReviewSettingsAfterJob() {
+    try {
+        const response = await fetch('/api/ayarlar');
+        if (!response.ok) return;
+        ayarlar = await response.json();
+        renderSidebar();
+    } catch (err) {
+        console.warn('Job sonrası şablon listesi yenilenemedi:', err);
+    }
+}
+
+async function monitorBatchAnalyzeJob(jobId, category, totalHint, resumed = false) {
+    batchAnalyzeRunning = true;
+    batchAnalyzeJobId = jobId;
+    batchAnalyzeCurrentCategory = category;
+    batchAnalyzeCurrentTemplate = null;
+    batchAnalyzeInFlightTemplates.clear();
+
+    const button = document.getElementById('batchAnalyzeButton');
+    if (button) {
+        button.disabled = true;
+        button.style.opacity = '0.55';
+        button.style.cursor = 'wait';
+    }
+
+    ensureBatchAnalyzeProgressModal();
+    if (resumed) {
+        setBatchAnalyzeCompact(true);
+    }
+    document.getElementById('batchAnalyzeTitle').textContent =
+        resumed
+            ? '↻ Kalıcı tarama devam ediyor'
+            : '⚡ Hızlı kalite-korumalı tarama';
+    document.getElementById('batchAnalyzeClose').style.display = 'none';
+    const runActions = document.getElementById('batchAnalyzeRunActions');
+    if (runActions) runActions.style.display = 'flex';
+    const stopButton = document.getElementById('batchAnalyzeStop');
+    if (stopButton) {
+        stopButton.disabled = false;
+        stopButton.textContent = '⏹ Taramayı Durdur';
+        stopButton.style.opacity = '1';
+    }
+
+    try {
+        while (true) {
+            const response = await fetch(
+                '/api/jobs/' + encodeURIComponent(jobId)
+            );
+            const data = await response.json();
+            if (!response.ok || !data.success || !data.job) {
+                throw new Error(
+                    data.error || ('HTTP ' + response.status)
+                );
+            }
+
+            const job = data.job;
+            const current = Number(job.progress_current || 0);
+            const total = Number(
+                job.progress_total || totalHint || 0
+            );
+            updateBatchAnalyzeProgress(
+                current,
+                total,
+                '',
+                job.progress_message ||
+                    (
+                        job.status === 'PENDING'
+                            ? 'Kalıcı iş kuyruğunda bekliyor...'
+                            : 'Analiz devam ediyor...'
+                    )
+            );
+
+            const status = String(job.status || '').toUpperCase();
+            if (
+                status === 'SUCCEEDED'
+                || status === 'FAILED'
+                || status === 'CANCELLED'
+            ) {
+                const result = job.result || {};
+                const stopped = status === 'CANCELLED';
+                const failureCount =
+                    Number(result.failed_count || 0) +
+                    Number(result.source_changed_count || 0);
+                const skippedCount =
+                    Number(result.missing_count || 0) +
+                    Number(result.busy_count || 0);
+
+                if (status === 'FAILED') {
+                    finishBatchAnalyzeProgress(
+                        total,
+                        current,
+                        Number(result.analyzed_count || 0),
+                        Number(result.approved_preserved_count || 0),
+                        Math.max(1, failureCount),
+                        skippedCount,
+                        [job.error_text || 'Kalıcı tarama başarısız.'],
+                        false
+                    );
+                } else {
+                    finishBatchAnalyzeProgress(
+                        total,
+                        current,
+                        Number(result.analyzed_count || 0),
+                        Number(result.approved_preserved_count || 0),
+                        failureCount,
+                        skippedCount,
+                        [],
+                        stopped
+                    );
+                    const cacheHits = Number(
+                        result.cache_hit_count || 0
+                    );
+                    if (!stopped && cacheHits > 0) {
+                        document.getElementById(
+                            'batchAnalyzeCurrent'
+                        ).textContent +=
+                            ' • ' + cacheHits +
+                            ' şablon SHA256 + analyzer sürüm cache’inden geldi.';
+                    }
+                }
+                await refreshReviewSettingsAfterJob();
+                return job;
+            }
+
+            await waitMs(450);
+        }
+    } catch (err) {
+        finishBatchAnalyzeProgress(
+            Number(totalHint || 0),
+            0,
+            0,
+            0,
+            1,
+            0,
+            [String(err)],
+            false
+        );
+        return null;
+    } finally {
+        batchAnalyzeRunning = false;
+        batchAnalyzeStopRequested = false;
+        batchAnalyzeCurrentCategory = null;
+        batchAnalyzeCurrentTemplate = null;
+        batchAnalyzeInFlightTemplates.clear();
+        batchAnalyzeExternalPause = false;
+        batchAnalyzeJobId = null;
+        if (button) {
+            button.disabled = false;
+            button.style.opacity = '1';
+            button.style.cursor = 'pointer';
+        }
+    }
+}
+
 async function batchAnalyze() {
     if(batchAnalyzeRunning) return;
 
@@ -2095,233 +2409,43 @@ async function batchAnalyze() {
 
     if(!confirm(
         category + " kategorisindeki " + templates.length +
-        " şablon taranacak.\n\n" +
+        " şablon kalıcı iş kuyruğuna alınacak.\n\n" +
         "4 köşe kalite algoritması DEĞİŞMEDİ. Kaynağı değişmemiş insan onaylı " +
-        "APPROVED şablonlar ağır analizden atlanıp aynen korunacak. " +
-        "Onaysız/değişmiş şablonlarda mevcut tam kalite motoru çalışacak.\n\n" +
-        "Hız için iki farklı görsel aynı anda hesaplanabilir; veritabanı kayıtları " +
-        "yine tek sıra yapılır.\n\nDevam edilsin mi?"
+        "APPROVED şablonlar korunur; aynı SHA256 + analyzer sürümü daha önce " +
+        "hesaplandıysa sonuç cache’den kullanılır.\n\n" +
+        "Sayfayı yenileseniz bile iş kaybolmaz; uygulama yeniden açılırsa " +
+        "kaldığı ilerleme noktasından devam eder.\n\nDevam edilsin mi?"
     )) return;
 
-    batchAnalyzeRunning = true;
     batchAnalyzeStopRequested = false;
-    batchAnalyzeCurrentCategory = category;
-    batchAnalyzeCurrentTemplate = null;
-    batchAnalyzeInFlightTemplates.clear();
-
-    const button = document.getElementById('batchAnalyzeButton');
-    if (button) {
-        button.disabled = true;
-        button.style.opacity = '0.55';
-        button.style.cursor = 'wait';
-    }
-
-    const overlay = ensureBatchAnalyzeProgressModal();
-    setBatchAnalyzeCompact(false);
-    document.getElementById('batchAnalyzeTitle').textContent =
-        '⚡ Hızlı kalite-korumalı tarama';
-    document.getElementById('batchAnalyzeClose').style.display = 'none';
-    document.getElementById('batchAnalyzeErrors').style.display = 'none';
-    const runActions = document.getElementById('batchAnalyzeRunActions');
-    if (runActions) runActions.style.display = 'flex';
-    const stopButton = document.getElementById('batchAnalyzeStop');
-    if (stopButton) {
-        stopButton.disabled = false;
-        stopButton.textContent = '⏹ Taramayı Durdur';
-        stopButton.style.opacity = '1';
-    }
-
-    let successCount = 0;
-    let approvedProtectedCount = 0;
-    let failureCount = 0;
-    let skippedCount = 0;
-    let processedCount = 0;
-    let stopped = false;
-    const failures = [];
-    const chunkSize = 4;
-
     try {
-        updateBatchAnalyzeProgress(
-            0,
+        const response = await fetch('/api/jobs', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                job_type: 'BATCH_CORNER_SCAN',
+                payload: {
+                    category,
+                    templates
+                }
+            })
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success || !data.job) {
+            throw new Error(data.error || ('HTTP ' + response.status));
+        }
+
+        await monitorBatchAnalyzeJob(
+            data.job.id,
+            category,
             templates.length,
-            '',
-            'Hızlı tarama başlatılıyor...'
+            Boolean(data.reused_active_job)
         );
-
-        for (let index = 0; index < templates.length; index += chunkSize) {
-            while (
-                batchAnalyzeExternalPause
-                && !batchAnalyzeStopRequested
-            ) {
-                updateBatchAnalyzeProgress(
-                    processedCount,
-                    templates.length,
-                    '',
-                    'Başka bir güvenli dosya işlemi tamamlanana kadar tarama bekliyor...'
-                );
-                await new Promise(resolve => setTimeout(resolve, 150));
-            }
-
-            if (batchAnalyzeStopRequested) {
-                stopped = true;
-                break;
-            }
-
-            const snapshotChunk = templates.slice(
-                index,
-                index + chunkSize
-            );
-            const activeChunk = [];
-
-            for (const tmpl of snapshotChunk) {
-                if (!ayarlar?.kategoriler?.[category]?.sablonlar?.[tmpl]) {
-                    skippedCount += 1;
-                    processedCount += 1;
-                } else {
-                    activeChunk.push(tmpl);
-                }
-            }
-
-            if (activeChunk.length === 0) {
-                updateBatchAnalyzeProgress(
-                    processedCount,
-                    templates.length,
-                    '',
-                    'Silinmiş/kaldırılmış şablonlar atlandı.'
-                );
-                continue;
-            }
-
-            batchAnalyzeCurrentTemplate = activeChunk[0];
-            batchAnalyzeInFlightTemplates = new Set(
-                activeChunk.map(tmpl => bulkTemplateKey(category, tmpl))
-            );
-
-            updateBatchAnalyzeProgress(
-                processedCount,
-                templates.length,
-                activeChunk.length + ' dosyalık küçük paket',
-                'Tam kalite motoru çalışıyor • en fazla 2 görsel aynı anda hesaplanıyor...'
-            );
-
-            try {
-                const response = await fetch(
-                    '/api/templates/batch_analyze',
-                    {
-                        method: 'POST',
-                        headers: {'Content-Type': 'application/json'},
-                        body: JSON.stringify({
-                            category,
-                            templates: activeChunk,
-                            workers: 2
-                        })
-                    }
-                );
-                const data = await response.json();
-
-                if (!response.ok || !data.success) {
-                    throw new Error(
-                        data.error || ('HTTP ' + response.status)
-                    );
-                }
-
-                const returned = new Map(
-                    (data.results || []).map(item => [
-                        String(item.template || ''),
-                        item
-                    ])
-                );
-
-                for (const tmpl of activeChunk) {
-                    const item = returned.get(tmpl) || {
-                        status: 'FAILED',
-                        error: 'Sonuç bulunamadı'
-                    };
-                    const status = String(
-                        item.status || 'FAILED'
-                    ).toUpperCase();
-
-                    if (status === 'ANALYZED') {
-                        successCount += 1;
-                    } else if (status === 'SKIPPED_APPROVED') {
-                        approvedProtectedCount += 1;
-                    } else if (status === 'MISSING') {
-                        skippedCount += 1;
-                    } else {
-                        failureCount += 1;
-                        failures.push(
-                            tmpl + ': ' +
-                            (item.error || 'Bilinmeyen hata')
-                        );
-                    }
-                    processedCount += 1;
-                }
-            } catch (err) {
-                failureCount += activeChunk.length;
-                processedCount += activeChunk.length;
-                activeChunk.forEach(tmpl => {
-                    failures.push(tmpl + ': ' + String(err));
-                });
-            } finally {
-                batchAnalyzeCurrentTemplate = null;
-                batchAnalyzeInFlightTemplates.clear();
-            }
-
-            updateBatchAnalyzeProgress(
-                processedCount,
-                templates.length,
-                '',
-                batchAnalyzeStopRequested
-                    ? 'Mevcut küçük paket tamamlandı. Tarama durduruluyor...'
-                    : (
-                        'İlerleme: ' + processedCount +
-                        ' / ' + templates.length +
-                        ' • ' + approvedProtectedCount +
-                        ' onaylı şablon ağır analizden atlandı'
-                    )
-            );
-
-            if (batchAnalyzeStopRequested) {
-                stopped = true;
-                break;
-            }
-        }
-
-        // Refresh review badges because some analyzed profiles changed state.
-        try {
-            const refresh = await fetch('/api/ayarlar');
-            if (refresh.ok) {
-                ayarlar = await refresh.json();
-                renderSidebar();
-            }
-        } catch (err) {
-            console.warn('Tarama sonrası liste yenilenemedi:', err);
-        }
-
-        finishBatchAnalyzeProgress(
-            templates.length,
-            processedCount,
-            successCount,
-            approvedProtectedCount,
-            failureCount,
-            skippedCount,
-            failures,
-            stopped
-        );
-    } finally {
-        batchAnalyzeRunning = false;
-        batchAnalyzeStopRequested = false;
-        batchAnalyzeCurrentCategory = null;
-        batchAnalyzeCurrentTemplate = null;
-        batchAnalyzeInFlightTemplates.clear();
-        batchAnalyzeExternalPause = false;
-        if (button) {
-            button.disabled = false;
-            button.style.opacity = '1';
-            button.style.cursor = 'pointer';
-        }
+    } catch (err) {
+        alert('Kalıcı kategori taraması başlatılamadı: ' + err.message);
     }
 }
+
 
 async function approveTemplate() {
     if(!currentCat || !currentTmpl) return;
