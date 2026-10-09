@@ -148,6 +148,31 @@ class TestIndependentUserTools(unittest.TestCase):
             self.assertTrue(source.is_file())
             self.assertTrue(collision.is_file())
 
+    def test_rename_blocks_same_stem_with_different_extension(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "source.png"
+            existing = root / "Tablo_001.jpg"
+            self._image(source, mode="RGBA")
+            self._image(existing)
+            before_source = source.read_bytes()
+            before_existing = existing.read_bytes()
+
+            with self.assertRaises(FileExistsError) as ctx:
+                rename_images(
+                    [source],
+                    "Tablo_",
+                    runtime_root=root / "runtime",
+                    start_number=1,
+                )
+
+            self.assertIn(
+                "AYNI İSİM, FARKLI UZANTI",
+                str(ctx.exception),
+            )
+            self.assertEqual(source.read_bytes(), before_source)
+            self.assertEqual(existing.read_bytes(), before_existing)
+
     def test_rename_is_blocked_inside_live_template_pool(self):
         with tempfile.TemporaryDirectory() as tmp:
             runtime = Path(tmp)
