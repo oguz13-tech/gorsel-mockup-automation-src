@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import os
 import subprocess
 import sys
@@ -243,6 +244,20 @@ class TestWatcherSafety(unittest.TestCase):
         self.assertTrue(np.array_equal(backup_cv, decoded))
         self.assertTrue(np.array_equal(working_cv, decoded))
 
+        txn_dir = (
+            self.root
+            / "SABLON_V2_MIMARI"
+            / "recovery"
+            / "staging_transactions"
+        )
+        txn_files = list(txn_dir.glob("*.json"))
+        self.assertEqual(len(txn_files), 1)
+        txn = json.loads(txn_files[0].read_text(encoding="utf-8"))
+        self.assertEqual(txn["state"], "COMMITTED")
+        self.assertEqual(txn["canonical_name"], "Wifi_Kutusu_001.png")
+        self.assertTrue(txn["backup_path"].endswith("Wifi_Kutusu_001.png"))
+        self.assertTrue(txn["working_path"].endswith("Wifi_Kutusu_001.png"))
+
     def test_backup_failure_restores_original_staging_file(self):
         source, _ = self._write_input()
 
@@ -266,6 +281,19 @@ class TestWatcherSafety(unittest.TestCase):
         self.assertFalse(
             source.with_suffix(source.suffix + ".processing").exists()
         )
+
+        txn_dir = (
+            self.root
+            / "SABLON_V2_MIMARI"
+            / "recovery"
+            / "staging_transactions"
+        )
+        txn_files = list(txn_dir.glob("*.json"))
+        self.assertEqual(len(txn_files), 1)
+        txn = json.loads(txn_files[0].read_text(encoding="utf-8"))
+        self.assertEqual(txn["state"], "ROLLED_BACK")
+        self.assertTrue(txn["rollback_original_restored"])
+        self.assertFalse(txn["rollback_processing_left"])
 
     def test_existing_template_number_forces_user_to_rename(self):
         existing = self.backup_dir / "Wifi_Kutusu_001.png"
