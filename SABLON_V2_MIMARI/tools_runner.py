@@ -30,11 +30,19 @@ try:
         category_for_prefix,
         validate_number_block,
     )
+    from .core.path_registry import (
+        resolve_runtime_root as resolve_registered_runtime_root,
+        runtime_path,
+    )
 except ImportError:
     from core.template_identity import (
         TemplateNumberConflictError,
         category_for_prefix,
         validate_number_block,
+    )
+    from core.path_registry import (
+        resolve_runtime_root as resolve_registered_runtime_root,
+        runtime_path,
     )
 
 
@@ -43,20 +51,8 @@ IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
 
 
 def resolve_runtime_root() -> Path:
-    override = str(os.environ.get("MOCKUP_RUNTIME_WORKSPACE") or "").strip()
-    if override:
-        return Path(override).expanduser().resolve()
+    return resolve_registered_runtime_root(SOURCE_ROOT)
 
-    home = Path.home()
-    candidates = [
-        home / "OneDrive" / "Masaüstü" / "GörselÜretme-ve-Mockup Otomasyonu",
-        home / "Desktop" / "GörselÜretme-ve-Mockup Otomasyonu",
-        SOURCE_ROOT,
-    ]
-    for candidate in candidates:
-        if (candidate / "SABLON_V2_MIMARI" / "ayarlar.db").is_file():
-            return candidate.resolve()
-    return SOURCE_ROOT.resolve()
 
 
 RUNTIME_ROOT = resolve_runtime_root()
@@ -87,8 +83,8 @@ def _is_under(path: Path, root: Path) -> bool:
 def _protected_template_roots(runtime_root: Path | None = None) -> list[Path]:
     root = (runtime_root or RUNTIME_ROOT).resolve()
     return [
-        root / "2_SABLON_HAVUZU",
-        root / "2_SABLON_HAVUZU_ORIJINAL_YEDEK",
+        runtime_path("WORKING_POOL", root),
+        runtime_path("ORIGINAL_ARCHIVE", root),
     ]
 
 
@@ -268,6 +264,111 @@ def convert_images(
             outputs.append(destination)
 
     return output_dir, outputs
+
+
+def convert_folder_to_png_recursive(
+    source_dir: Path,
+    *,
+    output_dir: Path | None = None,
+    runtime_root: Path | None = None,
+) -> dict:
+    """Recursively convert non-PNG images while preserving subfolders.
+
+    Safety contract:
+    - source files are never deleted or overwritten;
+    - active template/original-archive trees are blocked;
+    - existing PNG source files are skipped;
+    - existing destination files are never overwritten;
+    - every failure is returned in the final report.
+    """
+    source = Path(source_dir).expanduser().resolve()
+    if not source.is_dir():
+        raise ValueError("Kaynak klasör bulunamadı.")
+
+    ensure_not_live_template_path([source], runtime_root)
+
+    if output_dir is None:
+        destination_root = source.parent / f"{source.name}_PNG_CIKTILARI"
+    else:
+        destination_root = Path(output_dir).expanduser().resolve()
+
+    try:
+        destination_root.relative_to(source)
+        raise ValueError(
+            "Çıktı klasörü kaynak klasörün içinde olamaz; recursive döngü engellendi."
+        )
+    except ValueError as exc:
+        if "recursive döngü" in str(exc):
+            raise
+
+    destination_root.mkdir(parents=True, exist_ok=True)
+
+    report = {
+        "source_dir": str(source),
+        "output_dir": str(destination_root),
+        "scanned_image_count": 0,
+        "converted_count": 0,
+        "skipped_png_count": 0,
+        "skipped_existing_count": 0,
+        "failed_count": 0,
+        "converted": [],
+        "skipped_png": [],
+        "skipped_existing": [],
+        "failed": [],
+    }
+
+    candidates = sorted(
+        (
+            path for path in source.rglob("*")
+            if path.is_file() and path.suffix.lower() in IMAGE_EXTS
+        ),
+        key=lambda path: path.as_posix().casefold(),
+    )
+
+    for source_file in candidates:
+        report["scanned_image_count"] += 1
+        relative = source_file.relative_to(source)
+
+        if source_file.suffix.lower() == ".png":
+            report["skipped_png_count"] += 1
+            report["skipped_png"].append(relative.as_posix())
+            continue
+
+        destination = (
+            destination_root
+            / relative.parent
+            / f"{source_file.stem}.png"
+        )
+        if destination.exists():
+            report["skipped_existing_count"] += 1
+            report["skipped_existing"].append(
+                destination.relative_to(destination_root).as_posix()
+            )
+            continue
+
+        try:
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            with Image.open(source_file) as image:
+                image.convert("RGBA").save(
+                    destination,
+                    format="PNG",
+                    optimize=True,
+                )
+            report["converted_count"] += 1
+            report["converted"].append({
+                "source": relative.as_posix(),
+                "output": destination.relative_to(
+                    destination_root
+                ).as_posix(),
+            })
+        except Exception as exc:
+            report["failed_count"] += 1
+            report["failed"].append({
+                "source": relative.as_posix(),
+                "error": str(exc),
+            })
+
+    return report
 
 
 def watermark_images(
@@ -627,6 +728,66 @@ def interactive_convert() -> int:
         root.destroy()
 
 
+def interactive_recursive_png() -> int:
+    root, filedialog, messagebox, _simpledialog = _ui()
+    try:
+        source_dir = filedialog.askdirectory(
+            title="PNG'ye Recursive Dönüştürülecek Ana Klasörü Seçin"
+        )
+        if not source_dir:
+            return 0
+
+        report = convert_folder_to_png_recursive(
+            Path(source_dir),
+            runtime_root=RUNTIME_ROOT,
+        )
+        output = Path(report["output_dir"])
+        _open_folder(output)
+
+        failures = report["failed"]
+        failure_preview = ""
+        if failures:
+            failure_preview = "\n\nİlk hatalar:\n" + "\n".join(
+                f"- {item['source']}: {item['error']}"
+                for item in failures[:10]
+            )
+
+        message = (
+            "Recursive PNG dönüşümü tamamlandı.\n\n"
+            f"Taranan görsel: {report['scanned_image_count']}\n"
+            f"Dönüştürülen: {report['converted_count']}\n"
+            f"Zaten PNG olduğu için atlanan: {report['skipped_png_count']}\n"
+            f"Çıktı zaten var diye atlanan: {report['skipped_existing_count']}\n"
+            f"Hata: {report['failed_count']}\n\n"
+            f"Çıktı: {output}"
+            + failure_preview
+        )
+
+        if failures:
+            messagebox.showwarning(
+                "Recursive PNG — Kısmi Tamamlandı",
+                message,
+                parent=root,
+            )
+            return 1
+
+        messagebox.showinfo(
+            "Recursive PNG — Tamamlandı",
+            message,
+            parent=root,
+        )
+        return 0
+    except Exception as exc:
+        messagebox.showerror(
+            "Recursive PNG Hatası",
+            str(exc),
+            parent=root,
+        )
+        return 1
+    finally:
+        root.destroy()
+
+
 def interactive_watermark() -> int:
     root, filedialog, messagebox, _simpledialog = _ui()
     try:
@@ -792,6 +953,7 @@ def interactive_4k() -> int:
 TOOLS = {
     "rename": interactive_rename,
     "convert": interactive_convert,
+    "png_recursive": interactive_recursive_png,
     "watermark": interactive_watermark,
     "4k": interactive_4k,
     "links": interactive_links,
