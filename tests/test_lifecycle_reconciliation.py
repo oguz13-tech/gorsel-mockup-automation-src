@@ -17,6 +17,7 @@ from core.lifecycle_reconciliation import (
     archive_working_orphan,
     lifecycle_center_report,
     replace_original_and_working,
+    rollback_replace_original,
     sha256_file,
     undo_lifecycle_operation,
 )
@@ -224,6 +225,66 @@ class TestLifecycleReconciliation(unittest.TestCase):
             self.assertEqual(
                 center["lifecycle_recovery"][0]["kind"],
                 "REPLACE_ORIGINAL",
+            )
+
+    def test_replace_original_can_rollback_to_exact_previous_bytes(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            category = "03_Ahsap_Tablo"
+            backup = (
+                root
+                / "2_SABLON_HAVUZU_ORIJINAL_YEDEK"
+                / category
+            )
+            working = root / "2_SABLON_HAVUZU" / category
+
+            old_backup = backup / "AhsapTablo_015.png"
+            old_working = working / "AhsapTablo_015.png"
+            _write_image(old_backup, 21, ".png")
+            _write_image(old_working, 22, ".png")
+            old_backup_sha = sha256_file(old_backup)
+            old_working_sha = sha256_file(old_working)
+
+            upload_image = np.full((40, 50, 3), 155, dtype=np.uint8)
+            ok, encoded = cv2.imencode(".jpg", upload_image)
+            self.assertTrue(ok)
+
+            result = replace_original_and_working(
+                root,
+                category=category,
+                template="AhsapTablo_015.png",
+                upload_filename="replacement.jpg",
+                upload_bytes=encoded.tobytes(),
+            )
+            self.assertEqual(result["state"], "COMMITTED")
+            self.assertTrue((backup / "AhsapTablo_015.jpg").is_file())
+
+            rolled = rollback_replace_original(
+                root,
+                result["operation_id"],
+            )
+            self.assertEqual(
+                rolled["state"],
+                "ROLLED_BACK_AFTER_DB_FAILURE",
+            )
+            self.assertTrue(old_backup.is_file())
+            self.assertTrue(old_working.is_file())
+            self.assertEqual(sha256_file(old_backup), old_backup_sha)
+            self.assertEqual(sha256_file(old_working), old_working_sha)
+            self.assertFalse((backup / "AhsapTablo_015.jpg").exists())
+
+            replacement_after = (
+                root
+                / "SABLON_V2_MIMARI"
+                / "recovery"
+                / "lifecycle"
+                / result["operation_id"]
+                / "replacement_after"
+            )
+            self.assertTrue(replacement_after.is_dir())
+            self.assertGreaterEqual(
+                len(list(replacement_after.iterdir())),
+                2,
             )
 
     def test_working_orphan_archive_is_recoverable_and_active_identity_is_blocked(self):
