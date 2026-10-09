@@ -163,11 +163,21 @@ class TestIndependentUserTools(unittest.TestCase):
             self._image(existing_output, mode="RGBA")
             existing_before = existing_output.read_bytes()
 
+            progress_rows = []
             report = convert_folder_to_png_recursive(
                 source,
                 output_dir=output,
                 runtime_root=root / "runtime",
+                progress=lambda current, total, message: progress_rows.append(
+                    (current, total, message)
+                ),
             )
+
+            self.assertTrue(progress_rows)
+            self.assertEqual(progress_rows[0][0], 0)
+            self.assertEqual(progress_rows[-1][0], 3)
+            self.assertEqual(progress_rows[-1][1], 3)
+            self.assertIn("tamamlandı", progress_rows[-1][2].lower())
 
             self.assertEqual(report["scanned_image_count"], 3)
             self.assertEqual(report["converted_count"], 1)
@@ -204,6 +214,31 @@ class TestIndependentUserTools(unittest.TestCase):
                 )
 
             self.assertTrue((source / "sample.jpg").is_file())
+
+    def test_professional_tools_expose_recursive_png_with_progress_and_independent_launcher(self):
+        html = (
+            Path(__file__).resolve().parents[1]
+            / "SABLON_V2_MIMARI"
+            / "templates"
+            / "tools.html"
+        ).read_text(encoding="utf-8")
+        runner = (
+            Path(__file__).resolve().parents[1]
+            / "SABLON_V2_MIMARI"
+            / "tools_runner.py"
+        ).read_text(encoding="utf-8")
+        bat = (
+            Path(__file__).resolve().parents[1]
+            / "BAGIMSIZ_ARACLAR"
+            / "08_RECURSIVE_PNG_DONUSTURUCU.bat"
+        )
+
+        self.assertIn("Recursive PNG Dönüştürücü v2", html)
+        self.assertIn("launchTool('png_recursive'", html)
+        self.assertIn("ttk.Progressbar", runner)
+        self.assertIn("PNG_DONUSUM_RAPORU.json", runner)
+        self.assertIn("PNG_DONUSUM_RAPORU.txt", runner)
+        self.assertTrue(bat.is_file())
 
     def test_path_registry_resolves_canonical_runtime_folders(self):
         with tempfile.TemporaryDirectory() as tmp:
