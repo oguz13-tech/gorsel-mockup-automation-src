@@ -7,11 +7,13 @@ It is intentionally separate from repair actions: first observe, then decide.
 from __future__ import annotations
 
 import hashlib
+import importlib.metadata
 import json
 import os
 import re
 import shutil
 import sqlite3
+import sys
 import time
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -31,6 +33,115 @@ PRODUCTION_CATEGORIES = (
     "05_Ocak_Arkasi",
 )
 IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".avif")
+
+
+def _installed_version(name: str):
+    try:
+        return importlib.metadata.version(name)
+    except importlib.metadata.PackageNotFoundError:
+        return None
+
+
+def _runtime_lock_snapshot(source_root: Path, runtime_root: Path) -> dict:
+    lock_path = source_root / "SABLON_V2_MIMARI" / "runtime_lock.json"
+    result = {
+        "lock_path": str(lock_path),
+        "lock_exists": lock_path.is_file(),
+        "expected": {},
+        "actual": {},
+        "mismatches": [],
+        "gpu_baseline": None,
+        "gpu_changes": [],
+    }
+    if not lock_path.is_file():
+        return result
+
+    try:
+        lock = json.loads(lock_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        result["lock_error"] = str(exc)
+        return result
+
+    result["expected"] = lock
+    actual = {
+        "python": ".".join(map(str, sys.version_info[:2])),
+        "Flask": _installed_version("Flask"),
+        "numpy": _installed_version("numpy"),
+        "Pillow": _installed_version("Pillow"),
+        "openpyxl": _installed_version("openpyxl"),
+        "requests": _installed_version("requests"),
+    }
+    try:
+        import cv2
+        actual["cv2"] = str(cv2.__version__)
+    except Exception:
+        actual["cv2"] = None
+    result["actual"] = actual
+
+    expected_python = str(lock.get("python") or "")
+    if expected_python and actual["python"] != expected_python:
+        result["mismatches"].append({
+            "component": "python",
+            "expected": expected_python,
+            "actual": actual["python"],
+        })
+
+    expected_packages = lock.get("packages") or {}
+    for component in (
+        "Flask",
+        "numpy",
+        "cv2",
+        "Pillow",
+        "openpyxl",
+        "requests",
+    ):
+        expected = str(expected_packages.get(component) or "")
+        current = actual.get(component)
+        if expected and str(current or "") != expected:
+            result["mismatches"].append({
+                "component": component,
+                "expected": expected,
+                "actual": current,
+            })
+
+    baseline_path = (
+        runtime_root
+        / "SABLON_V2_MIMARI"
+        / "runtime_ai_baseline.json"
+    )
+    if baseline_path.is_file():
+        try:
+            baseline = json.loads(
+                baseline_path.read_text(encoding="utf-8")
+            )
+            result["gpu_baseline"] = baseline
+            current_gpu = {
+                "torch": _installed_version("torch"),
+                "transformers": _installed_version("transformers"),
+            }
+            try:
+                import torch
+                current_gpu["torch_cuda"] = getattr(
+                    torch.version,
+                    "cuda",
+                    None,
+                )
+            except Exception:
+                current_gpu["torch_cuda"] = None
+
+            for key in ("torch", "transformers", "torch_cuda"):
+                before = baseline.get(key)
+                now = current_gpu.get(key)
+                if before != now:
+                    result["gpu_changes"].append({
+                        "component": key,
+                        "baseline": before,
+                        "actual": now,
+                    })
+        except Exception as exc:
+            result["gpu_baseline_error"] = str(exc)
+
+    return result
 
 
 def _sha256_file(path: Path) -> str:
@@ -153,6 +264,41 @@ def run_factory_doctor(
 
     checks["runtime_root"] = str(runtime)
     checks["source_root"] = str(source)
+
+    runtime_versions = _runtime_lock_snapshot(source, runtime)
+    checks["runtime_versions"] = runtime_versions
+    if not runtime_versions.get("lock_exists"):
+        add_warning(
+            "RUNTIME_LOCK_MISSING",
+            "runtime_lock.json bulunamadı; bağımlılık sürümleri doğrulanamıyor.",
+        )
+    elif runtime_versions.get("lock_error"):
+        add_warning(
+            "RUNTIME_LOCK_INVALID",
+            "runtime_lock.json okunamadı: "
+            + str(runtime_versions.get("lock_error")),
+        )
+    else:
+        for mismatch in runtime_versions.get("mismatches", []):
+            add_warning(
+                "RUNTIME_VERSION_DRIFT",
+                (
+                    f"{mismatch['component']} sürümü kilitten farklı: "
+                    f"beklenen={mismatch['expected']} "
+                    f"mevcut={mismatch['actual']}"
+                ),
+                **mismatch,
+            )
+        for change in runtime_versions.get("gpu_changes", []):
+            add_warning(
+                "GPU_RUNTIME_DRIFT",
+                (
+                    f"{change['component']} ilk çalışan baseline'dan değişmiş: "
+                    f"baseline={change['baseline']} "
+                    f"mevcut={change['actual']}"
+                ),
+                **change,
+            )
 
     if not runtime.is_dir():
         add_error(
