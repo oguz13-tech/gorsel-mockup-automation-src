@@ -281,20 +281,7 @@ def _source_reference_inventory(source_root: Path, names: List[str]) -> Dict[str
     return refs
 
 
-def _discover_named_folders(runtime_root: Path) -> List[Path]:
-    if not runtime_root.is_dir():
-        return []
-    candidates = []
-    for path in runtime_root.iterdir():
-        if not path.is_dir():
-            continue
-        lowered = path.name.casefold()
-        if "kaggle" in lowered or "mockup" in lowered:
-            candidates.append(path)
-    return sorted(candidates, key=lambda p: p.name.casefold())
-
-
-def _discover_all_top_level_folders(runtime_root: Path) -> List[Path]:
+def _discover_named_foldersdef _discover_all_top_level_folders(runtime_root: Path) -> List[Path]:
     if not runtime_root.is_dir():
         return []
     try:
