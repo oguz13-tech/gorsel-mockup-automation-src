@@ -351,6 +351,42 @@ def _processing_recovery_records(runtime: Path, limit: int) -> List[dict]:
     ]
 
 
+def _staging_transaction_records(runtime: Path, limit: int) -> List[dict]:
+    root = (
+        runtime
+        / "SABLON_V2_MIMARI"
+        / "recovery"
+        / "staging_transactions"
+    )
+    if not root.is_dir():
+        return []
+    rows = []
+    files = sorted(
+        root.glob("*.json"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    for path in files[:limit]:
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        rows.append({
+            "transaction_id": data.get("transaction_id") or path.stem,
+            "state": data.get("state"),
+            "created_at": data.get("created_at"),
+            "updated_at": data.get("updated_at"),
+            "category": data.get("category"),
+            "canonical_name": data.get("canonical_name"),
+            "original_staging_path": data.get("original_staging_path"),
+            "processing_path": data.get("processing_path"),
+            "backup_path": data.get("backup_path"),
+            "working_path": data.get("working_path"),
+            "error": data.get("error"),
+        })
+    return rows
+
+
 def lifecycle_center_report(
     runtime_root: str | Path,
     settings: dict,
@@ -377,6 +413,7 @@ def lifecycle_center_report(
     trash = _trash_records(runtime, limit)
     lifecycle_recovery = _lifecycle_recovery_records(runtime, limit)
     processing_recovery = _processing_recovery_records(runtime, limit)
+    staging_transactions = _staging_transaction_records(runtime, limit)
 
     return {
         "success": True,
@@ -403,6 +440,11 @@ def lifecycle_center_report(
             "trash_record_count": len(trash),
             "lifecycle_recovery_count": len(lifecycle_recovery),
             "processing_recovery_count": len(processing_recovery),
+            "staging_transaction_count": len(staging_transactions),
+            "staging_recovery_required_count": sum(
+                1 for row in staging_transactions
+                if row.get("state") == "RECOVERY_REQUIRED"
+            ),
         },
         "duplicates": duplicates,
         "working_orphans": working_orphans,
@@ -410,6 +452,7 @@ def lifecycle_center_report(
         "trash_records": trash,
         "lifecycle_recovery": lifecycle_recovery,
         "processing_recovery": processing_recovery,
+        "staging_transactions": staging_transactions,
     }
 
 
