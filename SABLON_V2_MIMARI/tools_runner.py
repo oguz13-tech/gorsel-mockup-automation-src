@@ -19,6 +19,7 @@ import subprocess
 import sys
 import uuid
 from pathlib import Path
+from typing import Callable
 
 import requests
 from openpyxl import Workbook
@@ -271,6 +272,7 @@ def convert_folder_to_png_recursive(
     *,
     output_dir: Path | None = None,
     runtime_root: Path | None = None,
+    progress: Callable[[int, int, str], None] | None = None,
 ) -> dict:
     """Recursively convert non-PNG images while preserving subfolders.
 
@@ -325,9 +327,19 @@ def convert_folder_to_png_recursive(
         key=lambda path: path.as_posix().casefold(),
     )
 
-    for source_file in candidates:
+    total = len(candidates)
+    if progress:
+        progress(0, total, "Görseller tarandı; dönüşüm başlıyor.")
+
+    for index, source_file in enumerate(candidates, start=1):
         report["scanned_image_count"] += 1
         relative = source_file.relative_to(source)
+        if progress:
+            progress(
+                index - 1,
+                total,
+                f"İşleniyor: {relative.as_posix()}",
+            )
 
         if source_file.suffix.lower() == ".png":
             report["skipped_png_count"] += 1
@@ -368,6 +380,12 @@ def convert_folder_to_png_recursive(
                 "error": str(exc),
             })
 
+    if progress:
+        progress(
+            total,
+            total,
+            "Recursive PNG dönüşümü tamamlandı.",
+        )
     return report
 
 
@@ -730,6 +748,7 @@ def interactive_convert() -> int:
 
 def interactive_recursive_png() -> int:
     root, filedialog, messagebox, _simpledialog = _ui()
+    progress_window = None
     try:
         source_dir = filedialog.askdirectory(
             title="PNG'ye Recursive Dönüştürülecek Ana Klasörü Seçin"
@@ -737,11 +756,96 @@ def interactive_recursive_png() -> int:
         if not source_dir:
             return 0
 
+        import tkinter as tk
+        from tkinter import ttk
+
+        progress_window = tk.Toplevel(root)
+        progress_window.title("Recursive PNG Dönüştürücü v2")
+        progress_window.geometry("520x150")
+        progress_window.resizable(False, False)
+        try:
+            progress_window.attributes("-topmost", True)
+        except Exception:
+            pass
+
+        title = tk.Label(
+            progress_window,
+            text="Alt klasörler dahil PNG dönüşümü hazırlanıyor...",
+            anchor="w",
+        )
+        title.pack(fill="x", padx=16, pady=(16, 8))
+
+        bar = ttk.Progressbar(
+            progress_window,
+            orient="horizontal",
+            mode="determinate",
+            maximum=100,
+        )
+        bar.pack(fill="x", padx=16, pady=6)
+
+        status = tk.Label(
+            progress_window,
+            text="",
+            anchor="w",
+            justify="left",
+            wraplength=480,
+        )
+        status.pack(fill="x", padx=16, pady=(6, 12))
+
+        def on_progress(current: int, total: int, message: str) -> None:
+            denominator = max(1, int(total))
+            bar["value"] = min(
+                100,
+                max(0, (int(current) / denominator) * 100),
+            )
+            title.config(
+                text=f"{int(current)} / {int(total)} görsel işlendi"
+            )
+            status.config(text=str(message or ""))
+            progress_window.update_idletasks()
+            progress_window.update()
+
         report = convert_folder_to_png_recursive(
             Path(source_dir),
             runtime_root=RUNTIME_ROOT,
+            progress=on_progress,
         )
         output = Path(report["output_dir"])
+
+        report_json = _unique_destination(
+            output / "PNG_DONUSUM_RAPORU.json"
+        )
+        report_json.write_text(
+            json.dumps(report, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        report_txt = _unique_destination(
+            output / "PNG_DONUSUM_RAPORU.txt"
+        )
+        report_txt.write_text(
+            "\n".join([
+                "RECURSIVE PNG DONUSUM RAPORU",
+                f"Kaynak: {report['source_dir']}",
+                f"Cikti: {report['output_dir']}",
+                f"Taranan: {report['scanned_image_count']}",
+                f"Donusturulen: {report['converted_count']}",
+                f"PNG atlanan: {report['skipped_png_count']}",
+                f"Mevcut cikti atlanan: {report['skipped_existing_count']}",
+                f"Hata: {report['failed_count']}",
+                "",
+                "HATALAR:",
+                *[
+                    f"- {item['source']}: {item['error']}"
+                    for item in report["failed"]
+                ],
+            ]),
+            encoding="utf-8",
+        )
+
+        if progress_window is not None:
+            progress_window.destroy()
+            progress_window = None
+
         _open_folder(output)
 
         failures = report["failed"]
@@ -759,7 +863,9 @@ def interactive_recursive_png() -> int:
             f"Zaten PNG olduğu için atlanan: {report['skipped_png_count']}\n"
             f"Çıktı zaten var diye atlanan: {report['skipped_existing_count']}\n"
             f"Hata: {report['failed_count']}\n\n"
-            f"Çıktı: {output}"
+            f"Çıktı: {output}\n"
+            f"JSON rapor: {report_json.name}\n"
+            f"Metin raporu: {report_txt.name}"
             + failure_preview
         )
 
@@ -778,6 +884,11 @@ def interactive_recursive_png() -> int:
         )
         return 0
     except Exception as exc:
+        if progress_window is not None:
+            try:
+                progress_window.destroy()
+            except Exception:
+                pass
         messagebox.showerror(
             "Recursive PNG Hatası",
             str(exc),
