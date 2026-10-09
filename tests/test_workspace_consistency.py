@@ -177,7 +177,7 @@ class TestWorkspaceConsistencyAudit(unittest.TestCase):
             category_row = report["categories"][category]
             self.assertEqual(category_row["db_count"], 3)
             self.assertEqual(category_row["working_identity_count"], 3)
-            self.assertEqual(category_row["backup_identity_count"], 2)
+            self.assertEqual(category_row["backup_identity_count"], 3)
             self.assertEqual(category_row["staging_identity_count"], 1)
 
             codes = {item["code"] for item in report["issues"]}
