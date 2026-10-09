@@ -238,6 +238,59 @@ def init_db():
                     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
                  )''')
 
+    # Persistent background jobs survive browser refreshes and app restarts.
+    c.execute('''CREATE TABLE IF NOT EXISTS jobs (
+                    id TEXT PRIMARY KEY,
+                    job_type TEXT NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'PENDING',
+                    progress_current INTEGER NOT NULL DEFAULT 0,
+                    progress_total INTEGER NOT NULL DEFAULT 0,
+                    progress_message TEXT,
+                    result_json TEXT,
+                    error_text TEXT,
+                    stop_requested INTEGER NOT NULL DEFAULT 0,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    started_at DATETIME,
+                    finished_at DATETIME,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                 )''')
+    c.execute(
+        "CREATE INDEX IF NOT EXISTS idx_jobs_status_created "
+        "ON jobs(status, created_at)"
+    )
+
+    # Backend-level lease locks serialize destructive/mutating operations for
+    # the same category/template across UI requests and background jobs.
+    c.execute('''CREATE TABLE IF NOT EXISTS template_operation_locks (
+                    category TEXT NOT NULL,
+                    template TEXT NOT NULL,
+                    owner_token TEXT NOT NULL,
+                    operation TEXT NOT NULL,
+                    acquired_epoch REAL NOT NULL,
+                    expires_epoch REAL NOT NULL,
+                    PRIMARY KEY (category, template)
+                 )''')
+
+    # Pure AUTO analyzer cache. The key deliberately includes category,
+    # source bytes and analyzer version so source/algorithm changes invalidate
+    # old results automatically.
+    c.execute('''CREATE TABLE IF NOT EXISTS analysis_cache (
+                    category TEXT NOT NULL,
+                    source_asset_sha256 TEXT NOT NULL,
+                    analyzer_version TEXT NOT NULL,
+                    analysis_json TEXT NOT NULL,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    last_used_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    hit_count INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY (
+                        category,
+                        source_asset_sha256,
+                        analyzer_version
+                    )
+                 )''')
+
+
     # Run idempotent migrations for existing DBs
     migrate_schema(conn)
 
