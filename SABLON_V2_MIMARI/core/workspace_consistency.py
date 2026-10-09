@@ -950,10 +950,25 @@ def workspace_report_history(runtime_root: str, limit: int = 20) -> List[dict]:
                     summary.get("fully_matched_active_total", 0)
                 ),
                 "issue_count": int(summary.get("issue_count", 0)),
+                "active_integrity_issue_count": int(
+                    summary.get("active_integrity_issue_count", 0)
+                ),
+                "archive_inventory_count": int(
+                    summary.get("archive_inventory_count", 0)
+                ),
+                "working_hygiene_count": int(
+                    summary.get("working_hygiene_count", 0)
+                ),
+                "duplicate_hygiene_count": int(
+                    summary.get("duplicate_hygiene_count", 0)
+                ),
                 "critical_count": int(summary.get("critical_count", 0)),
                 "warning_count": int(summary.get("warning_count", 0)),
                 "kaggle_folder_count": int(summary.get("kaggle_folder_count", 0)),
                 "mockup_folder_count": int(summary.get("mockup_folder_count", 0)),
+                "unclassified_top_level_count": int(
+                    summary.get("unclassified_top_level_count", 0)
+                ),
             })
         except (OSError, ValueError, json.JSONDecodeError):
             continue
