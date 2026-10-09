@@ -338,7 +338,7 @@ class TestWatcherSafety(unittest.TestCase):
         self.assertTrue(txn["rollback_original_restored"])
         self.assertFalse(txn["rollback_processing_left"])
 
-    def test_existing_template_number_forces_user_to_rename(self):
+    def test_existing_template_name_with_different_extension_is_blocked_and_reported(self):
         existing = self.backup_dir / "Wifi_Kutusu_001.png"
         existing_bytes = b"DO_NOT_OVERWRITE"
         existing.write_bytes(existing_bytes)
@@ -358,6 +358,43 @@ class TestWatcherSafety(unittest.TestCase):
         self.assertTrue(source.is_file())
         self.assertFalse(
             (self.backup_dir / "Wifi_Kutusu_002.png").exists()
+        )
+
+        txn_dir = (
+            self.root
+            / "SABLON_V2_MIMARI"
+            / "recovery"
+            / "staging_transactions"
+        )
+        txn = json.loads(
+            next(txn_dir.glob("*.json")).read_text(encoding="utf-8")
+        )
+        identity = txn["identity_conflict"]
+        self.assertTrue(identity["different_extension_present"])
+        self.assertEqual(identity["incoming_extension"], ".jpg")
+        self.assertIn(".png", identity["existing_extensions"])
+        self.assertIn(
+            "AYNI İSİM, FARKLI UZANTI",
+            txn["error"],
+        )
+
+        block_file = (
+            self.root
+            / "SABLON_V2_MIMARI"
+            / "recovery"
+            / "staging_blocked_files.json"
+        )
+        blocked = json.loads(block_file.read_text(encoding="utf-8"))
+        self.assertIn(str(source.resolve()), blocked)
+        self.assertTrue(
+            self.watcher._is_staging_blocked_unchanged(source)
+        )
+
+        # A real file change re-enables validation instead of permanently
+        # blacklisting the path.
+        source.write_bytes(source.read_bytes() + b"changed")
+        self.assertFalse(
+            self.watcher._is_staging_blocked_unchanged(source)
         )
 
     def test_deleted_trash_number_also_forces_user_to_rename(self):
