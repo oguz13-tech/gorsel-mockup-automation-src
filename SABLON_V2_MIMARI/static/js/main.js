@@ -869,6 +869,20 @@ window.onerror = function(msg, url, line, col, error) {
 
         if (issueCount === 0) lines.push('Yok.');
 
+        const diff = data?.diff || {};
+        lines.push('', 'ÖNCEKİ SAĞLIK RAPORUNA GÖRE:');
+        if (diff.has_previous) {
+            lines.push(
+                'Önceki kayıt: ' + String(diff.previous_saved_at || ''),
+                'Yeni sorun: ' + Number(diff.new_issue_count || 0),
+                'Düzelen sorun: ' + Number(diff.resolved_issue_count || 0),
+                'Devam eden sorun: ' +
+                    Number(diff.unchanged_issue_count || 0)
+            );
+        } else {
+            lines.push('Bu ilk kayıtlı sağlık raporu.');
+        }
+
         const extraWorking = data?.filesystem_only_working || [];
         const extraBackup = data?.filesystem_only_backup || [];
 
