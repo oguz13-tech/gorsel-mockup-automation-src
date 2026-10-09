@@ -133,12 +133,12 @@ class TestWorkspaceConsistencyAudit(unittest.TestCase):
             write_bytes(
                 source / "tool.py",
                 (
-                    b'KAGGLE="1_GELEN_KAGGLE_BASKILARI"\n'
-                    b'OUTPUT="3_URETILEN_MOCKUPLAR"\n'
-                    b'MANUAL="MOCKUP A HAZIR GÖRSELLER"\n'
-                    b'MULTI="Mockup_Magaza_Klasorleri"\n'
-                    b'WORK="2_SABLON_HAVUZU"\n'
-                ),
+                    'KAGGLE="1_GELEN_KAGGLE_BASKILARI"\n'
+                    'OUTPUT="3_URETILEN_MOCKUPLAR"\n'
+                    'MANUAL="MOCKUP A HAZIR GÖRSELLER"\n'
+                    'MULTI="Mockup_Magaza_Klasorleri"\n'
+                    'WORK="2_SABLON_HAVUZU"\n'
+                ).encode("utf-8"),
             )
 
             before = asset_snapshot(runtime)
