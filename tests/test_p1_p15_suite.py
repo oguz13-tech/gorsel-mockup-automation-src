@@ -1566,7 +1566,7 @@ class TestFastBatchCornerScan(unittest.TestCase):
             }
 
             fake_analysis = {
-                "source_asset_sha256": "hash",
+                "source_asset_sha256": "",
                 "analyzer_version": "same-quality-engine",
                 "rule": {
                     "product_class": "test",
@@ -1594,7 +1594,13 @@ class TestFastBatchCornerScan(unittest.TestCase):
 
             def fake_worker(cat, name):
                 self.assertEqual(cat, category)
-                return worker_results[name]
+                item = dict(worker_results[name])
+                analysis = dict(item["analysis"])
+                analysis["source_asset_sha256"] = app._sha256_file(
+                    os.path.join(working_dir, name)
+                )
+                item["analysis"] = analysis
+                return item
 
             def fake_save(path, profile):
                 self.assertEqual(path, db_path)
@@ -1647,7 +1653,7 @@ class TestFastBatchCornerScan(unittest.TestCase):
                 ],
             )
 
-    def test_fast_scan_frontend_uses_small_batches_and_two_workers(self):
+    def test_fast_scan_frontend_uses_persistent_job_engine(self):
         js_path = os.path.join(
             BASE_DIR,
             "SABLON_V2_MIMARI",
@@ -1658,20 +1664,22 @@ class TestFastBatchCornerScan(unittest.TestCase):
         with open(js_path, "r", encoding="utf-8") as handle:
             js = handle.read()
 
-        self.assertIn("const chunkSize = 4;", js)
-        self.assertIn("workers: 2", js)
-        self.assertIn(
-            "'/api/templates/batch_analyze'",
-            js,
+        self.assertIn("BATCH_CORNER_SCAN", js)
+        self.assertIn("monitorBatchAnalyzeJob", js)
+        self.assertIn("resumePersistentJobs", js)
+        self.assertIn("'/api/jobs'", js)
+        self.assertIn("approvedProtectedCount", js)
+
+        app_path = os.path.join(
+            BASE_DIR,
+            "SABLON_V2_MIMARI",
+            "app.py",
         )
-        self.assertIn(
-            "approvedProtectedCount",
-            js,
-        )
-        self.assertIn(
-            "batchAnalyzeInFlightTemplates",
-            js,
-        )
+        with open(app_path, "r", encoding="utf-8") as handle:
+            app_source = handle.read()
+        self.assertIn("chunk_size = 4", app_source)
+        self.assertIn("workers=2", app_source)
+        self.assertIn('"db_writes": "SEQUENTIAL"', app_source)
 
 
 if __name__ == "__main__":
