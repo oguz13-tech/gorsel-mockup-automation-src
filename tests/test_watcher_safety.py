@@ -187,6 +187,49 @@ class TestWatcherSafety(unittest.TestCase):
         self.assertFalse(profile["manually_verified"])
         self.assertEqual(profile["surface_quad"], fake_result["surface_quad"])
 
+    def test_same_template_name_with_different_extension_is_rejected_and_reported(self):
+        source, decoded = self._write_input("Wifi_Kutusu_135.jpg")
+
+        existing = self.backup_dir / "Wifi_Kutusu_135.png"
+        ok, encoded = cv2.imencode(".png", decoded)
+        self.assertTrue(ok)
+        encoded.tofile(str(existing))
+
+        ok_result = self.watcher.process_from_staging(source)
+
+        self.assertFalse(ok_result)
+        self.assertTrue(source.is_file())
+        self.assertTrue(existing.is_file())
+        self.assertFalse(
+            source.with_suffix(source.suffix + ".processing").exists()
+        )
+        self.assertFalse(
+            (self.working_dir / "Wifi_Kutusu_135.png").exists()
+        )
+
+        txn_dir = (
+            self.root
+            / "SABLON_V2_MIMARI"
+            / "recovery"
+            / "staging_transactions"
+        )
+        txn_files = list(txn_dir.glob("*.json"))
+        self.assertEqual(len(txn_files), 1)
+        txn = json.loads(txn_files[0].read_text(encoding="utf-8"))
+        self.assertEqual(txn["state"], "ROLLED_BACK")
+        self.assertIn(
+            "AYNI İSİM, FARKLI UZANTI",
+            txn["error"],
+        )
+        conflict = txn["identity_conflict"]
+        self.assertEqual(conflict["incoming_extension"], ".jpg")
+        self.assertEqual(conflict["existing_extensions"], [".png"])
+        self.assertTrue(conflict["different_extension_present"])
+        self.assertEqual(
+            conflict["identity"],
+            "wifi_kutusu_135",
+        )
+
     def test_successful_ingest_creates_backup_working_and_review_row(self):
         source, decoded = self._write_input()
         saved = {}
