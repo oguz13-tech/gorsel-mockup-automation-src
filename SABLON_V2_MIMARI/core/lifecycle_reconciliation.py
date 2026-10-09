@@ -153,13 +153,58 @@ def _write_manifest(operation_dir: Path, manifest: dict) -> None:
     _atomic_write_bytes(operation_dir / "manifest.json", payload)
 
 
+def _image_evidence(path: Path) -> dict:
+    evidence = {
+        "width": None,
+        "height": None,
+        "channels": None,
+        "has_alpha": False,
+        "alpha_min": None,
+        "alpha_max": None,
+        "decoded_pixel_sha256": None,
+        "decode_ok": False,
+    }
+    try:
+        raw = np.fromfile(str(path), dtype=np.uint8)
+        image = cv2.imdecode(raw, cv2.IMREAD_UNCHANGED)
+        if image is None:
+            return evidence
+
+        evidence["decode_ok"] = True
+        evidence["height"] = int(image.shape[0])
+        evidence["width"] = int(image.shape[1])
+        channels = 1 if image.ndim == 2 else int(image.shape[2])
+        evidence["channels"] = channels
+        evidence["has_alpha"] = bool(channels == 4)
+        if channels == 4:
+            alpha = image[:, :, 3]
+            evidence["alpha_min"] = int(alpha.min())
+            evidence["alpha_max"] = int(alpha.max())
+
+        pixel_digest = hashlib.sha256()
+        pixel_digest.update(str(image.dtype).encode("ascii", errors="ignore"))
+        pixel_digest.update(str(tuple(image.shape)).encode("ascii"))
+        pixel_digest.update(image.tobytes(order="C"))
+        evidence["decoded_pixel_sha256"] = pixel_digest.hexdigest()
+    except Exception:
+        return evidence
+    return evidence
+
+
 def _file_record(path: Path, root: Path) -> dict:
+    stat = path.stat()
     return {
         "name": path.name,
+        "extension": path.suffix.casefold(),
         "absolute_path": str(path.resolve()),
         "relative_path": path.resolve().relative_to(root.resolve()).as_posix(),
-        "size_bytes": int(path.stat().st_size),
+        "size_bytes": int(stat.st_size),
+        "modified_at": time.strftime(
+            "%Y-%m-%d %H:%M:%S",
+            time.localtime(stat.st_mtime),
+        ),
         "sha256": sha256_file(path),
+        **_image_evidence(path),
     }
 
 
@@ -194,18 +239,49 @@ def _duplicate_rows(
                 if active_name and active_name in names
                 else None
             )
+            file_records = [
+                _file_record(path, root)
+                for path in files
+            ]
+            byte_hashes = {
+                row.get("sha256")
+                for row in file_records
+                if row.get("sha256")
+            }
+            pixel_hashes = {
+                row.get("decoded_pixel_sha256")
+                for row in file_records
+                if row.get("decoded_pixel_sha256")
+            }
+            byte_equivalent = bool(
+                len(file_records) > 1
+                and len(byte_hashes) == 1
+            )
+            pixel_equivalent = bool(
+                len(file_records) > 1
+                and len(pixel_hashes) == 1
+                and all(row.get("decode_ok") for row in file_records)
+            )
             rows.append({
                 "area": area,
                 "category": category,
                 "identity": identity,
-                "files": [
-                    _file_record(path, root)
-                    for path in files
-                ],
+                "files": file_records,
                 "active_template": active_name,
                 "recommended_keep": recommended_keep,
                 "safe_recommendation": bool(recommended_keep),
                 "requires_manual_choice": not bool(recommended_keep),
+                "byte_equivalent": byte_equivalent,
+                "pixel_equivalent": pixel_equivalent,
+                "manual_choice_reason": (
+                    None
+                    if recommended_keep
+                    else (
+                        "Aktif DB eşleşmesi yok; dosyalar görsel olarak aynı."
+                        if pixel_equivalent
+                        else "Aktif DB eşleşmesi yok; dosyalar insan incelemesi gerektiriyor."
+                    )
+                ),
                 "destructive_delete": False,
                 "action": "MOVE_NON_KEEP_TO_RECOVERY",
             })
