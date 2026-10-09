@@ -130,6 +130,119 @@ window.onerror = function(msg, url, line, col, error) {
         );
     }
 
+    function formatStagingCollisionWarning(collision) {
+        const identity = collision?.identity_conflict || null;
+        const number = collision?.number_conflict || null;
+        const lines = [
+            'STAGING GÜVENLİK UYARISI',
+            'İşlem: ' + String(collision?.transaction_id || ''),
+            'Zaman: ' + String(collision?.updated_at || ''),
+            ''
+        ];
+
+        if (identity) {
+            lines.push(
+                identity.different_extension_present
+                    ? '⛔ AYNI İSİM, FARKLI UZANTI'
+                    : '⛔ AYNI İSİM / AYNI UZANTI'
+            );
+            lines.push(
+                'Gelen: ' + String(identity.incoming_name || ''),
+                'Kategori: ' + String(identity.category || ''),
+                'Kimlik: ' + String(identity.identity || ''),
+                'Gelen uzantı: ' +
+                    String(identity.incoming_extension || 'YOK'),
+                'Sistemdeki uzantılar: ' +
+                    (identity.existing_extensions || []).join(', '),
+                '',
+                'Eşleşmeler:'
+            );
+            (identity.matches || []).forEach(row => {
+                lines.push(
+                    '• ' + String(row.location || '') +
+                    ' — ' + String(row.name || '') +
+                    (
+                        row.path
+                            ? ' [' + String(row.path) + ']'
+                            : ''
+                    )
+                );
+            });
+        } else if (number) {
+            lines.push(
+                '⛔ NUMARA KİMLİĞİ ÇAKIŞMASI',
+                'Gelen: ' + String(number.incoming_name || ''),
+                'Kategori: ' + String(number.category || ''),
+                'İstenen numara: ' +
+                    String(number.requested_number ?? ''),
+                'Gelen uzantı: ' +
+                    String(number.incoming_extension || 'YOK'),
+                'Önerilen yeni numara: ' +
+                    String(number.suggested_number ?? '')
+            );
+        }
+
+        lines.push(
+            '',
+            'SONUÇ:',
+            'Yeni şablon oluşturulmadı.',
+            'Gelen dosya silinmedi veya yeniden adlandırılmadı; staging klasöründe bırakıldı.',
+            '',
+            'Detay:',
+            String(collision?.error || '')
+        );
+        return lines.join('\n');
+    }
+
+    let stagingCollisionPollTimer = null;
+
+    async function pollLatestStagingCollision() {
+        try {
+            const response = await fetch('/api/staging/latest-collision');
+            const data = await response.json();
+            if (!response.ok || !data.success || !data.collision) return;
+
+            const collision = data.collision;
+            const age = Number(collision.age_seconds);
+            // Do not resurrect old historical warnings when the UI is opened.
+            if (Number.isFinite(age) && age > 180) return;
+
+            const id = String(collision.transaction_id || '');
+            if (!id) return;
+
+            const storageKey = 'jarvis-last-staging-collision-id';
+            let lastSeen = '';
+            try {
+                lastSeen = localStorage.getItem(storageKey) || '';
+            } catch (err) {
+                lastSeen = '';
+            }
+            if (lastSeen === id) return;
+
+            try {
+                localStorage.setItem(storageKey, id);
+            } catch (err) {
+                // Warning still remains visible even if localStorage is blocked.
+            }
+
+            showCopyableReport(
+                '⛔ Staging İsim / Uzantı Çakışması',
+                formatStagingCollisionWarning(collision)
+            );
+        } catch (err) {
+            console.warn('Staging çakışma uyarısı okunamadı:', err);
+        }
+    }
+
+    function startStagingCollisionPolling() {
+        if (stagingCollisionPollTimer) return;
+        pollLatestStagingCollision();
+        stagingCollisionPollTimer = window.setInterval(
+            pollLatestStagingCollision,
+            2500
+        );
+    }
+
     // SISTEM SAĞLIK KONTROLÜ
     fetch('/api/saglik_durumu')
         .then(res => res.json())
@@ -1416,6 +1529,7 @@ window.onerror = function(msg, url, line, col, error) {
             refreshTemplateHealth(false, false);
             loadLastWorkspaceConsistency(true);
             resumePersistentJobs();
+            startStagingCollisionPolling();
         })
         .catch(err => showMessage("FETCH ERROR: " + err.message));
     
