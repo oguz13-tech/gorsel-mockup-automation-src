@@ -175,8 +175,8 @@
                 <summary>⚙️ Gelişmiş / Kurtarma Araçları</summary>
                 <div class="tool-note advanced-summary-note">Normal kullanımda bu bölümü açmanız gerekmez.</div>
 
-                <button type="button" onclick="openLifecycleCenter('all')" class="advanced-action" style="background:#1d4ed8;">🧭 Güvenli Eşitleme Merkezi</button>
-                <div class="tool-note">DB, çalışma, ham, duplicate, yetim dosya ve eksik aktif kayıtları tek yerde gösterir. <b>Kendi kendine toplu düzeltme yapmaz.</b></div>
+                <button type="button" onclick="openActionableReconciliationCenter()" class="advanced-action" style="background:#1d4ed8;">🧭 Güvenli Eşitleme Merkezi</button>
+                <div class="tool-note">DB, çalışma, ham, duplicate, yetim dosya ve eksik aktif kayıtları tek yerde gösterir. Sorunlar <b>tek tek</b> çözülür; “hepsini düzelt” yoktur. Dosya taşıyan işlemler kalıcı silme yerine recovery kaydı oluşturur.</div>
 
                 <button type="button" onclick="resolveCurrentTemplateDuplicates()" class="advanced-action" style="background:#7c3aed;">🧹 Bu Şablondaki Duplicate'ları Güvenli Ayır</button>
                 <div class="tool-note">Yalnız aktif DB dosyası kesin olarak belirlenebiliyorsa çalışır. Korunan dosyaya dokunmaz; diğer uzantıları kalıcı silmek yerine recovery alanına taşır.</div>
