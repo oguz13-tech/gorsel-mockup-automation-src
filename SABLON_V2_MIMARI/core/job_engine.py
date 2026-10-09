@@ -184,6 +184,15 @@ class PersistentJobEngine:
         )
         self._dispatcher.start()
 
+    def stop(self, *, wait: bool = True):
+        self._stop.set()
+        if self._dispatcher and self._dispatcher.is_alive():
+            self._dispatcher.join(timeout=2.0 if wait else 0.0)
+        self._pool.shutdown(
+            wait=bool(wait),
+            cancel_futures=False,
+        )
+
     def _dispatch_loop(self):
         while not self._stop.is_set():
             with self._guard:
