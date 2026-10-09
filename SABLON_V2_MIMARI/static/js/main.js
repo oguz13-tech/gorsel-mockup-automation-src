@@ -2590,6 +2590,495 @@ window.onerror = function(msg, url, line, col, error) {
         }
     }
 
+    function closeReconciliationCenter() {
+        const overlay = document.getElementById(
+            'reconciliation-center-overlay'
+        );
+        if (overlay) overlay.style.display = 'none';
+    }
+
+    function reconciliationButton(label, handler, danger = false) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = label;
+        button.style.cssText =
+            'padding:8px 10px;border:0;border-radius:5px;cursor:pointer;' +
+            'font-weight:bold;margin-left:6px;' +
+            'background:' + (danger ? '#b91c1c' : '#2563eb') + ';color:white;';
+        button.onclick = handler;
+        return button;
+    }
+
+    function reconciliationRow(title, details, severity = 'normal') {
+        const row = document.createElement('div');
+        row.className = 'reconciliation-row';
+        const border = severity === 'critical'
+            ? '#dc2626'
+            : (severity === 'warning' ? '#d97706' : '#475569');
+        row.style.cssText =
+            'border:1px solid ' + border + ';border-radius:7px;' +
+            'padding:10px;margin:8px 0;background:#171717;';
+
+        const head = document.createElement('div');
+        head.style.cssText =
+            'font-weight:bold;color:#fff;margin-bottom:5px;word-break:break-word;';
+        head.textContent = title;
+        row.appendChild(head);
+
+        const info = document.createElement('div');
+        info.style.cssText =
+            'white-space:pre-wrap;color:#d1d5db;font-size:12px;' +
+            'line-height:1.45;word-break:break-word;';
+        info.textContent = details;
+        row.appendChild(info);
+
+        const actions = document.createElement('div');
+        actions.className = 'reconciliation-actions';
+        actions.style.cssText =
+            'display:flex;justify-content:flex-end;gap:4px;' +
+            'flex-wrap:wrap;margin-top:8px;';
+        row.appendChild(actions);
+        return {row, actions};
+    }
+
+    async function refreshSettingsAfterReconciliation() {
+        const response = await fetch('/api/ayarlar');
+        if (!response.ok) {
+            throw new Error('Ayarlar yeniden yüklenemedi: HTTP ' + response.status);
+        }
+        ayarlar = await response.json();
+        renderSidebar();
+        refreshTemplateHealth(false, false);
+        loadLastWorkspaceConsistency(true);
+    }
+
+    async function reconciliationPost(url, payload) {
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload || {})
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+            throw new Error(
+                data.error || ('HTTP ' + response.status)
+            );
+        }
+        return data;
+    }
+
+    async function restoreWorkingFromBackupRow(row) {
+        const category = String(row.category || '');
+        const template = String(row.template || '');
+        if (!confirm(
+            'Çalışma kopyası ham/orijinal yedekten geri oluşturulacak.\n\n' +
+            category + ' / ' + template + '\n\n' +
+            'Bu işlem ham yedeği değiştirmez. Önceki onay yeniden kontrol ' +
+            'gerektirebilir. Devam edilsin mi?'
+        )) return false;
+
+        const response = await fetch('/api/orijinal_yukle', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Active-Category': category,
+                'X-Active-Template': template
+            }
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+            throw new Error(
+                data.error || ('HTTP ' + response.status)
+            );
+        }
+        showCopyableReport(
+            'Çalışma Kopyası Geri Yüklendi',
+            [
+                'Şablon: ' + category + ' / ' + template,
+                'Ham kaynak: ' + String(data.backup_source_absolute || ''),
+                'Çalışma hedefi: ' + String(data.destination_absolute || ''),
+                'SHA256: ' + String(data.destination_after_sha256 || ''),
+                'PNG byte-exact: ' +
+                    (data.png_byte_exact_restore ? 'EVET' : 'HAYIR'),
+                'Onay yeniden kontrol gerekli: EVET'
+            ].join('\n')
+        );
+        return true;
+    }
+
+    async function goToReconciliationTemplate(category, template) {
+        closeReconciliationCenter();
+        await refreshSettingsAfterReconciliation();
+        const target = allTemplates.find(
+            item => item.cat === category && item.tmpl === template
+        );
+        if (!target) {
+            showMessage(
+                'Şablon aktif listede bulunamadı: ' +
+                category + ' / ' + template,
+                'Şablona Git'
+            );
+            return;
+        }
+        if (target.list) target.list.style.display = 'block';
+        await navigateToTemplate(
+            target.cat,
+            target.tmpl,
+            target.elem
+        );
+    }
+
+    async function runReconciliationAction(action, row) {
+        try {
+            if (action === 'DUPLICATE') {
+                const movedNames = (row.files || [])
+                    .map(item => item.name)
+                    .filter(name => name !== row.recommended_keep);
+                if (!confirm(
+                    'Duplicate varyant KALICI SİLİNMEYECEK.\n\n' +
+                    row.category + ' / ' + row.identity + '\n' +
+                    'Alan: ' + row.area + '\n' +
+                    'Korunacak: ' + row.recommended_keep + '\n' +
+                    'Recovery’ye taşınacak: ' + movedNames.join(', ') +
+                    '\n\nDevam edilsin mi?'
+                )) return;
+
+                const data = await reconciliationPost(
+                    '/api/lifecycle/resolve-duplicate',
+                    {
+                        area: row.area,
+                        category: row.category,
+                        identity: row.identity,
+                        keep_filename: row.recommended_keep,
+                        template: row.active_template || row.recommended_keep
+                    }
+                );
+                showCopyableReport(
+                    'Duplicate Güvenle Ayrıldı',
+                    [
+                        'Operasyon: ' +
+                            String(data.operation?.operation_id || ''),
+                        'Kategori: ' + row.category,
+                        'Kimlik: ' + row.identity,
+                        'Korunan: ' + row.recommended_keep,
+                        'Recovery’ye taşınan:',
+                        ...(data.operation?.moved || []).map(
+                            item => '• ' + item.name +
+                                ' | SHA256=' + item.sha256
+                        )
+                    ].join('\n')
+                );
+            } else if (action === 'WORKING_ORPHAN') {
+                if (!confirm(
+                    'Bu dosyanın aktif DB kaydı yok.\n\n' +
+                    row.category + ' / ' + row.identity + '\n\n' +
+                    'Dosya KALICI SİLİNMEYECEK; lifecycle recovery alanına ' +
+                    'taşınacak. Devam edilsin mi?'
+                )) return;
+
+                const data = await reconciliationPost(
+                    '/api/lifecycle/archive-working-orphan',
+                    {
+                        category: row.category,
+                        identity: row.identity
+                    }
+                );
+                showCopyableReport(
+                    'Çalışma Yetimi Recovery’ye Alındı',
+                    [
+                        'Operasyon: ' +
+                            String(data.operation?.operation_id || ''),
+                        'Kategori: ' + row.category,
+                        'Kimlik: ' + row.identity,
+                        'Taşınan:',
+                        ...(data.operation?.moved || []).map(
+                            item => '• ' + item.name +
+                                ' | SHA256=' + item.sha256
+                        )
+                    ].join('\n')
+                );
+            } else if (action === 'RETIRE_DB_ORPHAN') {
+                if (!confirm(
+                    'Bu aktif DB kaydının ne çalışma ne de ham dosyası var.\n\n' +
+                    row.category + ' / ' + row.template + '\n\n' +
+                    'DB kaydı aktif listeden çıkarılıp geri alınabilir çöp ' +
+                    'metası oluşturulacak. Kalıcı numara geçmişi korunacak.\n\n' +
+                    'Devam edilsin mi?'
+                )) return;
+
+                const data = await reconciliationPost(
+                    '/api/lifecycle/retire-db-orphan',
+                    {
+                        category: row.category,
+                        template: row.template
+                    }
+                );
+                showCopyableReport(
+                    'DB Yetimi Güvenle Retire Edildi',
+                    [
+                        'Kategori: ' + row.category,
+                        'Şablon: ' + row.template,
+                        'Çöp kaydı: ' + String(data.trash_record || ''),
+                        'Kaynak zaten eksikti: ' +
+                            (data.source_was_missing ? 'EVET' : 'HAYIR'),
+                        'Numara geçmişi: KORUNDU',
+                        'Geri alınabilir: EVET'
+                    ].join('\n')
+                );
+            } else if (action === 'RESTORE_WORKING') {
+                await restoreWorkingFromBackupRow(row);
+            } else {
+                throw new Error('Bilinmeyen reconciliation aksiyonu.');
+            }
+
+            await refreshSettingsAfterReconciliation();
+            await openActionableReconciliationCenter();
+        } catch (err) {
+            showMessage(
+                'Güvenli eşitleme işlemi başarısız: ' + err.message,
+                'Güvenli Eşitleme Hatası'
+            );
+        }
+    }
+
+    async function openActionableReconciliationCenter() {
+        try {
+            const data = await fetchLifecycleCenter();
+            let overlay = document.getElementById(
+                'reconciliation-center-overlay'
+            );
+            if (!overlay) {
+                overlay = document.createElement('div');
+                overlay.id = 'reconciliation-center-overlay';
+                overlay.style.cssText =
+                    'position:fixed;inset:0;background:rgba(0,0,0,.78);' +
+                    'z-index:100000;display:none;align-items:center;' +
+                    'justify-content:center;padding:20px;';
+                overlay.innerHTML =
+                    '<div id="reconciliation-center-dialog" ' +
+                    'style="width:min(1050px,96vw);max-height:90vh;' +
+                    'overflow:auto;background:#111827;border:1px solid #475569;' +
+                    'border-radius:10px;padding:16px;color:white;">' +
+                    '<div style="display:flex;justify-content:space-between;' +
+                    'align-items:center;gap:10px;position:sticky;top:0;' +
+                    'background:#111827;padding-bottom:10px;z-index:2;">' +
+                    '<div><div style="font-size:18px;font-weight:bold;">' +
+                    '🧭 Güvenli Eşitleme Merkezi</div>' +
+                    '<div id="reconciliation-summary" ' +
+                    'style="font-size:12px;color:#cbd5e1;margin-top:3px;"></div>' +
+                    '</div>' +
+                    '<div style="display:flex;gap:6px;">' +
+                    '<button type="button" id="reconciliation-copy-report" ' +
+                    'style="padding:8px;">📋 Raporu Aç</button>' +
+                    '<button type="button" id="reconciliation-close" ' +
+                    'style="padding:8px;">Kapat</button>' +
+                    '</div></div>' +
+                    '<div id="reconciliation-content"></div>' +
+                    '</div>';
+                document.body.appendChild(overlay);
+                overlay.querySelector(
+                    '#reconciliation-close'
+                ).onclick = closeReconciliationCenter;
+                overlay.addEventListener('click', event => {
+                    if (event.target === overlay) {
+                        closeReconciliationCenter();
+                    }
+                });
+            }
+
+            const summary = data.summary || {};
+            overlay.querySelector(
+                '#reconciliation-summary'
+            ).textContent =
+                'Duplicate=' +
+                Number(summary.duplicate_identity_count || 0) +
+                ' | Çalışma yetimi=' +
+                Number(summary.working_orphan_count || 0) +
+                ' | Aktif dosya eksiği=' +
+                Number(summary.active_missing_count || 0) +
+                ' | Kalıcı otomatik silme=KAPALI';
+
+            overlay.querySelector(
+                '#reconciliation-copy-report'
+            ).onclick = () => showCopyableReport(
+                'Güvenli Eşitleme Merkezi — Tam Rapor',
+                formatLifecycleCenter(data, 'all')
+            );
+
+            const content = overlay.querySelector(
+                '#reconciliation-content'
+            );
+            content.innerHTML = '';
+
+            const intro = document.createElement('div');
+            intro.style.cssText =
+                'padding:9px;border-radius:6px;background:#0f172a;' +
+                'color:#cbd5e1;font-size:12px;line-height:1.5;margin-bottom:10px;';
+            intro.textContent =
+                'Her sorun tek tek çözülür. “Hepsini düzelt” yoktur. ' +
+                'Dosya taşıyan işlemler kalıcı silme yapmaz; recovery kaydı oluşturur.';
+            content.appendChild(intro);
+
+            const addSection = title => {
+                const h = document.createElement('h3');
+                h.textContent = title;
+                h.style.cssText =
+                    'margin:15px 0 6px;color:#e2e8f0;font-size:14px;';
+                content.appendChild(h);
+            };
+
+            addSection('1) Duplicate Kimlikler');
+            const duplicates = data.duplicates || [];
+            if (!duplicates.length) {
+                const empty = document.createElement('div');
+                empty.textContent = '✅ Duplicate kimlik yok.';
+                empty.style.color = '#86efac';
+                content.appendChild(empty);
+            }
+            duplicates.forEach(row => {
+                const files = (row.files || [])
+                    .map(item => (
+                        item.name + '\n    SHA256=' + item.sha256
+                    ))
+                    .join('\n');
+                const item = reconciliationRow(
+                    '[' + row.area + '] ' +
+                        row.category + ' / ' + row.identity,
+                    'Dosyalar:\n' + files +
+                    '\nAktif DB dosyası: ' +
+                        String(row.active_template || 'YOK') +
+                    '\nKoruma önerisi: ' +
+                        String(
+                            row.recommended_keep ||
+                            'GÜVENLİ OTOMATİK SEÇİM YOK'
+                        ),
+                    row.safe_recommendation ? 'warning' : 'critical'
+                );
+                if (
+                    row.safe_recommendation
+                    && row.recommended_keep
+                ) {
+                    item.actions.appendChild(
+                        reconciliationButton(
+                            'Recovery’ye Ayır',
+                            () => runReconciliationAction(
+                                'DUPLICATE',
+                                row
+                            )
+                        )
+                    );
+                } else {
+                    const note = document.createElement('span');
+                    note.textContent =
+                        '⛔ Otomatik seçim yapılmadı; dosyalara dokunulmayacak.';
+                    note.style.cssText =
+                        'color:#fca5a5;font-size:12px;';
+                    item.actions.appendChild(note);
+                }
+                content.appendChild(item.row);
+            });
+
+            addSection('2) DB Dışı Çalışma Dosyaları');
+            const orphans = data.working_orphans || [];
+            if (!orphans.length) {
+                const empty = document.createElement('div');
+                empty.textContent = '✅ Çalışma yetimi yok.';
+                empty.style.color = '#86efac';
+                content.appendChild(empty);
+            }
+            orphans.forEach(row => {
+                const item = reconciliationRow(
+                    row.category + ' / ' + row.identity,
+                    'Aktif DB kaydı yok.\nDosyalar: ' +
+                        (row.files || []).map(
+                            file => file.name +
+                                ' | SHA256=' + file.sha256
+                        ).join('\n'),
+                    'warning'
+                );
+                item.actions.appendChild(
+                    reconciliationButton(
+                        'Recovery’ye Al',
+                        () => runReconciliationAction(
+                            'WORKING_ORPHAN',
+                            row
+                        )
+                    )
+                );
+                content.appendChild(item.row);
+            });
+
+            addSection('3) Aktif DB / Dosya Eksikleri');
+            const missing = data.active_missing || [];
+            if (!missing.length) {
+                const empty = document.createElement('div');
+                empty.textContent = '✅ Aktif DB kayıtlarında dosya eksiği yok.';
+                empty.style.color = '#86efac';
+                content.appendChild(empty);
+            }
+            missing.forEach(row => {
+                const item = reconciliationRow(
+                    row.category + ' / ' + row.template,
+                    'Çalışma: ' +
+                        (row.working_exists ? 'VAR' : 'YOK') +
+                    '\nHam: ' +
+                        (row.backup_exists ? 'VAR' : 'YOK') +
+                    '\nÖneri: ' +
+                        String(row.recommended_action || ''),
+                    'critical'
+                );
+
+                if (row.recommended_action === 'RETIRE_DB_ORPHAN') {
+                    item.actions.appendChild(
+                        reconciliationButton(
+                            'DB Yetimini Retire Et',
+                            () => runReconciliationAction(
+                                'RETIRE_DB_ORPHAN',
+                                row
+                            ),
+                            true
+                        )
+                    );
+                } else if (
+                    row.recommended_action ===
+                    'RESTORE_WORKING_FROM_BACKUP'
+                ) {
+                    item.actions.appendChild(
+                        reconciliationButton(
+                            'Hamdan Çalışmayı Geri Yükle',
+                            () => runReconciliationAction(
+                                'RESTORE_WORKING',
+                                row
+                            )
+                        )
+                    );
+                } else if (
+                    row.recommended_action ===
+                    'REPLACE_ORIGINAL_REQUIRED'
+                ) {
+                    item.actions.appendChild(
+                        reconciliationButton(
+                            'Şablona Git / Yeni Ham Seç',
+                            () => goToReconciliationTemplate(
+                                row.category,
+                                row.template
+                            )
+                        )
+                    );
+                }
+                content.appendChild(item.row);
+            });
+
+            overlay.style.display = 'flex';
+        } catch (err) {
+            showMessage(
+                'Güvenli Eşitleme Merkezi açılamadı: ' +
+                    err.message,
+                'Güvenli Eşitleme Hatası'
+            );
+        }
+    }
+
     function chooseReplacementOriginal() {
         if (!currentCat || !currentTmpl) {
             showMessage('Önce soldan bir şablon seçin.');
