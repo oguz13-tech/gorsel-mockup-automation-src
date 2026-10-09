@@ -1715,13 +1715,21 @@ window.onerror = function(msg, url, line, col, error) {
                     refreshTemplateHealth(false, false);
                     const sourceInfo =
                         '\n\nKaynak: ' +
-                        (res.source_root || '2_SABLON_HAVUZU_ORIJINAL_YEDEK') +
-                        '/' +
-                        (res.backup_source_file || currentTmpl) +
+                        (res.backup_source_absolute ||
+                            (
+                                (res.source_root || '2_SABLON_HAVUZU_ORIJINAL_YEDEK') +
+                                '/' +
+                                (res.backup_source_file || currentTmpl)
+                            )) +
                         '\nHedef: ' +
-                        (res.destination_root || '2_SABLON_HAVUZU') +
-                        '/' +
-                        (res.destination_file || currentTmpl);
+                        (res.destination_absolute ||
+                            (
+                                (res.destination_root || '2_SABLON_HAVUZU') +
+                                '/' +
+                                (res.destination_file || currentTmpl)
+                            )) +
+                        '\nPNG birebir kopya doğrulaması: ' +
+                        (res.png_byte_exact_restore ? 'EVET' : 'HAYIR / DÖNÜŞTÜRÜLDÜ');
 
                     alert(
                         'Ham orijinal çalışma kopyasına geri yüklendi.' +
