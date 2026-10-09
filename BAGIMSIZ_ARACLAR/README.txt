@@ -26,3 +26,10 @@ Bu klasordeki araclar factory render zincirinden bagimsiz calisir.
 
 Ana arayuzden ulasmak icin:
 ARACLAR_MERKEZINI_AC.bat
+
+
+08 - Recursive PNG Donusturucu v2
+     Bir ana klasor ve tum alt klasorlerdeki JPG/JPEG/WEBP/BMP gorselleri
+     PNG'ye donusturur. Klasor yapisini korur, orijinalleri silmez/degistirmez,
+     mevcut PNG'leri ve daha once uretilmis ciktilari atlar.
+     Aktif sablon ve ham-yedek klasorlerinde calisma guvenlik nedeniyle engellenir.
