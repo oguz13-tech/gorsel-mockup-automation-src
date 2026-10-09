@@ -49,6 +49,18 @@ $env:MOCKUP_NO_AUTO_BROWSER = "1"
 Write-Host "Ana çalışma klasörü otomatik bulundu:" -ForegroundColor Green
 Write-Host $runtime
 
+$baselineScript = Join-Path $RepoRoot "scripts\\capture_runtime_baseline.py"
+if (Test-Path -LiteralPath $baselineScript) {
+    try {
+        & python $baselineScript --ensure
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "Runtime sürüm baseline oluşturma uyarısı. Çıkış kodu: $LASTEXITCODE" -ForegroundColor Yellow
+        }
+    } catch {
+        Write-Host "Runtime sürüm baseline uyarısı: $($_.Exception.Message)" -ForegroundColor Yellow
+    }
+}
+
 if (-not (Test-Path -LiteralPath $WatcherPath)) {
     Write-Host "HATA: Şablon izleyici bulunamadı: $WatcherPath" -ForegroundColor Red
     Read-Host "Kapatmak için Enter"
