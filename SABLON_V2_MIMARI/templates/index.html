@@ -124,10 +124,22 @@
             <div class="tool-note"><b>Dosyayı değiştirir.</b> Ham yedek sağlamsa onu çalışma kopyasının yerine güvenli şekilde yazar. Bundan sonra köşeleri yeniden kontrol edip şablonu tekrar onaylamanız gerekebilir.</div>
 
             <button type="button" id="templateHealthScanButton" onclick="runTemplateHealthScan()" style="background:#0f766e; width:100%; padding:11px 10px; margin-top:5px; text-align:left; font-weight:bold;">🩺 Ham Dosya Sağlık Taraması</button>
-            <div class="tool-note"><b>Sadece kontrol eder; hiçbir dosyayı silmez.</b> Çalışma dosyası eksik, ham yedek eksik/okunamıyor, DB kaydı olmayan dosya ve benzeri sorunları tarar. Çok siyah/beyaz-düz görselleri otomatik bozuk saymaz; yalnız insan kontrolüne işaretler. Tamamlanan bu manuel tarama ayrıca <b>son rapor</b> olarak kalıcı kaydedilir.</div>
+            <div class="tool-note"><b>Sadece kontrol eder; hiçbir dosyayı silmez.</b> Çalışma dosyası eksik, ham yedek eksik/okunamıyor, DB kaydı olmayan dosya ve benzeri sorunları tarar. Çok siyah/beyaz-düz görselleri otomatik bozuk saymaz; yalnız insan kontrolüne işaretler. Tamamlanan bu manuel tarama ayrıca <b>son rapor</b> ve <b>geçmiş kaydı</b> olarak saklanır.</div>
 
             <button type="button" id="lastTemplateHealthReportButton" onclick="openLastTemplateHealthReport()" style="background:#374151; width:100%; padding:11px 10px; margin-top:5px; text-align:left; font-weight:bold;">📄 Son Sağlık Raporunu Aç</button>
-            <div class="tool-note">En son başarıyla tamamlanan manuel Ham Dosya Sağlık Taraması kaydını açar. Uygulamayı kapatıp yeniden açsanız da kayıt kalır; yeni tam tarama tamamlanana kadar eski rapor korunur.</div>
+            <div class="tool-note">En son başarıyla tamamlanan manuel Ham Dosya Sağlık Taraması kaydını açar. Yeni taramada önceki rapora göre yeni/düzelen sorun farkı da hesaplanır.</div>
+
+            <button type="button" onclick="openTemplateHealthHistory()" style="background:#4b5563; width:100%; padding:11px 10px; margin-top:5px; text-align:left; font-weight:bold;">📚 Sağlık Rapor Geçmişi</button>
+            <div class="tool-note">Önceki Ham Dosya Sağlık Taramalarını tarih, sağlam/uyarı/kritik sayıları ve taramalar arası farklarla listeler.</div>
+
+            <button type="button" id="workspaceConsistencyScanButton" onclick="runWorkspaceConsistencyScan()" style="background:#1d4ed8; width:100%; padding:11px 10px; margin-top:9px; text-align:left; font-weight:bold;">🧭 Klasör Tutarlılık Taraması</button>
+            <div class="tool-note"><b>Tamamen READ-ONLY.</b> DB ↔ çalışma ↔ ham yedek eşitliğini; staging, çöp, recovery, Kaggle ve Mockup klasörlerini denetler. Kullanıcı dosyalarını silmez, taşımaz, yeniden adlandırmaz veya değiştirmez. Yalnız rapor kaydı oluşturur.</div>
+
+            <button type="button" onclick="openLastWorkspaceConsistencyReport()" style="background:#334155; width:100%; padding:11px 10px; margin-top:5px; text-align:left; font-weight:bold;">📄 Son Tutarlılık Raporunu Aç</button>
+            <div class="tool-note">Son audit raporunu açar. Kategori bazında DB / Çalışma / Ham / Staging sayıları, Kaggle-Mockup klasörleri, kod referansları ve tutarsızlıklar görünür.</div>
+
+            <button type="button" onclick="openWorkspaceConsistencyHistory()" style="background:#475569; width:100%; padding:11px 10px; margin-top:5px; text-align:left; font-weight:bold;">📚 Tutarlılık Rapor Geçmişi</button>
+            <div class="tool-note">Önceki klasör auditlerini listeler. Her yeni tarama, önceki rapora göre yeni sorunları ve düzelmiş sorunları hesaplar.</div>
 
             <div class="tool-divider"></div>
             <h3 class="tool-section-title">Kontrol ve Onay</h3>
