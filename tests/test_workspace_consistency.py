@@ -395,7 +395,9 @@ class TestWorkspaceConsistencyAudit(unittest.TestCase):
             )
             legacy = rows["0_KAGGLE_ONAY_BEKLEYENLER"]
             self.assertEqual(legacy["runtime_code_reference_count"], 0)
-            self.assertEqual(legacy["code_reference_count"], 0)
+            # Test/docs references remain visible in all-reference inventory,
+            # but they must not make a legacy folder look active at runtime.
+            self.assertEqual(legacy["code_reference_count"], 1)
 
     def test_frontend_and_backend_expose_persistent_workspace_audit(self):
         js = (
