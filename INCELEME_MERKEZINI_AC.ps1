@@ -11,7 +11,29 @@ function Test-RuntimeRoot([string]$Path) {
 }
 
 $runtime = $env:MOCKUP_RUNTIME_WORKSPACE
+$runtimeSource = "environment"
+
 if (-not (Test-RuntimeRoot $runtime)) {
+    $pointerBase = $env:LOCALAPPDATA
+    if ([string]::IsNullOrWhiteSpace($pointerBase)) {
+        $pointerBase = Join-Path $env:USERPROFILE ".jarvis_mockup"
+    }
+    $pointerPath = Join-Path $pointerBase "JarvisMockup\runtime_workspace.txt"
+    if (Test-Path -LiteralPath $pointerPath) {
+        try {
+            $pointerRuntime = (Get-Content -LiteralPath $pointerPath -Raw -Encoding UTF8).Trim()
+            if (Test-RuntimeRoot $pointerRuntime) {
+                $runtime = $pointerRuntime
+                $runtimeSource = "runtime pointer"
+            }
+        } catch {
+            Write-Host "Runtime pointer okuma uyarisi: $($_.Exception.Message)" -ForegroundColor Yellow
+        }
+    }
+}
+
+if (-not (Test-RuntimeRoot $runtime)) {
+    $runtimeSource = "automatic discovery"
     $candidates = @(
         (Join-Path $env:USERPROFILE "OneDrive\Masaüstü\GörselÜretme-ve-Mockup Otomasyonu"),
         (Join-Path $env:USERPROFILE "OneDrive\Desktop\GörselÜretme-ve-Mockup Otomasyonu"),
@@ -46,8 +68,9 @@ if (-not (Test-RuntimeRoot $runtime)) {
 $env:MOCKUP_RUNTIME_WORKSPACE = $runtime
 $env:MOCKUP_NO_AUTO_BROWSER = "1"
 
-Write-Host "Ana çalışma klasörü otomatik bulundu:" -ForegroundColor Green
+Write-Host "Ana çalışma klasörü bulundu:" -ForegroundColor Green
 Write-Host $runtime
+Write-Host "Runtime kaynağı: $runtimeSource" -ForegroundColor DarkGray
 
 $baselineScript = Join-Path $RepoRoot "scripts\\capture_runtime_baseline.py"
 if (Test-Path -LiteralPath $baselineScript) {
