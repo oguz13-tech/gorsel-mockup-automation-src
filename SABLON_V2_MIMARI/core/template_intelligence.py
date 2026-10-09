@@ -629,10 +629,10 @@ class CandidateGenerators:
 
         gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
         clahe = cv2.createCLAHE(
-            clipLimit=2.2,
+            clipLimit=4.0,
             tileGridSize=(8, 8),
         ).apply(gray)
-        smooth = cv2.GaussianBlur(clahe, (5, 5), 0)
+        smooth = cv2.GaussianBlur(clahe, (1, 1), 0)
 
         edge_union = np.zeros_like(smooth)
         for low, high in ((8, 28), (14, 42), (24, 70)):
@@ -640,6 +640,19 @@ class CandidateGenerators:
                 edge_union,
                 cv2.Canny(smooth, low, high),
             )
+
+        # Additional pass for white/opaque panel borders: higher contrast,
+        # no blur, lower Canny thresholds to catch subtle panel borders.
+        clahe2 = cv2.createCLAHE(
+            clipLimit=6.0,
+            tileGridSize=(8, 8),
+        ).apply(gray)
+        for low, high in ((4, 16), (8, 32)):
+            edge_union = cv2.bitwise_or(
+                edge_union,
+                cv2.Canny(clahe2, low, high),
+            )
+
         edge_union = cv2.morphologyEx(
             edge_union,
             cv2.MORPH_CLOSE,
@@ -652,7 +665,7 @@ class CandidateGenerators:
             edge_union,
             1,
             np.pi / 180.0,
-            threshold=max(22, int(round(min_dim * 0.055))),
+            threshold=max(15, int(round(min_dim * 0.045))),
             minLineLength=min_len,
             maxLineGap=max(10, int(round(min_dim * 0.04))),
         )
@@ -810,8 +823,137 @@ class CandidateGenerators:
                 seen.add(key)
                 candidates.append(canonical.astype(np.float32))
 
-                if len(candidates) >= 120:
-                    return candidates
+                # Also add white panel candidates for ocak category before hitting the limit
+        if str(category_folder) == "05_Ocak_Arkasi":
+            white_panel_candidates = CandidateGenerators.generate_white_panel_quads(
+                image_cv,
+                category_folder,
+            )
+            for wp in white_panel_candidates:
+                key = tuple(
+                    int(round(float(value) / 3.0))
+                    for point in wp
+                    for value in point
+                )
+                if key not in seen:
+                    seen.add(key)
+                    candidates.append(wp)
+
+        if len(candidates) >= 120:
+            return candidates
+
+        return candidates
+
+    @staticmethod
+    def generate_white_panel_quads(
+        image_cv: np.ndarray,
+        category_folder: str = "",
+    ) -> List[np.ndarray]:
+        """Detect white/opaque rectangular panels using color and contour analysis.
+
+        This is specifically for ocak_arkasi white/opaque backsplash panels that
+        may not have strong edge contrast but have distinct white interior
+        and low saturation.
+        """
+        h_img, w_img = image_cv.shape[:2]
+        if h_img < 40 or w_img < 40:
+            return []
+
+        # Only for ocak category
+        if str(category_folder) != "05_Ocak_Arkasi":
+            return []
+
+        # Restrict to upper 72% where backsplash panels live
+        roi_h = max(40, int(round(h_img * 0.72)))
+        roi = image_cv[:roi_h, :]
+
+        # Convert to HSV for white panel detection
+        hsv = cv2.cvtColor(roi, cv2.COLOR_BGR2HSV)
+        
+        # White panel: high Value (luma), low Saturation
+        # Background wall: V~214, S~2.5
+        # White panel: V~238, S~0
+        # Use stricter V channel threshold to exclude background wall
+        white_mask = cv2.inRange(
+            hsv, 
+            np.array([0, 0, 225], dtype=np.uint8), 
+            np.array([180, 20, 255], dtype=np.uint8)
+        )
+        
+        # Remove small noise
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+        white_mask = cv2.morphologyEx(white_mask, cv2.MORPH_CLOSE, kernel)
+        white_mask = cv2.morphologyEx(white_mask, cv2.MORPH_OPEN, kernel)
+        
+        # Find contours
+        contours, _ = cv2.findContours(white_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        
+        candidates = []
+        seen = set()
+        img_area = float(w_img * h_img)
+        
+        for cnt in contours:
+            area = cv2.contourArea(cnt)
+            if area < img_area * 0.02:  # At least 2% of image
+                continue
+            if area > img_area * 0.50:  # Not full image
+                continue
+            
+            # Approximate to polygon
+            epsilon = 0.02 * cv2.arcLength(cnt, True)
+            approx = cv2.approxPolyDP(cnt, epsilon, True)
+            
+            if len(approx) == 4:
+                quad = approx.reshape(4, 2).astype(np.float32)
+            else:
+                # Fit minimum area rectangle
+                rect = cv2.minAreaRect(cnt)
+                box = cv2.boxPoints(rect)
+                quad = np.asarray(box, dtype=np.float32)
+            
+            # Validate
+            valid, _ = GeometryValidator.is_valid_quad(quad, w_img, roi_h)
+            if not valid:
+                continue
+                
+            canonical = GeometryValidator.canonical_sort(quad)
+            
+            # Check if in backsplash zone
+            center = np.mean(canonical, axis=0)
+            cy = float(center[1]) / float(roi_h)
+            if cy > 0.67 or cy < 0.10:
+                continue
+                
+            area_ratio = float(abs(cv2.contourArea(canonical)) / max(float(w_img * roi_h), 1.0))
+            if area_ratio > 0.48:
+                continue
+            
+            # Check aspect ratio
+            top_w = np.linalg.norm(canonical[1] - canonical[0])
+            bottom_w = np.linalg.norm(canonical[2] - canonical[3])
+            left_h = np.linalg.norm(canonical[3] - canonical[0])
+            right_h = np.linalg.norm(canonical[2] - canonical[1])
+            avg_w = (top_w + bottom_w) * 0.5
+            avg_h = (left_h + right_h) * 0.5
+            if avg_h <= 1.0 or (avg_w / avg_h) < 0.85:
+                continue
+            
+            # Convert to full image coordinates
+            canonical_full = canonical.copy()
+            canonical_full[:, 1] = canonical_full[:, 1]  # Already in ROI coordinates
+            
+            key = tuple(
+                int(round(float(value) / 3.0))
+                for point in canonical_full
+                for value in point
+            )
+            if key in seen:
+                continue
+            seen.add(key)
+            candidates.append(canonical_full.astype(np.float32))
+            
+            if len(candidates) >= 20:
+                break
 
         return candidates
 
@@ -1490,6 +1632,15 @@ class TemplateAnalyzer:
                     category_folder,
                 )
             )
+            # Also try white panel detector for opaque white panels
+            white_panel_candidates = (
+                CandidateGenerators.generate_white_panel_quads(
+                    img,
+                    category_folder,
+                )
+            )
+            if white_panel_candidates:
+                ocak_special_candidates.extend(white_panel_candidates)
             ocak_special = self.select_ocak_arkasi_special_candidate(
                 img,
                 ocak_special_candidates,
@@ -1526,6 +1677,7 @@ class TemplateAnalyzer:
                     "special_candidate_score": float(
                         ocak_special["score"]
                     ),
+                    "glass_priority_selected": 1.0,
                 }
                 provenance = "AUTO_OCAK_ARKASI_SPECIAL"
 
