@@ -393,29 +393,53 @@ def api_orijinal_yukle():
         dest_path = _safe_template_path(active_cat, stem + ".png")
         os.makedirs(os.path.dirname(dest_path), exist_ok=True)
 
-        img_raw = cv2.imdecode(
-            np.fromfile(src_path, dtype=np.uint8),
-            cv2.IMREAD_COLOR,
+        destination_before_sha256 = (
+            _sha256_file(dest_path)
+            if os.path.isfile(dest_path)
+            else None
         )
-        if img_raw is None:
-            return jsonify({
-                "success": False,
-                "error": "Orijinal yedek görsel okunamadı.",
-            }), 422
-
-        ok, encoded = cv2.imencode(".png", img_raw)
-        if not ok:
-            return jsonify({
-                "success": False,
-                "error": "Orijinal görsel PNG olarak kodlanamadı.",
-            }), 500
+        backup_source_hash = _sha256_file(src_path)
 
         tmp_path = dest_path + f".restore_{uuid.uuid4().hex}.tmp"
         try:
-            with open(tmp_path, "wb") as handle:
-                handle.write(encoded.tobytes())
-                handle.flush()
-                os.fsync(handle.fileno())
+            if Path(src_path).suffix.lower() == ".png":
+                # A raw PNG restore must be byte-for-byte exact. Decoding with
+                # IMREAD_COLOR would silently discard alpha/transparency.
+                with open(src_path, "rb") as source_handle:
+                    source_bytes = source_handle.read()
+                if not source_bytes:
+                    return jsonify({
+                        "success": False,
+                        "error": "Orijinal PNG yedek boş.",
+                    }), 422
+                with open(tmp_path, "wb") as handle:
+                    handle.write(source_bytes)
+                    handle.flush()
+                    os.fsync(handle.fileno())
+            else:
+                # Non-PNG backups still normalize to PNG, but preserve all
+                # available channels (including alpha when the format has it).
+                img_raw = cv2.imdecode(
+                    np.fromfile(src_path, dtype=np.uint8),
+                    cv2.IMREAD_UNCHANGED,
+                )
+                if img_raw is None:
+                    return jsonify({
+                        "success": False,
+                        "error": "Orijinal yedek görsel okunamadı.",
+                    }), 422
+
+                ok, encoded = cv2.imencode(".png", img_raw)
+                if not ok:
+                    return jsonify({
+                        "success": False,
+                        "error": "Orijinal görsel PNG olarak kodlanamadı.",
+                    }), 500
+                with open(tmp_path, "wb") as handle:
+                    handle.write(encoded.tobytes())
+                    handle.flush()
+                    os.fsync(handle.fileno())
+
             os.replace(tmp_path, dest_path)
         finally:
             if os.path.exists(tmp_path):
@@ -424,7 +448,6 @@ def api_orijinal_yukle():
                 except OSError:
                     pass
 
-        backup_source_hash = _sha256_file(src_path)
         current_hash = _sha256_file(dest_path)
         _invalidate_stale_profiles_for_source(
             active_cat,
@@ -447,13 +470,22 @@ def api_orijinal_yukle():
             "success": True,
             "source_sha256": current_hash,
             "backup_source_sha256": backup_source_hash,
+            "destination_before_sha256": destination_before_sha256,
+            "destination_after_sha256": current_hash,
             "backup_source_file": backup_relative,
+            "backup_source_absolute": os.path.abspath(src_path),
             "backup_source_exact_name": (
                 Path(src_path).name == Path(active_tmpl).name
             ),
             "destination_file": destination_relative,
+            "destination_absolute": os.path.abspath(dest_path),
+            "runtime_root": os.path.abspath(BASE_DIR),
             "source_root": "2_SABLON_HAVUZU_ORIJINAL_YEDEK",
             "destination_root": "2_SABLON_HAVUZU",
+            "png_byte_exact_restore": bool(
+                Path(src_path).suffix.lower() == ".png"
+                and backup_source_hash == current_hash
+            ),
             "profiles_revalidation_required": True,
         })
     except ValueError as exc:
