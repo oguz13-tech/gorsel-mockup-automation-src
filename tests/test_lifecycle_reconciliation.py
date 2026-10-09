@@ -75,6 +75,15 @@ class TestLifecycleReconciliation(unittest.TestCase):
                 row["recommended_keep"],
                 "AhsapTablo_015.png",
             )
+            self.assertFalse(row["byte_equivalent"])
+            self.assertFalse(row["pixel_equivalent"])
+            self.assertEqual(row["files"][0]["width"], 64)
+            self.assertEqual(row["files"][0]["height"], 48)
+            self.assertTrue(row["files"][0]["decode_ok"])
+            self.assertIn(
+                "decoded_pixel_sha256",
+                row["files"][0],
+            )
 
             operation = archive_duplicate_variants(
                 root,
@@ -100,6 +109,47 @@ class TestLifecycleReconciliation(unittest.TestCase):
             self.assertTrue(keep.is_file())
             self.assertTrue(duplicate.is_file())
             self.assertEqual(sha256_file(duplicate), duplicate_sha)
+
+    def test_manual_duplicate_reports_pixel_equivalence_without_auto_choice(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            category = "03_Ahsap_Tablo"
+            backup = (
+                root
+                / "2_SABLON_HAVUZU_ORIJINAL_YEDEK"
+                / category
+            )
+            png = backup / "AhsapTablo_011.png"
+            jpeg = backup / "AhsapTablo_011.jpeg"
+            _write_image(png, 77, ".png")
+            _write_image(jpeg, 77, ".jpg")
+
+            report = lifecycle_center_report(
+                root,
+                _settings(category),
+            )
+            row = next(
+                item for item in report["duplicates"]
+                if item["identity"] == "ahsaptablo_011"
+            )
+
+            self.assertIsNone(row["active_template"])
+            self.assertIsNone(row["recommended_keep"])
+            self.assertFalse(row["safe_recommendation"])
+            self.assertTrue(row["requires_manual_choice"])
+            self.assertTrue(row["pixel_equivalent"])
+            self.assertIn(
+                "görsel olarak aynı",
+                row["manual_choice_reason"],
+            )
+            self.assertNotEqual(
+                row["files"][0]["sha256"],
+                row["files"][1]["sha256"],
+            )
+            self.assertEqual(
+                row["files"][0]["decoded_pixel_sha256"],
+                row["files"][1]["decoded_pixel_sha256"],
+            )
 
     def test_duplicate_archive_rejects_replacing_active_exact_choice(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -427,6 +477,9 @@ class TestLifecycleReconciliation(unittest.TestCase):
 
         self.assertNotIn("alert(", js)
         self.assertIn("function showMessage", js)
+        self.assertIn("formatLifecycleFileEvidence", js)
+        self.assertIn("PIXEL_SHA256=", js)
+        self.assertIn("Piksel olarak aynı:", js)
         self.assertIn("resolveCurrentTemplateDuplicates", js)
         self.assertIn("replaceOriginalSelectedFile", js)
         self.assertIn("openLifecycleCenter", js)
