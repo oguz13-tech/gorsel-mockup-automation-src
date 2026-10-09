@@ -40,10 +40,73 @@ from core.template_identity import (
     extract_number,
     reserve_number,
 )
+from core.operation_lock import (
+    TemplateBusyError,
+    acquire_template_lock,
+    release_template_lock,
+    template_operation_lock,
+)
+from core.analysis_cache import (
+    load_analysis_cache,
+    save_analysis_cache,
+    cache_stats,
+)
+from core.job_engine import (
+    PersistentJobEngine,
+    create_job,
+    get_job,
+    list_jobs,
+    request_job_stop,
+)
 import hashlib
 import uuid
+from functools import wraps
 
 app = Flask(__name__)
+
+
+def _template_guard_values(source):
+    if source == "headers":
+        return (
+            str(request.headers.get("X-Active-Category", "")).strip(),
+            str(request.headers.get("X-Active-Template", "")).strip(),
+        )
+    payload = request.get_json(silent=True) or {}
+    if source == "json_tr":
+        return (
+            str(payload.get("kategori") or "").strip(),
+            str(payload.get("sablon") or "").strip(),
+        )
+    return (
+        str(payload.get("category") or "").strip(),
+        str(payload.get("template") or "").strip(),
+    )
+
+
+def template_guard(operation, *, source="headers", wait_seconds=0.15):
+    """Backend lock decorator for one-template request endpoints."""
+    def decorator(func):
+        @wraps(func)
+        def wrapped(*args, **kwargs):
+            category, template = _template_guard_values(source)
+            if not category or not template:
+                return func(*args, **kwargs)
+            try:
+                with template_operation_lock(
+                    category,
+                    template,
+                    operation,
+                    wait_seconds=wait_seconds,
+                ):
+                    return func(*args, **kwargs)
+            except TemplateBusyError as exc:
+                return jsonify({
+                    "success": False,
+                    "error": str(exc),
+                    "code": "TEMPLATE_BUSY",
+                }), 409
+        return wrapped
+    return decorator
 
 
 def occlusion_plan_has_objects(plan) -> bool:
@@ -235,6 +298,7 @@ def api_ayarlar():
             return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/api/tekil_sablon_kaydet', methods=['POST'])
+@template_guard('save', source='json_tr')
 def api_tekil_sablon_kaydet():
     try:
         req = request.json
@@ -294,6 +358,7 @@ def api_bulk_save_geometry():
         return jsonify({"success": False, "error": str(e)}), 500
 
 @app.route('/api/orijinal_yukle', methods=['POST'])
+@template_guard('restore-original', source='headers')
 def api_orijinal_yukle():
     """Restore a template working image from the immutable original backup.
 
@@ -381,6 +446,7 @@ def api_orijinal_yukle():
 
 
 @app.route('/api/auto_detect_corners', methods=['POST'])
+@template_guard('auto-detect-corners', source='headers')
 def api_auto_detect_corners():
     """Return a review-only geometry proposal from the current analyzer.
 
@@ -405,14 +471,16 @@ def api_auto_detect_corners():
         if img_cv is None:
             return jsonify({"success": False, "error": "Resim okunamadi"}), 500
 
-        analyzer = TemplateAnalyzer()
-        analysis = analyzer.analyze(
-            img_path,
+        analysis, cache_hit = _analyze_auto_cached(
             active_cat,
-            manual_geometry_prior=None,
+            img_path,
         )
         corners = analysis.get("surface_quad")
-        engine = "template_analyzer"
+        engine = (
+            "template_analyzer_cache"
+            if cache_hit
+            else "template_analyzer"
+        )
 
         # Conservative compatibility fallback: legacy detector may still find a
         # proposal when every EPIC-3 generator fails. It remains review-only.
@@ -1155,6 +1223,34 @@ def _sha256_file(path: str) -> str:
     return digest.hexdigest()
 
 
+def _analyze_auto_cached(category: str, img_path: str):
+    """Run the unchanged AUTO analyzer only when cache identity misses."""
+    source_hash = _sha256_file(img_path)
+    analyzer = TemplateAnalyzer()
+    cached = load_analysis_cache(
+        category,
+        source_hash,
+        analyzer.version,
+    )
+    if cached is not None:
+        return cached, True
+
+    analysis = analyzer.analyze(
+        img_path,
+        category,
+        manual_geometry_prior=None,
+    )
+    save_analysis_cache(
+        category,
+        source_hash,
+        analyzer.version,
+        analysis,
+    )
+    analysis = dict(analysis)
+    analysis["_cache_hit"] = False
+    return analysis, False
+
+
 def _bind_on_plan_source_identity(
     category: str,
     template_name: str,
@@ -1281,7 +1377,7 @@ def _profile_data_from_analysis(category, template_name, analysis):
 
 
 def _analyze_template_for_batch(category, template_name):
-    """CPU-heavy, read-only stage for one batch item."""
+    """CPU-heavy stage with backend lock + source/version cache."""
     img_path = _safe_template_path(category, template_name)
     if not os.path.isfile(img_path):
         return {
@@ -1291,17 +1387,27 @@ def _analyze_template_for_batch(category, template_name):
         }
 
     try:
-        # One analyzer per worker avoids shared mutable state. The actual
-        # quality algorithm is exactly TemplateAnalyzer.analyze().
-        analysis = TemplateAnalyzer().analyze(
-            img_path,
+        with template_operation_lock(
             category,
-            manual_geometry_prior=None,
-        )
+            template_name,
+            "batch-analyze",
+            wait_seconds=0.35,
+        ):
+            analysis, cache_hit = _analyze_auto_cached(
+                category,
+                img_path,
+            )
         return {
             "template": template_name,
             "status": "ANALYZED",
             "analysis": analysis,
+            "cache_hit": bool(cache_hit),
+        }
+    except TemplateBusyError as exc:
+        return {
+            "template": template_name,
+            "status": "BUSY",
+            "error": str(exc),
         }
     except Exception as exc:
         return {
@@ -1312,6 +1418,7 @@ def _analyze_template_for_batch(category, template_name):
 
 
 @app.route('/api/templates/foreground_detect', methods=['POST'])
+@template_guard('foreground-detect', source='json')
 def api_templates_foreground_detect():
     """Suggest automatic foreground object boxes using Grounding-DINO + SAM.
 
@@ -1415,6 +1522,7 @@ def api_templates_foreground_detect():
 
 
 @app.route('/api/templates/analyze', methods=['POST'])
+@template_guard('analyze', source='headers')
 def api_templates_analyze():
     try:
         active_cat = request.headers.get('X-Active-Category', '')
@@ -1785,6 +1893,7 @@ def api_templates_batch_analyze():
 
 
 @app.route('/api/templates/update_corners', methods=['POST'])
+@template_guard('approve-update-corners', source='json')
 def api_templates_update_corners():
     """Validate and atomically approve a human-corrected quad.
 
