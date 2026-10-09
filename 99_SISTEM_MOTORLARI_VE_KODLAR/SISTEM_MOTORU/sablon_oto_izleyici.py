@@ -52,6 +52,12 @@ YEDEK_DIR = BASE_DIR / "2_SABLON_HAVUZU_ORIJINAL_YEDEK"
 STAGING_DIR = BASE_DIR / "YENI-BOS MOCKUP SABLON HAVUZU"
 RUNTIME_ENGINE_DIR = BASE_DIR / "99_SISTEM_MOTORLARI_VE_KODLAR" / "SISTEM_MOTORU"
 REGISTRY_PATH = RUNTIME_ENGINE_DIR / "logs" / "whitened_registry.json"
+STAGING_BLOCK_REGISTRY_PATH = (
+    BASE_DIR
+    / "SABLON_V2_MIMARI"
+    / "recovery"
+    / "staging_blocked_files.json"
+)
 
 SOURCE_ENGINE_DIR = SOURCE_ROOT / "99_SISTEM_MOTORLARI_VE_KODLAR" / "SISTEM_MOTORU"
 SOURCE_ARCH_DIR = SOURCE_ROOT / "SABLON_V2_MIMARI"
@@ -105,6 +111,106 @@ def save_registry(registry: set):
             json.dump(list(registry), f, ensure_ascii=False, indent=2)
     except Exception as e:
         logger.warning(f"Registry kaydedilemedi: {e}")
+
+def _load_staging_block_registry() -> dict:
+    path = (
+        BASE_DIR
+        / "SABLON_V2_MIMARI"
+        / "recovery"
+        / "staging_blocked_files.json"
+    )
+    if not path.is_file():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def _save_staging_block_registry(data: dict) -> None:
+    path = (
+        BASE_DIR
+        / "SABLON_V2_MIMARI"
+        / "recovery"
+        / "staging_blocked_files.json"
+    )
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    try:
+        with open(tmp, "w", encoding="utf-8") as handle:
+            json.dump(data, handle, ensure_ascii=False, indent=2)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp, path)
+    finally:
+        try:
+            if tmp.exists():
+                tmp.unlink()
+        except OSError:
+            pass
+
+
+def _staging_file_signature(path: Path) -> dict | None:
+    try:
+        stat = path.stat()
+    except OSError:
+        return None
+    return {
+        "size_bytes": int(stat.st_size),
+        "mtime_ns": int(stat.st_mtime_ns),
+    }
+
+
+def _mark_staging_blocked(
+    path: Path,
+    *,
+    reason: str,
+    details: dict | None = None,
+) -> None:
+    signature = _staging_file_signature(path)
+    if signature is None:
+        return
+    registry = _load_staging_block_registry()
+    registry[str(path.resolve())] = {
+        **signature,
+        "reason": str(reason or "COLLISION"),
+        "details": details or {},
+        "blocked_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+    }
+    _save_staging_block_registry(registry)
+
+
+def _is_staging_blocked_unchanged(path: Path) -> bool:
+    signature = _staging_file_signature(path)
+    if signature is None:
+        return False
+    key = str(path.resolve())
+    registry = _load_staging_block_registry()
+    row = registry.get(key)
+    if not isinstance(row, dict):
+        return False
+
+    same = (
+        int(row.get("size_bytes", -1)) == signature["size_bytes"]
+        and int(row.get("mtime_ns", -1)) == signature["mtime_ns"]
+    )
+    if same:
+        return True
+
+    # File content/name state changed: allow a fresh validation attempt.
+    registry.pop(key, None)
+    _save_staging_block_registry(registry)
+    return False
+
+
+def _clear_staging_block(path: Path) -> None:
+    key = str(path.resolve())
+    registry = _load_staging_block_registry()
+    if key in registry:
+        registry.pop(key, None)
+        _save_staging_block_registry(registry)
+
 
 def _staging_txn_dir() -> Path:
     return (
@@ -652,6 +758,11 @@ def process_from_staging(staging_path: Path, thread_lock=None) -> bool:
                 processing_path,
                 original_staging_path,
             )
+            _mark_staging_blocked(
+                original_staging_path,
+                reason="IDENTITY_CONFLICT",
+                details=exc.report,
+            )
             _update_staging_txn(
                 txn_path,
                 txn,
@@ -702,6 +813,18 @@ def process_from_staging(staging_path: Path, thread_lock=None) -> bool:
                 _restore_processing_file(
                     processing_path,
                     original_staging_path,
+                )
+                number_details = {
+                    "category": cat_key,
+                    "requested_number": requested_idx,
+                    "incoming_name": original_staging_path.name,
+                    "incoming_extension": original_staging_path.suffix.lower(),
+                    "suggested_number": exc.suggested_start,
+                }
+                _mark_staging_blocked(
+                    original_staging_path,
+                    reason="NUMBER_CONFLICT",
+                    details=number_details,
                 )
                 _update_staging_txn(
                     txn_path,
@@ -906,6 +1029,7 @@ def process_from_staging(staging_path: Path, thread_lock=None) -> bool:
         logger.info(
             f"📦 Orijinal korundu: {backup_path}"
         )
+        _clear_staging_block(original_staging_path)
         logger.info(
             f"⏳ [REVIEW_REQUIRED] {new_name} inceleme merkezine eklendi. "
             "Üretime girmesi için insan onayı gerekiyor."
@@ -1038,6 +1162,9 @@ def run_watcher():
                     or "-beyazlatilmis-onizleme" in candidate.stem
                     or candidate.suffix == ".processing"
                 ):
+                    continue
+
+                if _is_staging_blocked_unchanged(candidate):
                     continue
 
                 try:
