@@ -471,6 +471,7 @@ class TestLifecycleReconciliation(unittest.TestCase):
         ).read_text(encoding="utf-8")
 
         self.assertIn("/api/lifecycle/center", app_source)
+        self.assertIn("/api/staging/latest-collision", app_source)
         self.assertIn(
             "/api/lifecycle/resolve-duplicate",
             app_source,
@@ -483,6 +484,10 @@ class TestLifecycleReconciliation(unittest.TestCase):
 
         self.assertNotIn("alert(", js)
         self.assertIn("function showMessage", js)
+        self.assertIn("formatStagingCollisionWarning", js)
+        self.assertIn("startStagingCollisionPolling", js)
+        self.assertIn("jarvis-last-staging-collision-id", js)
+        self.assertIn("AYNI İSİM, FARKLI UZANTI", js)
         self.assertIn("formatLifecycleFileEvidence", js)
         self.assertIn("PIXEL_SHA256=", js)
         self.assertIn("Piksel olarak aynı:", js)
