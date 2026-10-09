@@ -533,6 +533,66 @@ def api_lifecycle_center():
         }), 500
 
 
+@app.route('/api/staging/latest-collision')
+def api_staging_latest_collision():
+    """Return the most recent persisted staging identity/number collision."""
+    txn_dir = (
+        Path(BASE_DIR)
+        / "SABLON_V2_MIMARI"
+        / "recovery"
+        / "staging_transactions"
+    )
+    if not txn_dir.is_dir():
+        return jsonify({
+            "success": True,
+            "collision": None,
+        })
+
+    candidates = sorted(
+        txn_dir.glob("*.json"),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    for txn_path in candidates[:100]:
+        try:
+            data = json.loads(txn_path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        identity_conflict = data.get("identity_conflict")
+        number_conflict = data.get("number_conflict")
+        if not identity_conflict and not number_conflict:
+            continue
+
+        try:
+            age_seconds = max(
+                0.0,
+                time.time() - float(txn_path.stat().st_mtime),
+            )
+        except OSError:
+            age_seconds = None
+
+        return jsonify({
+            "success": True,
+            "collision": {
+                "transaction_id": (
+                    data.get("transaction_id")
+                    or txn_path.stem
+                ),
+                "state": data.get("state"),
+                "updated_at": data.get("updated_at"),
+                "age_seconds": age_seconds,
+                "error": data.get("error"),
+                "identity_conflict": identity_conflict,
+                "number_conflict": number_conflict,
+            },
+        })
+
+    return jsonify({
+        "success": True,
+        "collision": None,
+    })
+
+
 @app.route('/api/lifecycle/resolve-duplicate', methods=['POST'])
 def api_lifecycle_resolve_duplicate():
     """Move non-kept duplicate variants to recoverable lifecycle storage."""
