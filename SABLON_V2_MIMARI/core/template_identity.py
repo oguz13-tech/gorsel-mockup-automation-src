@@ -229,8 +229,7 @@ def collect_identity_conflicts(
 
     db_path = _db_path(runtime_root)
     if db_path.is_file():
-        ensure_registry_table(runtime_root)
-        conn = sqlite3.connect(str(db_path), timeout=30)
+        conn = _connect_read_only(db_path)
         try:
             # Active template registry.
             try:
@@ -479,6 +478,26 @@ def _db_path(runtime_root: Path) -> Path:
     return runtime_root / "SABLON_V2_MIMARI" / "ayarlar.db"
 
 
+def _connect_read_only(db_path: Path) -> sqlite3.Connection:
+    """Open an existing SQLite DB without creating it or writing schema/data.
+
+    Reserved-number and incoming-file checks must never run migrations.
+    Creation of the number registry belongs exclusively to explicit writer
+    operations such as reserve_number() and backfill_registry().
+    """
+    conn = sqlite3.connect(
+        db_path.resolve().as_uri() + "?mode=ro",
+        uri=True,
+        timeout=30,
+    )
+    try:
+        conn.execute("PRAGMA query_only = ON")
+    except BaseException:
+        conn.close()
+        raise
+    return conn
+
+
 def ensure_registry_table(runtime_root: Path) -> None:
     db_path = _db_path(Path(runtime_root))
     if not db_path.is_file():
@@ -536,18 +555,26 @@ def _numbers_from_db(runtime_root: Path, category: str) -> set[int]:
     if not db_path.is_file():
         return set()
 
-    ensure_registry_table(runtime_root)
     numbers: set[int] = set()
-    conn = sqlite3.connect(str(db_path), timeout=30)
+    conn = _connect_read_only(db_path)
     try:
-        for row in conn.execute(
-            """SELECT template_number
-               FROM template_number_registry
-               WHERE category=?""",
-            (category,),
-        ).fetchall():
+        # Legacy databases may not yet have the registry table. A lookup
+        # must never create it; the explicit writer/bootstrap path does that.
+        try:
+            registry_rows = conn.execute(
+                """SELECT template_number
+                   FROM template_number_registry
+                   WHERE category=?""",
+                (category,),
+            ).fetchall()
+        except sqlite3.OperationalError as exc:
+            if "no such table: template_number_registry" not in str(exc).lower():
+                raise
+            registry_rows = []
+
+        for (value,) in registry_rows:
             try:
-                numbers.add(int(row[0]))
+                numbers.add(int(value))
             except (TypeError, ValueError):
                 pass
 
