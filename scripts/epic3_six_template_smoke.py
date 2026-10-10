@@ -333,6 +333,66 @@ def _render_one(
     }
 
 
+def _build_contact_sheet(cv2, np, results: list[dict], temp: Path) -> str:
+    """Compare six disposable 3:4 previews at a glance, including blockers."""
+    cell_w, cell_h, top = 320, 452, 48
+    sheet = np.full(
+        (top + cell_h * 2, cell_w * 3, 3), 239, dtype=np.uint8,
+    )
+    cv2.putText(
+        sheet, "EPIC-3 SIX TEMPLATES - TEST ONLY",
+        (16, 32), cv2.FONT_HERSHEY_SIMPLEX, 0.75,
+        (33, 33, 33), 2, cv2.LINE_AA,
+    )
+    for i, category in enumerate(CATEGORY_UIDS):
+        row, col = divmod(i, 3)
+        x0, y0 = col * cell_w, top + row * cell_h
+        record = results[i]
+        output = record.get("output")
+        preview = None
+        if output:
+            candidate = _inside(temp, Path(output))
+            if candidate.is_file():
+                preview = cv2.imread(str(candidate), cv2.IMREAD_COLOR)
+        cv2.rectangle(
+            sheet, (x0 + 6, y0 + 7),
+            (x0 + cell_w - 7, y0 + cell_h - 8),
+            (206, 206, 206), 1,
+        )
+        cv2.putText(
+            sheet, category, (x0 + 12, y0 + 27),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.46,
+            (30, 30, 30), 1, cv2.LINE_AA,
+        )
+        cv2.putText(
+            sheet, "STATUS: " + str(record.get("status", "UNKNOWN")),
+            (x0 + 12, y0 + 48),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.46,
+            (28, 90, 45) if record.get("status") == "PASS"
+            else (25, 25, 180), 1, cv2.LINE_AA,
+        )
+        if preview is not None:
+            small = cv2.resize(
+                preview, (270, 360), interpolation=cv2.INTER_AREA,
+            )
+            sheet[y0 + 62:y0 + 422, x0 + 25:x0 + 295] = small
+        else:
+            reason = str(record.get("reason") or "No rendered preview")
+            cv2.putText(
+                sheet, reason[:36], (x0 + 18, y0 + 100),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.42,
+                (15, 15, 160), 1, cv2.LINE_AA,
+            )
+    output_path = temp / "CONTACT_SHEET_TEST_ONLY.jpg"
+    ok, encoded = cv2.imencode(
+        ".jpg", sheet, [int(cv2.IMWRITE_JPEG_QUALITY), 92],
+    )
+    if not ok:
+        raise SmokeBlocked("CONTACT_SHEET_ENCODING_FAILED")
+    output_path.write_bytes(encoded.tobytes())
+    return str(output_path)
+
+
 def smoke(runtime_root: Path, temp: Path, repo_root: Path) -> dict:
     db = runtime_root / "SABLON_V2_MIMARI" / "ayarlar.db"
     pool = runtime_root / "2_SABLON_HAVUZU"
@@ -363,7 +423,9 @@ def smoke(runtime_root: Path, temp: Path, repo_root: Path) -> dict:
             print("TEMPLATE_RESULT", json.dumps(result, ensure_ascii=False), flush=True)
     finally:
         conn.close()
+    contact_sheet = _build_contact_sheet(cv2, np, results, temp)
     return {
+        "contact_sheet": contact_sheet,
         "mode": "ISOLATED_SIX_TEMPLATE_SMOKE",
         "runtime_readonly_root": str(runtime_root),
         "test_output_root": str(temp),
