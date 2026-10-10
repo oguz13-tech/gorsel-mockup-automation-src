@@ -66,6 +66,44 @@ def _atomic_write_png(path: Path, image: np.ndarray) -> None:
     _atomic_write_bytes(path, encoded.tobytes())
 
 
+def _atomic_create_bytes(path: Path, payload: bytes) -> None:
+    """Publish complete bytes only when the target does not already exist.
+
+    A same-directory hard link makes publication atomic on NTFS/POSIX and
+    refuses to overwrite a concurrent writer's destination. Unsupported
+    filesystems fail closed; never fall back to os.replace().
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp = path.with_name(path.name + f".{uuid.uuid4().hex}.tmp")
+    try:
+        with temp.open("xb") as handle:
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        try:
+            os.link(temp, path)
+        except FileExistsError as exc:
+            raise LifecycleSafetyError(
+                f"Hedef eşzamanlı oluşturulmuş; üzerine yazılmadı: {path.name}"
+            ) from exc
+        except OSError as exc:
+            raise LifecycleSafetyError(
+                f"Dosya atomik ve üzerine yazmasız yayımlanamadı: {path.name}: {exc}"
+            ) from exc
+    finally:
+        try:
+            temp.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def _atomic_create_png(path: Path, image: np.ndarray) -> None:
+    ok, encoded = cv2.imencode(".png", image)
+    if not ok:
+        raise LifecycleSafetyError("Yeni çalışma görseli PNG olarak kodlanamadı.")
+    _atomic_create_bytes(path, encoded.tobytes())
+
+
 def _image_files(category_dir: Path) -> Iterable[Path]:
     if not category_dir.is_dir():
         return []
@@ -751,6 +789,7 @@ def replace_original_and_working(
         identity=identity,
     )
     moved = []
+    published = {}
     manifest = {
         "operation_id": operation_id,
         "kind": "REPLACE_ORIGINAL",
@@ -790,11 +829,13 @@ def replace_original_and_working(
                 manifest["moved"] = moved
                 _write_manifest(op_dir, manifest)
 
-        _atomic_write_bytes(new_backup, upload_bytes)
-        _atomic_write_png(new_working, image)
+        _atomic_create_bytes(new_backup, upload_bytes)
+        published[new_backup] = sha256_file(new_backup)
+        _atomic_create_png(new_working, image)
+        published[new_working] = sha256_file(new_working)
 
-        manifest["new_backup_sha256"] = sha256_file(new_backup)
-        manifest["new_working_sha256"] = sha256_file(new_working)
+        manifest["new_backup_sha256"] = published[new_backup]
+        manifest["new_working_sha256"] = published[new_working]
         manifest["new_backup_absolute"] = str(new_backup.resolve())
         manifest["new_working_absolute"] = str(new_working.resolve())
         manifest["state"] = "COMMITTED"
@@ -802,21 +843,43 @@ def replace_original_and_working(
         _write_manifest(op_dir, manifest)
         return manifest
     except Exception:
-        for path in (new_backup, new_working):
+        # Never remove a target created/modified by another process.
+        # If recovery cannot be completed safely, keep archived originals
+        # and mark the operation for manual review instead of claiming
+        # that rollback succeeded.
+        conflicts = []
+        for path, expected_hash in published.items():
             try:
-                if path.exists():
+                if path.is_file() and sha256_file(path) == expected_hash:
                     path.unlink()
-            except OSError:
-                pass
+                elif path.exists():
+                    conflicts.append(f"Başka işlem hedefi değiştirdi: {path}")
+            except OSError as exc:
+                conflicts.append(f"Yeni hedef güvenle kaldırılamadı: {path}: {exc}")
         for item in reversed(moved):
             original = Path(item["from"])
             archived = Path(item["to"])
-            if archived.exists() and not original.exists():
+            if not archived.exists():
+                if not original.exists():
+                    conflicts.append(f"Arşivlenmiş kaynak bulunamadı: {archived}")
+                continue
+            if original.exists():
+                conflicts.append(f"Kaynak yolunda başka dosya var: {original}")
+                continue
+            try:
                 original.parent.mkdir(parents=True, exist_ok=True)
                 shutil.move(str(archived), str(original))
-        manifest["state"] = "ROLLED_BACK"
+            except OSError as exc:
+                conflicts.append(f"Kaynak geri yüklenemedi: {original}: {exc}")
+        manifest["state"] = "RECOVERY_REQUIRED" if conflicts else "ROLLED_BACK"
+        manifest["rollback_conflicts"] = conflicts
         manifest["completed_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
         _write_manifest(op_dir, manifest)
+        if conflicts:
+            raise LifecycleSafetyError(
+                "Otomatik geri alma güvenli değil; eski dosyalar recovery alanında "
+                f"korundu. Operasyon={operation_id}; neden={'; '.join(conflicts)}"
+            )
         raise
 
 
