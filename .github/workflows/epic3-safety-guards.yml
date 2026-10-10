@@ -30,7 +30,9 @@ jobs:
             tests/test_epic3_archive_guards_readonly.py \
             tests/test_template_identity.py \
             tests/test_template_identity_extensions.py \
-            tests/test_epic3_lifecycle_no_overwrite.py
+            tests/test_epic3_lifecycle_no_overwrite.py \
+            scripts/epic3_six_template_smoke.py \
+            tests/test_epic3_six_template_smoke.py
       - name: Read-only DB and identity safety regressions
         env:
           PYTHONUTF8: "1"
@@ -81,7 +83,8 @@ jobs:
             tests/test_runtime_migration.py \
             tests/test_template_identity_extensions.py \
             tests/test_epic3_archive_guards_readonly.py \
-            tests/test_epic3_lifecycle_no_overwrite.py
+            tests/test_epic3_lifecycle_no_overwrite.py \
+            tests/test_epic3_six_template_smoke.py
 
   windows-readonly-db:
     runs-on: windows-latest
@@ -93,9 +96,13 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Verify temp SQLite DB handles are released on Windows
+      - name: Install locked dependencies for synthetic smoke on Windows
+        shell: pwsh
+        run: |
+          python -m pip install -r requirements-core.lock.txt
+      - name: Verify temporary DB and render smoke isolation on Windows
         shell: pwsh
         env:
           PYTHONUTF8: "1"
         run: |
-          python -m unittest -v tests.test_epic3_archive_guards_readonly
+          python -m unittest -v tests.test_epic3_archive_guards_readonly tests.test_epic3_six_template_smoke
