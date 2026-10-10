@@ -1,0 +1,37 @@
+name: EPIC-3 Archive Safety Checks
+
+on:
+  push:
+    branches:
+      - safety/epic3-archive-guardrails-20261010
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic-archive-guards:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact tested SHA
+        uses: actions/checkout@v4
+      - name: Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Syntax check of safety modules and tests
+        run: |
+          python -m py_compile \
+            SABLON_V2_MIMARI/core/template_identity.py \
+            tests/test_epic3_archive_guards_readonly.py \
+            tests/test_template_identity.py \
+            tests/test_template_identity_extensions.py
+      - name: Read-only DB and identity safety regressions
+        env:
+          PYTHONUTF8: "1"
+        run: |
+          python -m unittest -v \
+            tests/test_epic3_archive_guards_readonly.py \
+            tests/test_template_identity.py \
+            tests/test_template_identity_extensions.py
