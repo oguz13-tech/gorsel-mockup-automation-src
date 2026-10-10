@@ -107,6 +107,26 @@ jobs:
         run: |
           python -m unittest -v tests.test_epic3_archive_guards_readonly tests.test_epic3_six_template_smoke
 
+  visual-candidate-sheets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact tested SHA
+        uses: actions/checkout@v4
+      - name: Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install locked preview test dependencies
+        run: |
+          python -m pip install -r requirements-core.lock.txt
+      - name: Validate read-only candidate sheets and complete inventory
+        env:
+          PYTHONUTF8: "1"
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          python -m unittest -v tests.test_epic3_visual_candidate_sheets
+
   isolated-real-render-fixture:
     runs-on: ubuntu-latest
     timeout-minutes: 15
