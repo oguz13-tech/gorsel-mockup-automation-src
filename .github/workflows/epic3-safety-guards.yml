@@ -82,3 +82,20 @@ jobs:
             tests/test_template_identity_extensions.py \
             tests/test_epic3_archive_guards_readonly.py \
             tests/test_epic3_lifecycle_no_overwrite.py
+
+  windows-readonly-db:
+    runs-on: windows-latest
+    timeout-minutes: 12
+    steps:
+      - name: Checkout exact tested SHA
+        uses: actions/checkout@v4
+      - name: Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Verify temp SQLite DB handles are released on Windows
+        shell: pwsh
+        env:
+          PYTHONUTF8: "1"
+        run: |
+          python -m unittest -v tests.test_epic3_archive_guards_readonly
