@@ -119,6 +119,9 @@ class TestRealRendererSmokeSyntheticFixtures(unittest.TestCase):
                 + completed.stdout[-8000:] + "\n" + completed.stderr[-4000:],
             )
             self.assertEqual(report["pass_count"], 6, report)
+            sheet_path = Path(report["contact_sheet"])
+            self.assertTrue(sheet_path.is_file())
+            self.assertEqual(cv2.imread(str(sheet_path)).shape[1], 960)
             self.assertEqual(_sha256_file(db), before_db)
             self.assertEqual(
                 {name: _sha256_file(path) for name, path in files.items()},
