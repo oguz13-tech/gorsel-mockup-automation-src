@@ -4,6 +4,7 @@ Gerçek runtime workspace'e, görsellere veya veritabanına dokunmaz.
 """
 import json
 import sqlite3
+from contextlib import closing
 import tempfile
 import unicodedata
 import unittest
@@ -29,7 +30,7 @@ ALT_CATEGORY = "03_Ahsap_Tablo"
 def make_db(root: Path, *, with_registry=False):
     target = root / "SABLON_V2_MIMARI" / "ayarlar.db"
     target.parent.mkdir(parents=True, exist_ok=True)
-    with sqlite3.connect(str(target)) as conn:
+    with closing(sqlite3.connect(str(target))) as conn, conn:
         conn.execute(
             "CREATE TABLE templates(category_id TEXT, filename TEXT)"
         )
@@ -46,7 +47,7 @@ def make_db(root: Path, *, with_registry=False):
 
 
 def names_in(db: Path):
-    with sqlite3.connect(str(db)) as conn:
+    with closing(sqlite3.connect(str(db))) as conn, conn:
         return tuple(sorted(row[0] for row in conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table'"
         )))
@@ -67,7 +68,7 @@ class TestEpic3ArchiveGuards(unittest.TestCase):
 
     def test_01_readonly_identity_does_not_bootstrap_legacy_db(self):
         db = make_db(self.root)
-        with sqlite3.connect(str(db)) as conn:
+        with closing(sqlite3.connect(str(db))) as conn, conn:
             conn.execute(
                 "INSERT INTO templates VALUES (?, ?)",
                 (CATEGORY, "Wifi_Kutusu_001.png"),
@@ -84,7 +85,7 @@ class TestEpic3ArchiveGuards(unittest.TestCase):
 
     def test_02_readonly_reserved_numbers_does_not_bootstrap_db(self):
         db = make_db(self.root)
-        with sqlite3.connect(str(db)) as conn:
+        with closing(sqlite3.connect(str(db))) as conn, conn:
             conn.execute(
                 "INSERT INTO templates VALUES (?, ?)",
                 (CATEGORY, "Wifi_Kutusu_042.png"),
@@ -97,7 +98,7 @@ class TestEpic3ArchiveGuards(unittest.TestCase):
 
     def test_03_legacy_profile_is_respected_without_registry(self):
         db = make_db(self.root)
-        with sqlite3.connect(str(db)) as conn:
+        with closing(sqlite3.connect(str(db))) as conn, conn:
             conn.execute(
                 "INSERT INTO template_profiles VALUES (?, ?, ?)",
                 (CATEGORY, "01_Wifi_Kutusu/Wifi_Kutusu_017.jpeg", ""),
@@ -108,7 +109,7 @@ class TestEpic3ArchiveGuards(unittest.TestCase):
 
     def test_04_existing_registry_is_read_without_write(self):
         db = make_db(self.root, with_registry=True)
-        with sqlite3.connect(str(db)) as conn:
+        with closing(sqlite3.connect(str(db))) as conn, conn:
             conn.execute(
                 "INSERT INTO template_number_registry VALUES (?, ?, ?)",
                 (CATEGORY, 71, "Wifi_Kutusu_071.png"),
@@ -210,7 +211,7 @@ class TestEpic3ArchiveGuards(unittest.TestCase):
 
     def test_14_database_history_cannot_be_reused(self):
         db = make_db(self.root, with_registry=True)
-        with sqlite3.connect(str(db)) as conn:
+        with closing(sqlite3.connect(str(db))) as conn, conn:
             conn.execute(
                 "INSERT INTO template_number_registry VALUES (?, ?, ?)",
                 (CATEGORY, 55, "Wifi_Kutusu_055.png"),
