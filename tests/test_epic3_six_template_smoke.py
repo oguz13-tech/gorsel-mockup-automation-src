@@ -128,6 +128,9 @@ class TestSixTemplateSmokeIsolation(unittest.TestCase):
         result, calls = self._run_fixture()
         self.assertEqual(result["pass_count"], 6, result["results"])
         self.assertEqual(len(calls), 6)
+        self.assertTrue(Path(result["contact_sheet"]).is_file())
+        sheet = cv2.imread(result["contact_sheet"])
+        self.assertEqual(sheet.shape[1], 960)
         self.assertTrue(all(r["status"] == "PASS" for r in result["results"]))
         self.assertTrue(all(r["dimensions"] == "1200x1600"
                             for r in result["results"]))
