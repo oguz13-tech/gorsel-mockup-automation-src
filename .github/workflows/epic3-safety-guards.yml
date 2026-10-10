@@ -106,3 +106,23 @@ jobs:
           PYTHONUTF8: "1"
         run: |
           python -m unittest -v tests.test_epic3_archive_guards_readonly tests.test_epic3_six_template_smoke
+
+  isolated-real-render-fixture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact tested SHA
+        uses: actions/checkout@v4
+      - name: Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install locked render dependencies
+        run: |
+          python -m pip install -r requirements-core.lock.txt
+      - name: Run real renderer on six disposable synthetic template fixtures
+        env:
+          PYTHONUTF8: "1"
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          python -m unittest -v tests.test_epic3_six_template_real_renderer
