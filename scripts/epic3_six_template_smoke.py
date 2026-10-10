@@ -174,6 +174,8 @@ def _load_renderer(temp_runtime: Path, repo_root: Path):
     if not engine_file.is_file():
         raise SmokeBlocked("FACTORY_SOURCE_NOT_FOUND")
     os.environ["MOCKUP_RUNTIME_WORKSPACE"] = str(temp_runtime)
+    # No bytecode/cache writes to the checked-out source tree.
+    sys.dont_write_bytecode = True
     sys.path.insert(0, str(engine_parent))
     # Factory checks --preflight at import to suppress directory/log creation.
     # Append only within this short-lived child process; never run factory CLI.
