@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
+import unicodedata
 from pathlib import Path
 from typing import Iterable
 
@@ -91,7 +92,7 @@ def canonical_identity(name: str) -> str:
     raw = str(name or "").strip()
     if raw.endswith(".processing"):
         raw = raw[: -len(".processing")]
-    return Path(raw).stem.casefold()
+    return unicodedata.normalize("NFC", Path(raw).stem).casefold()
 
 
 def same_identity(name_a: str, name_b: str) -> bool:
