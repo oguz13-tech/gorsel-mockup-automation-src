@@ -190,6 +190,15 @@ def run(runtime: Path, temp: Path, repo_root: Path,
                 continue
             src_path = row["resolved_source"]
             read_sources[str(src_path)] = row["source_sha256_verified"]
+            # Monitor the optional real original backup as well, since the
+            # optical renderer reads its TEMP copy for lighting/shadow mapping.
+            original_backup = (
+                runtime / "2_SABLON_HAVUZU_ORIJINAL_YEDEK" / cat / src_path.name
+            )
+            if original_backup.is_file():
+                read_sources[str(original_backup)] = base._sha256_file(
+                    original_backup
+                )
             try:
                 orientation = str(row.get("orientation") or "").upper()
                 if orientation not in ("H", "V"):
