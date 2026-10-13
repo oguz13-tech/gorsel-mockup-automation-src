@@ -18,6 +18,18 @@ if str(ARCH_DIR) not in sys.path:
 from core.factory_doctor import run_factory_doctor
 
 
+
+def _safe_console_print(value: str = "") -> None:
+    """Escape unsupported glyphs on Windows legacy consoles, preserving output."""
+    value = str(value)
+    encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
+    try:
+        display = value.encode(encoding, errors="backslashreplace").decode(encoding)
+    except LookupError:
+        display = value.encode("ascii", errors="backslashreplace").decode("ascii")
+    sys.stdout.write(display + "\n")
+
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description="Mockup fabrikasını değiştirmeden bütünlük taraması yap."
@@ -39,7 +51,7 @@ def main() -> int:
     args = parse_args()
     runtime = str(args.runtime or "").strip()
     if not runtime:
-        print(
+        _safe_console_print(
             "HATA: Runtime workspace belirtilmedi. "
             "MOCKUP_RUNTIME_WORKSPACE ayarlayın veya --runtime kullanın."
         )
@@ -51,33 +63,33 @@ def main() -> int:
         deep=not args.fast,
     )
 
-    print("=" * 72)
-    print("JARVIS MOCKUP FACTORY DOCTOR")
-    print("=" * 72)
-    print(f"Runtime : {report['checks'].get('runtime_root', runtime)}")
-    print(
+    _safe_console_print("=" * 72)
+    _safe_console_print("JARVIS MOCKUP FACTORY DOCTOR")
+    _safe_console_print("=" * 72)
+    _safe_console_print(f"Runtime : {report['checks'].get('runtime_root', runtime)}")
+    _safe_console_print(
         f"Sonuç   : {'READY' if report['ready'] else 'BLOCKED'} | "
         f"Kritik={report['error_count']} | Uyarı={report['warning_count']}"
     )
 
     if report["errors"]:
-        print("\nKRİTİK:")
+        _safe_console_print("\nKRİTİK:")
         for item in report["errors"]:
-            print(f"  ❌ [{item['code']}] {item['message']}")
+            _safe_console_print(f"  ❌ [{item['code']}] {item['message']}")
 
     if report["warnings"]:
-        print("\nUYARILAR:")
+        _safe_console_print("\nUYARILAR:")
         for item in report["warnings"]:
-            print(f"  ⚠️ [{item['code']}] {item['message']}")
+            _safe_console_print(f"  ⚠️ [{item['code']}] {item['message']}")
 
     if not report["errors"] and not report["warnings"]:
-        print("\n✅ Kritik sorun veya uyarı bulunmadı.")
+        _safe_console_print("\n✅ Kritik sorun veya uyarı bulunmadı.")
 
-    print(
+    _safe_console_print(
         "\nDOCTOR_JSON="
         + json.dumps(
             report,
-            ensure_ascii=False,
+            ensure_ascii=True,
             separators=(",", ":"),
         )
     )
