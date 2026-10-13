@@ -80,9 +80,9 @@ class TestRealArtworkPilot(unittest.TestCase):
             self.assertEqual(config["output_width"], 1200)
             self.assertEqual(config["output_height"], 1600)
             self.assertFalse(config["auto_foreground"])
-            self.assertTrue(art_path.is_relative_to(self.root))
+            self.assertTrue(art_path.resolve().is_relative_to(self.root.resolve()))
             self.assertIn("user_artwork_copies", str(art_path))
-            self.assertTrue(template_path.is_relative_to(self.pool))
+            self.assertTrue(template_path.resolve().is_relative_to(self.pool.resolve()))
             self.assertEqual(config["profile_orientation"],
                              "H" if "Wifi" in str(template_path) else "V")
             output_path.parent.mkdir(parents=True, exist_ok=True)
