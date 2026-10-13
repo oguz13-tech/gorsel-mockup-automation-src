@@ -134,6 +134,25 @@ jobs:
         run: |
           python -m unittest -v tests.test_epic3_visual_candidate_sheets
 
+  geometry-surface-regressions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+      - name: Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install locked dependencies
+        run: python -m pip install -r requirements-core.lock.txt
+      - name: Run previously omitted surface-mode regressions
+        env:
+          PYTHONUTF8: "1"
+          PYTHONPATH: SABLON_V2_MIMARI
+        run: |
+          python -m unittest -v tests.test_surface_mode_detection
+
   isolated-real-render-fixture:
     runs-on: ubuntu-latest
     timeout-minutes: 15
