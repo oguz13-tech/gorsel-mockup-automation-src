@@ -245,6 +245,7 @@ def _safe_original_copy(
 def _render_one(
     row: dict, category: str, module, cv2, numpy,
     conn: sqlite3.Connection, temp: Path, real_runtime: Path,
+    *, prepared_artwork_path: Path | None = None,
 ) -> dict:
     uid = CATEGORY_UIDS[category]
     if row.get("status") == "BLOCKED":
@@ -282,9 +283,19 @@ def _render_one(
         return {"uid": uid, "status": "BLOCKED", "reason": f"INVALID_APPROVED_PROFILE:{exc}"}
 
     safe_name = category + "__" + row["resolved_source"].stem
-    art_path = temp / "synthetic_artwork" / (safe_name + ".png")
     result_path = temp / "previews_1200x1600" / (safe_name + ".jpg")
-    artwork_sha = _synthetic_artwork(numpy, cv2, category, nominal, art_path)
+    if prepared_artwork_path is None:
+        art_path = temp / "synthetic_artwork" / (safe_name + ".png")
+        artwork_sha = _synthetic_artwork(numpy, cv2, category, nominal, art_path)
+        synthetic_only = True
+    else:
+        # Only a caller-validated, immutable copy under our isolated TEMP may
+        # enter the real-artwork pilot; no user artwork is ever rewritten.
+        art_path = _inside(temp, Path(prepared_artwork_path))
+        if not art_path.is_file():
+            raise SmokeBlocked("PREPARED_ARTWORK_COPY_MISSING")
+        artwork_sha = _sha256_file(art_path)
+        synthetic_only = False
     archive_used = _safe_original_copy(
         real_runtime, category, row["resolved_source"].name,
         Path(module.USER_WORKSPACE_DIR),
@@ -328,7 +339,8 @@ def _render_one(
         "output_sha256": _sha256_file(result_path),
         "dimensions": f"{TARGET_WIDTH}x{TARGET_HEIGHT}",
         "original_archive_copy_in_temp": archive_used,
-        "synthetic_art_only": True,
+        "synthetic_art_only": synthetic_only,
+        "local_pilot_no_cloud_or_excel": True,
         "foreground_ai_disabled": True,
     }
 
