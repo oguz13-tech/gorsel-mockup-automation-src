@@ -33,12 +33,12 @@ TRACKING: oguz13-tech/gorsel-mockup-ai-bridge Issue #1. Source: oguz13-tech/gors
 - [ ] L06 Tek Issue #1 raporu: SHA, komut+exit, literal hata, DB_SHA_SAME, MANIFEST_SHA_SAME, gerçek asset varlığı/dosya adetleri. Konum gizliliği gerektiğinde paylaşma.
 
 ## 4. P0 / G1 CHATGPT KOD — PARALEL
-- [ ] C01 İzole gerçek artwork smoke: mevcut scripts/epic3_six_template_smoke.py tabanını genişlet; --execute yokken I/O yok; --artwork-h/--artwork-v isteğe bağlı, iki dosya için gerçek H/V ve aspect. Synthetic default 6/6 korunmalı.
-- [ ] C02 Gerçek H/V artwork read-only; oryantasyon ve fiziksel yüzey oranı; no forced stretch/crop; incompatible source BLOCKED; format/dim guard; no imported normal factory state/upload/Excel writes.
+- [x] C01 İzole gerçek artwork smoke: mevcut scripts/epic3_six_template_smoke.py tabanını genişlet; --execute yokken I/O yok; --artwork-h/--artwork-v isteğe bağlı, iki dosya için gerçek H/V ve aspect. Synthetic default 6/6 korunmalı.
+- [x] C02 Gerçek H/V artwork read-only; oryantasyon ve fiziksel yüzey oranı; no forced stretch/crop; incompatible source BLOCKED; format/dim guard; no imported normal factory state/upload/Excel writes.
 - [ ] C03 Source DB+templates/artwork immutable, OS TEMP 1200x1600 JPG, SHA output manifest; report synthetic/test vs real clearly; block foreground/legacy plan without verified masking.
-- [ ] C04 Synthetic fixture tests: no-execute, H/V selection, incorrect orientation/aspect, missing source, corrupted source, source hash unchanged, TEMP-only output, no cloud/Excel, unique output, blocked masks. Linux+Windows CI.
-- [ ] C05 Ayrı epic3-geometry-fix dalındaki OcakArkası white panel fix diff ve testlerini safety dalı ile karşılaştır; güvenli seçici entegrasyon veya gerekçeli defer; tests/test_surface_mode_detection.py CI kapsamına eklensin.
-- [ ] C06 scripts/epic3_validation_bundle.py EXPECTED_BRANCH feature/... sabit; güvenlik dalı ve release candidate için doğru branch+SHA gate'i doğrulamayı zayıflatmadan düzelt.
+- [x] C04 Synthetic fixture tests: no-execute, H/V selection, incorrect orientation/aspect, missing source, corrupted source, source hash unchanged, TEMP-only output, no cloud/Excel, unique output, blocked masks. Linux+Windows CI.
+- [x] C05 Ayrı epic3-geometry-fix dalındaki OcakArkası white panel fix diff ve testlerini safety dalı ile karşılaştır; güvenli seçici entegrasyon veya gerekçeli defer; tests/test_surface_mode_detection.py CI kapsamına eklensin.
+- [x] C06 scripts/epic3_validation_bundle.py EXPECTED_BRANCH feature/... sabit; güvenlik dalı ve release candidate için doğru branch+SHA gate'i doğrulamayı zayıflatmadan düzelt.
 - [ ] C07 Full factory preflight ile isolated smoke arasındaki fark belgeli; S0 başarılı ise S2 PASSED denmez.
 
 ## 5. P1 / G2 GÖRSEL İNSAN DEĞERLENDİRMESİ + PİLOT
@@ -67,8 +67,8 @@ TRACKING: oguz13-tech/gorsel-mockup-ai-bridge Issue #1. Source: oguz13-tech/gors
 ## 8. Ölçülebilir release kapıları
 | Gate | Kanıt | Durum |
 |---|---|---|
-| G0 | Kilo exact SHA Doctor+preflight+DB/manifest unchanged, blocker matrix | PENDING |
-| G1 | Gerçek H/V approved source + 1200x1600 yalnız TEMP, QA + 1 human approved preview | PENDING |
+| G0 | Kilo exact SHA Doctor+preflight+DB/manifest unchanged, blocker matrix | ASSIGNED / EVIDENCE PENDING |
+| G1 | Gerçek H/V approved source + 1200x1600 yalnız TEMP, QA + 1 human approved preview | CODE+CI READY / REAL LOCAL PILOT PENDING |
 | G2 | 4 kategori / ≥2 desen / dosya collision-safety / insan görsel QA | PENDING |
 | G3 | Normal factory preflight READY + upload/Excel + UI/staging/mask Windows gerçek test | PENDING |
 | G4 | CI+Windows RC SHA + backups/rollback + explicit user release approval | PENDING |
@@ -77,6 +77,16 @@ TRACKING: oguz13-tech/gorsel-mockup-ai-bridge Issue #1. Source: oguz13-tech/gors
 - S0 ilk gerçek JPG: 2–5 saat mühendislik/deneme eforu, gerçek H/V dosyalarının hazır olması ve Windows blokajının bulunmamasına bağlı.
 - S1 küçük seri: 1–2 iş günü; S2 altı kategori/tam üretim 3–7 iş günü; S3 tam otonom 2–4+ hafta.
 - Bunlar SLA değil. Kodu GitHub'da yazmak, kullanıcının yerel kurulumunu ve makinesindeki verileri değiştirmez.
+
+## 10A. 13 Ekim uygulama checkpoint (GitHub code-only)
+- G0 L01..L06 Windows read-only Doctor+preflight görevi Issue #1 yorum 6149983171 olarak YAYINLANDI; **Kilo çalıştırdı/bitirdi denmiyor**, gerçek rapor BEKLENİYOR.
+- C01/C02 uygulandı: scripts/epic3_real_artwork_pilot.py; gerçek H/V/özel kategori master, +/−0.5% nomimal yüzey ratio, no crop/stretch, mask-needed BLOCKED, DB/template/original/art hash read-only, yalnız TEMP çıktıları.
+- C02 otomasyon testleri: tests/test_epic3_real_artwork_pilot.py (14 synthetic assertions) + tests/test_epic3_six_template_real_renderer.py (real renderer secondary pilot with synthetic user-file stand-ins); *gerçek müşteri sanatı CI'ya yüklenmedi*.
+- C04 uygulandı: epic3-geometry-fix ayrı Ocak Arkası white panel fix güvenlik dalına taşındı. tests/test_surface_mode_detection.py Linux + Windows'da 13/13 PASS.
+- C05 uygulandı: scripts/epic3_validation_bundle.py safety branch için exact 40-char --expected-head zorunlu, yanlış branch/HEAD preflight'ten önce fail; 8 guard tests eklendi.
+- C06 açıklama: docs/EPIC3_REAL_ARTWORK_PILOT_GUIDE_20261013.md + EPIC3_VALIDATION_HANDOFF.md güncellendi; real-art pilot ile full commerce factory ayrımı belgeli.
+- En son tam doğrulanmış CI https://github.com/oguz13-tech/gorsel-mockup-automation-src/actions/runs/38431071940 : 7/7 GitHub jobs PASS, 243 full regression, Windows 34, Ocak Arkası Linux/Windows 13'er. Sonraki archive hash eklemesi ve docs commitleri için exact HEAD CI ayrıca kontrol edilir.
+- C03 gerçek kullanıcı tasarımı pilotu, G0 kanıtı ve kullanıcı deneme yetkisi ile yapılacak; ilk ticari JPG **henüz kullanıcı ortamında üretilmedi**.
 
 ## 10. Çalışma disiplinimiz
 - Issue #1 = 1 toplu Kilo görevi + 1 kanıt raporu; geçmiş 172 dosya incelemesini tekrar etme.
