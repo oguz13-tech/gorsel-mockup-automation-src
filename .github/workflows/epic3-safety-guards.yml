@@ -32,7 +32,9 @@ jobs:
             tests/test_template_identity_extensions.py \
             tests/test_epic3_lifecycle_no_overwrite.py \
             scripts/epic3_six_template_smoke.py \
-            tests/test_epic3_six_template_smoke.py
+            tests/test_epic3_six_template_smoke.py \
+            scripts/epic3_real_artwork_pilot.py \
+            tests/test_epic3_real_artwork_pilot.py
       - name: Read-only DB and identity safety regressions
         env:
           PYTHONUTF8: "1"
@@ -84,7 +86,8 @@ jobs:
             tests/test_template_identity_extensions.py \
             tests/test_epic3_archive_guards_readonly.py \
             tests/test_epic3_lifecycle_no_overwrite.py \
-            tests/test_epic3_six_template_smoke.py
+            tests/test_epic3_six_template_smoke.py \
+            tests/test_epic3_real_artwork_pilot.py
 
   windows-readonly-db:
     runs-on: windows-latest
@@ -105,7 +108,7 @@ jobs:
         env:
           PYTHONUTF8: "1"
         run: |
-          python -m unittest -v tests.test_epic3_archive_guards_readonly tests.test_epic3_six_template_smoke
+          python -m unittest -v tests.test_epic3_archive_guards_readonly tests.test_epic3_six_template_smoke tests.test_epic3_real_artwork_pilot
 
   visual-candidate-sheets:
     runs-on: ubuntu-latest
