@@ -2,6 +2,27 @@
 
 Status: **implementation branch only — runtime validation pending**
 
+## 2026-10-13 release-candidate extension
+
+This file originally documented only the feature branch. The validation CLI
+now also accepts the more recent safety branch
+`safety/epic3-archive-guardrails-20261010`, **but ONLY with an exact
+40-character `--expected-head` pin matching the local clean checkout**.
+The feature branch keeps backward compatibility and can optionally pin HEAD.
+
+For the safety branch, after reviewing a successful exact-HEAD GitHub CI run,
+use a separate clean checkout at that same SHA and add:
+
+```text
+--expected-head <full-approved-40-character-git-SHA>
+```
+
+Do not use `main`, `epic3-geometry-fix`, arbitrary branches, a short SHA,
+or an unreviewed newer commit. Wrong branch/unpinned SHA is rejected before
+writing validation output. Validation benchmark/Doctor/preflight evidence
+remains distinct from real product visual approval and full normal factory
+deployment. Do not weaken/remove Git integrity checks for convenience.
+
 Branch:
 
 `feature/epic-3-geometry-accuracy`
