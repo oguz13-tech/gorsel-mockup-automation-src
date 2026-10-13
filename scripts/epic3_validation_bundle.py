@@ -88,6 +88,25 @@ RUNTIME_READONLY_INPUTS = (
 )
 
 EXPECTED_BRANCH = "feature/epic-3-geometry-accuracy"
+SAFETY_VALIDATION_BRANCH = "safety/epic3-archive-guardrails-20261010"
+
+
+def _validate_checkout_binding(branch: str, head_sha: str, expected_head: str) -> None:
+    """Fail closed: safety release candidates require caller-pinned exact SHA."""
+    pin = str(expected_head or "").strip().lower()
+    if pin and (len(pin) != 40 or any(ch not in "0123456789abcdef" for ch in pin)):
+        raise ValueError("EXPECTED_HEAD_MUST_BE_FULL_40_CHAR_SHA")
+    if branch == SAFETY_VALIDATION_BRANCH and not pin:
+        raise ValueError("SAFETY_BRANCH_REQUIRES_EXPLICIT_EXPECTED_HEAD_SHA")
+    if branch not in (EXPECTED_BRANCH, SAFETY_VALIDATION_BRANCH):
+        raise ValueError(
+            f"UNEXPECTED_VALIDATION_BRANCH:{branch}; "
+            f"allowed={EXPECTED_BRANCH},{SAFETY_VALIDATION_BRANCH}"
+        )
+    if not head_sha or head_sha == "UNKNOWN":
+        raise ValueError("UNKNOWN_GIT_HEAD")
+    if pin and str(head_sha).lower() != pin:
+        raise ValueError("VALIDATION_HEAD_SHA_MISMATCH")
 
 
 def _run(
@@ -497,6 +516,13 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--expected-head", default="",
+        help=(
+            "Exact 40-character git HEAD; MANDATORY for safety/release "
+            "candidate branch, optional for legacy feature branch."
+        ),
+    )
+    parser.add_argument(
         "--skip-unit-tests",
         action="store_true",
         help="Collect benchmark/preflight evidence without running unittest.",
@@ -508,6 +534,17 @@ def main() -> int:
         help="Number of largest scorer selection-gap samples to inspect.",
     )
     args = parser.parse_args()
+
+    # Do not create any report/evidence directories on an unexpected branch
+    # or unpinned safety candidate. Existing feature branch remains compatible.
+    initial_branch = _git_branch()
+    initial_head = _git_head()
+    try:
+        _validate_checkout_binding(
+            initial_branch, initial_head, args.expected_head,
+        )
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
 
     dataset = args.dataset.resolve()
     out_dir = args.output_dir.resolve()
@@ -566,11 +603,14 @@ def main() -> int:
 
     head_before = _git_head()
     branch_before = _git_branch()
-    if branch_before != EXPECTED_BRANCH:
-        raise SystemExit(
-            f"Refusing EPIC-3 validation on branch {branch_before!r}; "
-            f"expected {EXPECTED_BRANCH!r}."
+    try:
+        _validate_checkout_binding(
+            branch_before, head_before, args.expected_head,
         )
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
+    if head_before != initial_head or branch_before != initial_branch:
+        raise SystemExit("VALIDATION_SOURCE_CHANGED_SINCE_START")
 
     tracked_before = _tracked_worktree_snapshot()
     if tracked_before["dirty"]:
@@ -761,7 +801,9 @@ def main() -> int:
             "runtime_readonly_inputs_unchanged": runtime_readonly_inputs_unchanged,
             "runtime_readonly_inputs_before": runtime_inputs_before,
             "runtime_readonly_inputs_after": runtime_inputs_after,
-            "expected_branch": EXPECTED_BRANCH,
+            "expected_branch": initial_branch,
+            "caller_expected_head": str(args.expected_head or ""),
+            "pin_required": initial_branch == SAFETY_VALIDATION_BRANCH,
             "branch_before": branch_before,
             "branch_after": branch_after,
             "head_sha_before": head_before,
@@ -864,7 +906,8 @@ def main() -> int:
     integrity_ok = bool(
         dataset_unchanged
         and runtime_readonly_inputs_unchanged
-        and branch_before == EXPECTED_BRANCH
+        and branch_before == initial_branch
+        and head_before == initial_head
         and git_revision_unchanged
         and not tracked_before["dirty"]
         and tracked_worktree_unchanged
