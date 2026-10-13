@@ -41,6 +41,7 @@ MAX_ARTWORK_BYTES = 100 * 1024 * 1024
 MAX_ARTWORK_PIXELS = 60_000_000
 MIN_ARTWORK_SHORT_SIDE = 500
 MAX_RELATIVE_ASPECT_ERROR = 0.005
+MAX_PREVIEW_PAD_ASPECT_ERROR = 0.15
 
 
 class PilotBlocked(base.SmokeBlocked):
@@ -74,7 +75,7 @@ def _protected_artwork_source(source: Path, runtime: Path) -> bool:
 
 
 def _artwork_metadata(source: Path, orientation: str, nominal: float, runtime: Path,
-                      cv2, np) -> dict[str, Any]:
+                      cv2, np, *, preview_pad: bool = False) -> dict[str, Any]:
     path = source.expanduser().resolve()
     if _protected_artwork_source(path, runtime):
         raise PilotBlocked("ARTWORK_PATH_POINTS_TO_PROTECTED_TEMPLATE_OR_OUTPUT")
@@ -110,13 +111,17 @@ def _artwork_metadata(source: Path, orientation: str, nominal: float, runtime: P
     # and creates synthetic bleed for mismatch up to 15%. The isolated user
     # artwork pilot must not silently alter text/border pixels in either case.
     relative_error = abs(actual_aspect - nominal) / nominal
-    if relative_error > MAX_RELATIVE_ASPECT_ERROR:
+    needs_pad = relative_error > MAX_RELATIVE_ASPECT_ERROR
+    if needs_pad and (
+        not preview_pad or relative_error > MAX_PREVIEW_PAD_ASPECT_ERROR
+    ):
         raise PilotBlocked(
             "ARTWORK_RATIO_WOULD_CROP_OR_SYNTHESIZE:"
             f"actual={actual_aspect:.6f}:required={nominal:.6f}"
         )
     return {
         "path": path,
+        "preview_pad_needed": needs_pad,
         "sha256": base._sha256_file(path),
         "width": w, "height": h,
         "orientation": orientation,
@@ -136,6 +141,57 @@ def _copy_artwork_into_temp(source: Path, target: Path, expected_sha: str) -> st
         target.unlink(missing_ok=True)
         raise PilotBlocked("ARTWORK_CHANGED_DURING_COPY")
     return copied
+
+
+def _create_noncropping_pad_preview(
+    source: Path, output: Path, nominal: float, cv2, np,
+) -> dict[str, Any]:
+    """Preserve every original design pixel exactly; blur only new perimeter.
+
+    TEMP-only inspection adaptation, never a commercial-ready transformation.
+    No resize, crop, orientation change, source mutation or synthetic content
+    inside the original design rectangle.
+    """
+    raw = cv2.imdecode(
+        np.fromfile(str(source), dtype=np.uint8), cv2.IMREAD_COLOR,
+    )
+    if raw is None or raw.ndim != 3 or raw.shape[2] != 3:
+        raise PilotBlocked("PREVIEW_PAD_SOURCE_NOT_DECODABLE")
+    height, width = raw.shape[:2]
+    actual = width / float(height)
+    if not 0.2 < nominal < 5:
+        raise PilotBlocked("PREVIEW_PAD_NOMINAL_ASPECT_INVALID")
+    error = abs(actual - nominal) / nominal
+    if error > MAX_PREVIEW_PAD_ASPECT_ERROR:
+        raise PilotBlocked("PREVIEW_PAD_ASPECT_ERROR_TOO_LARGE")
+    new_w = max(width, int(round(height * nominal)))
+    new_h = max(height, int(round(width / nominal)))
+    if abs(new_w / float(new_h) - nominal) / nominal > MAX_RELATIVE_ASPECT_ERROR:
+        raise PilotBlocked("PREVIEW_PAD_RATIO_ROUNDING_FAILURE")
+    left = (new_w - width) // 2
+    top = (new_h - height) // 2
+    if left == 0 and top == 0 and new_w == width and new_h == height:
+        raise PilotBlocked("PREVIEW_PAD_NOT_NEEDED")
+    # Gaussian-blurred backdrop fills only the added margins.
+    background = cv2.resize(raw, (new_w, new_h), interpolation=cv2.INTER_AREA)
+    background = cv2.GaussianBlur(
+        background, (0, 0),
+        sigmaX=max(12.0, min(new_w, new_h) / 18.0),
+    )
+    background[top:top + height, left:left + width] = raw
+    ok, encoded = cv2.imencode(".png", background)
+    if not ok:
+        raise PilotBlocked("PREVIEW_PAD_ENCODING_FAILED")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_bytes(encoded.tobytes())
+    return {
+        "fit_mode": "BLURRED_BORDER_PREVIEW_REQUIRES_HUMAN_REVIEW",
+        "source_dimensions": [width, height],
+        "prepared_dimensions": [new_w, new_h],
+        "original_design_bounds": [left, top, left + width, top + height],
+        "original_pixels_unchanged": True,
+        "preview_only_not_sale_approved": True,
+    }
 
 
 def _requested_sources(args: argparse.Namespace) -> dict[str, Path]:
@@ -161,7 +217,7 @@ def _selected_categories(args: argparse.Namespace) -> list[str]:
 
 def run(runtime: Path, temp: Path, repo_root: Path,
         categories: list[str], artwork_h: Path | None, artwork_v: Path | None,
-        overrides: dict[str, Path]) -> dict:
+        overrides: dict[str, Path], *, preview_pad: bool = False) -> dict:
     import cv2
     import numpy as np
 
@@ -222,6 +278,7 @@ def run(runtime: Path, temp: Path, repo_root: Path,
                 nominal = float(row["nominal_aspect"])
                 meta = _artwork_metadata(
                     Path(source), orientation, nominal, runtime, cv2, np,
+                    preview_pad=preview_pad,
                 )
                 read_sources[str(meta["path"])] = meta["sha256"]
                 copied_path = temp / "user_artwork_copies" / (
@@ -230,11 +287,30 @@ def run(runtime: Path, temp: Path, repo_root: Path,
                 _copy_artwork_into_temp(
                     meta["path"], copied_path, meta["sha256"],
                 )
+                prepared = copied_path
+                pad_info = None
+                if meta["preview_pad_needed"]:
+                    if not preview_pad:
+                        raise PilotBlocked("PREVIEW_PAD_NOT_AUTHORIZED")
+                    padded_path = (
+                        temp / "user_artwork_copies" / (cat + "_PADDED_PREVIEW.png")
+                    )
+                    pad_info = _create_noncropping_pad_preview(
+                        copied_path, padded_path, nominal, cv2, np,
+                    )
+                    prepared = padded_path
                 item = base._render_one(
                     row, cat, module, cv2, np, conn, temp, runtime,
-                    prepared_artwork_path=copied_path,
+                    prepared_artwork_path=prepared,
                 )
                 item["original_artwork_sha256"] = meta["sha256"]
+                item["artwork_fit_mode"] = (
+                    "BLURRED_BORDER_PREVIEW_REQUIRES_HUMAN_REVIEW"
+                    if pad_info is not None else "ORIGINAL_ASPECT_MATCH"
+                )
+                if pad_info is not None:
+                    item["preview_pad"] = pad_info
+                    item["commercial_release_approved"] = False
                 item["artwork_dimensions"] = [
                     meta["width"], meta["height"],
                 ]
@@ -298,6 +374,8 @@ def run(runtime: Path, temp: Path, repo_root: Path,
         "no_cloud_excel_or_seo": True,
         "foreground_ai_disabled": True,
         "never_automatically_approved_for_sale": True,
+        "preview_pad_opt_in": preview_pad,
+        "preview_pad_requires_human_acceptance": True,
         "not_proof_of_full_factory_release": True,
     }
 
@@ -315,6 +393,12 @@ def main(argv: list[str] | None = None) -> int:
         "--only", action="append", choices=tuple(base.CATEGORY_UIDS),
         help="Select a category; may be supplied repeatedly",
     )
+    parser.add_argument(
+        "--preview-pad", action="store_true",
+        help=("Allow <=15% source/nominal aspect deviation ONLY for TEMP "
+              "preview; preserve all original pixels, pad new perimeter "
+              "with blurred colors; requires human visual approval."),
+    )
     parser.add_argument("--execute", action="store_true")
     args = parser.parse_args(argv)
     if not args.execute:
@@ -322,6 +406,7 @@ def main(argv: list[str] | None = None) -> int:
             "status": "PLAN_ONLY",
             "selected_categories": args.only or list(base.CATEGORY_UIDS),
             "real_user_artwork": True,
+            "preview_pad_opt_in": args.preview_pad,
             "writes": "NONE",
             "on_execute": "fresh OS TEMP previews only",
             "cloud_excel_approval": False,
@@ -340,6 +425,7 @@ def main(argv: list[str] | None = None) -> int:
         report = run(
             args.runtime_root.expanduser().resolve(), temp,
             ROOT, categories, args.artwork_h, args.artwork_v, overrides,
+            preview_pad=args.preview_pad,
         )
         code = 0 if (
             report["pass_count"] == len(categories)
