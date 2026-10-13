@@ -28,6 +28,8 @@ jobs:
           python -m py_compile \
             SABLON_V2_MIMARI/core/template_identity.py \
             SABLON_V2_MIMARI/core/template_intelligence.py \
+            scripts/factory_doctor.py \
+            tests/test_epic3_doctor_windows_encoding.py \
             tests/test_epic3_archive_guards_readonly.py \
             tests/test_template_identity.py \
             tests/test_template_identity_extensions.py \
@@ -80,6 +82,7 @@ jobs:
             tests/test_watcher_safety.py \
             tests/test_template_identity.py \
             tests/test_factory_doctor.py \
+            tests/test_epic3_doctor_windows_encoding.py \
             tests/test_quality_power_tool.py \
             tests/test_runtime_infrastructure.py \
             tests/test_workspace_consistency.py \
@@ -112,7 +115,7 @@ jobs:
         env:
           PYTHONUTF8: "1"
         run: |
-          python -m unittest -v tests.test_epic3_archive_guards_readonly tests.test_epic3_six_template_smoke tests.test_epic3_real_artwork_pilot
+          python -m unittest -v tests.test_epic3_archive_guards_readonly tests.test_epic3_six_template_smoke tests.test_epic3_real_artwork_pilot tests.test_epic3_doctor_windows_encoding
 
   visual-candidate-sheets:
     runs-on: ubuntu-latest
