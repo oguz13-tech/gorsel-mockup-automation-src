@@ -114,7 +114,7 @@ class TestRealArtworkPilot(unittest.TestCase):
         )
 
     def _run(self, categories=("01_Wifi_Kutusu","02_Cam_Tablo_Dikey"),
-             h=None, v=None, overrides=None):
+             h=None, v=None, overrides=None, *, preview_pad=False):
         output = self.root / ("output-" + str(len(list(self.root.glob("output-*")))))
         output.mkdir()
         calls = []
@@ -124,7 +124,7 @@ class TestRealArtworkPilot(unittest.TestCase):
                 self.runtime,output,self.root,list(categories),
                 h if h is not None else self.horizontal,
                 v if v is not None else self.vertical,
-                overrides or {},
+                overrides or {}, preview_pad=preview_pad,
             )
         return result,calls
 
@@ -176,6 +176,55 @@ class TestRealArtworkPilot(unittest.TestCase):
         self.assertEqual(len(calls),0)
         self.assertIn("ARTWORK_RATIO_WOULD_CROP_OR_SYNTHESIZE",
                       result["results"][0]["reason"])
+
+    def test_opt_in_preview_pad_preserves_all_design_pixels_and_source_bytes(self):
+        self._write_art(self.horizontal, width=1000, height=680)
+        original_art_sha = base._sha256_file(self.horizontal)
+        original_db_sha = base._sha256_file(self.db)
+        result, calls = self._run(
+            categories=("01_Wifi_Kutusu",), preview_pad=True,
+        )
+        self.assertEqual(result["pass_count"], 1, result)
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(result["results"][0]["artwork_fit_mode"],
+                         "BLURRED_BORDER_PREVIEW_REQUIRES_HUMAN_REVIEW")
+        pad = result["results"][0]["preview_pad"]
+        self.assertTrue(pad["original_pixels_unchanged"])
+        self.assertTrue(pad["preview_only_not_sale_approved"])
+        self.assertFalse(result["results"][0]["commercial_release_approved"])
+        original_img = cv2.imread(str(self.horizontal))
+        prepared = cv2.imread(calls[0][0])
+        l,t,r,b = pad["original_design_bounds"]
+        self.assertTrue(np.array_equal(original_img, prepared[t:b,l:r]))
+        self.assertGreater(prepared.shape[1]*prepared.shape[0],
+                           original_img.shape[1]*original_img.shape[0])
+        self.assertAlmostEqual(prepared.shape[1] / prepared.shape[0], 4/3,
+                               delta=0.005)
+        self.assertEqual(base._sha256_file(self.horizontal), original_art_sha)
+        self.assertEqual(base._sha256_file(self.db), original_db_sha)
+        self.assertTrue(result["source_hash_stable"])
+
+    def test_preview_pad_still_refuses_severe_mismatch_and_does_not_render(self):
+        self._write_art(self.horizontal, width=1000, height=500)
+        result, calls = self._run(
+            categories=("01_Wifi_Kutusu",), preview_pad=True,
+        )
+        self.assertEqual(len(calls), 0)
+        self.assertEqual(result["blocked_count"], 1)
+        self.assertIn("ARTWORK_RATIO_WOULD_CROP_OR_SYNTHESIZE",
+                      result["results"][0]["reason"])
+
+    def test_preview_pad_opt_in_keeps_matching_artwork_unaltered(self):
+        before = base._sha256_file(self.horizontal)
+        result, calls = self._run(
+            categories=("01_Wifi_Kutusu",), preview_pad=True,
+        )
+        self.assertEqual(result["pass_count"], 1, result)
+        self.assertEqual(result["results"][0]["artwork_fit_mode"],
+                         "ORIGINAL_ASPECT_MATCH")
+        self.assertFalse("preview_pad" in result["results"][0])
+        self.assertEqual(base._sha256_file(self.horizontal), before)
+        self.assertTrue(Path(calls[0][0]).is_file())
 
     def test_wrong_orientation_is_blocked(self):
         result,calls = self._run(
