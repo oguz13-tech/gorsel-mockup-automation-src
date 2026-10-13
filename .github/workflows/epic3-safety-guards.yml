@@ -35,7 +35,9 @@ jobs:
             scripts/epic3_six_template_smoke.py \
             tests/test_epic3_six_template_smoke.py \
             scripts/epic3_real_artwork_pilot.py \
-            tests/test_epic3_real_artwork_pilot.py
+            tests/test_epic3_real_artwork_pilot.py \
+            scripts/epic3_validation_bundle.py \
+            tests/test_epic3_release_checkout_guard.py
       - name: Read-only DB and identity safety regressions
         env:
           PYTHONUTF8: "1"
@@ -88,7 +90,8 @@ jobs:
             tests/test_epic3_archive_guards_readonly.py \
             tests/test_epic3_lifecycle_no_overwrite.py \
             tests/test_epic3_six_template_smoke.py \
-            tests/test_epic3_real_artwork_pilot.py
+            tests/test_epic3_real_artwork_pilot.py \
+            tests/test_epic3_release_checkout_guard.py
 
   windows-readonly-db:
     runs-on: windows-latest
