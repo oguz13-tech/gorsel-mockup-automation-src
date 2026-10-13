@@ -154,6 +154,21 @@ class TestRealArtworkPilot(unittest.TestCase):
         self.assertFalse((self.runtime/"3_URETILEN_MOCKUPLAR").exists())
         self.assertFalse((self.runtime/"4_EXCEL_YUKLEME_LISTELERI").exists())
 
+    def test_original_backup_remains_readonly_during_real_pilot(self):
+        source = self.fixtures["01_Wifi_Kutusu"]
+        archive = (
+            self.runtime / "2_SABLON_HAVUZU_ORIJINAL_YEDEK"
+            / "01_Wifi_Kutusu" / source.name
+        )
+        archive.parent.mkdir(parents=True, exist_ok=True)
+        archive.write_bytes(source.read_bytes())
+        before = archive.read_bytes()
+        result, calls = self._run(categories=("01_Wifi_Kutusu",))
+        self.assertEqual(result["pass_count"], 1, result)
+        self.assertTrue(result["source_hash_stable"])
+        self.assertEqual(archive.read_bytes(), before)
+        self.assertEqual(len(calls), 1)
+
     def test_any_nontrivial_ratio_mismatch_is_blocked_before_crop(self):
         self._write_art(self.horizontal,width=1000,height=744)
         result,calls = self._run(categories=("01_Wifi_Kutusu",))
