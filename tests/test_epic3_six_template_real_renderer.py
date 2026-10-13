@@ -19,7 +19,7 @@ import unittest
 import cv2
 import numpy as np
 
-from scripts.epic3_six_template_smoke import CATEGORY_UIDS, _sha256_file
+from scripts.epic3_six_template_smoke import CATEGORY_UIDS, _sha256_file, _synthetic_artwork
 
 
 class TestRealRendererSmokeSyntheticFixtures(unittest.TestCase):
@@ -133,6 +133,82 @@ class TestRealRendererSmokeSyntheticFixtures(unittest.TestCase):
                 / "SISTEM_MOTORU" / "logs"
             ).exists())
             for record in report["results"]:
+                image = cv2.imread(record["output"])
+                self.assertIsNotNone(image)
+                self.assertEqual(image.shape[:2], (1600, 1200))
+
+            # The second child executes the actual renderer with externally
+            # supplied, category-matched artwork files. Files are synthetic
+            # fixtures solely to protect real customer content in CI.
+            artwork_folder = base / "user-supplied-test-artwork"
+            artwork_folder.mkdir()
+            pilot_cmd = [
+                sys.executable,
+                str(repo / "scripts" / "epic3_real_artwork_pilot.py"),
+                "--runtime-root", str(runtime), "--execute",
+            ]
+            for cat in CATEGORY_UIDS:
+                ratio = (
+                    5/7 if cat == "02_Cam_Tablo_Dikey"
+                    else 2/3 if cat == "03_Ahsap_Tablo"
+                    else 10/7 if cat == "02_Cam_Tablo_Yatay"
+                    else 4/3
+                )
+                art = artwork_folder / (cat + ".png")
+                _synthetic_artwork(np, cv2, cat, ratio, art)
+                pilot_cmd.extend(["--artwork-for", f"{cat}={art}"])
+            art_hashes = {
+                str(p): _sha256_file(p)
+                for p in artwork_folder.iterdir()
+            }
+            pilot_completed = subprocess.run(
+                pilot_cmd, cwd=repo, env=child_env,
+                text=True, encoding="utf-8", errors="replace",
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=240,
+            )
+            report_paths = [
+                line.partition("PILOT_REPORT_PATH ")[2].strip()
+                for line in pilot_completed.stdout.splitlines()
+                if line.startswith("PILOT_REPORT_PATH ")
+            ]
+            self.assertTrue(
+                report_paths, "Real-art pilot did not emit report path:\n"
+                + pilot_completed.stdout[-8000:]
+                + pilot_completed.stderr[-5000:],
+            )
+            pilot_report_path = Path(report_paths[-1])
+            self.addCleanup(
+                shutil.rmtree, pilot_report_path.parent, ignore_errors=True,
+            )
+            pilot_report = json.loads(
+                pilot_report_path.read_text(encoding="utf-8"),
+            )
+            self.assertEqual(
+                pilot_completed.returncode, 0,
+                "Real-art pilot actual renderer failed:\n"
+                + json.dumps(pilot_report, ensure_ascii=False) + "\n"
+                + pilot_completed.stdout[-8000:]
+                + pilot_completed.stderr[-5000:],
+            )
+            self.assertEqual(pilot_report["pass_count"], 6, pilot_report)
+            self.assertTrue(pilot_report["source_hash_stable"])
+            self.assertTrue(pilot_report["no_cloud_excel_or_seo"])
+            self.assertTrue(all(
+                r["synthetic_art_only"] is False
+                for r in pilot_report["results"]
+            ))
+            self.assertTrue(Path(pilot_report["contact_sheet"]).is_file())
+            self.assertEqual(_sha256_file(db), before_db)
+            self.assertEqual(
+                {name:_sha256_file(path) for name,path in files.items()},
+                before_files,
+            )
+            self.assertEqual(
+                {str(p):_sha256_file(p) for p in artwork_folder.iterdir()},
+                art_hashes,
+            )
+            self.assertFalse((runtime/"3_URETILEN_MOCKUPLAR").exists())
+            for record in pilot_report["results"]:
                 image = cv2.imread(record["output"])
                 self.assertIsNotNone(image)
                 self.assertEqual(image.shape[:2], (1600, 1200))
