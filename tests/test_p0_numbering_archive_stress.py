@@ -92,8 +92,16 @@ class NumberingAndLossRegression(unittest.TestCase):
         self.assertEqual(len(list(self.work.glob("*.png"))), 100)
         raw = [p.read_bytes() for p in (self.root / "_GUVENLI_GELEN_HAM_GORSELLER" / CAT).rglob("*") if p.is_file()]
         self.assertCountEqual(raw, all_raw)
-        with sqlite3.connect(self.root / "SABLON_V2_MIMARI/ayarlar.db") as db:
-            rows = db.execute("SELECT template_number FROM template_number_registry WHERE category=?", (CAT,)).fetchall()
+        # sqlite3.Connection context managers commit/rollback but DO NOT close.
+        # On Windows a leaked test handle locks the temp DB against cleanup.
+        db = sqlite3.connect(self.root / "SABLON_V2_MIMARI/ayarlar.db")
+        try:
+            rows = db.execute(
+                "SELECT template_number FROM template_number_registry WHERE category=?",
+                (CAT,),
+            ).fetchall()
+        finally:
+            db.close()
         self.assertEqual(len(rows), 100)
         self.assertEqual(len(set(rows)), 100)
 
