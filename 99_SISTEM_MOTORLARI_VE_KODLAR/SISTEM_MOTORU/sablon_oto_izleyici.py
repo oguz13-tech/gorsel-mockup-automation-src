@@ -19,6 +19,8 @@ import json
 import logging
 import hashlib
 import shutil
+import contextlib
+import uuid
 from pathlib import Path
 import numpy as np
 
@@ -80,6 +82,9 @@ from core.template_identity import (
     collect_reserved_numbers,
     find_next_contiguous_free_block,
     reserve_number,
+    claim_number_once,
+    next_monotonic_number,
+    extract_number,
     validate_number_block,
 )
 # from foreground_ai import ForegroundAIEngine # Gereksiz sistem yükü oluşturduğu için devredışı bırakıldı
@@ -424,25 +429,30 @@ def detect_frame_auto(img_cv: np.ndarray) -> dict:
     return {"tip": "duz", "x": cx, "y": cy, "w": cw, "h": ch, "supheli": True}
 
 def _write_png_atomic(dest_path: Path, img_cv: np.ndarray) -> bool:
-    """Write a PNG atomically so crashes never leave a half-written template."""
+    """Create-only, durable PNG: no preexisting file may be replaced."""
     dest_path.parent.mkdir(parents=True, exist_ok=True)
     ok, encoded = cv2.imencode(".png", img_cv)
     if not ok:
         return False
-    tmp_path = dest_path.with_name(dest_path.name + ".tmp")
+    tmp = dest_path.with_name(dest_path.name + "." + uuid.uuid4().hex + ".tmp")
     try:
-        with open(tmp_path, "wb") as handle:
+        with open(tmp, "xb") as handle:
             handle.write(encoded.tobytes())
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(tmp_path, dest_path)
-        return True
+        try:
+            # Atomic no-overwrite creation on NTFS/POSIX. Unsupported FS
+            # fails closed; NEVER fall back to os.replace.
+            os.link(tmp, dest_path)
+            return True
+        except (FileExistsError, OSError) as exc:
+            logger.error("P0_DESTINATION_CONFLICT_OR_UNSUPPORTED_LINK: %s", exc)
+            return False
     finally:
-        if tmp_path.exists():
-            try:
-                tmp_path.unlink()
-            except OSError:
-                pass
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            logger.exception("P0_TMP_CLEANUP_FAILED")
 
 
 def _sha256_file(path: Path) -> str:
@@ -612,12 +622,16 @@ def recover_stale_processing_files(
                 identical = False
 
             if identical:
-                processing_path.unlink()
-                result["deduplicated"].append(str(processing_path))
-                logger.info(
-                    f"🧹 Aynı bytes'a sahip eski .processing kopyası "
-                    f"temizlendi: {processing_path}"
+                # P0: even byte-identical .processing is archived, not unlinked.
+                category = processing_path.parent.name
+                dest = (recovery_root / category)
+                dest.mkdir(parents=True, exist_ok=True)
+                candidate = dest / (
+                    Path(original_name).stem + "__IDENTICAL__"
+                    + uuid.uuid4().hex + Path(original_name).suffix
                 )
+                shutil.move(str(processing_path), str(candidate))
+                result["quarantined"].append(str(candidate))
                 continue
 
             category = processing_path.parent.name
@@ -667,7 +681,54 @@ def _restore_processing_file(processing_path: Path, original_path: Path) -> None
         )
 
 
+@contextlib.contextmanager
+def _exclusive_intake_lock(root: Path):
+    """Serialize ingestion across processes. Crash-held locks fail closed."""
+    lock_dir = Path(root) / "SABLON_V2_MIMARI" / "recovery" / "locks"
+    lock_dir.mkdir(parents=True, exist_ok=True)
+    lock = lock_dir / "staging_intake.lock"
+    token = uuid.uuid4().hex
+    deadline = time.monotonic() + 10.0
+    fd = None
+    while time.monotonic() < deadline:
+        try:
+            fd = os.open(str(lock), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            os.write(fd, f"{os.getpid()}:{token}".encode("ascii"))
+            os.fsync(fd)
+            break
+        except FileExistsError:
+            time.sleep(0.05)
+    if fd is None:
+        raise RuntimeError("INGEST_LOCK_BUSY: must investigate; never auto-unlock")
+    try:
+        yield
+    finally:
+        os.close(fd)
+        try:
+            if lock.read_text(encoding="ascii") == f"{os.getpid()}:{token}":
+                lock.unlink()
+        except OSError:
+            logger.exception("INGEST_LOCK_CLEANUP_FAILED")
+
+
+def _staging_write_authorized() -> bool:
+    return os.environ.get("MOCKUP_STAGING_IMPORT_APPROVED") == "I_REVIEWED_AND_APPROVED_STAGING_IMPORT"
+
+
 def process_from_staging(staging_path: Path, thread_lock=None) -> bool:
+    """No mutating intake without explicit opt-in and cross-process lock."""
+    if not _staging_write_authorized():
+        logger.error("P0 BLOCKED: Staging import disabled: %s", staging_path)
+        return False
+    try:
+        with _exclusive_intake_lock(BASE_DIR):
+            return _process_from_staging_locked(Path(staging_path), thread_lock)
+    except Exception as exc:
+        logger.error("INGEST_LOCK/NUMBER_CLAIM_BLOCKED: %s", exc)
+        return False
+
+
+def _process_from_staging_locked(staging_path: Path, thread_lock=None) -> bool:
     """Safely ingest one raw template into backup + review workspace.
 
     Safety contract:
@@ -693,6 +754,9 @@ def process_from_staging(staging_path: Path, thread_lock=None) -> bool:
     planned_backup_path = None
     planned_working_path = None
 
+    if processing_path.exists():
+        logger.error("P0 BLOCKED: existing processing file: %s", processing_path)
+        return False
     try:
         staging_path.rename(processing_path)
     except Exception:
@@ -740,121 +804,28 @@ def process_from_staging(staging_path: Path, thread_lock=None) -> bool:
             _restore_processing_file(processing_path, original_staging_path)
             return False
 
-        # Filename identity is category + extension-insensitive stem.
-        # Example: AhsapTablo_015.png / .jpg / .jpeg are ONE identity.
-        # Reject before number allocation and preserve the incoming file.
-        try:
-            assert_identity_available(
-                BASE_DIR,
-                cat_key,
-                original_staging_path.name,
-                ignore_paths=[processing_path],
-                include_staging=True,
-            )
-        except TemplateIdentityConflictError as exc:
-            message = str(exc)
-            logger.error(message.replace("\n", " | "))
-            _restore_processing_file(
-                processing_path,
-                original_staging_path,
-            )
-            _mark_staging_blocked(
-                original_staging_path,
-                reason="IDENTITY_CONFLICT",
-                details=exc.report,
-            )
-            _update_staging_txn(
-                txn_path,
-                txn,
-                state="ROLLED_BACK",
-                error=message,
-                identity_conflict=exc.report,
-            )
-            return False
-
-        # A template number is a permanent identity across active files,
-        # backups, DB history, trash and generated artifact history.
+        # The incoming name is a proposal, never the sole identity. Reserve
+        # numbers from all known history and choose above the high-water mark.
+        old_id = extract_number(cat_key, original_staging_path.name)
         reserved_nums = collect_reserved_numbers(
-            BASE_DIR,
-            cat_key,
-            ignore_paths=[processing_path],
+            BASE_DIR, cat_key, ignore_paths=[processing_path],
             include_pending_staging=True,
         )
-
-        requested_idx = None
-        original_stem = original_staging_path.stem
-        if original_stem.startswith(f"{prefix}_"):
-            try:
-                requested_idx = int(
-                    original_stem.replace(f"{prefix}_", "")
-                )
-            except (TypeError, ValueError):
-                requested_idx = None
-
-        if requested_idx is not None:
-            try:
-                validate_number_block(
-                    BASE_DIR,
-                    cat_key,
-                    requested_idx,
-                    1,
-                    ignore_paths=[processing_path],
-                )
-            except TemplateNumberConflictError as exc:
-                message = (
-                    f"⛔ NUMARA KİMLİĞİ ÇAKIŞMASI: {requested_idx} daha önce "
-                    "bu kategoride kullanılmış. "
-                    f"Gelen dosya: {original_staging_path.name}. "
-                    "Uzantı farkı kimliği değiştirmez. "
-                    f"Önerilen yeni numara: {exc.suggested_start}. "
-                    "Dosya işlenmedi ve adı değiştirilmeden geri bırakıldı."
-                )
-                logger.error(message)
-                _restore_processing_file(
-                    processing_path,
-                    original_staging_path,
-                )
-                number_details = {
-                    "category": cat_key,
-                    "requested_number": requested_idx,
-                    "incoming_name": original_staging_path.name,
-                    "incoming_extension": original_staging_path.suffix.lower(),
-                    "suggested_number": exc.suggested_start,
-                }
-                _mark_staging_blocked(
-                    original_staging_path,
-                    reason="NUMBER_CONFLICT",
-                    details=number_details,
-                )
-                _update_staging_txn(
-                    txn_path,
-                    txn,
-                    state="ROLLED_BACK",
-                    error=message,
-                    number_conflict={
-                        "category": cat_key,
-                        "requested_number": requested_idx,
-                        "incoming_name": original_staging_path.name,
-                        "incoming_extension": original_staging_path.suffix.lower(),
-                        "suggested_number": exc.suggested_start,
-                    },
-                )
-                return False
-            new_idx = requested_idx
-        else:
-            # Generic filenames may still be accepted, but allocation uses the
-            # permanent registry and never recycles an old identity.
-            new_idx = find_next_contiguous_free_block(
-                reserved_nums,
-                1,
-                1,
+        highest_known = max(reserved_nums, default=0)
+        new_idx = old_id if old_id is not None and old_id > highest_known else next_monotonic_number(reserved_nums)
+        if old_id != new_idx:
+            logger.warning(
+                "SAFE_RENUMBER: %s -> %s_%03d.png (previous max=%d)",
+                original_staging_path.name, prefix, new_idx, highest_known,
             )
-            logger.info(
-                "ℹ️ Dosyada şablon numarası yok; ilk kalıcı boş numara "
-                "atanacak: %s_%03d",
-                prefix,
-                new_idx,
-            )
+        _update_staging_txn(
+            txn_path, txn,
+            incoming_name=original_staging_path.name,
+            incoming_requested_number=old_id,
+            assigned_number=new_idx,
+            max_reserved_before=highest_known,
+            auto_renumbered=(old_id != new_idx),
+        )
 
         new_name = f"{prefix}_{new_idx:03d}.png"
         backup_path = YEDEK_DIR / cat_key / new_name
@@ -883,6 +854,18 @@ def process_from_staging(staging_path: Path, thread_lock=None) -> bool:
             f"{processing_path.name} -> {new_name}"
         )
 
+        # Claim the permanent identity BEFORE output writes; failures burn IDs.
+        try:
+            claim_number_once(
+                BASE_DIR, cat_key, new_idx,
+                canonical_name=new_name, source="staging_ingest",
+            )
+        except Exception as exc:
+            logger.error("NUMBER_CLAIM_FAILED: %s", exc)
+            _restore_processing_file(processing_path, original_staging_path)
+            _update_staging_txn(txn_path, txn, state="ROLLED_BACK", error=str(exc))
+            return False
+
         # 1) Immutable recovery copy first.
         if not _write_png_atomic(backup_path, img_cv):
             logger.error(f"Orijinal yedek yazılamadı: {backup_path}")
@@ -899,12 +882,7 @@ def process_from_staging(staging_path: Path, thread_lock=None) -> bool:
         #    in pixel content to the durable original backup.
         if not _write_png_atomic(working_path, img_cv):
             logger.error(f"Çalışma şablonu yazılamadı: {working_path}")
-            try:
-                backup_path.unlink(missing_ok=True)
-            except Exception as cleanup_exc:
-                logger.warning(
-                    f"Başarısız ingest yedeği temizlenemedi: {cleanup_exc}"
-                )
+            logger.error("RECOVERY_REQUIRED: backup retained at %s", backup_path)
             _restore_processing_file(processing_path, original_staging_path)
             return False
         _update_staging_txn(
@@ -941,13 +919,6 @@ def process_from_staging(staging_path: Path, thread_lock=None) -> bool:
             save_template(cat_key, new_name, s_conf)
             review_db = BASE_DIR / "SABLON_V2_MIMARI" / "ayarlar.db"
             save_template_profile(str(review_db), profile_data)
-            reserve_number(
-                BASE_DIR,
-                cat_key,
-                new_idx,
-                canonical_name=new_name,
-                source="staging_ingest",
-            )
             _update_staging_txn(
                 txn_path,
                 txn,
@@ -955,69 +926,39 @@ def process_from_staging(staging_path: Path, thread_lock=None) -> bool:
             )
         except Exception as exc:
             logger.error(f"Şablon review DB'ye kaydedilemedi: {exc}")
-            try:
-                delete_template(cat_key, new_name)
-            except Exception as cleanup_exc:
-                logger.warning(
-                    f"Başarısız DB kaydı geri alınamadı "
-                    f"({new_name}): {cleanup_exc}"
-                )
-            for created_path in (working_path, backup_path):
-                try:
-                    created_path.unlink(missing_ok=True)
-                except Exception as cleanup_exc:
-                    logger.warning(
-                        f"Başarısız ingest artığı temizlenemedi "
-                        f"({created_path.name}): {cleanup_exc}"
-                    )
+            # Preserve backups and working copies on DB errors for recovery.
+            logger.error(
+                "RECOVERY_REQUIRED: work=%s backup=%s staging=%s",
+                working_path, backup_path, processing_path,
+            )
             _restore_processing_file(processing_path, original_staging_path)
             return False
 
-        # Only now is the staging copy redundant.
+        # Never delete the only byte-exact raw input. Move to unique
+        # non-watched archive and verify its SHA before committing.
         try:
-            processing_path.unlink()
-        except Exception as exc:
-            logger.warning(
-                f"Şablon güvenle kaydedildi ancak staging kopyası silinemedi: {exc}"
+            raw_dir = (
+                BASE_DIR / "_GUVENLI_GELEN_HAM_GORSELLER" / cat_key
+                / (str(txn.get("transaction_id")) if txn else uuid.uuid4().hex)
             )
-            try:
-                recovery_dir = (
-                    BASE_DIR
-                    / "_KURTARMA_PROCESSING"
-                    / cat_key
-                )
-                recovery_dir.mkdir(parents=True, exist_ok=True)
-                recovery_target = recovery_dir / (
-                    f"{Path(new_name).stem}__COMMITTED_STAGING"
-                    f"__{time.strftime('%Y%m%d_%H%M%S')}"
-                    f"{original_staging_path.suffix}"
-                )
-                counter = 1
-                while recovery_target.exists():
-                    recovery_target = recovery_dir / (
-                        f"{Path(new_name).stem}__COMMITTED_STAGING"
-                        f"__{time.strftime('%Y%m%d_%H%M%S')}_{counter}"
-                        f"{original_staging_path.suffix}"
-                    )
-                    counter += 1
-                shutil.move(
-                    str(processing_path),
-                    str(recovery_target),
-                )
-                _update_staging_txn(
-                    txn_path,
-                    txn,
-                    committed_staging_recovery=str(recovery_target),
-                )
-                logger.warning(
-                    f"🛟 Commit edilmiş staging artığı recovery alanına taşındı: "
-                    f"{recovery_target}"
-                )
-            except Exception as recovery_exc:
-                logger.error(
-                    "KRİTİK: Commit edilmiş .processing dosyası watched "
-                    f"alandan çıkarılamadı: {recovery_exc}"
-                )
+            raw_dir.mkdir(parents=True, exist_ok=False)
+            raw_archive_path = raw_dir / original_staging_path.name
+            before_hash = _sha256_file(processing_path)
+            shutil.move(str(processing_path), str(raw_archive_path))
+            if _sha256_file(raw_archive_path) != before_hash:
+                raise IOError("RAW_ARCHIVE_HASH_MISMATCH")
+            _update_staging_txn(
+                txn_path, txn,
+                raw_original_archive_path=str(raw_archive_path),
+                raw_original_archive_sha256=before_hash,
+            )
+        except Exception as exc:
+            logger.error("RECOVERY_REQUIRED: Raw archive failure: %s", exc)
+            _update_staging_txn(
+                txn_path, txn, state="RECOVERY_REQUIRED",
+                error=f"RAW_ARCHIVE_FAILED: {exc}",
+            )
+            return False
 
         committed = True
         _update_staging_txn(
@@ -1079,6 +1020,9 @@ def process_from_staging(staging_path: Path, thread_lock=None) -> bool:
 
 
 def run_watcher():
+    if not _staging_write_authorized():
+        logger.error("P0 BLOCKED: watcher requires explicit reviewed opt-in")
+        raise SystemExit(4)
     try:
         history = backfill_registry(BASE_DIR)
         logger.info(
@@ -1268,7 +1212,10 @@ def run_watcher():
 if __name__ == "__main__":
     if "--recover-only" in sys.argv:
         STAGING_DIR.mkdir(parents=True, exist_ok=True)
-        recovery = recover_stale_processing_files(stale_seconds=0)
+        # P0: --recover-only cannot secretly rename or delete user sources.
+        recovery = {"status": "READ_ONLY", "pending": [
+            str(p) for p in STAGING_DIR.rglob("*.processing")
+        ], "failed": []}
         print(
             json.dumps(
                 recovery,

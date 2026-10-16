@@ -551,6 +551,52 @@ def reserve_number(
         conn.close()
 
 
+
+def claim_number_once(runtime_root: Path, category: str, number: int, *, canonical_name: str, source: str="staging_ingest") -> None:
+    """Durably claim an identity before output is written; duplicates fail closed.
+
+    BEGIN IMMEDIATE serializes separate SQLite processes; unlike historical
+    backfill this MUST NOT use INSERT OR IGNORE.
+    """
+    runtime_root = Path(runtime_root)
+    if category not in CATEGORY_PREFIXES or int(number) < 1:
+        raise ValueError("INVALID_TEMPLATE_IDENTITY")
+    db_path = _db_path(runtime_root)
+    if not db_path.is_file():
+        raise RuntimeError("NUMBER_REGISTRY_DB_MISSING")
+    conn = sqlite3.connect(str(db_path), timeout=30)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        conn.execute("""CREATE TABLE IF NOT EXISTS template_number_registry (
+            category TEXT NOT NULL,
+            template_number INTEGER NOT NULL,
+            canonical_name TEXT,
+            first_seen_source TEXT,
+            first_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (category, template_number)
+        )""")
+        try:
+            conn.execute(
+                """INSERT INTO template_number_registry
+                   (category, template_number, canonical_name, first_seen_source)
+                   VALUES (?, ?, ?, ?)""",
+                (str(category), int(number), str(canonical_name), str(source)),
+            )
+        except sqlite3.IntegrityError as exc:
+            raise TemplateNumberConflictError(category, [number]) from exc
+        conn.commit()
+    except BaseException:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def next_monotonic_number(reserved: Iterable[int]) -> int:
+    """Never fill gaps; deleted/missing files might have owned that ID."""
+    return max((int(x) for x in reserved), default=0) + 1
+
+
 def _numbers_from_db(runtime_root: Path, category: str) -> set[int]:
     db_path = _db_path(runtime_root)
     if not db_path.is_file():

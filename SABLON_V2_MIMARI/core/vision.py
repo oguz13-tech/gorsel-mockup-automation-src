@@ -443,21 +443,7 @@ class MockupHandler(http.server.SimpleHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(data.encode('utf-8'))
         elif req_path == '/api/ayarlar':
-            try:
-                sm_dir = os.path.join(BASE_DIR, "99_SISTEM_MOTORLARI_VE_KODLAR", "SISTEM_MOTORU")
-                if sm_dir not in sys.path:
-                    sys.path.append(sm_dir)
-                import sablon_oto_izleyici as soi
-                staging = soi.STAGING_DIR
-                if staging.exists():
-                    for f in staging.rglob("*.*"):
-                        if f.is_file() and f.suffix.lower() in soi.VALID_EXTS:
-                            if "-düzenleme-yapıldı" not in f.stem and "-beyazlatilmis-onizleme" not in f.stem:
-                                logger.info(f"UI SYNC: Yeni dosya tespit edildi, isleniyor: {f.name}")
-                                soi.process_from_staging(f, thread_lock=AYARLAR_LOCK)
-            except Exception as e:
-                logger.error(f"UI SYNC Hatasi: {e}")
-                
+            # P0: Reading settings must never mutate or ingest images.
             with AYARLAR_LOCK:
                 with open(AYARLAR_PATH, 'r', encoding='utf-8') as f:
                     encoded_json = f.read().encode('utf-8')

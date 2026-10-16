@@ -29,6 +29,12 @@ if not exist "%MOCKUP_RUNTIME_WORKSPACE%\SABLON_V2_MIMARI\ayarlar.db" (
     exit /b 2
 )
 
+if /I not "%MOCKUP_STAGING_IMPORT_APPROVED%"=="I_REVIEWED_AND_APPROVED_STAGING_IMPORT" (
+    echo P0 DURDURULDU: yeni gorsel otomatik aktarimi varsayilan KAPALI.
+    echo Test / code review onayi olmadan watcher baslatilamaz.
+    pause
+    exit /b 4
+)
 cd /d "%~dp0"
 python 99_SISTEM_MOTORLARI_VE_KODLAR\SISTEM_MOTORU\sablon_oto_izleyici.py
 pause
