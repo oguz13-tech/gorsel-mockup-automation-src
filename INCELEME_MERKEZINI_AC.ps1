@@ -90,49 +90,8 @@ if (-not (Test-Path -LiteralPath $WatcherPath)) {
     exit 6
 }
 
-# İnceleme Merkezi ile staging watcher tek bir çalışma setidir.
-# Eski watcher süreçlerini kapatıp aynı runtime ortamıyla temiz bir watcher başlat.
-try {
-    $watcherPattern = [regex]::Escape($WatcherPath)
-    $oldWatchers = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
-        Where-Object {
-            $_.CommandLine -and
-            $_.CommandLine -match "sablon_oto_izleyici\.py" -and
-            $_.CommandLine -match $watcherPattern
-        }
-
-    foreach ($oldWatcher in $oldWatchers) {
-        Write-Host "Eski şablon izleyici kapatılıyor... PID: $($oldWatcher.ProcessId)" -ForegroundColor Yellow
-        Stop-Process -Id $oldWatcher.ProcessId -Force -ErrorAction SilentlyContinue
-    }
-    if ($oldWatchers) {
-        Start-Sleep -Milliseconds 500
-    }
-} catch {
-    Write-Host "Watcher süreç kontrol uyarısı: $($_.Exception.Message)" -ForegroundColor Yellow
-}
-
-$watcherLogDir = Join-Path $runtime "99_SISTEM_MOTORLARI_VE_KODLAR\SISTEM_MOTORU\logs"
-New-Item -ItemType Directory -Force -Path $watcherLogDir | Out-Null
-$watcherOut = Join-Path $watcherLogDir "staging_watcher_stdout.log"
-$watcherErr = Join-Path $watcherLogDir "staging_watcher_stderr.log"
-
-Write-Host "Yeni şablon izleyici başlatılıyor..." -ForegroundColor Cyan
-$watcherProcess = Start-Process -FilePath "python" -ArgumentList @($WatcherPath) -WorkingDirectory $RepoRoot -RedirectStandardOutput $watcherOut -RedirectStandardError $watcherErr -PassThru
-Start-Sleep -Milliseconds 700
-
-if ($watcherProcess.HasExited) {
-    Write-Host "HATA: Şablon izleyici başlatılamadı." -ForegroundColor Red
-    Write-Host "Log: $watcherErr"
-    if (Test-Path -LiteralPath $watcherErr) {
-        Get-Content -LiteralPath $watcherErr -Tail 20 -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_ }
-    }
-    Read-Host "Kapatmak için Enter"
-    exit 7
-}
-
-Write-Host "Şablon izleyici aktif. PID: $($watcherProcess.Id)" -ForegroundColor Green
-Write-Host "İzlenen klasör: $(Join-Path $runtime 'YENI-BOS MOCKUP SABLON HAVUZU')" -ForegroundColor Green
+# P0 safety: opening the review UI must never start, restart or stop a watcher.
+Write-Host "P0 GUVENLIK: Otomatik watcher BASLATILMADI." -ForegroundColor Yellow
 
 try {
     $listener = Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
