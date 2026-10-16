@@ -622,12 +622,16 @@ def recover_stale_processing_files(
                 identical = False
 
             if identical:
-                processing_path.unlink()
-                result["deduplicated"].append(str(processing_path))
-                logger.info(
-                    f"🧹 Aynı bytes'a sahip eski .processing kopyası "
-                    f"temizlendi: {processing_path}"
+                # P0: even byte-identical .processing is archived, not unlinked.
+                category = processing_path.parent.name
+                dest = (recovery_root / category)
+                dest.mkdir(parents=True, exist_ok=True)
+                candidate = dest / (
+                    Path(original_name).stem + "__IDENTICAL__"
+                    + uuid.uuid4().hex + Path(original_name).suffix
                 )
+                shutil.move(str(processing_path), str(candidate))
+                result["quarantined"].append(str(candidate))
                 continue
 
             category = processing_path.parent.name
@@ -1208,7 +1212,10 @@ def run_watcher():
 if __name__ == "__main__":
     if "--recover-only" in sys.argv:
         STAGING_DIR.mkdir(parents=True, exist_ok=True)
-        recovery = recover_stale_processing_files(stale_seconds=0)
+        # P0: --recover-only cannot secretly rename or delete user sources.
+        recovery = {"status": "READ_ONLY", "pending": [
+            str(p) for p in STAGING_DIR.rglob("*.processing")
+        ], "failed": []}
         print(
             json.dumps(
                 recovery,
