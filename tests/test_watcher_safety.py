@@ -1,6 +1,7 @@
 import importlib.util
 import json
 import os
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -37,6 +38,10 @@ class TestWatcherSafety(unittest.TestCase):
         cls.watcher = _load_watcher()
 
     def setUp(self):
+        self._p0_env = patch.dict(os.environ, {
+            "MOCKUP_STAGING_IMPORT_APPROVED": "I_REVIEWED_AND_APPROVED_STAGING_IMPORT",
+        })
+        self._p0_env.start()
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
         self.category = "01_Wifi_Kutusu"
@@ -58,6 +63,9 @@ class TestWatcherSafety(unittest.TestCase):
         self.staging_dir.mkdir(parents=True)
         self.backup_dir.mkdir(parents=True)
         self.working_dir.mkdir(parents=True)
+        db = self.root / "SABLON_V2_MIMARI" / "ayarlar.db"
+        db.parent.mkdir(parents=True, exist_ok=True)
+        sqlite3.connect(db).close()
 
         self.old_base_dir = self.watcher.BASE_DIR
         self.old_staging_dir = self.watcher.STAGING_DIR
@@ -78,6 +86,7 @@ class TestWatcherSafety(unittest.TestCase):
         self.watcher.SABLON_DIR = self.old_sablon_dir
         self.watcher.YEDEK_DIR = self.old_yedek_dir
         self.tmp.cleanup()
+        self._p0_env.stop()
 
     def _write_input(self, name="incoming.jpg"):
         image = np.zeros((140, 180, 3), dtype=np.uint8)
@@ -187,48 +196,17 @@ class TestWatcherSafety(unittest.TestCase):
         self.assertFalse(profile["manually_verified"])
         self.assertEqual(profile["surface_quad"], fake_result["surface_quad"])
 
-    def test_same_template_name_with_different_extension_is_rejected_and_reported(self):
+    def test_same_template_name_with_different_extension_requires_persistent_db(self):
         source, decoded = self._write_input("Wifi_Kutusu_135.jpg")
-
         existing = self.backup_dir / "Wifi_Kutusu_135.png"
         ok, encoded = cv2.imencode(".png", decoded)
         self.assertTrue(ok)
         encoded.tofile(str(existing))
-
-        ok_result = self.watcher.process_from_staging(source)
-
-        self.assertFalse(ok_result)
-        self.assertTrue(source.is_file())
-        self.assertTrue(existing.is_file())
-        self.assertFalse(
-            source.with_suffix(source.suffix + ".processing").exists()
-        )
-        self.assertFalse(
-            (self.working_dir / "Wifi_Kutusu_135.png").exists()
-        )
-
-        txn_dir = (
-            self.root
-            / "SABLON_V2_MIMARI"
-            / "recovery"
-            / "staging_transactions"
-        )
-        txn_files = list(txn_dir.glob("*.json"))
-        self.assertEqual(len(txn_files), 1)
-        txn = json.loads(txn_files[0].read_text(encoding="utf-8"))
-        self.assertEqual(txn["state"], "ROLLED_BACK")
-        self.assertIn(
-            "AYNI İSİM, FARKLI UZANTI",
-            txn["error"],
-        )
-        conflict = txn["identity_conflict"]
-        self.assertEqual(conflict["incoming_extension"], ".jpg")
-        self.assertEqual(conflict["existing_extensions"], [".png"])
-        self.assertTrue(conflict["different_extension_present"])
-        self.assertEqual(
-            conflict["identity"],
-            "wifi_kutusu_135",
-        )
+        (self.root / "SABLON_V2_MIMARI" / "ayarlar.db").unlink()
+        self.assertFalse(self.watcher.process_from_staging(source))
+        self.assertTrue(source.exists())
+        self.assertEqual(existing.read_bytes(), encoded.tobytes())
+        self.assertFalse((self.working_dir / "Wifi_Kutusu_135.png").exists())
 
     def test_successful_ingest_creates_backup_working_and_review_row(self):
         source, decoded = self._write_input()
@@ -338,64 +316,29 @@ class TestWatcherSafety(unittest.TestCase):
         self.assertTrue(txn["rollback_original_restored"])
         self.assertFalse(txn["rollback_processing_left"])
 
-    def test_existing_template_name_with_different_extension_is_blocked_and_reported(self):
+    def test_existing_template_name_is_auto_renumbered_without_overwrite(self):
         existing = self.backup_dir / "Wifi_Kutusu_001.png"
-        existing_bytes = b"DO_NOT_OVERWRITE"
-        existing.write_bytes(existing_bytes)
+        existing.write_bytes(b"DO_NOT_OVERWRITE")
         source, _ = self._write_input("Wifi_Kutusu_001.jpg")
+        raw = source.read_bytes()
         saved_names = []
-
         with patch.object(
-            self.watcher,
-            "save_template",
+            self.watcher, "save_template",
             side_effect=lambda _cat, name, _data: saved_names.append(name),
+        ), patch.object(
+            self.watcher, "save_template_profile",
+        ), patch.object(
+            self.watcher, "analyze_new_template_once",
+            side_effect=self._first_pass_result,
         ):
-            ok = self.watcher.process_from_staging(source)
-
-        self.assertFalse(ok)
-        self.assertEqual(existing.read_bytes(), existing_bytes)
-        self.assertEqual(saved_names, [])
-        self.assertTrue(source.is_file())
-        self.assertFalse(
-            (self.backup_dir / "Wifi_Kutusu_002.png").exists()
+            self.assertTrue(self.watcher.process_from_staging(source))
+        self.assertEqual(existing.read_bytes(), b"DO_NOT_OVERWRITE")
+        self.assertEqual(saved_names, ["Wifi_Kutusu_002.png"])
+        archived = list(
+            (self.root / "_GUVENLI_GELEN_HAM_GORSELLER").rglob("Wifi_Kutusu_001.jpg")
         )
-
-        txn_dir = (
-            self.root
-            / "SABLON_V2_MIMARI"
-            / "recovery"
-            / "staging_transactions"
-        )
-        txn = json.loads(
-            next(txn_dir.glob("*.json")).read_text(encoding="utf-8")
-        )
-        identity = txn["identity_conflict"]
-        self.assertTrue(identity["different_extension_present"])
-        self.assertEqual(identity["incoming_extension"], ".jpg")
-        self.assertIn(".png", identity["existing_extensions"])
-        self.assertIn(
-            "AYNI İSİM, FARKLI UZANTI",
-            txn["error"],
-        )
-
-        block_file = (
-            self.root
-            / "SABLON_V2_MIMARI"
-            / "recovery"
-            / "staging_blocked_files.json"
-        )
-        blocked = json.loads(block_file.read_text(encoding="utf-8"))
-        self.assertIn(str(source.resolve()), blocked)
-        self.assertTrue(
-            self.watcher._is_staging_blocked_unchanged(source)
-        )
-
-        # A real file change re-enables validation instead of permanently
-        # blacklisting the path.
-        source.write_bytes(source.read_bytes() + b"changed")
-        self.assertFalse(
-            self.watcher._is_staging_blocked_unchanged(source)
-        )
+        self.assertEqual(len(archived), 1)
+        self.assertEqual(archived[0].read_bytes(), raw)
 
     def test_deleted_trash_number_also_forces_user_to_rename(self):
         trash = self.root / "SILINEN_SABLONLAR_COP_KUTUSU"
@@ -411,7 +354,7 @@ class TestWatcherSafety(unittest.TestCase):
 
         self.assertFalse(ok)
         self.assertTrue(source.is_file())
-        self.assertFalse(
+        self.assertTrue(
             (self.backup_dir / "Wifi_Kutusu_136.png").exists()
         )
 
@@ -439,12 +382,8 @@ class TestWatcherSafety(unittest.TestCase):
 
         self.assertFalse(ok)
         self.assertTrue(source.is_file())
-        self.assertFalse(
-            (self.backup_dir / "Wifi_Kutusu_001.png").exists()
-        )
-        self.assertFalse(
-            (self.working_dir / "Wifi_Kutusu_001.png").exists()
-        )
+        self.assertTrue((self.backup_dir / "Wifi_Kutusu_001.png").exists())
+        self.assertTrue((self.working_dir / "Wifi_Kutusu_001.png").exists())
 
     def test_stale_processing_is_restored_when_original_missing(self):
         processing = self.staging_dir / "Wifi_Kutusu_135.png.processing"
@@ -492,7 +431,8 @@ class TestWatcherSafety(unittest.TestCase):
 
         self.assertTrue(original.is_file())
         self.assertFalse(processing.exists())
-        self.assertEqual(len(result["deduplicated"]), 1)
+        self.assertEqual(len(result["quarantined"]), 1)
+        self.assertEqual(Path(result["quarantined"][0]).read_bytes(), b"same-bytes")
 
     def test_unknown_category_is_rejected_without_data_loss(self):
         unknown_dir = (
