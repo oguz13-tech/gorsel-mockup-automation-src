@@ -72,17 +72,9 @@ Write-Host "Ana çalışma klasörü bulundu:" -ForegroundColor Green
 Write-Host $runtime
 Write-Host "Runtime kaynağı: $runtimeSource" -ForegroundColor DarkGray
 
-$baselineScript = Join-Path $RepoRoot "scripts\\capture_runtime_baseline.py"
-if (Test-Path -LiteralPath $baselineScript) {
-    try {
-        & python $baselineScript --ensure
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "Runtime sürüm baseline oluşturma uyarısı. Çıkış kodu: $LASTEXITCODE" -ForegroundColor Yellow
-        }
-    } catch {
-        Write-Host "Runtime sürüm baseline uyarısı: $($_.Exception.Message)" -ForegroundColor Yellow
-    }
-}
+# Startup must NOT silently create a runtime baseline file. An explicit
+# pre-release command owns baseline creation after verified backups.
+Write-Host "P0: Runtime AI baseline otomatik degistirilmedi." -ForegroundColor DarkGray
 
 if (-not (Test-Path -LiteralPath $WatcherPath)) {
     Write-Host "HATA: Şablon izleyici bulunamadı: $WatcherPath" -ForegroundColor Red
@@ -99,9 +91,10 @@ try {
         $owner = Get-CimInstance Win32_Process -Filter "ProcessId=$($listener.OwningProcess)" -ErrorAction SilentlyContinue
         $cmd = [string]$owner.CommandLine
         if ($cmd -match "SABLON_V2_MIMARI[\\/]app\.py") {
-            Write-Host "Eski İnceleme Merkezi kapatılıyor..." -ForegroundColor Yellow
-            Stop-Process -Id $listener.OwningProcess -Force -ErrorAction Stop
-            Start-Sleep -Milliseconds 700
+            Write-Host "8080 Inceleme Merkezi zaten calisiyor. Devam eden islem KESILMEDI." -ForegroundColor Yellow
+            Write-Host "Kod guncellemesi gerekiyorsa once tum gorevlerin bitmesini bekleyin." -ForegroundColor Yellow
+            Start-Process ("http://127.0.0.1:8080" + $OpenPath)
+            exit 0
         } else {
             Write-Host "HATA: 8080 portunu başka bir program kullanıyor. PID: $($listener.OwningProcess)" -ForegroundColor Red
             Read-Host "Kapatmak için Enter"

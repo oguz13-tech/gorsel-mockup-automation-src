@@ -17,6 +17,15 @@ import numpy as np
 from SABLON_V2_MIMARI.core import lifecycle_reconciliation as lifecycle
 
 
+def _is_same_destination(target, expected):
+    """NTFS may alias a path via RUNNER~1 versus runneradmin (8.3 name)."""
+    lhs, rhs = Path(target), Path(expected)
+    return (
+        lhs.name.casefold() == rhs.name.casefold()
+        and os.path.samefile(lhs.parent, rhs.parent)
+    )
+
+
 CATEGORY = "03_Ahsap_Tablo"
 TEMPLATE = "AhsapTablo_015.png"
 
@@ -75,7 +84,7 @@ class TestNoOverwriteSourceReplacement(unittest.TestCase):
         def inject_race(src, dst):
             # New backup target was moved to recovery; another writer wins
             # the name just before we publish this operation's bytes.
-            if Path(dst) == self.backup:
+            if _is_same_destination(dst, self.backup):
                 Path(dst).write_bytes(b"OTHER-WRITER")
                 raise FileExistsError(errno.EEXIST, "target exists", str(dst))
             return real_link(src, dst)
@@ -102,7 +111,7 @@ class TestNoOverwriteSourceReplacement(unittest.TestCase):
         real_link = os.link
 
         def inject_race(src, dst):
-            if Path(dst) == self.working:
+            if _is_same_destination(dst, self.working):
                 Path(dst).write_bytes(b"WORKER-OWNED")
                 raise FileExistsError(errno.EEXIST, "target exists", str(dst))
             return real_link(src, dst)

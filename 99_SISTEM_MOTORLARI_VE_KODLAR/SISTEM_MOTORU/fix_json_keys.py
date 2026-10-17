@@ -1,3 +1,12 @@
+# P0 SAFETY GATE: historical script retained but can never mutate live data.
+# See scripts/legacy_recovery_preview.py for the safe, read-only preview.
+import sys as _p0_sys
+from pathlib import Path as _p0_Path
+_p0_sys.path.insert(0, str(_p0_Path(__file__).resolve().parents[2]))
+from scripts.legacy_recovery_preview import main as _p0_legacy_preview
+raise SystemExit(_p0_legacy_preview("fix_json_keys", _p0_sys.argv[1:]))
+
+# HISTORICAL / UNREACHABLE: dangerous legacy implementation retained below.
 import json
 from pathlib import Path
 

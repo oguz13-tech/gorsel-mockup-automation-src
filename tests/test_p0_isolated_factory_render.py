@@ -6,6 +6,9 @@ its APPROVED label into any user/prod database. No cloud, Excel or 8080 server.
 """
 import hashlib
 import json
+import os
+import subprocess
+import sys
 import sqlite3
 import tempfile
 from pathlib import Path
@@ -13,7 +16,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from scripts.epic3_six_template_smoke import smoke, CATEGORY_UIDS
+from scripts.epic3_six_template_smoke import CATEGORY_UIDS
 
 CATEGORY = "01_Wifi_Kutusu"
 
@@ -61,7 +64,26 @@ def test_factory_renders_approved_synthetic_wifi_template_3x4():
 
         original = digest(scene)
         original_db = digest(db)
-        report = smoke(runtime, base / "TEMP_REPORT_ONLY", root)
+        # Import the render engine only inside its own subprocess. A full
+        # pytest run may already have imported pc_master_factory with normal
+        # CLI flags; testing in-process would incorrectly reuse that module.
+        env = os.environ.copy()
+        env["MOCKUP_RUNTIME_WORKSPACE"] = str(base / "isolated-engine-runtime")
+        env["PYTHONUTF8"] = "1"
+        result = subprocess.run(
+            [sys.executable, "-B", str(root / "scripts" / "epic3_six_template_smoke.py"),
+             "--runtime-root", str(runtime), "--execute"],
+            cwd=str(root), env=env, text=True, capture_output=True,
+            encoding="utf-8", errors="replace", timeout=120,
+        )
+        report_line = next(
+            (line for line in result.stdout.splitlines()
+             if line.startswith("REPORT_PATH ")), None
+        )
+        assert report_line, result.stdout + "\\n" + result.stderr
+        report_path = Path(report_line.split(" ", 1)[1])
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        assert result.returncode == 2  # Five intentionally blocked categories.
         records = {row["uid"]: row for row in report["results"]}
         wifi = records[CATEGORY_UIDS[CATEGORY]]
         assert wifi["status"] == "PASS", wifi

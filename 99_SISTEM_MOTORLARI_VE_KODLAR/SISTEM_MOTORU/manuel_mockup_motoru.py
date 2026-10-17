@@ -15,6 +15,9 @@ import time
 import json
 import logging
 import argparse
+import hashlib
+import sqlite3
+import math
 from pathlib import Path
 from PIL import Image
 
@@ -32,6 +35,8 @@ sys.path.insert(0, str(BASE_DIR / "99_SISTEM_MOTORLARI_VE_KODLAR" / "SISTEM_MOTO
 from pc_master_factory import (
     PRODUCT_CATALOG,
     MockupRenderer,
+    USER_WORKSPACE_DIR,
+    physical_orientation_verified,
     AYARLAR,
     OUTPUT_DIR,
     OUTPUT_COKLU_DIR,
@@ -47,8 +52,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger("ManuelMockup")
 
-MANUAL_DIR = BASE_DIR / "MOCKUP A HAZIR GÖRSELLER"
-SABLON_DIR = BASE_DIR / "2_SABLON_HAVUZU"
+# Code lives in SOURCE_ROOT; user assets live in the explicitly selected
+# MOCKUP_RUNTIME_WORKSPACE. Never silently switch to the git checkout.
+MANUAL_DIR = USER_WORKSPACE_DIR / "MOCKUP A HAZIR GÖRSELLER"
+SABLON_DIR = USER_WORKSPACE_DIR / "2_SABLON_HAVUZU"
 
 def get_manual_images() -> list[Path]:
     if not MANUAL_DIR.exists():
@@ -59,29 +66,112 @@ def get_manual_images() -> list[Path]:
     images = [f for f in MANUAL_DIR.iterdir() if f.is_file() and f.suffix.lower() in valid_exts]
     return sorted(images)
 
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def get_template_pool(prod_key: str) -> list[tuple[str, Path, dict]]:
-    pool = []
+    """Return ONLY human-approved, source-SHA-bound valid working templates.
+
+    Never trust existence + legacy JSON coordinates as sufficient approval.
+    Importantly, an absent/legacy SQLite schema fails CLOSED and cannot
+    accidentally promote an unreviewed template to marketplace production.
+    """
+    if prod_key not in PRODUCT_CATALOG:
+        return []
     prod_def = PRODUCT_CATALOG[prod_key]
-    
-    kat_cfg = AYARLAR.get("kategoriler", {}).get(prod_key, {})
-    sablonlar_cfg = kat_cfg.get("sablonlar", {})
-
-    target_dir = SABLON_DIR / prod_def.folder_name
-    if not target_dir.exists():
-        target_dir = SABLON_DIR
-
-    for s_name, s_conf in sablonlar_cfg.items():
-        s_path = target_dir / s_name
-        if not s_path.exists():
-            for alt_ext in [".webp", ".jpg", ".jpeg", ".png"]:
-                cand = target_dir / (Path(s_name).stem + alt_ext)
-                if cand.exists():
-                    s_path = cand
-                    break
-        if s_path.exists():
-            pool.append((s_name, s_path, s_conf))
-
+    db_path = USER_WORKSPACE_DIR / "SABLON_V2_MIMARI" / "ayarlar.db"
+    if not db_path.is_file():
+        logger.error("MANUAL_APPROVED_REGISTRY_MISSING: %s", db_path)
+        return []
+    config_templates = AYARLAR.get("kategoriler", {}).get(prod_key, {}).get("sablonlar", {})
+    cat_folder = SABLON_DIR / prod_key
+    if cat_folder.is_symlink() or not cat_folder.is_dir():
+        return []
+    pool = []
+    try:
+        conn = sqlite3.connect(db_path.resolve().as_uri() + "?mode=ro", uri=True, timeout=5)
+        conn.row_factory = sqlite3.Row
+        try:
+            conn.execute("PRAGMA query_only=ON")
+            rows = conn.execute(
+                """SELECT template_uid,source_relative_path,source_asset_sha256,
+                          surface_quad,orientation,nominal_aspect,review_status,
+                          manually_verified,is_active,has_occlusion,
+                          component_confidences
+                   FROM template_profiles WHERE category=? AND is_active=1""",
+                (prod_key,),
+            ).fetchall()
+        finally:
+            conn.close()
+    except (sqlite3.Error, OSError) as exc:
+        logger.error("MANUAL_APPROVED_REGISTRY_UNREADABLE: %s", exc)
+        return []
+    allowed = {}
+    ambiguous = set()
+    for row in rows:
+        relative = Path(str(row["source_relative_path"] or "").replace(chr(92), "/"))
+        if relative.parent.name != prod_key:
+            continue
+        name = relative.name.casefold()
+        if name in allowed:
+            ambiguous.add(name)
+        else:
+            allowed[name] = row
+    for name in ambiguous:
+        allowed.pop(name, None)
+    for template, legacy_conf in config_templates.items():
+        profile = allowed.get(Path(template).name.casefold())
+        if profile is None or str(profile["review_status"]) != "APPROVED" or int(profile["manually_verified"] or 0) != 1:
+            continue
+        s_path = cat_folder / Path(template).name
+        if s_path.is_symlink() or not s_path.is_file() or s_path.suffix.lower() != ".png":
+            continue
+        if s_path.resolve().parent != cat_folder.resolve():
+            continue
+        if not profile["source_asset_sha256"] or _sha256_file(s_path) != str(profile["source_asset_sha256"]):
+            logger.warning("MANUAL_STALE_SOURCE_BLOCKED: %s/%s", prod_key, template)
+            continue
+        if int(profile["has_occlusion"] or 0):
+            logger.info("MANUAL_OCCLUSION_REVIEW_REQUIRED: %s", template)
+            continue
+        orient = str(profile["orientation"] or "").upper()
+        if orient != prod_def.orientation:
+            continue
+        if prod_key == "04_Cam_Dograma" and not physical_orientation_verified(profile["component_confidences"]):
+            continue
+        try:
+            quad = json.loads(profile["surface_quad"])
+            if not isinstance(quad, list) or len(quad) != 4:
+                continue
+            with Image.open(s_path) as im:
+                width, height = im.size
+            if not all(isinstance(pt, (list, tuple)) and len(pt) == 2
+                       and all(math.isfinite(float(v)) for v in pt)
+                       and 0 <= float(pt[0]) < width and 0 <= float(pt[1]) < height
+                       for pt in quad):
+                continue
+            nominal = float(profile["nominal_aspect"])
+            if not math.isfinite(nominal) or nominal <= 0:
+                continue
+        except (OSError, ValueError, TypeError):
+            continue
+        settings = dict(legacy_conf or {})
+        settings.update({
+            "tip": "perspektif", "koseler": quad,
+            "profile_orientation": orient, "nominal_aspect": nominal,
+            "has_occlusion": False, "auto_foreground": False, "on_plan": None,
+            "output_width": 1200, "output_height": 1600,
+            "marketplace_ready": True,
+            "source_asset_sha256": str(profile["source_asset_sha256"]),
+        })
+        pool.append((template, s_path, settings))
     return pool
+
 
 def adapt_image_for_orientation(img_path: Path, target_orientation: str) -> Path:
     """
@@ -97,7 +187,7 @@ def adapt_image_for_orientation(img_path: Path, target_orientation: str) -> Path
                 return img_path
 
             # Kırpma gerekiyor
-            temp_dir = BASE_DIR / "99_SISTEM_MOTORLARI_VE_KODLAR" / "SISTEM_MOTORU" / "logs" / "temp_crops"
+            temp_dir = USER_WORKSPACE_DIR / "99_SISTEM_MOTORLARI_VE_KODLAR" / "SISTEM_MOTORU" / "logs" / "temp_crops"
             temp_dir.mkdir(parents=True, exist_ok=True)
             
             if target_orientation == "H":
@@ -134,7 +224,7 @@ def process_manual_images(mode: str = "dongusel", all_products: bool = True, lim
         logger.warning("⚠️ 'MOCKUP A HAZIR GÖRSELLER' klasöründe işlenecek görsel bulunamadı!")
         logger.warning(f"📁 Lütfen görsellerinizi buraya kopyalayın:\n   {MANUAL_DIR}")
         logger.warning("==================================================================")
-        return
+        return False
 
     logger.info("==================================================================")
     logger.info(f"🚀 MANUEL MOCKUP MOTORU BAŞLATILDI | Bulunan Görsel: {len(images)} | Mod: {mode.upper()}")
@@ -160,14 +250,13 @@ def process_manual_images(mode: str = "dongusel", all_products: bool = True, lim
                 
             target_art_path = raw_path
             
+            pool = get_template_pool(prod_key)
+            if not pool:
+                continue
             seq = state.get_next_sequence(prod_def.barkod_prefix)
             barkod = f"{prod_def.barkod_prefix}{seq:05d}"
             sku = barkod
             model_kodu = f"{prod_def.model_prefix}{seq:05d}"
-
-            pool = get_template_pool(prod_key)
-            if not pool:
-                continue
 
             if mode == "coklu":
                 secilen_sablonlar = pool
@@ -225,6 +314,13 @@ def process_manual_images(mode: str = "dongusel", all_products: bool = True, lim
     logger.info(f"📁 Çıktılar: {OUTPUT_DIR}")
     logger.info(f"📊 Excel: {excel.file_path}")
     logger.info("==================================================================")
+    # FastExcelManager buffers rows in memory until its threshold; flushing
+    # here is mandatory for 1..49 rendered images. A failed flush is a job
+    # failure, not a misleading successful completion message.
+    excel_ok = excel.flush()
+    if not excel_ok:
+        logger.error("MANUAL_EXCEL_FINAL_FLUSH_FAILED: restore/retry required")
+    return total_created > 0 and excel_ok
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
@@ -232,4 +328,6 @@ if __name__ == "__main__":
     p.add_argument("--limit", type=int, default=None, help="İşlenecek maksimum ham görsel sayısı")
     args = p.parse_args()
 
-    process_manual_images(mode=args.mod, limit=args.limit)
+    if not process_manual_images(mode=args.mod, limit=args.limit):
+        logger.error("MANUAL_RENDER_BLOCKED_OR_NO_SUCCESSFUL_OUTPUT")
+        raise SystemExit(2)

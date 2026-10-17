@@ -230,6 +230,34 @@ def rename_images(
     root = Path(runtime_root or RUNTIME_ROOT).resolve()
     with (_template_rename_lock(root) if template_category else contextlib.nullcontext()):
         if template_category:
+            # Standalone user tools can run without a production runtime DB,
+            # but MUST NOT silently create a database in any existing
+            # template/staging/archive workspace. For a *new* explicitly
+            # supplied utility-only namespace, create an isolated registry
+            # under that namespace so parallel renames still claim uniquely.
+            db_path = root / "SABLON_V2_MIMARI" / "ayarlar.db"
+            if not db_path.is_file():
+                production_markers = (
+                    "2_SABLON_HAVUZU", "2_SABLON_HAVUZU_ORIJINAL_YEDEK",
+                    "YENI-BOS MOCKUP SABLON HAVUZU", "ayarlar.json",
+                )
+                if runtime_root is None or any((root / key).exists() for key in production_markers):
+                    raise RuntimeError("NUMBER_REGISTRY_DB_MISSING_IN_PRODUCTION_RUNTIME")
+                db_path.parent.mkdir(parents=True, exist_ok=True)
+                # The official live SQLite schema is never created or modified
+                # by this fallback. This DB belongs to the standalone tool only.
+                conn = sqlite3.connect(db_path)
+                try:
+                    conn.execute("CREATE TABLE IF NOT EXISTS template_number_registry ("
+                                 "category TEXT NOT NULL, template_number INTEGER NOT NULL,"
+                                 "canonical_name TEXT, first_seen_source TEXT,"
+                                 "first_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP,"
+                                 "PRIMARY KEY (category, template_number))")
+                    conn.commit()
+                finally:
+                    # SQLite context manager commits; it does NOT close. An
+                    # open handle prevents Temp cleanup on Windows/NTFS.
+                    conn.close()
             claim_number_block_once(
                 root, template_category, start_number, len(selected),
                 canonical_names=[target.name for target in targets],
@@ -274,6 +302,45 @@ def rename_images(
             raise
 
 
+
+def _publish_image_without_overwrite(image, target_path: Path, *, fmt: str,
+                                     one_exact_name: bool = False, **save_options) -> Path:
+    """Write complete user-tool output and publish with O_EXCL semantics.
+
+    A pre-check such as `_unique_destination` alone races another process.
+    Hard-link publication creates only unused names (NTFS/POSIX), preserving
+    any existing output even when two independent tool windows run together.
+    """
+    target_path = Path(target_path)
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    temp = target_path.parent / (".__jarvis_tmp_" + uuid.uuid4().hex + ".bin")
+    try:
+        with temp.open("xb") as handle:
+            image.save(handle, format=fmt, **save_options)
+            handle.flush()
+            os.fsync(handle.fileno())
+        for index in range(10000):
+            if index and one_exact_name:
+                break
+            dest = (
+                target_path if index == 0 else
+                target_path.with_name(f"{target_path.stem}_{index+1}{target_path.suffix}")
+            )
+            try:
+                os.link(str(temp), str(dest))
+                return dest
+            except FileExistsError:
+                continue
+            except OSError as exc:
+                raise RuntimeError(
+                    f"OUTPUT_ATOMIC_CREATE_FAILED: {dest.name}: {exc}"
+                ) from exc
+        raise FileExistsError(f"OUTPUT_NAME_COLLISION_NO_OVERWRITE: {target_path.name}")
+    finally:
+        temp.unlink(missing_ok=True)
+
+
+
 def _unique_destination(path: Path) -> Path:
     if not path.exists():
         return path
@@ -297,6 +364,7 @@ def convert_images(
     selected = [Path(p).resolve() for p in files]
     if not selected:
         raise ValueError("Dönüştürülecek görsel seçilmedi.")
+    ensure_not_live_template_path(selected)
     parents = {p.parent for p in selected}
     if len(parents) != 1:
         raise ValueError("Görseller aynı klasörden seçilmelidir.")
@@ -310,23 +378,14 @@ def convert_images(
             continue
         with Image.open(source) as image:
             if target == "JPG":
-                destination = _unique_destination(
-                    output_dir / f"{source.stem}.jpg"
-                )
-                image.convert("RGB").save(
-                    destination,
-                    format="JPEG",
-                    quality=95,
-                    optimize=True,
+                destination = _publish_image_without_overwrite(
+                    image.convert("RGB"), output_dir / f"{source.stem}.jpg",
+                    fmt="JPEG", quality=95, optimize=True,
                 )
             else:
-                destination = _unique_destination(
-                    output_dir / f"{source.stem}.png"
-                )
-                image.convert("RGBA").save(
-                    destination,
-                    format="PNG",
-                    optimize=True,
+                destination = _publish_image_without_overwrite(
+                    image.convert("RGBA"), output_dir / f"{source.stem}.png",
+                    fmt="PNG", optimize=True,
                 )
             outputs.append(destination)
 
@@ -427,10 +486,9 @@ def convert_folder_to_png_recursive(
         try:
             destination.parent.mkdir(parents=True, exist_ok=True)
             with Image.open(source_file) as image:
-                image.convert("RGBA").save(
-                    destination,
-                    format="PNG",
-                    optimize=True,
+                _publish_image_without_overwrite(
+                    image.convert("RGBA"), destination,
+                    fmt="PNG", one_exact_name=True, optimize=True,
                 )
             report["converted_count"] += 1
             report["converted"].append({
@@ -465,6 +523,7 @@ def watermark_images(
         raise ValueError("Filigran logosu bulunamadı.")
     if not selected:
         raise ValueError("Filigran uygulanacak görsel seçilmedi.")
+    ensure_not_live_template_path(selected)
 
     parents = {p.parent for p in selected}
     if len(parents) != 1:
@@ -495,17 +554,17 @@ def watermark_images(
                 composed = image.copy()
                 composed.alpha_composite(resized, position)
 
-                destination = _unique_destination(
-                    output_dir / source.name
-                )
-                if destination.suffix.lower() in {".jpg", ".jpeg"}:
-                    composed.convert("RGB").save(
-                        destination,
-                        quality=95,
-                        optimize=True,
+                output_name = output_dir / source.name
+                if output_name.suffix.lower() in {".jpg", ".jpeg"}:
+                    destination = _publish_image_without_overwrite(
+                        composed.convert("RGB"), output_name,
+                        fmt="JPEG", quality=95, optimize=True,
                     )
                 else:
-                    composed.save(destination)
+                    fmt = {".png": "PNG", ".webp": "WEBP", ".bmp": "BMP"}[output_name.suffix.lower()]
+                    destination = _publish_image_without_overwrite(
+                        composed, output_name, fmt=fmt,
+                    )
                 outputs.append(destination)
 
     return output_dir, outputs

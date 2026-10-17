@@ -188,7 +188,14 @@ class GeometryValidator:
             return False, "Not convex (self intersecting or concave)"
             
         edges = [sorted_pts[(i+1)%4] - sorted_pts[i] for i in range(4)]
-        cross_prods = [np.cross(edges[i], edges[(i+1)%4]) for i in range(4)]
+        # NumPy 2.x deprecates np.cross(2D, 2D), generating tens of
+        # thousands of warnings in geometry sweeps. The signed 2D scalar
+        # determinant is identical and future-proof for 2-element vectors.
+        cross_prods = [
+            float(edges[i][0] * edges[(i + 1) % 4][1]
+                  - edges[i][1] * edges[(i + 1) % 4][0])
+            for i in range(4)
+        ]
         
         # All must have same sign
         if not (all(cp > 0 for cp in cross_prods) or all(cp < 0 for cp in cross_prods)):

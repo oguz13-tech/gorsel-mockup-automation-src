@@ -92,7 +92,7 @@ def _physical_files(pool: Path, cat: str) -> list[Path]:
         if not path.is_file() or path.suffix.casefold() not in IMAGE_SUFFIXES:
             continue
         images.append(_within(pool, path))
-    return sorted(images, key=lambda p: str(p.relative_to(pool)).casefold())
+    return sorted(images, key=lambda p: str(p.resolve().relative_to(pool.resolve())).casefold())
 
 
 def _render_sheet(PIL_Image, PIL_Draw, PIL_Font, group: str,
@@ -174,7 +174,7 @@ def run(runtime: Path, dest: Path) -> dict:
         for source in physical:
             review = approved_map.get(source)
             records.append({
-                "relative": str(source.relative_to(pool)),
+                "relative": str(source.resolve().relative_to(pool.resolve())),
                 "source": source,
                 "uid": review["uid"] if review else None,
                 "status": "APPROVED" if review else "NOT_APPROVED_OR_NO_ACTIVE_PROFILE",
