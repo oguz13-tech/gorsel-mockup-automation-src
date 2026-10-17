@@ -400,6 +400,74 @@ def api_bulk_save_geometry():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
+@app.route('/api/anlik_beyazlat', methods=['POST'])
+@template_guard("preview-whiten", source="headers")
+def api_izole_anlik_beyazlat():
+    """Real 8080 preview; immutable backup is read-only and working unchanged."""
+    from core.template_identity import CATEGORY_PREFIXES
+    from core.safe_working_revision import save_preview_only, WorkingRevisionBlocked
+    try:
+        category = str(request.headers.get("X-Active-Category", "")).strip()
+        template = str(request.headers.get("X-Active-Template", "")).strip()
+        if category not in CATEGORY_PREFIXES or Path(template).name != template or not template:
+            return jsonify({"success":False,"error":"INVALID_PREVIEW_TEMPLATE"}),400
+        payload = request.get_json(silent=True) or {}
+        stem = Path(template).stem
+        backup_dir = Path(YEDEK_IMG_DIR) / category
+        if backup_dir.is_symlink():
+            return jsonify({"success":False,"error":"ORIGINAL_SYMLINK_BLOCKED"}),409
+        candidates = [backup_dir / template] + [
+            backup_dir / (stem + ext)
+            for ext in (".png",".jpg",".jpeg",".webp",".avif")
+        ]
+        source = next((p for p in candidates if p.is_file() and not p.is_symlink()),None)
+        if source is None:
+            return jsonify({"success":False,"error":"IMMUTABLE_ORIGINAL_NOT_FOUND"}),404
+        raw = cv2.imdecode(np.fromfile(str(source),dtype=np.uint8),cv2.IMREAD_UNCHANGED)
+        if raw is None:
+            return jsonify({"success":False,"error":"ORIGINAL_UNREADABLE"}),422
+        config = payload.get("data")
+        if not isinstance(config,dict):
+            config=(get_all_ayarlar().get("kategoriler",{})
+                    .get(category,{}).get("sablonlar",{}).get(template,{}))
+        sm_dir=str(Path(SOURCE_ROOT) / "99_SISTEM_MOTORLARI_VE_KODLAR" / "SISTEM_MOTORU")
+        if sm_dir not in sys.path:
+            sys.path.insert(0, sm_dir)
+        from sablon_beyazlatma_motoru import whiten_canvas
+        whitened=whiten_canvas(
+            raw,config,
+            is_frameless=category in ("01_Wifi_Kutusu","04_Cam_Dograma","05_Ocak_Arkasi")
+        )
+        preview=save_preview_only(BASE_DIR,category,template,whitened)
+        return jsonify({
+            "success":True,"preview_only":True,"working_modified":False,
+            "preview_url":"/preview/"+category+"/"+template,
+            "preview_name":preview.name,
+        })
+    except (FileNotFoundError,WorkingRevisionBlocked) as error:
+        return jsonify({"success":False,"error":str(error)}),409
+    except Exception as error:
+        logger.exception("8080 izole onizleme basarisiz")
+        return jsonify({"success":False,"error":str(error)}),500
+
+
+@app.route('/preview/<category>/<template>',methods=['GET'])
+def api_get_izole_onizleme(category,template):
+    """Serve only derived previews, never arbitrary runtime paths."""
+    from core.template_identity import CATEGORY_PREFIXES
+    if (category not in CATEGORY_PREFIXES or not template
+            or Path(template).name != template):
+        return jsonify({"success":False,"error":"INVALID_PREVIEW_PATH"}),403
+    root=Path(BASE_DIR).resolve() / "_ONIZLEME_SABLONLAR"
+    file=root / category / (Path(template).stem+"-beyazlatilmis-onizleme.png")
+    if (root.is_symlink() or file.parent.is_symlink() or file.is_symlink()
+            or not file.resolve().is_relative_to(root.resolve())):
+        return jsonify({"success":False,"error":"PREVIEW_PATH_BLOCKED"}),403
+    if not file.is_file():
+        return jsonify({"success":False,"error":"PREVIEW_NOT_FOUND"}),404
+    return send_file(str(file),mimetype="image/png")
+
+
 @app.route('/api/orijinal_yukle', methods=['POST'])
 @template_guard('restore-original', source='headers')
 def api_orijinal_yukle():
