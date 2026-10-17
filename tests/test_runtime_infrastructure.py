@@ -162,6 +162,10 @@ import cv2
 import numpy as np
 root = Path.cwd()
 sys.path.insert(0, str(root / "SABLON_V2_MIMARI"))
+# Startup is intentionally read-only. Synthetic infrastructure test opts
+# into initializing its isolated fixture database explicitly.
+from core import db
+db.init_db()
 import app
 
 runtime = Path(os.environ["MOCKUP_RUNTIME_WORKSPACE"])
