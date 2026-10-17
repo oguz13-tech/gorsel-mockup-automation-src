@@ -72,17 +72,9 @@ Write-Host "Ana çalışma klasörü bulundu:" -ForegroundColor Green
 Write-Host $runtime
 Write-Host "Runtime kaynağı: $runtimeSource" -ForegroundColor DarkGray
 
-$baselineScript = Join-Path $RepoRoot "scripts\\capture_runtime_baseline.py"
-if (Test-Path -LiteralPath $baselineScript) {
-    try {
-        & python $baselineScript --ensure
-        if ($LASTEXITCODE -ne 0) {
-            Write-Host "Runtime sürüm baseline oluşturma uyarısı. Çıkış kodu: $LASTEXITCODE" -ForegroundColor Yellow
-        }
-    } catch {
-        Write-Host "Runtime sürüm baseline uyarısı: $($_.Exception.Message)" -ForegroundColor Yellow
-    }
-}
+# Safety: Opening UI must not silently write a new runtime baseline.
+# The separate explicit maintenance script may create one only after review.
+Write-Host "P0: Runtime AI baseline otomatik olusturulmuyor (salt-okunur baslangic)." -ForegroundColor DarkYellow
 
 if (-not (Test-Path -LiteralPath $WatcherPath)) {
     Write-Host "HATA: Şablon izleyici bulunamadı: $WatcherPath" -ForegroundColor Red
