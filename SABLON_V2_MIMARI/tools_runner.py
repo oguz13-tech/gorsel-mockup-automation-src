@@ -18,6 +18,8 @@ import sqlite3
 import subprocess
 import sys
 import uuid
+import time
+import contextlib
 from pathlib import Path
 from typing import Callable
 
@@ -28,6 +30,7 @@ from PIL import Image
 try:
     from .core.template_identity import (
         TemplateNumberConflictError,
+        claim_number_block_once,
         category_for_prefix,
         same_stem_files,
         validate_number_block,
@@ -115,6 +118,33 @@ def _sanitize_prefix(prefix: str) -> str:
     return prefix
 
 
+@contextlib.contextmanager
+def _template_rename_lock(runtime_root: Path):
+    """Same physical lock used by staging watcher, across processes.
+
+    Fail closed on stale locks; never remove someone else's active lock.
+    """
+    locks = Path(runtime_root).resolve() / "SABLON_V2_MIMARI" / "recovery" / "locks"
+    locks.mkdir(parents=True, exist_ok=True)
+    path = locks / "staging_intake.lock"
+    deadline = time.monotonic() + 10
+    fd = None
+    while time.monotonic() < deadline:
+        try:
+            fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            os.write(fd, uuid.uuid4().hex.encode("ascii"))
+            break
+        except FileExistsError:
+            time.sleep(0.05)
+    if fd is None:
+        raise RuntimeError("NUMBER_CLAIM_LOCK_BUSY_OR_STALE")
+    try:
+        yield
+    finally:
+        os.close(fd)
+        path.unlink(missing_ok=True)
+
+
 def rename_images(
     files: list[Path],
     prefix: str,
@@ -148,14 +178,8 @@ def rename_images(
     selected_set = {p.resolve() for p in selected}
 
     template_category = category_for_prefix(prefix)
-    if template_category:
-        validate_number_block(
-            Path(runtime_root or RUNTIME_ROOT),
-            template_category,
-            start_number,
-            len(selected),
-            ignore_paths=selected,
-        )
+    if template_category and start_number < 1:
+        raise ValueError("Şablon numarası 1 veya daha büyük olmalıdır.")
 
     last_number = start_number + len(selected) - 1
     digits = max(3, len(str(last_number)))
@@ -201,35 +225,53 @@ def rename_images(
                 "Dosyalar değiştirilmedi."
             )
 
-    temp_pairs: list[tuple[Path, Path]] = []
-    final_pairs: list[tuple[Path, Path]] = []
-    try:
-        for source in selected:
-            temp = source.with_name(
-                f".__jarvis_rename_{uuid.uuid4().hex}{source.suffix.lower()}"
+    # Keep the shared lock across BOTH claims and filesystem publication.
+    # The registry is still durable if any disk operation later fails.
+    root = Path(runtime_root or RUNTIME_ROOT).resolve()
+    with (_template_rename_lock(root) if template_category else contextlib.nullcontext()):
+        if template_category:
+            claim_number_block_once(
+                root, template_category, start_number, len(selected),
+                canonical_names=[target.name for target in targets],
+                ignore_paths=selected,
             )
-            source.rename(temp)
-            temp_pairs.append((source, temp))
 
-        for (source, temp), target in zip(temp_pairs, targets):
-            temp.rename(target)
-            final_pairs.append((source, target))
-        return targets
-    except Exception:
-        # Roll back anything already finalized, then untouched temp files.
-        for original, final in reversed(final_pairs):
-            if final.exists() and not original.exists():
+        temp_pairs: list[tuple[Path, Path]] = []
+        final_pairs: list[tuple[Path, Path]] = []
+        try:
+            for source in selected:
+                temp = source.with_name(
+                    f".__jarvis_rename_{uuid.uuid4().hex}{source.suffix.lower()}"
+                )
+                source.rename(temp)
+                temp_pairs.append((source, temp))
+
+            for (source, temp), target in zip(temp_pairs, targets):
+                # Exclusive publication: Path.rename can overwrite targets on
+                # POSIX after the precheck; hard-link creation cannot.
+                os.link(str(temp), str(target))
+                final_pairs.append((temp, target))
+            # Only remove temporary names once EVERY final target exists.
+            for original, temp in temp_pairs:
+                temp.unlink()
+            return targets
+        except Exception:
+            # Remove ONLY published files still hard-linked to our temp;
+            # never delete another process's later edits.
+            for temp, target in reversed(final_pairs):
                 try:
-                    final.rename(original)
+                    if temp.exists() and target.exists() and os.path.samefile(temp, target):
+                        target.unlink()
                 except OSError:
                     pass
-        for original, temp in reversed(temp_pairs):
-            if temp.exists() and not original.exists():
-                try:
-                    temp.rename(original)
-                except OSError:
-                    pass
-        raise
+            for original, temp in reversed(temp_pairs):
+                if temp.exists() and not original.exists():
+                    try:
+                        temp.rename(original)
+                    except OSError:
+                        # Keep recoverable .__jarvis_rename temp; never unlink.
+                        pass
+            raise
 
 
 def _unique_destination(path: Path) -> Path:
