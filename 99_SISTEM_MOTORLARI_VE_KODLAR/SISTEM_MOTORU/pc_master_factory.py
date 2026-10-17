@@ -37,6 +37,7 @@ import json
 import random
 import sqlite3
 import hashlib
+import uuid
 import logging
 import threading
 import argparse
@@ -3827,10 +3828,13 @@ class MockupRenderer:
                 return False
 
             tmp_output = output_path.with_name(
-                output_path.name + ".writing"
+                output_path.name + ".writing." + uuid.uuid4().hex
             )
             try:
-                enc_img.tofile(str(tmp_output))
+                with tmp_output.open("xb") as handle:
+                    handle.write(enc_img.tobytes())
+                    handle.flush()
+                    os.fsync(handle.fileno())
                 persisted = cv2.imdecode(
                     np.fromfile(str(tmp_output), dtype=np.uint8),
                     cv2.IMREAD_COLOR,
@@ -3861,7 +3865,25 @@ class MockupRenderer:
                         f"{persisted_msg}"
                     )
                     return False
-                os.replace(tmp_output, output_path)
+                # A published marketplace JPEG is an artifact, not a mutable
+                # scratch file. os.replace() used to silently destroy existing
+                # SKU/template output on duplicate or parallel jobs.
+                try:
+                    os.link(str(tmp_output), str(output_path))
+                except FileExistsError:
+                    def _digest(path):
+                        h = hashlib.sha256()
+                        with path.open("rb") as stream:
+                            for part in iter(lambda: stream.read(1024*1024), b""):
+                                h.update(part)
+                        return h.digest()
+                    if _digest(tmp_output) != _digest(output_path):
+                        logger.error("P0 ARTIFACT_COLLISION: existing JPEG preserved: %s", output_path)
+                        return False
+                    logger.info("P0 ARTIFACT_IDEMPOTENT: identical JPEG already exists")
+                except OSError as exc:
+                    logger.error("P0 ARTIFACT_PUBLISH_FAILED_NO_OVERWRITE: %s", exc)
+                    return False
                 return True
             finally:
                 if tmp_output.exists():
