@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - 'audit/full-system-release-gate-*'
+      - 'release/p0-final-consolidation-*'
   pull_request:
     paths:
       - 'SABLON_V2_MIMARI/**'
