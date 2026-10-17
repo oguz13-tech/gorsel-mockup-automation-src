@@ -1,5 +1,6 @@
 """Schema migration rehearsal on SQLite backup, never on a live DB."""
 import hashlib
+import contextlib
 import sqlite3
 import tempfile
 from pathlib import Path
@@ -35,7 +36,7 @@ def test_legacy_sqlite_rehearsal_does_not_modify_source_database():
         assert sha(db) == original_hash
         copy = Path(result["snapshot"])
         assert copy.is_file()
-        with sqlite3.connect(copy) as conn:
+        with contextlib.closing(sqlite3.connect(copy)) as conn:
             cols = {row[1] for row in conn.execute("PRAGMA table_info(template_profiles)")}
             assert {"nominal_aspect", "is_active"}.issubset(cols)
             assert conn.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
