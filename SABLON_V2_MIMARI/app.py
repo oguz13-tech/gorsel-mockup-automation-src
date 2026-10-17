@@ -230,7 +230,14 @@ def _require_migrated_database():
     # whose SQLite connection is patched at runtime. Production never uses
     # TESTING=True; don't reinterpret synthetic paths as live migrations.
     if app.config.get("TESTING") is True:
-        return None
+        # Legacy unit tests patch their disposable DB_PATH after importing app.
+        # Bootstrap ONLY their test DB when it is not in a OneDrive workspace.
+        from core import db as _db_for_testing
+        test_db = Path(_db_for_testing.DB_PATH).resolve()
+        if not any("onedrive" in part.casefold() for part in test_db.parts):
+            if not inspect_startup_schema(test_db)["ready"]:
+                _db_for_testing.init_db()
+            return None
     if request.path.startswith("/api/") and not DB_STARTUP_AUDIT["ready"]:
         return jsonify({
             "success": False, "code": "DB_STARTUP_BLOCKED",
