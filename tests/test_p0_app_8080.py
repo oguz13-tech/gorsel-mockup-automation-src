@@ -31,6 +31,12 @@ work = root / "2_SABLON_HAVUZU" / cat / name
 backup = root / "2_SABLON_HAVUZU_ORIJINAL_YEDEK" / cat / name
 old = work.read_bytes()
 expected = backup.read_bytes()
+# Import alone must NOT touch the database. This synthetic acceptance
+# explicitly initializes its own disposable SQLite and refreshes audit.
+assert not (root / "SABLON_V2_MIMARI" / "ayarlar.db").exists()
+webapp.init_db()
+webapp.DB_STARTUP_AUDIT = webapp.inspect_startup_schema()
+assert webapp.DB_STARTUP_AUDIT["ready"], webapp.DB_STARTUP_AUDIT
 client = webapp.app.test_client()
 index = client.get("/")
 print("INDEX_STATUS", index.status_code)
