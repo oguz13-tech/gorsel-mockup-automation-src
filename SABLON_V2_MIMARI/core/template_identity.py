@@ -870,13 +870,14 @@ def validate_number_block(
         include_pending_staging=True,
     )
     requested = set(range(int(start), int(start) + int(count)))
+    # Never recycle gaps below the highest known historical identity. An old
+    # photo can be absent from both SQLite and disk while its identifier is
+    # still legitimately owned (cloud-only/previously deleted/recovered).
+    max_seen = max(reserved, default=0)
     conflicts = requested.intersection(reserved)
+    conflicts.update(number for number in requested if number <= max_seen)
     if conflicts:
-        suggested = find_next_contiguous_free_block(
-            reserved,
-            int(start),
-            int(count),
-        )
+        suggested = next_monotonic_number(reserved)
         raise TemplateNumberConflictError(
             category,
             conflicts,
