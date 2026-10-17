@@ -2131,70 +2131,52 @@ class MockupHandler(http.server.SimpleHTTPRequestHandler):
             self.wfile.write(json.dumps({"success": False, "error": str(error)}).encode("utf-8"))
 
     def _handle_api_anlik_beyazlat(self):
+        """Derived preview only: does NOT change the approved working PNG."""
+        from SABLON_V2_MIMARI.core.safe_working_revision import (
+            save_preview_only, WorkingRevisionBlocked,
+        )
         try:
-            content_length = int(self.headers['Content-Length'])
-            post_data = self.rfile.read(content_length)
-            new_data = json.loads(post_data.decode('utf-8'))
-            active_cat = self.headers.get('X-Active-Category', '')
-            active_tmpl = self.headers.get('X-Active-Template', '')
-            
-            if active_cat and active_tmpl:
-                sm_dir = os.path.join(BASE_DIR, "99_SISTEM_MOTORLARI_VE_KODLAR", "SISTEM_MOTORU")
-                if sm_dir not in sys.path:
-                    sys.path.append(sm_dir)
-                from sablon_beyazlatma_motoru import whiten_canvas, imread_unicode, imwrite_unicode
-                
-                stem = Path(active_tmpl).stem
-                
-                # Yedek klasöründe tüm uzantıları dene
-                src_path = None
-                for _ext in ['.jpg', '.jpeg', '.webp', '.png', '.avif']:
-                    _cand = os.path.join(YEDEK_IMG_DIR, active_cat, stem + _ext)
-                    if os.path.exists(_cand):
-                        src_path = _cand
-                        break
-                # Yedekte yoksa havuzdaki PNG'yi kullan
-                if not src_path:
-                    src_path = os.path.join(BASE_DIR, "2_SABLON_HAVUZU", active_cat, stem + ".png")
-                if not src_path or not os.path.exists(src_path):
-                    src_path = os.path.join(BASE_DIR, "2_SABLON_HAVUZU", active_cat, active_tmpl)
-                # Her zaman PNG olarak kaydet (şeffaflık için)
-                dest_path = os.path.join(BASE_DIR, "2_SABLON_HAVUZU", active_cat, stem + ".png")
-                
-                img_cv = imread_unicode(src_path)
-                if img_cv is not None:
-                    s_conf = new_data["kategoriler"][active_cat]["sablonlar"][active_tmpl]
-                    is_frameless = active_cat in ["01_Wifi_Kutusu", "04_Cam_Dograma", "05_Ocak_Arkasi"]
-                    whitened = whiten_canvas(img_cv, s_conf, is_frameless=is_frameless)
-                    
-                    try:
-                        preview_path = os.path.join(BASE_DIR, "YENI-BOS MOCKUP SABLON HAVUZU", active_cat, stem + "-beyazlatilmis-onizleme.png")
-                        if os.path.exists(os.path.dirname(preview_path)):
-                            imwrite_unicode(preview_path, whitened)
-                    except Exception as ep:
-                        logger.error(f"Onizleme guncellenemedi: {ep}")
-                        
-                    logger.info(f"ANLIK BEYAZLATMA BASARILI: {active_tmpl} -> {dest_path}")
-                    
-                    self.send_response(200)
-                    self.send_header('Content-type', 'application/json')
-                    self.send_header('Access-Control-Allow-Origin', '*')
-                    self.end_headers()
-                    self.wfile.write(b'{"success": true}')
-                    return
-            
-            self.send_response(400)
-            self.send_header('Content-type', 'application/json')
-            self.send_header('Access-Control-Allow-Origin', '*')
+            new_data = json.loads(self.rfile.read(int(self.headers["Content-Length"])).decode("utf-8"))
+            category = self.headers.get("X-Active-Category", "")
+            template = self.headers.get("X-Active-Template", "")
+            if not category or not template:
+                raise ValueError("Kategori veya sablon eksik")
+            sm_dir = os.path.join(BASE_DIR, "99_SISTEM_MOTORLARI_VE_KODLAR", "SISTEM_MOTORU")
+            if sm_dir not in sys.path:
+                sys.path.append(sm_dir)
+            from sablon_beyazlatma_motoru import whiten_canvas, imread_unicode
+            stem = Path(template).stem
+            source = None
+            for ext in (".png", ".jpg", ".jpeg", ".webp", ".avif"):
+                candidate = Path(YEDEK_IMG_DIR) / category / (stem + ext)
+                if candidate.is_file() and not candidate.is_symlink():
+                    source = candidate
+                    break
+            if source is None:
+                raise FileNotFoundError("IMMUTABLE_SOURCE_NOT_FOUND")
+            image = imread_unicode(source)
+            if image is None:
+                raise ValueError("ORIGINAL_IMAGE_UNREADABLE")
+            config = new_data["kategoriler"][category]["sablonlar"][template]
+            whitened = whiten_canvas(
+                image, config,
+                is_frameless=category in ("01_Wifi_Kutusu", "04_Cam_Dograma", "05_Ocak_Arkasi"),
+            )
+            preview = save_preview_only(BASE_DIR, category, template, whitened)
+            logger.info("PREVIEW_ONLY CREATED: %s", preview)
+            self.send_response(200)
+            self.send_header("Content-type", "application/json; charset=utf-8")
             self.end_headers()
-            self.wfile.write(b'{"success": false, "error": "Kategori veya sablon eksik"}')
-        except Exception as e:
-            self.send_response(500)
-            self.send_header('Content-type', 'application/json')
-            self.send_header('Access-Control-Allow-Origin', '*')
+            self.wfile.write(json.dumps({
+                "success": True, "preview_only": True, "source_unchanged": True,
+                "preview_name": preview.name,
+            }).encode("utf-8"))
+        except Exception as error:
+            logger.error("P0 PREVIEW FAILED: %s", error)
+            self.send_response(409 if isinstance(error, (WorkingRevisionBlocked, FileNotFoundError)) else 500)
+            self.send_header("Content-type", "application/json; charset=utf-8")
             self.end_headers()
-            self.wfile.write(json.dumps({"success": False, "error": str(e)}).encode('utf-8'))
-            logger.error(f"ANLIK BEYAZLAT HATASI: {e}")
+            self.wfile.write(json.dumps({"success": False, "error": str(error)}).encode("utf-8"))
 
     def _handle_api_orijinal_yukle(self):
         try:
