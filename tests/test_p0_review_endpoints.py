@@ -7,6 +7,7 @@ import contextlib
 import importlib.util
 import io
 import json
+import logging
 import os
 import sys
 import types
@@ -39,6 +40,13 @@ def load_handler(monkeypatch, root, name):
     spec = importlib.util.spec_from_file_location("p0_test_handler_" + name.replace("/", "_").replace(".", "_"), path)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
+    # Legacy modules open a FileHandler during import. Windows locks open
+    # log files even after a unit test exits; close immediately in this
+    # HTTP-handler mock to avoid WinError 32 on TemporaryDirectory cleanup.
+    for handler in list(mod.logger.handlers):
+        if isinstance(handler, logging.FileHandler):
+            mod.logger.removeHandler(handler)
+            handler.close()
     mod.BASE_DIR = str(root)
     mod.YEDEK_IMG_DIR = str(root / "2_SABLON_HAVUZU_ORIJINAL_YEDEK")
     mod.AYARLAR_PATH = str(root / "99_SISTEM_MOTORLARI_VE_KODLAR" / "SISTEM_MOTORU" / "ayarlar.json")
