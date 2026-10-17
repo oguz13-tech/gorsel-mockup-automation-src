@@ -2045,113 +2045,90 @@ class MockupHandler(http.server.SimpleHTTPRequestHandler):
             self.wfile.write(json.dumps({"success": False, "error": str(e)}).encode())
 
     def _handle_api_ayarlar(self):
-        content_length = int(self.headers['Content-Length'])
-        post_data = self.rfile.read(content_length)
-        
+        """Persist settings and an optional, explicitly selected working revision.
+
+        Order matters: working PNG is snapshotted/published first and will be
+        rolled back if JSON cannot be saved. No original/archive mutation.
+        """
+        from SABLON_V2_MIMARI.core.safe_working_revision import (
+            working_png_revision, WorkingRevisionBlocked,
+        )
         try:
-            new_data = json.loads(post_data.decode('utf-8'))
-            
-            with AYARLAR_LOCK:
-                with acquire_os_lock(AYARLAR_PATH):
-                    if os.path.exists(AYARLAR_PATH):
-                        with open(AYARLAR_PATH, 'r', encoding='utf-8') as current_f:
-                            try:
-                                current_data = json.load(current_f)
-                            except Exception as e:
-                                logger.error(f"Eski veritabanı okunamadı, boş başlatılıyor: {e}")
-                                current_data = {"kategoriler": {}}
-                        # SMART DEEP MERGE: Sadece new_data'daki şablonları current_data içine yedir.
-                        # Arayüzde (new_data) bulunmayan ama arkaplanda botun eklediği şablonlar (current_data) ASLA SİLİNMESİN.
-                        if "kategoriler" not in current_data:
-                            current_data["kategoriler"] = {}
-                        
-                        for cat, cat_data in new_data.get('kategoriler', {}).items():
-                            if cat not in current_data['kategoriler']:
-                                current_data['kategoriler'][cat] = {'sablonlar': {}}
-                            for tmpl, tmpl_data in cat_data.get('sablonlar', {}).items():
-                                current_data['kategoriler'][cat]['sablonlar'][tmpl] = tmpl_data
-                        
-                        for k, v in new_data.items():
-                            if k != 'kategoriler':
-                                current_data[k] = v
-                        ts = time.strftime("%Y%m%d_%H%M%S")
-                        shutil.copy2(AYARLAR_PATH, AYARLAR_PATH + '.arayuz_yedek')
-                        shutil.copy2(AYARLAR_PATH, AYARLAR_PATH + f'.user_backup_{ts}')
-                        
-                        # PERFORMANS: Yedek Rotasyonu (Sadece son 10 yedegi tut)
-                        backups = sorted(glob.glob(AYARLAR_PATH + '.user_backup_*'))
-                        while len(backups) > 10:
-                            old_backup = backups.pop(0)
-                            try:
-                                os.remove(old_backup)
-                            except Exception:
-                                pass
-                    else:
-                        current_data = new_data
-                        
-                    # ATOMIC WRITE: Write to .tmp first, then replace
-                    tmp_path = AYARLAR_PATH + ".tmp"
-                    with open(tmp_path, 'w', encoding='utf-8') as f:
-                        json.dump(current_data, f, indent=2, ensure_ascii=False)
-                    os.replace(tmp_path, AYARLAR_PATH)
-                    
-                    root_copy = os.path.join(BASE_DIR, "ayarlar.json")
-                    shutil.copy2(AYARLAR_PATH, root_copy)
-            active_cat = self.headers.get('X-Active-Category', '')
-            active_tmpl = self.headers.get('X-Active-Template', '')
-            
-            # Sadece aktif olan görseli anında fiziksel olarak da beyazlat
-            if active_cat and active_tmpl:
-                try:
-                    sm_dir = os.path.join(BASE_DIR, "99_SISTEM_MOTORLARI_VE_KODLAR", "SISTEM_MOTORU")
-                    if sm_dir not in sys.path:
-                        sys.path.append(sm_dir)
-                    from sablon_beyazlatma_motoru import whiten_canvas, imread_unicode, imwrite_unicode
-                    
-                    src_path = os.path.join(YEDEK_IMG_DIR, active_cat, active_tmpl)
-                    if not os.path.exists(src_path):
-                        src_path = os.path.join(BASE_DIR, "2_SABLON_HAVUZU", active_cat, active_tmpl)
-                    
-                    # Transparent sablonlar zorunlu olarak PNG kaydedilir
-                    stem = Path(active_tmpl).stem
-                    dest_path = os.path.join(BASE_DIR, "2_SABLON_HAVUZU", active_cat, stem + ".png")
-                    
-                    img_cv = imread_unicode(src_path)
-                    if img_cv is not None:
-                        s_conf = new_data["kategoriler"][active_cat]["sablonlar"][active_tmpl]
-                        is_frameless = active_cat in ["01_Wifi_Kutusu", "04_Cam_Dograma", "05_Ocak_Arkasi"]
-                        whitened = whiten_canvas(img_cv, s_conf, is_frameless=is_frameless)
-                        imwrite_unicode(dest_path, whitened)
-                        logger.info(f"AKTIF GORSEL KOORDINATLARI KAYDEDILDI VE ONAYLANIP BEYAZLATILDI: {active_tmpl}")
-                        
-                        # Onizleme dosyasini da guncelle (YENI-BOS MOCKUP SABLON HAVUZU)
+            import contextlib
+            import uuid
+            content_length = int(self.headers["Content-Length"])
+            new_data = json.loads(self.rfile.read(content_length).decode("utf-8"))
+            active_cat = self.headers.get("X-Active-Category", "")
+            active_tmpl = self.headers.get("X-Active-Template", "")
+            transaction = contextlib.nullcontext()
+            if bool(active_cat) != bool(active_tmpl):
+                raise ValueError("ACTIVE_CATEGORY_TEMPLATE_MISMATCH")
+            if active_cat:
+                sm_dir = os.path.join(BASE_DIR, "99_SISTEM_MOTORLARI_VE_KODLAR", "SISTEM_MOTORU")
+                if sm_dir not in sys.path:
+                    sys.path.append(sm_dir)
+                from sablon_beyazlatma_motoru import whiten_canvas, imread_unicode
+                src = os.path.join(YEDEK_IMG_DIR, active_cat, active_tmpl)
+                if not os.path.isfile(src):
+                    raise FileNotFoundError("IMMUTABLE_ORIGINAL_NOT_FOUND: " + active_tmpl)
+                image = imread_unicode(src)
+                if image is None:
+                    raise ValueError("ORIGINAL_IMAGE_UNREADABLE")
+                conf = new_data["kategoriler"][active_cat]["sablonlar"][active_tmpl]
+                whitened = whiten_canvas(
+                    image, conf,
+                    is_frameless=active_cat in ("01_Wifi_Kutusu", "04_Cam_Dograma", "05_Ocak_Arkasi"),
+                )
+                transaction = working_png_revision(BASE_DIR, active_cat, active_tmpl, whitened)
+            with transaction:
+                with AYARLAR_LOCK:
+                    with acquire_os_lock(AYARLAR_PATH):
+                        if os.path.isfile(AYARLAR_PATH):
+                            with open(AYARLAR_PATH, "r", encoding="utf-8") as stream:
+                                current = json.load(stream)  # Corrupt JSON MUST fail closed.
+                        else:
+                            current = {"kategoriler": {}}
+                        current.setdefault("kategoriler", {})
+                        for cat, obj in new_data.get("kategoriler", {}).items():
+                            current["kategoriler"].setdefault(cat, {"sablonlar": {}})
+                            current["kategoriler"][cat].setdefault("sablonlar", {})
+                            for name, values in obj.get("sablonlar", {}).items():
+                                current["kategoriler"][cat]["sablonlar"][name] = values
+                        for key, value in new_data.items():
+                            if key != "kategoriler":
+                                current[key] = value
+                        # Never rotate/delete backups just to make space.
+                        if os.path.isfile(AYARLAR_PATH):
+                            ts = time.strftime("%Y%m%d_%H%M%S")
+                            snapshot = AYARLAR_PATH + ".user_backup_" + ts + "_" + uuid.uuid4().hex
+                            with open(AYARLAR_PATH, "rb") as src, open(snapshot, "xb") as dst:
+                                shutil.copyfileobj(src, dst)
+                        tmp = AYARLAR_PATH + "." + uuid.uuid4().hex + ".p0tmp"
                         try:
-                            staging_cat_dir = Path(BASE_DIR) / "YENI-BOS MOCKUP SABLON HAVUZU" / active_cat
-                            t_stem = Path(active_tmpl).stem
-                            t_ext = Path(active_tmpl).suffix
-                            preview_name = f"{t_stem}-beyazlatilmis-onizleme{t_ext}"
-                            preview_path = staging_cat_dir / preview_name
-                            if preview_path.exists():
-                                imwrite_unicode(preview_path, whitened)
-                                logger.info(f"HAZIRLIK KLASORUNDEKI ONIZLEME GUNCELLEDI: {preview_name}")
-                        except Exception as e_prev:
-                            logger.error(f"ONIZLEME GUNCELLEME HATASI: {e_prev}")
-                except Exception as ex:
-                    logger.error(f"BEYAZLATMA HATASI: {ex}")
-                    
+                            with open(tmp, "x", encoding="utf-8") as stream:
+                                json.dump(current, stream, indent=2, ensure_ascii=False)
+                                stream.flush()
+                                os.fsync(stream.fileno())
+                            os.replace(tmp, AYARLAR_PATH)
+                        finally:
+                            if os.path.exists(tmp):
+                                os.unlink(tmp)
+                        # Optional compatibility copy: not a second commit gate.
+                        try:
+                            root_copy = os.path.join(BASE_DIR, "ayarlar.json")
+                            shutil.copy2(AYARLAR_PATH, root_copy)
+                        except OSError as mirror_error:
+                            logger.warning("AYARLAR ROOT MIRROR UNAVAILABLE: %s", mirror_error)
             self.send_response(200)
-            self.send_header('Content-type', 'application/json')
-            self.send_header('Access-Control-Allow-Origin', '*')
+            self.send_header("Content-type", "application/json; charset=utf-8")
             self.end_headers()
             self.wfile.write(b'{"success": true}')
-            
-            logger.info(f"AYARLAR.JSON BASARIYLA GUNCELLENDI VE YEDEKLENDI (user_backup_{ts})!")
-        except Exception as e:
-            self.send_response(500)
-            self.send_header('Access-Control-Allow-Origin', '*')
+        except Exception as error:
+            logger.error("P0 SETTINGS/WORKING REVISION FAILED: %s", error)
+            self.send_response(409 if isinstance(error, (WorkingRevisionBlocked, FileNotFoundError)) else 500)
+            self.send_header("Content-type", "application/json; charset=utf-8")
             self.end_headers()
-            self.wfile.write(b'{"success": false}')
-            logger.error(f"HATA: {e}")
+            self.wfile.write(json.dumps({"success": False, "error": str(error)}).encode("utf-8"))
 
     def _handle_api_anlik_beyazlat(self):
         try:
