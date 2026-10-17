@@ -128,7 +128,7 @@ def main(runtime_root: Path, output_root: Path):
     final_mockup = np.clip(final_mockup, 0, 255).astype(np.uint8)
 
     output_root = Path(output_root).resolve()
-    if output_root.is_relative_to(BASE_DIR) or not output_root.is_relative_to(Path(__file__).resolve().parents[0]) and output_root == BASE_DIR:
+    if output_root.is_relative_to(BASE_DIR) or output_root.is_relative_to(Path(__file__).resolve().parents[3]):
         raise ValueError("OUTPUT_MUST_BE_OUTSIDE_RUNTIME")
     output_root.mkdir(parents=True, exist_ok=True)
     out_path = output_root / "test_cam_tablo_peacock_match.jpg"
