@@ -4065,8 +4065,30 @@ class FastExcelManager:
                     wb=openpyxl.load_workbook(self.file_path)
                     try:
                         ws=wb.active
+                        # A second process may have flushed the same logical
+                        # artifact after this manager loaded _known_keys.
+                        # Re-check persisted rows INSIDE the OS workbook lock.
+                        columns={str(cell.value):i for i,cell in enumerate(ws[1])}
+                        stock_col=columns.get("Stok Kodu")
+                        mockup_col=columns.get("Mockup Dosya Adı")
+                        if stock_col is None or mockup_col is None:
+                            raise RuntimeError("EXCEL_HEADERS_MISSING_NO_OVERWRITE")
+                        persisted=set()
+                        for existing in ws.iter_rows(min_row=2,values_only=True):
+                            key=self._row_key_from_values(
+                                existing[stock_col] if len(existing)>stock_col else None,
+                                existing[mockup_col] if len(existing)>mockup_col else None,
+                            )
+                            if key: persisted.add(key)
                         for row in self._buffer:
+                            key=self._row_key_from_values(
+                                row[self.HEADERS.index("Stok Kodu")],
+                                row[self.HEADERS.index("Mockup Dosya Adı")],
+                            )
+                            if key and key in persisted:
+                                continue
                             ws.append(row)
+                            if key: persisted.add(key)
                         self._commit_workbook(wb,expected_sha=expected)
                     finally:
                         wb.close()
