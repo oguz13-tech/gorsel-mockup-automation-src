@@ -83,8 +83,8 @@ def generate_3d_glass_beveled_edge(h_bg: int, w_bg: int, dst_pts: np.ndarray) ->
     bevel = cv2.GaussianBlur(bevel, (3, 3), 0.4)
     return bevel
 
-def main():
-    BASE_DIR = Path(r"C:\Users\oguzc\OneDrive\Masaüstü\GörselÜretme-ve-Mockup Otomasyonu")
+def main(runtime_root: Path, output_root: Path):
+    BASE_DIR = Path(runtime_root).resolve()
     with open(BASE_DIR / "99_SISTEM_MOTORLARI_VE_KODLAR" / "SISTEM_MOTORU" / "ayarlar.json", encoding="utf-8") as f:
         ayarlar = json.load(f)
 
@@ -127,9 +127,26 @@ def main():
     final_mockup = bg_shadowed * (1.0 - mask_3c) + glass_final * mask_3c
     final_mockup = np.clip(final_mockup, 0, 255).astype(np.uint8)
 
-    out_path = BASE_DIR / "99_SISTEM_MOTORLARI_VE_KODLAR" / "SISTEM_MOTORU" / "test_effects" / "test_cam_tablo_peacock_match.jpg"
+    output_root = Path(output_root).resolve()
+    if output_root.is_relative_to(BASE_DIR) or not output_root.is_relative_to(Path(__file__).resolve().parents[0]) and output_root == BASE_DIR:
+        raise ValueError("OUTPUT_MUST_BE_OUTSIDE_RUNTIME")
+    output_root.mkdir(parents=True, exist_ok=True)
+    out_path = output_root / "test_cam_tablo_peacock_match.jpg"
+    if out_path.exists():
+        raise FileExistsError("NO_OVERWRITE_TEST_RENDER")
     imwrite_unicode(out_path, final_mockup)
     print("SUCCESS! Saved:", out_path)
 
 if __name__ == "__main__":
-    main()
+    import argparse
+    ap = argparse.ArgumentParser(description="Isolated optical-effect experiment")
+    ap.add_argument("--execute", action="store_true")
+    ap.add_argument("--runtime-root", type=Path)
+    ap.add_argument("--output-root", type=Path)
+    args = ap.parse_args()
+    if not args.execute:
+        print("PLAN_ONLY: no files opened or written.")
+    elif not args.runtime_root or not args.output_root:
+        raise SystemExit("BLOCKED: explicit --runtime-root and --output-root required")
+    else:
+        main(args.runtime_root, args.output_root)
