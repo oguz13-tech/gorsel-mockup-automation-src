@@ -92,7 +92,7 @@ def _physical_files(pool: Path, cat: str) -> list[Path]:
         if not path.is_file() or path.suffix.casefold() not in IMAGE_SUFFIXES:
             continue
         images.append(_within(pool, path))
-    return sorted(images, key=lambda p: str(p.relative_to(pool)).casefold())
+    return sorted(images, key=lambda p: str(p.resolve().relative_to(pool.resolve())).casefold())
 
 
 def _render_sheet(PIL_Image, PIL_Draw, PIL_Font, group: str,
