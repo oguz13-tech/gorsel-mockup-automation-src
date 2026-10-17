@@ -811,66 +811,71 @@ class MockupHandler(http.server.SimpleHTTPRequestHandler):
             self.wfile.write(json.dumps({"success": False, "error": str(error)}).encode("utf-8"))
 
     def _handle_api_tumunu_beyazlat(self):
+        """Explicit bulk working-only revision; no overwrite or silent success."""
+        from SABLON_V2_MIMARI.core.safe_working_revision import (
+            working_png_revision, WorkingRevisionBlocked,
+        )
+        from SABLON_V2_MIMARI.core.template_identity import CATEGORY_PREFIXES
         try:
-            content_length = int(self.headers['Content-Length'])
-            post_data = self.rfile.read(content_length)
-            req = json.loads(post_data.decode('utf-8'))
-            hedef_cat = req.get("kategori", None)
-            
-            with open(AYARLAR_PATH, 'r', encoding='utf-8') as f:
-                ayarlar = json.load(f)
-                
+            request = json.loads(self.rfile.read(int(self.headers["Content-Length"])).decode("utf-8"))
+            requested_category = request.get("kategori")
+            if requested_category and requested_category not in CATEGORY_PREFIXES:
+                raise ValueError("INVALID_TEMPLATE_CATEGORY")
+            with open(AYARLAR_PATH, "r", encoding="utf-8") as stream:
+                settings = json.load(stream)
             sm_dir = os.path.join(BASE_DIR, "99_SISTEM_MOTORLARI_VE_KODLAR", "SISTEM_MOTORU")
             if sm_dir not in sys.path:
                 sys.path.append(sm_dir)
-            from sablon_beyazlatma_motoru import whiten_canvas, imread_unicode, imwrite_unicode
-            
-            islenen_sayisi = 0
-            kategoriler = [hedef_cat] if hedef_cat else ayarlar.get("kategoriler", {}).keys()
-            
-            for cat in kategoriler:
-                sablonlar = ayarlar.get("kategoriler", {}).get(cat, {}).get("sablonlar", {})
-                is_frameless = cat in ["01_Wifi_Kutusu", "04_Cam_Dograma", "05_Ocak_Arkasi"]
-                
-                for tmpl, s_conf in sablonlar.items():
-                    src_path = os.path.join(YEDEK_IMG_DIR, cat, tmpl)
-                    if not os.path.exists(src_path):
-                        # Diger uzantilari dene
-                        stem = Path(tmpl).stem
-                        for _ext in ['.jpg', '.jpeg', '.webp', '.png', '.avif']:
-                            _cand = os.path.join(YEDEK_IMG_DIR, cat, stem + _ext)
-                            if os.path.exists(_cand):
-                                src_path = _cand
-                                break
-                    if not os.path.exists(src_path):
-                        src_path = os.path.join(BASE_DIR, "2_SABLON_HAVUZU", cat, tmpl)
-                        
-                    if os.path.exists(src_path):
-                        img_cv = imread_unicode(src_path)
-                        if img_cv is not None:
-                            try:
-                                whitened = whiten_canvas(img_cv, s_conf, is_frameless=is_frameless)
-                                stem = Path(tmpl).stem
-                                dest_path = os.path.join(BASE_DIR, "2_SABLON_HAVUZU", cat, stem + ".png")
-                                imwrite_unicode(dest_path, whitened)
-                                islenen_sayisi += 1
-                                logger.info(f"Toplu Beyazlatma Tamamlandi: {dest_path}")
-                            except Exception as ex:
-                                logger.error(f"SABLON {tmpl} BEYAZLATILAMADI: {ex}")
-            
-            self.send_response(200)
-            self.send_header('Content-type', 'application/json; charset=utf-8')
-            self.send_header('Access-Control-Allow-Origin', '*')
+            from sablon_beyazlatma_motoru import whiten_canvas, imread_unicode
+            categories = [requested_category] if requested_category else [
+                c for c in settings.get("kategoriler", {}) if c in CATEGORY_PREFIXES
+            ]
+            processed = 0
+            failed = []
+            for category in categories:
+                for template, conf in settings.get("kategoriler", {}).get(category, {}).get("sablonlar", {}).items():
+                    try:
+                        backup = Path(YEDEK_IMG_DIR) / category
+                        if backup.is_symlink() or Path(template).name != template:
+                            raise WorkingRevisionBlocked("INVALID_ORIGINAL_PATH")
+                        source = next((
+                            backup / (Path(template).stem + ext)
+                            for ext in (".png", ".jpg", ".jpeg", ".webp", ".avif")
+                            if (backup / (Path(template).stem + ext)).is_file()
+                            and not (backup / (Path(template).stem + ext)).is_symlink()
+                        ), None)
+                        if source is None:
+                            raise FileNotFoundError("ORIGINAL_NOT_FOUND")
+                        raw = imread_unicode(source)
+                        if raw is None:
+                            raise ValueError("UNREADABLE_ORIGINAL")
+                        whitened = whiten_canvas(
+                            raw, conf,
+                            is_frameless=category in ("01_Wifi_Kutusu", "04_Cam_Dograma", "05_Ocak_Arkasi"),
+                        )
+                        with working_png_revision(BASE_DIR, category, template, whitened):
+                            pass
+                        processed += 1
+                    except Exception as template_error:
+                        failed.append({"category": category, "template": template, "error": str(template_error)})
+                        logger.error("P0 BULK WORKING REVISION FAILED %s/%s: %s", category, template, template_error)
+            # Partial success is NOT reported as success. Each successful item
+            # has its own immutable snapshot and can be audited individually.
+            success = not failed
+            self.send_response(200 if success else 409)
+            self.send_header("Content-type", "application/json; charset=utf-8")
             self.end_headers()
-            self.wfile.write(json.dumps({'success': True, 'islenen': islenen_sayisi}).encode('utf-8'))
-            logger.info(f"TUMUNU BEYAZLAT BASARILI. Islenen Sablon: {islenen_sayisi}")
-        except Exception as e:
+            self.wfile.write(json.dumps({
+                "success": success, "islenen": processed,
+                "failed_count": len(failed), "failed": failed[:100],
+                "requires_review": True,
+            }).encode("utf-8"))
+        except Exception as error:
+            logger.error("P0 BULK REVISION BLOCKED: %s", error)
             self.send_response(500)
-            self.send_header('Content-type', 'application/json; charset=utf-8')
-            self.send_header('Access-Control-Allow-Origin', '*')
+            self.send_header("Content-type", "application/json; charset=utf-8")
             self.end_headers()
-            self.wfile.write(json.dumps({'success': False, 'error': str(e)}).encode('utf-8'))
-            logger.error(f"TUMUNU BEYAZLAT HATASI: {e}")
+            self.wfile.write(json.dumps({"success": False, "error": str(error)}).encode("utf-8"))
 
     def _handle_api_sablon_sil(self):
         try:
