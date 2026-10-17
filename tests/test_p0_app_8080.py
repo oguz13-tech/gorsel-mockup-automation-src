@@ -20,6 +20,9 @@ CHILD = r"""
 import json
 from pathlib import Path
 import os
+import sys
+# Running app.py as a script normally sets its own directory on sys.path.
+sys.path.insert(0, str(Path.cwd() / "SABLON_V2_MIMARI"))
 from SABLON_V2_MIMARI import app as webapp
 root = Path(os.environ["MOCKUP_RUNTIME_WORKSPACE"])
 cat = "01_Wifi_Kutusu"
