@@ -234,6 +234,7 @@ def tools_center():
 
 _ALLOWED_USER_TOOLS = {
     "rename",
+    "stage",
     "convert",
     "png_recursive",
     "watermark",
