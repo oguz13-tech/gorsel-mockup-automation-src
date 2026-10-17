@@ -38,6 +38,7 @@ import random
 import sqlite3
 import hashlib
 import uuid
+import contextlib
 import logging
 import threading
 import argparse
@@ -3899,6 +3900,38 @@ class MockupRenderer:
 # ==============================================================================
 # 8. HIZLI EXCEL YÖNETİCİSİ (openpyxl Append)
 # ==============================================================================
+
+@contextlib.contextmanager
+def _exclusive_excel_output_lock(path: Path):
+    """Cross-process Excel workbook guard; stale locks fail closed."""
+    path=Path(path)
+    lock=path.with_name(path.name + ".p0.lock")
+    lock.parent.mkdir(parents=True,exist_ok=True)
+    fd=None
+    for attempt in range(50):
+        try:
+            fd=os.open(lock,os.O_WRONLY|os.O_CREAT|os.O_EXCL,0o600)
+            break
+        except FileExistsError:
+            time.sleep(0.1)
+    if fd is None:
+        raise RuntimeError("EXCEL_OUTPUT_LOCK_BUSY_OR_STALE")
+    try:
+        os.write(fd,uuid.uuid4().hex.encode("ascii"))
+        yield
+    finally:
+        os.close(fd)
+        lock.unlink(missing_ok=True)
+
+
+def _sha256_excel(path: Path) -> str:
+    h=hashlib.sha256()
+    with Path(path).open("rb") as f:
+        for data in iter(lambda:f.read(1024*1024),b""):
+            h.update(data)
+    return h.hexdigest()
+
+
 class FastExcelManager:
     HEADERS = [
         "Stok Kodu", "Barkod", "Model Kodu", "Kategori", "Ham Baskı Dosyası",
@@ -3907,30 +3940,56 @@ class FastExcelManager:
     ]
 
     def __init__(self, file_path: Path):
-        self.file_path = file_path
+        self.file_path = Path(file_path)
         self._buffer = []
         self._known_keys = set()
         self._init_file()
         self._load_known_keys()
 
-    def _init_file(self):
-        if not self.file_path.exists():
-            wb = openpyxl.Workbook()
-            ws = wb.active
-            ws.title = "Trendyol_Yukleme"
-            ws.append(self.HEADERS)
-            
-            # Başlık stilizasyonu
-            header_fill = PatternFill(start_color="1F497D", end_color="1F497D", fill_type="solid")
-            header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
-            for col_idx in range(1, len(self.HEADERS) + 1):
-                cell = ws.cell(row=1, column=col_idx)
-                cell.fill = header_fill
-                cell.font = header_font
-                cell.alignment = Alignment(horizontal="center", vertical="center")
+    def _commit_workbook(self, wb, *, expected_sha: str | None):
+        path=Path(self.file_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        temp=path.with_name("." + path.name + "." + uuid.uuid4().hex + ".tmp.xlsx")
+        try:
+            wb.save(temp)
+            # Another writer, including MS Excel, must not be silently clobbered.
+            current=_sha256_excel(path) if path.is_file() else None
+            if current != expected_sha:
+                raise RuntimeError("EXCEL_CHANGED_CONCURRENTLY_NO_OVERWRITE")
+            if current is not None:
+                versions=path.parent / "_EXCEL_ONCEKI_SURUMLER"
+                versions.mkdir(parents=True,exist_ok=True)
+                snapshot=versions / (path.stem+"_"+time.strftime("%Y%m%d_%H%M%S")+"_"+uuid.uuid4().hex+".xlsx")
+                with path.open("rb") as src, snapshot.open("xb") as out:
+                    for chunk in iter(lambda:src.read(1024*1024),b""):
+                        out.write(chunk)
+                    out.flush()
+                    os.fsync(out.fileno())
+                if _sha256_excel(snapshot)!=current:
+                    raise RuntimeError("EXCEL_SNAPSHOT_SHA_MISMATCH")
+            os.replace(temp,path)
+        finally:
+            temp.unlink(missing_ok=True)
 
-            wb.save(self.file_path)
-            wb.close()
+    def _init_file(self):
+        with _exclusive_excel_output_lock(self.file_path):
+            if self.file_path.exists():
+                return
+            wb = openpyxl.Workbook()
+            try:
+                ws = wb.active
+                ws.title = "Trendyol_Yukleme"
+                ws.append(self.HEADERS)
+                header_fill = PatternFill(start_color="1F497D", end_color="1F497D", fill_type="solid")
+                header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
+                for col_idx in range(1, len(self.HEADERS) + 1):
+                    cell = ws.cell(row=1, column=col_idx)
+                    cell.fill = header_fill
+                    cell.font = header_font
+                    cell.alignment = Alignment(horizontal="center", vertical="center")
+                self._commit_workbook(wb,expected_sha=None)
+            finally:
+                wb.close()
 
     @staticmethod
     def _row_key_from_values(stock_code, mockup_name):
@@ -4001,16 +4060,20 @@ class FastExcelManager:
             if not self._buffer:
                 return True
             try:
-                wb = openpyxl.load_workbook(self.file_path)
-                ws = wb.active
-                for row in self._buffer:
-                    ws.append(row)
-                wb.save(self.file_path)
-                wb.close()
+                with _exclusive_excel_output_lock(self.file_path):
+                    expected=_sha256_excel(self.file_path)
+                    wb=openpyxl.load_workbook(self.file_path)
+                    try:
+                        ws=wb.active
+                        for row in self._buffer:
+                            ws.append(row)
+                        self._commit_workbook(wb,expected_sha=expected)
+                    finally:
+                        wb.close()
                 self._buffer.clear()
                 return True
             except Exception as e:
-                logger.error(f"Excel yazım hatası (flush): {e}")
+                logger.error(f"Excel yazım hatası (flush), eski Excel korundu: {e}")
                 return False
 
 # ==============================================================================
