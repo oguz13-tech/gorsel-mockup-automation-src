@@ -230,6 +230,28 @@ def rename_images(
     root = Path(runtime_root or RUNTIME_ROOT).resolve()
     with (_template_rename_lock(root) if template_category else contextlib.nullcontext()):
         if template_category:
+            # Standalone user tools can run without a production runtime DB,
+            # but MUST NOT silently create a database in any existing
+            # template/staging/archive workspace. For a *new* explicitly
+            # supplied utility-only namespace, create an isolated registry
+            # under that namespace so parallel renames still claim uniquely.
+            db_path = root / "SABLON_V2_MIMARI" / "ayarlar.db"
+            if not db_path.is_file():
+                production_markers = (
+                    "2_SABLON_HAVUZU", "2_SABLON_HAVUZU_ORIJINAL_YEDEK",
+                    "YENI-BOS MOCKUP SABLON HAVUZU", "ayarlar.json",
+                )
+                if runtime_root is None or any((root / key).exists() for key in production_markers):
+                    raise RuntimeError("NUMBER_REGISTRY_DB_MISSING_IN_PRODUCTION_RUNTIME")
+                db_path.parent.mkdir(parents=True, exist_ok=True)
+                # The official live SQLite schema is never created or modified
+                # by this fallback. This DB belongs to the standalone tool only.
+                with sqlite3.connect(db_path) as conn:
+                    conn.execute("CREATE TABLE IF NOT EXISTS template_number_registry ("
+                                 "category TEXT NOT NULL, template_number INTEGER NOT NULL,"
+                                 "canonical_name TEXT, first_seen_source TEXT,"
+                                 "first_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP,"
+                                 "PRIMARY KEY (category, template_number))")
             claim_number_block_once(
                 root, template_category, start_number, len(selected),
                 canonical_names=[target.name for target in targets],
