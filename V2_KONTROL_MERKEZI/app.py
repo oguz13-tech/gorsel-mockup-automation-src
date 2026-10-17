@@ -8,6 +8,7 @@ import ctypes
 import time
 import sqlite3
 from PIL import Image
+from pathlib import Path
 from flask import Flask, render_template, request, jsonify
 import tkinter as tk
 
@@ -105,6 +106,21 @@ def safe_two_phase_rename(files, prefix):
         raise ValueError("Dosya adı öneki klasör yolu içeremez.")
 
     normalized = [os.path.abspath(path) for path in files]
+    # The legacy V2 control center must honor the same protected roots and
+    # template-number registry as the current 8080 Professional Tools.
+    if SOURCE_ROOT not in sys.path:
+        sys.path.insert(0, SOURCE_ROOT)
+    from SABLON_V2_MIMARI.tools_runner import (
+        ensure_not_live_template_path, rename_images as safe_shared_rename,
+    )
+    from SABLON_V2_MIMARI.core.template_identity import category_for_prefix
+    ensure_not_live_template_path([Path(p) for p in normalized], Path(BASE_DIR))
+    if category_for_prefix(prefix):
+        # No separate numbering algorithm for Wifi/Cam/Ahsap/Ocak templates.
+        return [str(p) for p in safe_shared_rename(
+            [Path(p) for p in normalized], prefix,
+            runtime_root=Path(BASE_DIR), start_number=1,
+        )]
     folder = os.path.dirname(normalized[0])
     if any(os.path.dirname(path) != folder for path in normalized):
         raise ValueError("Toplu isimlendirme aynı klasördeki dosyalarla yapılmalı.")
