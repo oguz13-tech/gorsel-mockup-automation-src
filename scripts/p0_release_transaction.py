@@ -28,6 +28,7 @@ RELEASE_FILES = (
     "SABLON_V2_MIMARI/core/template_intelligence.py",
     "SABLON_V2_MIMARI/core/safe_working_revision.py",
     "SABLON_V2_MIMARI/core/manual_production_guard.py",
+    "SABLON_V2_MIMARI/core/visual_qa_audit.py",
     "SABLON_V2_MIMARI/core/lifecycle_reconciliation.py",
     "SABLON_V2_MIMARI/core/vision.py",
     "SABLON_V2_MIMARI/tools_runner.py",
