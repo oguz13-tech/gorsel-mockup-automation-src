@@ -418,61 +418,34 @@ def api_orijinal_yukle():
         )
         backup_source_hash = _sha256_file(src_path)
 
-        tmp_path = dest_path + f".restore_{uuid.uuid4().hex}.tmp"
-        try:
-            if Path(src_path).suffix.lower() == ".png":
-                # A raw PNG restore must be byte-for-byte exact. Decoding with
-                # IMREAD_COLOR would silently discard alpha/transparency.
-                with open(src_path, "rb") as source_handle:
-                    source_bytes = source_handle.read()
-                if not source_bytes:
-                    return jsonify({
-                        "success": False,
-                        "error": "Orijinal PNG yedek boş.",
-                    }), 422
-                with open(tmp_path, "wb") as handle:
-                    handle.write(source_bytes)
-                    handle.flush()
-                    os.fsync(handle.fileno())
-            else:
-                # Non-PNG backups still normalize to PNG, but preserve all
-                # available channels (including alpha when the format has it).
-                img_raw = cv2.imdecode(
-                    np.fromfile(src_path, dtype=np.uint8),
-                    cv2.IMREAD_UNCHANGED,
-                )
-                if img_raw is None:
-                    return jsonify({
-                        "success": False,
-                        "error": "Orijinal yedek görsel okunamadı.",
-                    }), 422
-
-                ok, encoded = cv2.imencode(".png", img_raw)
-                if not ok:
-                    return jsonify({
-                        "success": False,
-                        "error": "Orijinal görsel PNG olarak kodlanamadı.",
-                    }), 500
-                with open(tmp_path, "wb") as handle:
-                    handle.write(encoded.tobytes())
-                    handle.flush()
-                    os.fsync(handle.fileno())
-
-            os.replace(tmp_path, dest_path)
-        finally:
-            if os.path.exists(tmp_path):
-                try:
-                    os.remove(tmp_path)
-                except OSError:
-                    pass
-
-        current_hash = _sha256_file(dest_path)
-        _invalidate_stale_profiles_for_source(
-            active_cat,
-            active_tmpl,
-            stem + ".png",
-            current_hash,
+        # Human-triggered operation: archive a SHA-verified working snapshot
+        # and publish only the working PNG; never mutate original/raw inputs.
+        from SABLON_V2_MIMARI.core.safe_working_revision import (
+            working_png_revision, WorkingRevisionBlocked,
         )
+        if Path(src_path).is_symlink():
+            return jsonify({"success": False, "error": "ORIGINAL_SYMLINK_BLOCKED"}), 409
+        if Path(src_path).suffix.lower() == ".png":
+            # Exact bytes preserve PNG metadata, transparency and origin SHA.
+            source_bytes = Path(src_path).read_bytes()
+            if not source_bytes:
+                return jsonify({"success": False, "error": "Orijinal PNG yedek bos"}), 422
+        else:
+            # The target is a PNG but the backup remains byte-identical.
+            img_raw = cv2.imdecode(
+                np.fromfile(src_path, dtype=np.uint8), cv2.IMREAD_UNCHANGED
+            )
+            if img_raw is None:
+                return jsonify({"success": False, "error": "Orijinal okunamadi"}), 422
+            ok, encoded = cv2.imencode(".png", img_raw)
+            if not ok:
+                return jsonify({"success": False, "error": "PNG_ENCODE_FAILED"}), 500
+            source_bytes = encoded.tobytes()
+        with working_png_revision(BASE_DIR, active_cat, active_tmpl, source_bytes):
+            current_hash = _sha256_file(dest_path)
+            _invalidate_stale_profiles_for_source(
+                active_cat, active_tmpl, stem + ".png", current_hash
+            )
         backup_relative = os.path.relpath(
             src_path,
             backup_root,
@@ -506,6 +479,8 @@ def api_orijinal_yukle():
             ),
             "profiles_revalidation_required": True,
         })
+    except (WorkingRevisionBlocked, FileNotFoundError) as exc:
+        return jsonify({"success": False, "error": str(exc)}), 409
     except ValueError as exc:
         return jsonify({"success": False, "error": str(exc)}), 400
     except Exception as exc:
