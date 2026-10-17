@@ -54,6 +54,10 @@ RELEASE_FILES = (
     "99_SISTEM_MOTORLARI_VE_KODLAR/SISTEM_MOTORU/test_effects/create_and_compare_effects.py",
     "99_SISTEM_MOTORLARI_VE_KODLAR/SISTEM_MOTORU/test_effects/render_peacock_match.py",
     "scripts/epic3_visual_candidate_sheets.py",
+    "scripts/p0_release_transaction.py",
+    "scripts/p0_db_migration_gate.py",
+    "scripts/p0_prepare_release.py",
+    "P0_RELEASE_ON_KONTROL.bat",
 )
 RUNTIME_DATA = (
     "SABLON_V2_MIMARI/ayarlar.db",
@@ -80,6 +84,8 @@ def _inside(p: Path, root: Path) -> bool:
 
 def _paths(source: Path, code: Path, runtime: Path, vault: Path):
     source, code, runtime, vault = (Path(x).resolve() for x in (source, code, runtime, vault))
+    if any(part.casefold() == "onedrive" for part in vault.parts):
+        raise ReleaseBlocked("VAULT_MUST_BE_OUTSIDE_ONEDRIVE")
     if len({str(x).casefold() for x in (source, code, runtime, vault)}) != 4:
         raise ReleaseBlocked("SOURCE_CODE_RUNTIME_VAULT_MUST_DIFFER")
     if any(_inside(vault, p) or _inside(p, vault) for p in (source, code, runtime)):
@@ -146,7 +152,8 @@ def create_snapshot(source, code, runtime, vault):
     for rel in RELEASE_FILES:
         original = dst / rel
         entry = {"path": rel, "existed": original.is_file(),
-                 "before": None, "installed": None}
+                 "before": None, "installed": None,
+                 "release_sha256": sha(src / rel)}
         if original.is_file():
             out = snapshot / "code_before" / rel
             out.parent.mkdir(parents=True, exist_ok=True)
@@ -210,6 +217,10 @@ def install(snapshot, *, approval: str):
                 raise ReleaseBlocked("CODE_CHANGED_SINCE_SNAPSHOT:" + entry["path"])
         elif target.exists():
             raise ReleaseBlocked("NEW_CODE_COLLISION:" + entry["path"])
+    # A source checkout changed after snapshot could deliver unreviewed code.
+    for entry in m["entries"]:
+        if sha(src / entry["path"]) != entry["release_sha256"]:
+            raise ReleaseBlocked("RELEASE_SOURCE_CHANGED:" + entry["path"])
     m["state"] = "INSTALL_IN_PROGRESS"
     _write_manifest(mpath, m)
     for entry in m["entries"]:
