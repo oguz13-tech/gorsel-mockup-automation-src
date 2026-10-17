@@ -505,31 +505,18 @@ def format_convert():
         return jsonify({"status":"blocked","message":str(exc)}),409
         
     def process():
-        start_time = time.time()
-        folder_path = os.path.dirname(files[0]) if files else ""
-        for file in files:
-            try:
-                if target_format == 'JPG' and file.lower().endswith('.png'):
-                    img = Image.open(file)
-                    rgb_im = img.convert('RGB')
-                    target = collision_safe_path(
-                        os.path.splitext(file)[0] + '.jpg'
-                    )
-                    rgb_im.save(target, quality=95)
-                elif target_format == 'PNG' and file.lower().endswith(('.jpg', '.jpeg')):
-                    img = Image.open(file)
-                    target = collision_safe_path(
-                        os.path.splitext(file)[0] + '.png'
-                    )
-                    img.save(target)
-            except Exception as e:
-                print(f"Hata: {e}")
-                
-        # İşlem bitince klasörü aç ve bilgi ver
-        if folder_path:
-            os.startfile(folder_path)
-            show_colored_popup("format_convert", f"Format Çevirici ({target_format})", start_time)
-                
+        start=time.time()
+        try:
+            from SABLON_V2_MIMARI.tools_runner import convert_images as safe_convert
+            output_dir, outputs = safe_convert([Path(f) for f in files], target_format)
+            if not outputs:
+                raise RuntimeError("SUPPORTED_IMAGES_NOT_FOUND")
+            if os.name == "nt":
+                os.startfile(str(output_dir))
+            show_colored_popup("format_convert", f"Format Cevirici ({target_format})", start)
+        except Exception as exc:
+            print(f"P0 FORMAT_CONVERT_FAILED_NO_ORIGINAL_CHANGE: {exc}")
+
     threading.Thread(target=process).start()
     return jsonify({"status": "success", "message": f"Arka planda tüm görseller {target_format} formatına çevriliyor. Bittiğinde klasör otomatik açılacak!"})
 
@@ -596,44 +583,17 @@ def watermark():
         return jsonify({"status":"blocked","message":str(exc)}),409
     
     def process():
-        start_time = time.time()
-        folder_path = os.path.dirname(files[0]) if files else ""
-        out_dir = os.path.join(folder_path, "Filigranli_Gorseller")
-        if not os.path.exists(out_dir): os.makedirs(out_dir)
-        
+        start=time.time()
         try:
-            watermark_img = Image.open(logo_path).convert("RGBA")
-            for file in files:
-                img = Image.open(file)
-                if img.mode != 'RGBA':
-                    img = img.convert('RGBA')
-                    
-                # Logoyu resmin %20'si boyutuna ayarla
-                wm_width = int(img.width * 0.20)
-                wm_ratio = wm_width / watermark_img.width
-                wm_height = int(watermark_img.height * wm_ratio)
-                wm_resized = watermark_img.resize((wm_width, wm_height), Image.Resampling.LANCZOS)
-                
-                # Pozisyon: Sağ Alt (Kenarlardan %5 boşluk)
-                padding_x = int(img.width * 0.05)
-                padding_y = int(img.height * 0.05)
-                position = (img.width - wm_width - padding_x, img.height - wm_height - padding_y)
-                
-                img.paste(wm_resized, position, wm_resized)
-                
-                out_path = collision_safe_path(
-                    os.path.join(out_dir, os.path.basename(file))
-                )
-                if file.lower().endswith(('.jpg', '.jpeg')):
-                    img.convert('RGB').save(out_path, quality=100, subsampling=0)
-                else:
-                    img.save(out_path)
-        except Exception as e:
-            print(f"Hata: {e}")
-            
-        if folder_path:
-            os.startfile(out_dir)
-            show_colored_popup("watermark", "Filigran Motoru", start_time)
+            from SABLON_V2_MIMARI.tools_runner import watermark_images as safe_watermark
+            output_dir, outputs = safe_watermark(Path(logo_path), [Path(f) for f in files])
+            if not outputs:
+                raise RuntimeError("WATERMARK_NO_OUTPUT")
+            if os.name == "nt":
+                os.startfile(str(output_dir))
+            show_colored_popup("watermark", "Filigran Motoru", start)
+        except Exception as exc:
+            print(f"P0 WATERMARK_FAILED_NO_ORIGINAL_CHANGE: {exc}")
 
     threading.Thread(target=process).start()
     return jsonify({"status": "success", "message": "Logo ve görseller alındı. Filigran basılıyor..."})
@@ -654,53 +614,19 @@ def image_to_excel():
         return jsonify({"status":"blocked","message":str(exc)}),409
     
     def process():
-        start_time = time.time()
-        import base64, requests, pandas as pd
-        folder_path = os.path.dirname(files[0]) if files else ""
-        
-        # Use the same cloud settings source as the production factory.
-        # Credential values are never logged or embedded in source.
-        cloud_settings = load_cloud_settings()
-        imgbb_keys = cloud_settings.get("imgbb_keys", [])
-            
-        if not imgbb_keys:
-            ctypes.windll.user32.MessageBoxW(
-                0,
-                "Bulut ayarlarında ImgBB anahtarı bulunamadı. İşlem iptal edildi.",
-                "Anahtar Eksik",
-                0x10,
-            )
-            return
-            
-        def upload_to_imgbb(image_path, api_keys):
-            try:
-                with open(image_path, "rb") as file:
-                    image_base64 = base64.b64encode(file.read()).decode('utf-8')
-                for key in api_keys:
-                    url = "https://api.imgbb.com/1/upload"
-                    payload = {"key": key, "image": image_base64}
-                    response = requests.post(url, data=payload, timeout=30)
-                    if response.status_code == 200:
-                        return response.json()["data"]["url"]
-            except Exception as e:
-                print(f"Yükleme hatası: {e}")
-            return "YÜKLEME_HATASI"
-            
-        results = []
-        for file in files:
-            url = upload_to_imgbb(file, imgbb_keys)
-            results.append({
-                "Gorsel_Adi": os.path.basename(file),
-                "Internet_Linki": url,
-                "Sistem_Dosya_Yolu": file
-            })
-            
-        if results and folder_path:
-            df = pd.DataFrame(results)
-            excel_path = os.path.join(folder_path, "Gorsel_Linkleri.xlsx")
-            df.to_excel(excel_path, index=False)
-            os.startfile(folder_path)
-            show_colored_popup("image_to_excel", "Excel Aktarıcı (ImgBB)", start_time)
+        start=time.time()
+        try:
+            # Use the same connector/core as the 8080 Professional Tools,
+            # avoiding the old pandas-only, fixed-filename Excel overwrite.
+            from SABLON_V2_MIMARI.tools_runner import images_to_link_excel
+            excel_path, success, failed = images_to_link_excel([Path(f) for f in files])
+            if failed:
+                print(f"P0 CLOUD_UPLOAD_PARTIAL: {failed} files failed, see Excel: {excel_path}")
+            if os.name == "nt":
+                os.startfile(str(excel_path.parent))
+            show_colored_popup("image_to_excel", "Gorsel Linkleri Excel", start)
+        except Exception as exc:
+            print(f"P0 IMAGE_LINKS_FAILED: {exc}")
 
     threading.Thread(target=process).start()
     return jsonify({"status": "success", "message": "Görseller ImgBB'ye yükleniyor... Bu işlem dosya boyutuna göre birkaç dakika sürebilir. Bittiğinde klasör açılacak."})
