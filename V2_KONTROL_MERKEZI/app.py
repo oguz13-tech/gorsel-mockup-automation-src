@@ -96,6 +96,14 @@ def collision_safe_path(path):
         suffix += 1
 
 
+def _guard_professional_source_selection(paths):
+    """Legacy 5000 tool routes must respect current protected template pools."""
+    if SOURCE_ROOT not in sys.path:
+        sys.path.insert(0, SOURCE_ROOT)
+    from SABLON_V2_MIMARI.tools_runner import ensure_not_live_template_path
+    ensure_not_live_template_path([Path(p) for p in paths], Path(BASE_DIR))
+
+
 def safe_two_phase_rename(files, prefix):
     """Rename a selected set without collisions or partial name swaps."""
     if not files:
@@ -491,6 +499,10 @@ def format_convert():
         
     if not files:
         return jsonify({"status": "error", "message": "Hiçbir görsel seçilmedi."}), 400
+    try:
+        _guard_professional_source_selection(files)
+    except ValueError as exc:
+        return jsonify({"status":"blocked","message":str(exc)}),409
         
     def process():
         start_time = time.time()
@@ -536,6 +548,10 @@ def rename_images():
         
     if not files:
         return jsonify({"status": "error", "message": "Hiçbir görsel seçilmedi."}), 400
+    try:
+        _guard_professional_source_selection(files)
+    except ValueError as exc:
+        return jsonify({"status":"blocked","message":str(exc)}),409
         
     def process():
         start_time = time.time()
@@ -574,6 +590,10 @@ def watermark():
         files = []
         
     if not files: return jsonify({"status": "error", "message": "Görsel seçilmedi."}), 400
+    try:
+        _guard_professional_source_selection(files)
+    except ValueError as exc:
+        return jsonify({"status":"blocked","message":str(exc)}),409
     
     def process():
         start_time = time.time()
@@ -628,6 +648,10 @@ def image_to_excel():
         files = []
         
     if not files: return jsonify({"status": "error", "message": "Görsel seçilmedi."}), 400
+    try:
+        _guard_professional_source_selection(files)
+    except ValueError as exc:
+        return jsonify({"status":"blocked","message":str(exc)}),409
     
     def process():
         start_time = time.time()
