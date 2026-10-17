@@ -19,6 +19,48 @@ RUNTIME_ROOT = resolve_runtime_root()
 # Mutable DB belongs to the runtime workspace; code stays in the source checkout.
 DB_PATH = os.fspath(RUNTIME_ROOT / "SABLON_V2_MIMARI" / "ayarlar.db")
 
+
+def inspect_startup_schema(db_path: str | Path = DB_PATH) -> dict:
+    """Audit a real DB without creating SQLite files, WAL or migrations."""
+    file = Path(db_path)
+    if file.is_symlink() or not file.is_file():
+        return {"ready": False, "reason": "DB_MISSING_OR_UNSAFE",
+                "migration_required": False}
+    try:
+        conn = sqlite3.connect(file.resolve().as_uri() + "?mode=ro",
+                               uri=True, timeout=8)
+        try:
+            conn.execute("PRAGMA query_only=ON")
+            integrity = conn.execute("PRAGMA quick_check(1)").fetchone()
+            if not integrity or integrity[0] != "ok":
+                return {"ready": False, "reason": "DB_INTEGRITY_FAILURE",
+                        "migration_required": False}
+            required = {
+                "categories", "templates", "settings", "template_profiles",
+                "jobs", "template_operation_locks", "template_number_registry",
+                "analysis_cache",
+            }
+            existing = {x[0] for x in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'")}
+            missing = sorted(required - existing)
+            if missing:
+                return {"ready": False, "reason": "DB_SCHEMA_MIGRATION_REQUIRED",
+                        "missing_tables": missing, "migration_required": True}
+            columns = {x[1] for x in conn.execute(
+                "PRAGMA table_info(template_profiles)")}
+            missing_cols = sorted({"nominal_aspect", "is_active"} - columns)
+            if missing_cols or _template_uid_has_legacy_unique_constraint(conn):
+                return {"ready": False, "reason": "DB_SCHEMA_MIGRATION_REQUIRED",
+                        "missing_columns": missing_cols, "migration_required": True}
+            return {"ready": True, "reason": "DB_SCHEMA_READY",
+                    "migration_required": False}
+        finally:
+            conn.close()
+    except (sqlite3.DatabaseError, OSError) as err:
+        return {"ready": False, "reason": "DB_READ_ONLY_AUDIT_FAILED",
+                "error": type(err).__name__, "migration_required": False}
+
+
 def get_db_connection():
     Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(DB_PATH, timeout=30)
@@ -27,7 +69,9 @@ def get_db_connection():
     conn.execute("PRAGMA busy_timeout = 30000")
     # WAL lets the review UI write approvals while read-only factory/preflight
     # queries are active without unnecessary "database is locked" failures.
-    conn.execute("PRAGMA journal_mode = WAL")
+    # Opening a reader/request must not switch SQLite journal mode.
+    # WAL configuration belongs only in an explicitly approved migration.
+    # Existing WAL databases continue functioning without this statement.
     return conn
 
 def _template_uid_has_legacy_unique_constraint(conn) -> bool:
@@ -181,6 +225,7 @@ def migrate_schema(conn):
 
 
 def init_db():
+    # Explicit migration/bootstrap only. Never invoke at Flask import.
     conn = get_db_connection()
     c = conn.cursor()
     # Kategoriler Tablosu
