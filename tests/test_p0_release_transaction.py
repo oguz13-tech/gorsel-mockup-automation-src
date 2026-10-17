@@ -99,3 +99,42 @@ def test_rollback_refuses_to_overwrite_post_install_user_edit():
         with pytest.raises(release.ReleaseBlocked, match="INSTALLED_CODE_CHANGED"):
             release.rollback(snapshot["snapshot"], approval="ROLLBACK_CODE_ONLY")
         assert edited.read_bytes() == b"SOMEONE_CHANGED_NEW_CODE"
+
+def test_rollback_recovers_crash_after_publish_before_manifest_update():
+    """Power cut after os.replace but before entry.installed manifest update."""
+    with tempfile.TemporaryDirectory() as td:
+        source, code, runtime, vault, original, js, db = scenario(Path(td))
+        old_hashes = [checksum(p) for p in (original, js, db)]
+        result = release.create_snapshot(source, code, runtime, vault)
+        snapshot = Path(result["snapshot"])
+        manifest = snapshot / "manifest.json"
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+        data["state"] = "INSTALL_IN_PROGRESS"
+        manifest.write_text(json.dumps(data), encoding="utf-8")
+        # Simulate two publishes with NO journal update: one previously existed,
+        # the other was absent, but both now contain exact release bytes.
+        for index in (0, 1):
+            rel = release.RELEASE_FILES[index]
+            target = code / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes((source / rel).read_bytes())
+        assert release.rollback(snapshot, approval="ROLLBACK_CODE_ONLY")["status"] == "ROLLED_BACK_CODE_ONLY"
+        assert (code / release.RELEASE_FILES[0]).read_bytes() == b"OLD_CODE:0"
+        assert not (code / release.RELEASE_FILES[1]).exists()
+        assert [checksum(p) for p in (original, js, db)] == old_hashes
+
+
+def test_rollback_blocks_unknown_unjournaled_target():
+    with tempfile.TemporaryDirectory() as td:
+        source, code, runtime, vault, *_ = scenario(Path(td))
+        result = release.create_snapshot(source, code, runtime, vault)
+        snapshot = Path(result["snapshot"])
+        manifest = snapshot / "manifest.json"
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+        data["state"] = "INSTALL_IN_PROGRESS"
+        manifest.write_text(json.dumps(data), encoding="utf-8")
+        target = code / release.RELEASE_FILES[0]
+        target.write_bytes(b"UNKNOWN_THIRD_PARTY_EDIT")
+        with pytest.raises(release.ReleaseBlocked, match="UNJOURNALED_TARGET_CHANGED"):
+            release.rollback(snapshot, approval="ROLLBACK_CODE_ONLY")
+        assert target.read_bytes() == b"UNKNOWN_THIRD_PARTY_EDIT"
