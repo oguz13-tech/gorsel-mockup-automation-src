@@ -42,6 +42,7 @@ try:
 except ImportError:
     from core.template_identity import (
         TemplateNumberConflictError,
+        claim_number_block_once,
         category_for_prefix,
         same_stem_files,
         validate_number_block,
