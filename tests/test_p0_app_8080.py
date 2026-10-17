@@ -47,7 +47,7 @@ trash = root / "SILINEN_SABLONLAR_COP_KUTUSU"
 trash.mkdir()
 (trash / "a_meta.json").write_text(json.dumps({"kategori":cat,"sablon":name}), encoding="utf-8")
 conflict = client.post("/api/sablon_sil_geri_al", json={})
-print("TRASH_COLLISION", conflict.status_code, conflict.get_json())
+print("TRASH_COLLISION_STATUS", conflict.status_code)
 assert conflict.status_code == 409
 assert work.read_bytes() == expected
 assert backup.read_bytes() == expected
@@ -70,6 +70,7 @@ def test_flask_8080_get_restore_and_trash_conflict_are_safe():
             dest.write_bytes(buf.tobytes())
         env = os.environ.copy()
         env["MOCKUP_RUNTIME_WORKSPACE"] = str(runtime)
+        env["PYTHONIOENCODING"] = "utf-8"
         env["PYTHONPATH"] = str(ROOT) + os.pathsep + env.get("PYTHONPATH", "")
         result = subprocess.run(
             [sys.executable, "-B", "-c", CHILD],
