@@ -13,7 +13,7 @@ if not exist "%MOCKUP_RUNTIME_WORKSPACE%\SABLON_V2_MIMARI\ayarlar.db" (
 )
 python -c "import flask, cv2, numpy" >nul 2>&1
 if errorlevel 1 (
-    echo HATA: Python bagimliliklari eksik, otomatik pip install YAPILMADI.
+    echo HATA: Python bagimliliklari eksik, otomatik paket yuklemesi yapilmadi.
     pause
     exit /b 2
 )
