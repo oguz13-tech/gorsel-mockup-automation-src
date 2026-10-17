@@ -34,11 +34,28 @@ class AuditBlocked(RuntimeError):
 
 
 def _within(parent: Path, child: Path) -> Path:
-    base = parent.resolve()
-    candidate = child.resolve()
-    if not candidate.is_relative_to(base):
-        raise AuditBlocked(f"UNSAFE_SOURCE_PATH:{child.name}")
-    return candidate
+    """Resolve a child only when physically beneath the trusted pool.
+
+    Windows can return different aliases (RUNNER~1 vs runneradmin) from
+    Path.resolve() for the same NTFS directory. Compare actual ancestor file
+    identities, never mere path string prefixes, to avoid both false BLOCKED
+    and symlink/prefix escape bypasses.
+    """
+    base = Path(parent).resolve()
+    candidate = Path(child).resolve()
+    if candidate.is_relative_to(base):
+        return candidate
+    # Exact samefile comparison works across Windows 8.3 alias paths.
+    for ancestor in (candidate, *candidate.parents):
+        try:
+            if ancestor.exists() and os.path.samefile(ancestor, base):
+                suffix = candidate.relative_to(ancestor)
+                normalized = base / suffix
+                if normalized.resolve().exists() and os.path.samefile(normalized, candidate):
+                    return normalized
+        except (OSError, ValueError):
+            continue
+    raise AuditBlocked(f"UNSAFE_SOURCE_PATH:{child.name}")
 
 
 def _load_approved(db_path: Path, pool: Path) -> dict[str, list[dict[str, Any]]]:
