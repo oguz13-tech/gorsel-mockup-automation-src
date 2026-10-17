@@ -174,7 +174,7 @@ def run(runtime: Path, dest: Path) -> dict:
         for source in physical:
             review = approved_map.get(source)
             records.append({
-                "relative": str(source.relative_to(pool)),
+                "relative": str(source.resolve().relative_to(pool.resolve())),
                 "source": source,
                 "uid": review["uid"] if review else None,
                 "status": "APPROVED" if review else "NOT_APPROVED_OR_NO_ACTIVE_PROFILE",
