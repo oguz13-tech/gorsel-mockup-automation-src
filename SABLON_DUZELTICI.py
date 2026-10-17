@@ -2179,59 +2179,47 @@ class MockupHandler(http.server.SimpleHTTPRequestHandler):
             self.wfile.write(json.dumps({"success": False, "error": str(error)}).encode("utf-8"))
 
     def _handle_api_orijinal_yukle(self):
+        """Explicitly restore a WORKING copy from an immutable original.
+
+        Original/archive inputs remain unmodified, including transparent PNG.
+        """
+        from SABLON_V2_MIMARI.core.safe_working_revision import (
+            working_png_revision, WorkingRevisionBlocked,
+        )
+        from SABLON_V2_MIMARI.core.template_identity import CATEGORY_PREFIXES
         try:
-            active_cat = self.headers.get('X-Active-Category', '')
-            active_tmpl = self.headers.get('X-Active-Template', '')
-            
-            if active_cat and active_tmpl:
-                stem = Path(active_tmpl).stem
-                
-                # Yedek klasorunde tum uzantilari dene
-                src_path = None
-                for _ext in ['.jpg', '.jpeg', '.webp', '.png', '.avif']:
-                    _cand = os.path.join(YEDEK_IMG_DIR, active_cat, stem + _ext)
-                    if os.path.exists(_cand):
-                        src_path = _cand
-                        break
-                
-                # Havuzdaki PNG'yi geri yukle (orijinalin kopyasini PNG olarak yaz)
-                dest_path = os.path.join(BASE_DIR, "2_SABLON_HAVUZU", active_cat, stem + ".png")
-                
-                if src_path and os.path.exists(src_path):
-                    img_raw = cv2.imdecode(np.fromfile(src_path, dtype=np.uint8), cv2.IMREAD_COLOR)
-                    if img_raw is not None:
-                        _, buf = cv2.imencode('.png', img_raw)
-                        with open(dest_path, 'wb') as _f:
-                            _f.write(buf.tobytes())
-                    else:
-                        shutil.copy2(src_path, dest_path)
-                    logger.info(f"ORIJINAL GORSEL GERI YUKLENDI: {stem}.png <- {Path(src_path).name}")
-                    self.send_response(200)
-                    self.send_header('Content-type', 'application/json')
-                    self.send_header('Access-Control-Allow-Origin', '*')
-                    self.end_headers()
-                    self.wfile.write(b'{"success": true}')
-                    return
-                else:
-                    self.send_response(404)
-                    self.send_header('Content-type', 'application/json')
-                    self.send_header('Access-Control-Allow-Origin', '*')
-                    self.end_headers()
-                    self.wfile.write(b'{"success": false, "error": "Orijinal yedek bulunamadi. Bu dosya eski ve yedegi yok."}')
-                    return
-                    
-            self.send_response(400)
-            self.send_header('Content-type', 'application/json')
-            self.send_header('Access-Control-Allow-Origin', '*')
+            category = self.headers.get("X-Active-Category", "")
+            template = self.headers.get("X-Active-Template", "")
+            if category not in CATEGORY_PREFIXES or not template or Path(template).name != template:
+                raise ValueError("INVALID_RESTORE_IDENTITY")
+            stem = Path(template).stem
+            backup_folder = Path(YEDEK_IMG_DIR) / category
+            if backup_folder.is_symlink():
+                raise WorkingRevisionBlocked("ORIGINAL_FOLDER_SYMLINK_BLOCKED")
+            src = None
+            for ext in (".png", ".jpg", ".jpeg", ".webp", ".avif"):
+                candidate = backup_folder / (stem + ext)
+                if candidate.is_file() and not candidate.is_symlink():
+                    src = candidate
+                    break
+            if src is None:
+                raise FileNotFoundError("Orijinal yedek bulunamadi")
+            image = cv2.imdecode(np.fromfile(str(src), dtype=np.uint8), cv2.IMREAD_UNCHANGED)
+            if image is None:
+                raise ValueError("ORIGINAL_IMAGE_UNREADABLE")
+            with working_png_revision(BASE_DIR, category, template, image):
+                pass
+            logger.info("P0 WORKING RESTORED from immutable original: %s", template)
+            self.send_response(200)
+            self.send_header("Content-type", "application/json; charset=utf-8")
             self.end_headers()
-            self.wfile.write(b'{"success": false, "error": "Kategori eksik"}')
-        except Exception as e:
-            self.send_response(500)
-            self.send_header('Content-type', 'application/json')
-            self.send_header('Access-Control-Allow-Origin', '*')
+            self.wfile.write(b'{"success": true, "working_restored": true, "original_unchanged": true}')
+        except Exception as error:
+            logger.error("P0 ORIGINAL RESTORE BLOCKED: %s", error)
+            self.send_response(409 if isinstance(error, (WorkingRevisionBlocked, FileNotFoundError, FileExistsError)) else 500)
+            self.send_header("Content-type", "application/json; charset=utf-8")
             self.end_headers()
-            self.wfile.write(json.dumps({"success": False, "error": str(e)}).encode('utf-8'))
-            logger.error(f"ORIJINAL YUKLE HATASI: {e}")
+            self.wfile.write(json.dumps({"success": False, "error": str(error)}).encode("utf-8"))
 
     def _handle_api_tumunu_beyazlat(self):
         try:
