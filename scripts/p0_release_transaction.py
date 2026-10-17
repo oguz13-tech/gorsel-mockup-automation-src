@@ -253,9 +253,24 @@ def rollback(snapshot, *, approval: str):
         raise ReleaseBlocked("NOT_AN_INSTALLED_SNAPSHOT")
     _, code, _, _ = _paths(m["source"], m["code"], m["runtime"], mpath.parent.parent)
     _check_ports()
+    # A process can crash after os.replace() but BEFORE the manifest records
+    # entry["installed"]. Recognize only exact release hashes as unjournaled
+    # publications; never overwrite unexpected third-party changes.
     for entry in m["entries"]:
         installed = entry.get("installed")
         target = code / entry["path"]
+        if not installed and m["state"] == "INSTALL_IN_PROGRESS":
+            if target.is_file():
+                current = sha(target)
+                if entry["existed"] and current == entry["before"]:
+                    continue  # publication never reached this file
+                if current == entry["release_sha256"]:
+                    entry["installed"] = current  # recovered exact release
+                    installed = current
+                else:
+                    raise ReleaseBlocked("UNJOURNALED_TARGET_CHANGED_REQUIRES_REVIEW:" + entry["path"])
+            elif entry["existed"]:
+                raise ReleaseBlocked("PREEXISTING_CODE_MISSING_REQUIRES_REVIEW:" + entry["path"])
         if installed and (not target.is_file() or sha(target) != installed):
             raise ReleaseBlocked("INSTALLED_CODE_CHANGED_REQUIRES_REVIEW:" + entry["path"])
     m["state"] = "ROLLBACK_IN_PROGRESS"
