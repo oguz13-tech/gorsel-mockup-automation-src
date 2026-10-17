@@ -114,7 +114,7 @@ def get_template_pool(prod_key: str) -> list[tuple[str, Path, dict]]:
     allowed = {}
     ambiguous = set()
     for row in rows:
-        relative = Path(str(row["source_relative_path"] or "").replace("\\\\", "/"))
+        relative = Path(str(row["source_relative_path"] or "").replace(chr(92), "/"))
         if relative.parent.name != prod_key:
             continue
         name = relative.name.casefold()
@@ -314,7 +314,13 @@ def process_manual_images(mode: str = "dongusel", all_products: bool = True, lim
     logger.info(f"📁 Çıktılar: {OUTPUT_DIR}")
     logger.info(f"📊 Excel: {excel.file_path}")
     logger.info("==================================================================")
-    return total_created > 0
+    # FastExcelManager buffers rows in memory until its threshold; flushing
+    # here is mandatory for 1..49 rendered images. A failed flush is a job
+    # failure, not a misleading successful completion message.
+    excel_ok = excel.flush()
+    if not excel_ok:
+        logger.error("MANUAL_EXCEL_FINAL_FLUSH_FAILED: restore/retry required")
+    return total_created > 0 and excel_ok
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
