@@ -32,7 +32,7 @@ from core.vision import (
     YEDEK_IMG_DIR, detect_document_corners, detect_occlusion_boxes, logger
 )
 
-from core.db import init_db, get_all_ayarlar, save_settings_node, save_category, save_template, delete_template, save_templates_bulk
+from core.db import init_db, inspect_startup_schema, get_all_ayarlar, save_settings_node, save_category, save_template, delete_template, save_templates_bulk
 from core.template_intelligence import TemplateAnalyzer, save_template_profile, TemplateSelector, GeometryValidator, CategoryRuleEngine
 from core.factory_doctor import run_factory_doctor
 from core.template_identity import (
@@ -218,9 +218,21 @@ def annotate_review_metadata(data: dict) -> dict:
     return data
 
 
-# The UI and factory share the same SQLite schema. Ensure a clean checkout can
-# start safely without requiring a separate migration command first.
-init_db()
+# No automatic migration or WAL alteration during module import/startup.
+# Production schema migrations require a verified off-runtime SQLite backup
+# and explicit human approval. A missing/legacy DB fails closed at API gate.
+DB_STARTUP_AUDIT = inspect_startup_schema()
+
+
+@app.before_request
+def _require_migrated_database():
+    if request.path.startswith("/api/") and not DB_STARTUP_AUDIT["ready"]:
+        return jsonify({
+            "success": False, "code": "DB_STARTUP_BLOCKED",
+            "error": DB_STARTUP_AUDIT["reason"],
+            "migration_required": DB_STARTUP_AUDIT.get("migration_required", False),
+        }), 503
+
 
 @app.route('/')
 def index():
