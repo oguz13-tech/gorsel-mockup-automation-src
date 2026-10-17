@@ -30,6 +30,7 @@ from PIL import Image
 
 try:
     from .core.template_identity import (
+        CATEGORY_PREFIXES,
         TemplateNumberConflictError,
         claim_number_block_once,
         category_for_prefix,
@@ -42,6 +43,7 @@ try:
     )
 except ImportError:
     from core.template_identity import (
+        CATEGORY_PREFIXES,
         TemplateNumberConflictError,
         claim_number_block_once,
         category_for_prefix,
@@ -297,7 +299,6 @@ def stage_incoming_safely(
     an image extension, so a watcher cannot process incomplete bytes. A hard
     link atomically publishes only complete images; failure keeps the original.
     """
-    from core.template_identity import CATEGORY_PREFIXES
     root = Path(runtime_root or RUNTIME_ROOT).resolve()
     if category not in CATEGORY_PREFIXES:
         raise ValueError("INVALID_TEMPLATE_CATEGORY")
@@ -377,8 +378,7 @@ def interactive_safe_stage() -> int:
         )]
         if not files:
             return 0
-        from core.template_identity import CATEGORY_PREFIXES
-        categories = sorted(CATEGORY_PREFIXES)
+            categories = sorted(CATEGORY_PREFIXES)
         prompt = "\n".join(f"{i+1}. {name}" for i, name in enumerate(categories))
         index = simpledialog.askinteger(
             "Yeni şablon kategorisi", prompt + "\n\nKategori numarası:",
