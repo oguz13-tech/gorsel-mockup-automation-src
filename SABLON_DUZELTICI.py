@@ -2356,8 +2356,21 @@ class MockupHandler(http.server.SimpleHTTPRequestHandler):
             cop_png = meta['cop_png']
             restore_dir = os.path.join(BASE_DIR, "2_SABLON_HAVUZU", meta['kategori'])
             restore_path = os.path.join(restore_dir, meta['stem'] + ".png")
-            if os.path.exists(cop_png):
-                shutil.move(cop_png, restore_path)
+            # The trash can contain untrusted/stale metadata. Validate its
+            # source and destination; NEVER replace an existing working name.
+            from SABLON_V2_MIMARI.core.template_identity import CATEGORY_PREFIXES, same_stem_files
+            if meta["kategori"] not in CATEGORY_PREFIXES or Path(meta["stem"]).name != meta["stem"]:
+                raise ValueError("INVALID_TRASH_RESTORE_IDENTITY")
+            trash_root = Path(cop_dir).resolve()
+            source = Path(cop_png)
+            destination = Path(restore_path)
+            if source.is_symlink() or not source.is_file() or not source.resolve().is_relative_to(trash_root):
+                raise FileNotFoundError("TRASH_ORIGINAL_NOT_AVAILABLE_OR_UNSAFE")
+            if destination.parent.is_symlink() or destination.exists() or same_stem_files(destination.parent, destination.name):
+                raise FileExistsError("RESTORE_TARGET_ALREADY_EXISTS_NO_OVERWRITE")
+            # Atomic create-only; retain the trash source until settings
+            # metadata is durably committed, so failure cannot lose content.
+            os.link(str(source), str(destination))
             # ayarlar.json'a geri ekle
             with AYARLAR_LOCK:
                 with acquire_os_lock(AYARLAR_PATH):
