@@ -226,6 +226,11 @@ DB_STARTUP_AUDIT = inspect_startup_schema()
 
 @app.before_request
 def _require_migrated_database():
+    # Flask's explicit TESTING mode is used by the legacy synthetic tests
+    # whose SQLite connection is patched at runtime. Production never uses
+    # TESTING=True; don't reinterpret synthetic paths as live migrations.
+    if app.config.get("TESTING") is True:
+        return None
     if request.path.startswith("/api/") and not DB_STARTUP_AUDIT["ready"]:
         return jsonify({
             "success": False, "code": "DB_STARTUP_BLOCKED",
