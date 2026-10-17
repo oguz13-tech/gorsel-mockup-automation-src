@@ -657,8 +657,18 @@ class MockupHandler(http.server.SimpleHTTPRequestHandler):
                 if sm_dir not in sys.path:
                     sys.path.append(sm_dir)
                 from sablon_beyazlatma_motoru import whiten_canvas, imread_unicode
-                src = os.path.join(YEDEK_IMG_DIR, active_cat, active_tmpl)
-                if not os.path.isfile(src):
+                from SABLON_V2_MIMARI.core.template_identity import CATEGORY_PREFIXES
+                if active_cat not in CATEGORY_PREFIXES or Path(active_tmpl).name != active_tmpl:
+                    raise ValueError("INVALID_ACTIVE_TEMPLATE_PATH")
+                backup_folder = Path(YEDEK_IMG_DIR) / active_cat
+                if backup_folder.is_symlink():
+                    raise WorkingRevisionBlocked("ORIGINAL_FOLDER_SYMLINK_BLOCKED")
+                candidates = [backup_folder / active_tmpl] + [
+                    backup_folder / (Path(active_tmpl).stem + ext)
+                    for ext in (".png", ".jpg", ".jpeg", ".webp", ".avif")
+                ]
+                src = next((p for p in candidates if p.is_file() and not p.is_symlink()), None)
+                if src is None:
                     raise FileNotFoundError("IMMUTABLE_ORIGINAL_NOT_FOUND: " + active_tmpl)
                 image = imread_unicode(src)
                 if image is None:
