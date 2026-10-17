@@ -1,5 +1,6 @@
 """Actual release transaction contracts on synthetic fake directories ONLY."""
 import hashlib
+import contextlib
 import json
 import sqlite3
 import tempfile
@@ -55,7 +56,7 @@ def test_release_plan_backup_install_and_code_rollback_leave_runtime_untouched()
         # backup contains SQLite independently with validated integrity
         copied_db = Path(snapshot["snapshot"]) / "runtime_snapshot" / "SABLON_V2_MIMARI" / "ayarlar.db"
         assert copied_db.is_file()
-        with sqlite3.connect(copied_db) as conn:
+        with contextlib.closing(sqlite3.connect(copied_db)) as conn:
             assert conn.execute("SELECT name FROM evidence").fetchone() == ("UNCHANGED",)
         with pytest.raises(release.ReleaseBlocked):
             release.install(snapshot["snapshot"], approval="")
