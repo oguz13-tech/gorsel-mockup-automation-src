@@ -246,12 +246,18 @@ def rename_images(
                 db_path.parent.mkdir(parents=True, exist_ok=True)
                 # The official live SQLite schema is never created or modified
                 # by this fallback. This DB belongs to the standalone tool only.
-                with sqlite3.connect(db_path) as conn:
+                conn = sqlite3.connect(db_path)
+                try:
                     conn.execute("CREATE TABLE IF NOT EXISTS template_number_registry ("
                                  "category TEXT NOT NULL, template_number INTEGER NOT NULL,"
                                  "canonical_name TEXT, first_seen_source TEXT,"
                                  "first_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP,"
                                  "PRIMARY KEY (category, template_number))")
+                    conn.commit()
+                finally:
+                    # SQLite context manager commits; it does NOT close. An
+                    # open handle prevents Temp cleanup on Windows/NTFS.
+                    conn.close()
             claim_number_block_once(
                 root, template_category, start_number, len(selected),
                 canonical_names=[target.name for target in targets],
