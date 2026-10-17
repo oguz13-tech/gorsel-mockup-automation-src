@@ -592,6 +592,64 @@ def claim_number_once(runtime_root: Path, category: str, number: int, *, canonic
         conn.close()
 
 
+
+def claim_number_block_once(
+    runtime_root: Path,
+    category: str,
+    start: int,
+    count: int,
+    *,
+    canonical_names: Iterable[str],
+    source: str = "tools_runner_rename",
+    ignore_paths: Iterable[Path] | None = None,
+) -> set[int]:
+    """Atomically burn a validated range for the end-user renamer.
+
+    Caller must hold the shared staging-intake lock during both this claim
+    AND its physical rename. A separate SQLite BEGIN IMMEDIATE stops writers
+    that use the registry but not the file lock. Failed file operations leave
+    allocated numbers reserved forever rather than recycle an identity.
+    """
+    runtime_root = Path(runtime_root).resolve()
+    numbers = list(range(int(start), int(start) + int(count)))
+    names = list(canonical_names)
+    if category not in CATEGORY_PREFIXES or count < 1 or start < 1 or len(names) != count:
+        raise ValueError("INVALID_TEMPLATE_IDENTITY_BLOCK")
+    db_path = _db_path(runtime_root)
+    if not db_path.is_file():
+        raise RuntimeError("NUMBER_REGISTRY_DB_MISSING")
+    # Read-only validation must not migrate or create a missing DB.
+    validated = validate_number_block(
+        runtime_root, category, start, count, ignore_paths=ignore_paths
+    )
+    conn = sqlite3.connect(str(db_path), timeout=30)
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        conn.execute("""CREATE TABLE IF NOT EXISTS template_number_registry (
+            category TEXT NOT NULL, template_number INTEGER NOT NULL,
+            canonical_name TEXT, first_seen_source TEXT,
+            first_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (category, template_number)
+        )""")
+        for number, name in zip(numbers, names):
+            try:
+                conn.execute(
+                    """INSERT INTO template_number_registry
+                       (category, template_number, canonical_name, first_seen_source)
+                       VALUES (?, ?, ?, ?)""",
+                    (category, number, name, source),
+                )
+            except sqlite3.IntegrityError as exc:
+                raise TemplateNumberConflictError(category, [number]) from exc
+        conn.commit()
+        return validated
+    except BaseException:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
 def next_monotonic_number(reserved: Iterable[int]) -> int:
     """Never fill gaps; deleted/missing files might have owned that ID."""
     return max((int(x) for x in reserved), default=0) + 1
