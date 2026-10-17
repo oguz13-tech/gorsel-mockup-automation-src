@@ -383,6 +383,9 @@ def api_orijinal_yukle():
     The replacement is atomic. Any APPROVED profile bound to different source
     bytes is immediately marked stale, so the UI and production gate agree.
     """
+    from SABLON_V2_MIMARI.core.safe_working_revision import (
+        working_png_revision, WorkingRevisionBlocked,
+    )
     try:
         active_cat = request.headers.get('X-Active-Category', '')
         active_tmpl = request.headers.get('X-Active-Template', '')
@@ -418,61 +421,34 @@ def api_orijinal_yukle():
         )
         backup_source_hash = _sha256_file(src_path)
 
-        tmp_path = dest_path + f".restore_{uuid.uuid4().hex}.tmp"
-        try:
-            if Path(src_path).suffix.lower() == ".png":
-                # A raw PNG restore must be byte-for-byte exact. Decoding with
-                # IMREAD_COLOR would silently discard alpha/transparency.
-                with open(src_path, "rb") as source_handle:
-                    source_bytes = source_handle.read()
-                if not source_bytes:
-                    return jsonify({
-                        "success": False,
-                        "error": "Orijinal PNG yedek boş.",
-                    }), 422
-                with open(tmp_path, "wb") as handle:
-                    handle.write(source_bytes)
-                    handle.flush()
-                    os.fsync(handle.fileno())
-            else:
-                # Non-PNG backups still normalize to PNG, but preserve all
-                # available channels (including alpha when the format has it).
-                img_raw = cv2.imdecode(
-                    np.fromfile(src_path, dtype=np.uint8),
-                    cv2.IMREAD_UNCHANGED,
-                )
-                if img_raw is None:
-                    return jsonify({
-                        "success": False,
-                        "error": "Orijinal yedek görsel okunamadı.",
-                    }), 422
-
-                ok, encoded = cv2.imencode(".png", img_raw)
-                if not ok:
-                    return jsonify({
-                        "success": False,
-                        "error": "Orijinal görsel PNG olarak kodlanamadı.",
-                    }), 500
-                with open(tmp_path, "wb") as handle:
-                    handle.write(encoded.tobytes())
-                    handle.flush()
-                    os.fsync(handle.fileno())
-
-            os.replace(tmp_path, dest_path)
-        finally:
-            if os.path.exists(tmp_path):
-                try:
-                    os.remove(tmp_path)
-                except OSError:
-                    pass
-
-        current_hash = _sha256_file(dest_path)
-        _invalidate_stale_profiles_for_source(
-            active_cat,
-            active_tmpl,
-            stem + ".png",
-            current_hash,
+        # Human-triggered operation: archive a SHA-verified working snapshot
+        # and publish only the working PNG; never mutate original/raw inputs.
+        from SABLON_V2_MIMARI.core.safe_working_revision import (
+            working_png_revision, WorkingRevisionBlocked,
         )
+        if Path(src_path).is_symlink():
+            return jsonify({"success": False, "error": "ORIGINAL_SYMLINK_BLOCKED"}), 409
+        if Path(src_path).suffix.lower() == ".png":
+            # Exact bytes preserve PNG metadata, transparency and origin SHA.
+            source_bytes = Path(src_path).read_bytes()
+            if not source_bytes:
+                return jsonify({"success": False, "error": "Orijinal PNG yedek bos"}), 422
+        else:
+            # The target is a PNG but the backup remains byte-identical.
+            img_raw = cv2.imdecode(
+                np.fromfile(src_path, dtype=np.uint8), cv2.IMREAD_UNCHANGED
+            )
+            if img_raw is None:
+                return jsonify({"success": False, "error": "Orijinal okunamadi"}), 422
+            ok, encoded = cv2.imencode(".png", img_raw)
+            if not ok:
+                return jsonify({"success": False, "error": "PNG_ENCODE_FAILED"}), 500
+            source_bytes = encoded.tobytes()
+        with working_png_revision(BASE_DIR, active_cat, active_tmpl, source_bytes):
+            current_hash = _sha256_file(dest_path)
+            _invalidate_stale_profiles_for_source(
+                active_cat, active_tmpl, stem + ".png", current_hash
+            )
         backup_relative = os.path.relpath(
             src_path,
             backup_root,
@@ -506,6 +482,8 @@ def api_orijinal_yukle():
             ),
             "profiles_revalidation_required": True,
         })
+    except (WorkingRevisionBlocked, FileNotFoundError) as exc:
+        return jsonify({"success": False, "error": str(exc)}), 409
     except ValueError as exc:
         return jsonify({"success": False, "error": str(exc)}), 400
     except Exception as exc:
@@ -1319,7 +1297,9 @@ def api_sablon_sil_geri_al():
         restore_dir = os.path.dirname(restore_path)
         os.makedirs(restore_dir, exist_ok=True)
 
-        if os.path.exists(restore_path):
+        # The identity includes ALL format variants; restore cannot silently
+        # publish a .png beside an existing same-stem .jpeg or .webp.
+        if os.path.exists(restore_path) or same_stem_files(Path(restore_dir), tmpl):
             return jsonify({
                 "success": False,
                 "error": (
@@ -1372,7 +1352,7 @@ def api_sablon_sil_geri_al():
                 backup_cat_dir,
                 Path(tmpl).stem + Path(backup_source_in_trash).suffix,
             )
-            if os.path.exists(restored_backup):
+            if os.path.exists(restored_backup) or same_stem_files(Path(backup_cat_dir), Path(restored_backup).name):
                 return jsonify({
                     "success": False,
                     "error": (
@@ -1387,26 +1367,23 @@ def api_sablon_sil_geri_al():
             "undo-delete",
             wait_seconds=0.25,
         )
-        moved_back = []
+        linked_back = []
         db_path = os.path.join(BASE_DIR, "SABLON_V2_MIMARI", "ayarlar.db")
         conn = sqlite3.connect(db_path)
         try:
             if not source_was_missing and source_in_trash:
-                shutil.move(source_in_trash, restore_path)
-                moved_back.append((restore_path, source_in_trash))
+                # os.link is exclusively create-only on Windows and POSIX.
+                # Trash source remains intact if a later SQLite step fails.
+                os.link(source_in_trash, restore_path)
+                linked_back.append((restore_path, source_in_trash))
 
             if (
                 backup_source_in_trash
                 and restored_backup
                 and os.path.isfile(backup_source_in_trash)
             ):
-                shutil.move(
-                    backup_source_in_trash,
-                    restored_backup,
-                )
-                moved_back.append(
-                    (restored_backup, backup_source_in_trash)
-                )
+                os.link(backup_source_in_trash, restored_backup)
+                linked_back.append((restored_backup, backup_source_in_trash))
 
             restored_hash = (
                 "" if source_was_missing else _sha256_file(restore_path)
@@ -1445,19 +1422,23 @@ def api_sablon_sil_geri_al():
             conn.commit()
         except Exception:
             conn.rollback()
-            for moved_src, moved_dst in reversed(moved_back):
-                if os.path.exists(moved_src) and not os.path.exists(moved_dst):
-                    try:
-                        shutil.move(moved_src, moved_dst)
-                    except Exception:
-                        logger.exception(
-                            "Sablon geri alma rollback basarisiz"
-                        )
+            for created_path, trash_source in reversed(linked_back):
+                try:
+                    if (
+                        os.path.isfile(created_path)
+                        and os.path.isfile(trash_source)
+                        and os.path.samefile(created_path, trash_source)
+                    ):
+                        os.unlink(created_path)
+                except OSError:
+                    logger.exception("P0 RESTORE_RECOVERY_REQUIRED: %s", created_path)
             raise
         finally:
             conn.close()
             release_template_lock(cat, tmpl, lock_token)
 
+        # Keep the trashed input bytes for recovery/audit. Removing only
+        # the metadata makes this entry ineligible for repeated undo.
         os.remove(meta_path)
         return jsonify({
             "success": True,

@@ -634,296 +634,258 @@ class MockupHandler(http.server.SimpleHTTPRequestHandler):
             self.wfile.write(json.dumps({"success": False, "error": str(e)}).encode())
 
     def _handle_api_ayarlar(self):
-        content_length = int(self.headers['Content-Length'])
-        post_data = self.rfile.read(content_length)
-        
-        try:
-            new_data = json.loads(post_data.decode('utf-8'))
-            
-            with AYARLAR_LOCK:
-                with acquire_os_lock(AYARLAR_PATH):
-                    if os.path.exists(AYARLAR_PATH):
-                        with open(AYARLAR_PATH, 'r', encoding='utf-8') as current_f:
-                            try:
-                                current_data = json.load(current_f)
-                            except Exception as e:
-                                logger.error(f"Eski veritabanı okunamadı, boş başlatılıyor: {e}")
-                                current_data = {"kategoriler": {}}
-                        # SMART DEEP MERGE: Sadece new_data'daki şablonları current_data içine yedir.
-                        # Arayüzde (new_data) bulunmayan ama arkaplanda botun eklediği şablonlar (current_data) ASLA SİLİNMESİN.
-                        if "kategoriler" not in current_data:
-                            current_data["kategoriler"] = {}
-                        
-                        for cat, cat_data in new_data.get('kategoriler', {}).items():
-                            if cat not in current_data['kategoriler']:
-                                current_data['kategoriler'][cat] = {'sablonlar': {}}
-                            for tmpl, tmpl_data in cat_data.get('sablonlar', {}).items():
-                                current_data['kategoriler'][cat]['sablonlar'][tmpl] = tmpl_data
-                        
-                        for k, v in new_data.items():
-                            if k != 'kategoriler':
-                                current_data[k] = v
-                        ts = time.strftime("%Y%m%d_%H%M%S")
-                        shutil.copy2(AYARLAR_PATH, AYARLAR_PATH + '.arayuz_yedek')
-                        shutil.copy2(AYARLAR_PATH, AYARLAR_PATH + f'.user_backup_{ts}')
-                        
-                        # PERFORMANS: Yedek Rotasyonu (Sadece son 10 yedegi tut)
-                        backups = sorted(glob.glob(AYARLAR_PATH + '.user_backup_*'))
-                        while len(backups) > 10:
-                            old_backup = backups.pop(0)
-                            try:
-                                os.remove(old_backup)
-                            except Exception:
-                                pass
-                    else:
-                        current_data = new_data
-                        
-                    # ATOMIC WRITE: Write to .tmp first, then replace
-                    tmp_path = AYARLAR_PATH + ".tmp"
-                    with open(tmp_path, 'w', encoding='utf-8') as f:
-                        json.dump(current_data, f, indent=2, ensure_ascii=False)
-                    os.replace(tmp_path, AYARLAR_PATH)
-                    
-                    root_copy = os.path.join(BASE_DIR, "ayarlar.json")
-                    shutil.copy2(AYARLAR_PATH, root_copy)
-            active_cat = self.headers.get('X-Active-Category', '')
-            active_tmpl = self.headers.get('X-Active-Template', '')
-            
-            # Sadece aktif olan görseli anında fiziksel olarak da beyazlat
-            if active_cat and active_tmpl:
-                try:
-                    sm_dir = os.path.join(BASE_DIR, "99_SISTEM_MOTORLARI_VE_KODLAR", "SISTEM_MOTORU")
-                    if sm_dir not in sys.path:
-                        sys.path.append(sm_dir)
-                    from sablon_beyazlatma_motoru import whiten_canvas, imread_unicode, imwrite_unicode
-                    
-                    src_path = os.path.join(YEDEK_IMG_DIR, active_cat, active_tmpl)
-                    if not os.path.exists(src_path):
-                        src_path = os.path.join(BASE_DIR, "2_SABLON_HAVUZU", active_cat, active_tmpl)
-                    
-                    # Transparent sablonlar zorunlu olarak PNG kaydedilir
-                    stem = Path(active_tmpl).stem
-                    dest_path = os.path.join(BASE_DIR, "2_SABLON_HAVUZU", active_cat, stem + ".png")
-                    
-                    img_cv = imread_unicode(src_path)
-                    if img_cv is not None:
-                        s_conf = new_data["kategoriler"][active_cat]["sablonlar"][active_tmpl]
-                        is_frameless = active_cat in ["01_Wifi_Kutusu", "04_Cam_Dograma", "05_Ocak_Arkasi"]
-                        whitened = whiten_canvas(img_cv, s_conf, is_frameless=is_frameless)
-                        imwrite_unicode(dest_path, whitened)
-                        logger.info(f"AKTIF GORSEL KOORDINATLARI KAYDEDILDI VE ONAYLANIP BEYAZLATILDI: {active_tmpl}")
-                        
-                        # Onizleme dosyasini da guncelle (YENI-BOS MOCKUP SABLON HAVUZU)
-                        try:
-                            staging_cat_dir = Path(BASE_DIR) / "YENI-BOS MOCKUP SABLON HAVUZU" / active_cat
-                            t_stem = Path(active_tmpl).stem
-                            t_ext = Path(active_tmpl).suffix
-                            preview_name = f"{t_stem}-beyazlatilmis-onizleme{t_ext}"
-                            preview_path = staging_cat_dir / preview_name
-                            if preview_path.exists():
-                                imwrite_unicode(preview_path, whitened)
-                                logger.info(f"HAZIRLIK KLASORUNDEKI ONIZLEME GUNCELLEDI: {preview_name}")
-                        except Exception as e_prev:
-                            logger.error(f"ONIZLEME GUNCELLEME HATASI: {e_prev}")
-                except Exception as ex:
-                    logger.error(f"BEYAZLATMA HATASI: {ex}")
-                    
-            self.send_response(200)
-            self.send_header('Content-type', 'application/json')
-            self.send_header('Access-Control-Allow-Origin', '*')
-            self.end_headers()
-            self.wfile.write(b'{"success": true}')
-            
-            logger.info(f"AYARLAR.JSON BASARIYLA GUNCELLENDI VE YEDEKLENDI (user_backup_{ts})!")
-        except Exception as e:
-            self.send_response(500)
-            self.send_header('Access-Control-Allow-Origin', '*')
-            self.end_headers()
-            self.wfile.write(b'{"success": false}')
-            logger.error(f"HATA: {e}")
+        """Persist settings and an optional, explicitly selected working revision.
 
-    def _handle_api_anlik_beyazlat(self):
+        Order matters: working PNG is snapshotted/published first and will be
+        rolled back if JSON cannot be saved. No original/archive mutation.
+        """
+        from SABLON_V2_MIMARI.core.safe_working_revision import (
+            working_png_revision, WorkingRevisionBlocked,
+        )
         try:
-            content_length = int(self.headers['Content-Length'])
-            post_data = self.rfile.read(content_length)
-            new_data = json.loads(post_data.decode('utf-8'))
-            active_cat = self.headers.get('X-Active-Category', '')
-            active_tmpl = self.headers.get('X-Active-Template', '')
-            
-            if active_cat and active_tmpl:
+            import contextlib
+            import uuid
+            content_length = int(self.headers["Content-Length"])
+            new_data = json.loads(self.rfile.read(content_length).decode("utf-8"))
+            active_cat = self.headers.get("X-Active-Category", "")
+            active_tmpl = self.headers.get("X-Active-Template", "")
+            transaction = contextlib.nullcontext()
+            if bool(active_cat) != bool(active_tmpl):
+                raise ValueError("ACTIVE_CATEGORY_TEMPLATE_MISMATCH")
+            if active_cat:
                 sm_dir = os.path.join(BASE_DIR, "99_SISTEM_MOTORLARI_VE_KODLAR", "SISTEM_MOTORU")
                 if sm_dir not in sys.path:
                     sys.path.append(sm_dir)
-                from sablon_beyazlatma_motoru import whiten_canvas, imread_unicode, imwrite_unicode
-                
-                stem = Path(active_tmpl).stem
-                
-                # Yedek klasöründe tüm uzantıları dene
-                src_path = None
-                for _ext in ['.jpg', '.jpeg', '.webp', '.png', '.avif']:
-                    _cand = os.path.join(YEDEK_IMG_DIR, active_cat, stem + _ext)
-                    if os.path.exists(_cand):
-                        src_path = _cand
-                        break
-                # Yedekte yoksa havuzdaki PNG'yi kullan
-                if not src_path:
-                    src_path = os.path.join(BASE_DIR, "2_SABLON_HAVUZU", active_cat, stem + ".png")
-                if not src_path or not os.path.exists(src_path):
-                    src_path = os.path.join(BASE_DIR, "2_SABLON_HAVUZU", active_cat, active_tmpl)
-                # Her zaman PNG olarak kaydet (şeffaflık için)
-                dest_path = os.path.join(BASE_DIR, "2_SABLON_HAVUZU", active_cat, stem + ".png")
-                
-                img_cv = imread_unicode(src_path)
-                if img_cv is not None:
-                    s_conf = new_data["kategoriler"][active_cat]["sablonlar"][active_tmpl]
-                    is_frameless = active_cat in ["01_Wifi_Kutusu", "04_Cam_Dograma", "05_Ocak_Arkasi"]
-                    whitened = whiten_canvas(img_cv, s_conf, is_frameless=is_frameless)
-                    
-                    try:
-                        preview_path = os.path.join(BASE_DIR, "YENI-BOS MOCKUP SABLON HAVUZU", active_cat, stem + "-beyazlatilmis-onizleme.png")
-                        if os.path.exists(os.path.dirname(preview_path)):
-                            imwrite_unicode(preview_path, whitened)
-                    except Exception as ep:
-                        logger.error(f"Onizleme guncellenemedi: {ep}")
-                        
-                    logger.info(f"ANLIK BEYAZLATMA BASARILI: {active_tmpl} -> {dest_path}")
-                    
-                    self.send_response(200)
-                    self.send_header('Content-type', 'application/json')
-                    self.send_header('Access-Control-Allow-Origin', '*')
-                    self.end_headers()
-                    self.wfile.write(b'{"success": true}')
-                    return
-            
-            self.send_response(400)
-            self.send_header('Content-type', 'application/json')
-            self.send_header('Access-Control-Allow-Origin', '*')
+                from sablon_beyazlatma_motoru import whiten_canvas, imread_unicode
+                from SABLON_V2_MIMARI.core.template_identity import CATEGORY_PREFIXES
+                if active_cat not in CATEGORY_PREFIXES or Path(active_tmpl).name != active_tmpl:
+                    raise ValueError("INVALID_ACTIVE_TEMPLATE_PATH")
+                backup_folder = Path(YEDEK_IMG_DIR) / active_cat
+                if backup_folder.is_symlink():
+                    raise WorkingRevisionBlocked("ORIGINAL_FOLDER_SYMLINK_BLOCKED")
+                candidates = [backup_folder / active_tmpl] + [
+                    backup_folder / (Path(active_tmpl).stem + ext)
+                    for ext in (".png", ".jpg", ".jpeg", ".webp", ".avif")
+                ]
+                src = next((p for p in candidates if p.is_file() and not p.is_symlink()), None)
+                if src is None:
+                    raise FileNotFoundError("IMMUTABLE_ORIGINAL_NOT_FOUND: " + active_tmpl)
+                image = imread_unicode(src)
+                if image is None:
+                    raise ValueError("ORIGINAL_IMAGE_UNREADABLE")
+                conf = new_data["kategoriler"][active_cat]["sablonlar"][active_tmpl]
+                whitened = whiten_canvas(
+                    image, conf,
+                    is_frameless=active_cat in ("01_Wifi_Kutusu", "04_Cam_Dograma", "05_Ocak_Arkasi"),
+                )
+                transaction = working_png_revision(BASE_DIR, active_cat, active_tmpl, whitened)
+            with transaction:
+                with AYARLAR_LOCK:
+                    with acquire_os_lock(AYARLAR_PATH):
+                        if os.path.isfile(AYARLAR_PATH):
+                            with open(AYARLAR_PATH, "r", encoding="utf-8") as stream:
+                                current = json.load(stream)  # Corrupt JSON MUST fail closed.
+                        else:
+                            current = {"kategoriler": {}}
+                        current.setdefault("kategoriler", {})
+                        for cat, obj in new_data.get("kategoriler", {}).items():
+                            current["kategoriler"].setdefault(cat, {"sablonlar": {}})
+                            current["kategoriler"][cat].setdefault("sablonlar", {})
+                            for name, values in obj.get("sablonlar", {}).items():
+                                current["kategoriler"][cat]["sablonlar"][name] = values
+                        for key, value in new_data.items():
+                            if key != "kategoriler":
+                                current[key] = value
+                        # Never rotate/delete backups just to make space.
+                        if os.path.isfile(AYARLAR_PATH):
+                            ts = time.strftime("%Y%m%d_%H%M%S")
+                            snapshot = AYARLAR_PATH + ".user_backup_" + ts + "_" + uuid.uuid4().hex
+                            with open(AYARLAR_PATH, "rb") as src, open(snapshot, "xb") as dst:
+                                shutil.copyfileobj(src, dst)
+                        tmp = AYARLAR_PATH + "." + uuid.uuid4().hex + ".p0tmp"
+                        try:
+                            with open(tmp, "x", encoding="utf-8") as stream:
+                                json.dump(current, stream, indent=2, ensure_ascii=False)
+                                stream.flush()
+                                os.fsync(stream.fileno())
+                            os.replace(tmp, AYARLAR_PATH)
+                        finally:
+                            if os.path.exists(tmp):
+                                os.unlink(tmp)
+                        # Optional compatibility copy: not a second commit gate.
+                        try:
+                            root_copy = os.path.join(BASE_DIR, "ayarlar.json")
+                            shutil.copy2(AYARLAR_PATH, root_copy)
+                        except OSError as mirror_error:
+                            logger.warning("AYARLAR ROOT MIRROR UNAVAILABLE: %s", mirror_error)
+            self.send_response(200)
+            self.send_header("Content-type", "application/json; charset=utf-8")
             self.end_headers()
-            self.wfile.write(b'{"success": false, "error": "Kategori veya sablon eksik"}')
-        except Exception as e:
-            self.send_response(500)
-            self.send_header('Content-type', 'application/json')
-            self.send_header('Access-Control-Allow-Origin', '*')
+            self.wfile.write(b'{"success": true}')
+        except Exception as error:
+            logger.error("P0 SETTINGS/WORKING REVISION FAILED: %s", error)
+            self.send_response(409 if isinstance(error, (WorkingRevisionBlocked, FileNotFoundError)) else 500)
+            self.send_header("Content-type", "application/json; charset=utf-8")
             self.end_headers()
-            self.wfile.write(json.dumps({"success": False, "error": str(e)}).encode('utf-8'))
-            logger.error(f"ANLIK BEYAZLAT HATASI: {e}")
+            self.wfile.write(json.dumps({"success": False, "error": str(error)}).encode("utf-8"))
 
-    def _handle_api_orijinal_yukle(self):
+    def _handle_api_anlik_beyazlat(self):
+        """Derived preview only: does NOT change the approved working PNG."""
+        from SABLON_V2_MIMARI.core.safe_working_revision import (
+            save_preview_only, WorkingRevisionBlocked,
+        )
         try:
-            active_cat = self.headers.get('X-Active-Category', '')
-            active_tmpl = self.headers.get('X-Active-Template', '')
-            
-            if active_cat and active_tmpl:
-                stem = Path(active_tmpl).stem
-                
-                # Yedek klasorunde tum uzantilari dene
-                src_path = None
-                for _ext in ['.jpg', '.jpeg', '.webp', '.png', '.avif']:
-                    _cand = os.path.join(YEDEK_IMG_DIR, active_cat, stem + _ext)
-                    if os.path.exists(_cand):
-                        src_path = _cand
-                        break
-                
-                # Havuzdaki PNG'yi geri yukle (orijinalin kopyasini PNG olarak yaz)
-                dest_path = os.path.join(BASE_DIR, "2_SABLON_HAVUZU", active_cat, stem + ".png")
-                
-                if src_path and os.path.exists(src_path):
-                    img_raw = cv2.imdecode(np.fromfile(src_path, dtype=np.uint8), cv2.IMREAD_COLOR)
-                    if img_raw is not None:
-                        _, buf = cv2.imencode('.png', img_raw)
-                        with open(dest_path, 'wb') as _f:
-                            _f.write(buf.tobytes())
-                    else:
-                        shutil.copy2(src_path, dest_path)
-                    logger.info(f"ORIJINAL GORSEL GERI YUKLENDI: {stem}.png <- {Path(src_path).name}")
-                    self.send_response(200)
-                    self.send_header('Content-type', 'application/json')
-                    self.send_header('Access-Control-Allow-Origin', '*')
-                    self.end_headers()
-                    self.wfile.write(b'{"success": true}')
-                    return
-                else:
-                    self.send_response(404)
-                    self.send_header('Content-type', 'application/json')
-                    self.send_header('Access-Control-Allow-Origin', '*')
-                    self.end_headers()
-                    self.wfile.write(b'{"success": false, "error": "Orijinal yedek bulunamadi. Bu dosya eski ve yedegi yok."}')
-                    return
-                    
-            self.send_response(400)
-            self.send_header('Content-type', 'application/json')
-            self.send_header('Access-Control-Allow-Origin', '*')
-            self.end_headers()
-            self.wfile.write(b'{"success": false, "error": "Kategori eksik"}')
-        except Exception as e:
-            self.send_response(500)
-            self.send_header('Content-type', 'application/json')
-            self.send_header('Access-Control-Allow-Origin', '*')
-            self.end_headers()
-            self.wfile.write(json.dumps({"success": False, "error": str(e)}).encode('utf-8'))
-            logger.error(f"ORIJINAL YUKLE HATASI: {e}")
-
-    def _handle_api_tumunu_beyazlat(self):
-        try:
-            content_length = int(self.headers['Content-Length'])
-            post_data = self.rfile.read(content_length)
-            req = json.loads(post_data.decode('utf-8'))
-            hedef_cat = req.get("kategori", None)
-            
-            with open(AYARLAR_PATH, 'r', encoding='utf-8') as f:
-                ayarlar = json.load(f)
-                
+            new_data = json.loads(self.rfile.read(int(self.headers["Content-Length"])).decode("utf-8"))
+            category = self.headers.get("X-Active-Category", "")
+            template = self.headers.get("X-Active-Template", "")
+            if not category or not template:
+                raise ValueError("Kategori veya sablon eksik")
             sm_dir = os.path.join(BASE_DIR, "99_SISTEM_MOTORLARI_VE_KODLAR", "SISTEM_MOTORU")
             if sm_dir not in sys.path:
                 sys.path.append(sm_dir)
-            from sablon_beyazlatma_motoru import whiten_canvas, imread_unicode, imwrite_unicode
-            
-            islenen_sayisi = 0
-            kategoriler = [hedef_cat] if hedef_cat else ayarlar.get("kategoriler", {}).keys()
-            
-            for cat in kategoriler:
-                sablonlar = ayarlar.get("kategoriler", {}).get(cat, {}).get("sablonlar", {})
-                is_frameless = cat in ["01_Wifi_Kutusu", "04_Cam_Dograma", "05_Ocak_Arkasi"]
-                
-                for tmpl, s_conf in sablonlar.items():
-                    src_path = os.path.join(YEDEK_IMG_DIR, cat, tmpl)
-                    if not os.path.exists(src_path):
-                        # Diger uzantilari dene
-                        stem = Path(tmpl).stem
-                        for _ext in ['.jpg', '.jpeg', '.webp', '.png', '.avif']:
-                            _cand = os.path.join(YEDEK_IMG_DIR, cat, stem + _ext)
-                            if os.path.exists(_cand):
-                                src_path = _cand
-                                break
-                    if not os.path.exists(src_path):
-                        src_path = os.path.join(BASE_DIR, "2_SABLON_HAVUZU", cat, tmpl)
-                        
-                    if os.path.exists(src_path):
-                        img_cv = imread_unicode(src_path)
-                        if img_cv is not None:
-                            try:
-                                whitened = whiten_canvas(img_cv, s_conf, is_frameless=is_frameless)
-                                stem = Path(tmpl).stem
-                                dest_path = os.path.join(BASE_DIR, "2_SABLON_HAVUZU", cat, stem + ".png")
-                                imwrite_unicode(dest_path, whitened)
-                                islenen_sayisi += 1
-                                logger.info(f"Toplu Beyazlatma Tamamlandi: {dest_path}")
-                            except Exception as ex:
-                                logger.error(f"SABLON {tmpl} BEYAZLATILAMADI: {ex}")
-            
+            from sablon_beyazlatma_motoru import whiten_canvas, imread_unicode
+            stem = Path(template).stem
+            source = None
+            for ext in (".png", ".jpg", ".jpeg", ".webp", ".avif"):
+                candidate = Path(YEDEK_IMG_DIR) / category / (stem + ext)
+                if candidate.is_file() and not candidate.is_symlink():
+                    source = candidate
+                    break
+            if source is None:
+                raise FileNotFoundError("IMMUTABLE_SOURCE_NOT_FOUND")
+            image = imread_unicode(source)
+            if image is None:
+                raise ValueError("ORIGINAL_IMAGE_UNREADABLE")
+            config = new_data["kategoriler"][category]["sablonlar"][template]
+            whitened = whiten_canvas(
+                image, config,
+                is_frameless=category in ("01_Wifi_Kutusu", "04_Cam_Dograma", "05_Ocak_Arkasi"),
+            )
+            preview = save_preview_only(BASE_DIR, category, template, whitened)
+            logger.info("PREVIEW_ONLY CREATED: %s", preview)
             self.send_response(200)
-            self.send_header('Content-type', 'application/json; charset=utf-8')
-            self.send_header('Access-Control-Allow-Origin', '*')
+            self.send_header("Content-type", "application/json; charset=utf-8")
             self.end_headers()
-            self.wfile.write(json.dumps({'success': True, 'islenen': islenen_sayisi}).encode('utf-8'))
-            logger.info(f"TUMUNU BEYAZLAT BASARILI. Islenen Sablon: {islenen_sayisi}")
-        except Exception as e:
+            self.wfile.write(json.dumps({
+                "success": True, "preview_only": True, "source_unchanged": True,
+                "preview_name": preview.name,
+            }).encode("utf-8"))
+        except Exception as error:
+            logger.error("P0 PREVIEW FAILED: %s", error)
+            self.send_response(409 if isinstance(error, (WorkingRevisionBlocked, FileNotFoundError)) else 500)
+            self.send_header("Content-type", "application/json; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(json.dumps({"success": False, "error": str(error)}).encode("utf-8"))
+
+    def _handle_api_orijinal_yukle(self):
+        """Explicitly restore a WORKING copy from an immutable original.
+
+        Original/archive inputs remain unmodified, including transparent PNG.
+        """
+        from SABLON_V2_MIMARI.core.safe_working_revision import (
+            working_png_revision, WorkingRevisionBlocked,
+        )
+        from SABLON_V2_MIMARI.core.template_identity import CATEGORY_PREFIXES
+        try:
+            category = self.headers.get("X-Active-Category", "")
+            template = self.headers.get("X-Active-Template", "")
+            if category not in CATEGORY_PREFIXES or not template or Path(template).name != template:
+                raise ValueError("INVALID_RESTORE_IDENTITY")
+            stem = Path(template).stem
+            backup_folder = Path(YEDEK_IMG_DIR) / category
+            if backup_folder.is_symlink():
+                raise WorkingRevisionBlocked("ORIGINAL_FOLDER_SYMLINK_BLOCKED")
+            src = None
+            for ext in (".png", ".jpg", ".jpeg", ".webp", ".avif"):
+                candidate = backup_folder / (stem + ext)
+                if candidate.is_file() and not candidate.is_symlink():
+                    src = candidate
+                    break
+            if src is None:
+                raise FileNotFoundError("Orijinal yedek bulunamadi")
+            image = cv2.imdecode(np.fromfile(str(src), dtype=np.uint8), cv2.IMREAD_UNCHANGED)
+            if image is None:
+                raise ValueError("ORIGINAL_IMAGE_UNREADABLE")
+            with working_png_revision(BASE_DIR, category, template, image):
+                pass
+            logger.info("P0 WORKING RESTORED from immutable original: %s", template)
+            self.send_response(200)
+            self.send_header("Content-type", "application/json; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(b'{"success": true, "working_restored": true, "original_unchanged": true}')
+        except Exception as error:
+            logger.error("P0 ORIGINAL RESTORE BLOCKED: %s", error)
+            self.send_response(409 if isinstance(error, (WorkingRevisionBlocked, FileNotFoundError, FileExistsError)) else 500)
+            self.send_header("Content-type", "application/json; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(json.dumps({"success": False, "error": str(error)}).encode("utf-8"))
+
+    def _handle_api_tumunu_beyazlat(self):
+        """Explicit bulk working-only revision; no overwrite or silent success."""
+        from SABLON_V2_MIMARI.core.safe_working_revision import (
+            working_png_revision, WorkingRevisionBlocked,
+        )
+        from SABLON_V2_MIMARI.core.template_identity import CATEGORY_PREFIXES
+        try:
+            request = json.loads(self.rfile.read(int(self.headers["Content-Length"])).decode("utf-8"))
+            requested_category = request.get("kategori")
+            if requested_category and requested_category not in CATEGORY_PREFIXES:
+                raise ValueError("INVALID_TEMPLATE_CATEGORY")
+            with open(AYARLAR_PATH, "r", encoding="utf-8") as stream:
+                settings = json.load(stream)
+            sm_dir = os.path.join(BASE_DIR, "99_SISTEM_MOTORLARI_VE_KODLAR", "SISTEM_MOTORU")
+            if sm_dir not in sys.path:
+                sys.path.append(sm_dir)
+            from sablon_beyazlatma_motoru import whiten_canvas, imread_unicode
+            categories = [requested_category] if requested_category else [
+                c for c in settings.get("kategoriler", {}) if c in CATEGORY_PREFIXES
+            ]
+            processed = 0
+            failed = []
+            for category in categories:
+                for template, conf in settings.get("kategoriler", {}).get(category, {}).get("sablonlar", {}).items():
+                    try:
+                        backup = Path(YEDEK_IMG_DIR) / category
+                        if backup.is_symlink() or Path(template).name != template:
+                            raise WorkingRevisionBlocked("INVALID_ORIGINAL_PATH")
+                        source = next((
+                            backup / (Path(template).stem + ext)
+                            for ext in (".png", ".jpg", ".jpeg", ".webp", ".avif")
+                            if (backup / (Path(template).stem + ext)).is_file()
+                            and not (backup / (Path(template).stem + ext)).is_symlink()
+                        ), None)
+                        if source is None:
+                            raise FileNotFoundError("ORIGINAL_NOT_FOUND")
+                        raw = imread_unicode(source)
+                        if raw is None:
+                            raise ValueError("UNREADABLE_ORIGINAL")
+                        whitened = whiten_canvas(
+                            raw, conf,
+                            is_frameless=category in ("01_Wifi_Kutusu", "04_Cam_Dograma", "05_Ocak_Arkasi"),
+                        )
+                        with working_png_revision(BASE_DIR, category, template, whitened):
+                            pass
+                        processed += 1
+                    except Exception as template_error:
+                        failed.append({"category": category, "template": template, "error": str(template_error)})
+                        logger.error("P0 BULK WORKING REVISION FAILED %s/%s: %s", category, template, template_error)
+            # Partial success is NOT reported as success. Each successful item
+            # has its own immutable snapshot and can be audited individually.
+            success = not failed
+            self.send_response(200 if success else 409)
+            self.send_header("Content-type", "application/json; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(json.dumps({
+                "success": success, "islenen": processed,
+                "failed_count": len(failed), "failed": failed[:100],
+                "requires_review": True,
+            }).encode("utf-8"))
+        except Exception as error:
+            logger.error("P0 BULK REVISION BLOCKED: %s", error)
             self.send_response(500)
-            self.send_header('Content-type', 'application/json; charset=utf-8')
-            self.send_header('Access-Control-Allow-Origin', '*')
+            self.send_header("Content-type", "application/json; charset=utf-8")
             self.end_headers()
-            self.wfile.write(json.dumps({'success': False, 'error': str(e)}).encode('utf-8'))
-            logger.error(f"TUMUNU BEYAZLAT HATASI: {e}")
+            self.wfile.write(json.dumps({"success": False, "error": str(error)}).encode("utf-8"))
 
     def _handle_api_sablon_sil(self):
         try:
@@ -993,8 +955,21 @@ class MockupHandler(http.server.SimpleHTTPRequestHandler):
             cop_png = meta['cop_png']
             restore_dir = os.path.join(BASE_DIR, "2_SABLON_HAVUZU", meta['kategori'])
             restore_path = os.path.join(restore_dir, meta['stem'] + ".png")
-            if os.path.exists(cop_png):
-                shutil.move(cop_png, restore_path)
+            # The trash can contain untrusted/stale metadata. Validate its
+            # source and destination; NEVER replace an existing working name.
+            from SABLON_V2_MIMARI.core.template_identity import CATEGORY_PREFIXES, same_stem_files
+            if meta["kategori"] not in CATEGORY_PREFIXES or Path(meta["stem"]).name != meta["stem"]:
+                raise ValueError("INVALID_TRASH_RESTORE_IDENTITY")
+            trash_root = Path(cop_dir).resolve()
+            source = Path(cop_png)
+            destination = Path(restore_path)
+            if source.is_symlink() or not source.is_file() or not source.resolve().is_relative_to(trash_root):
+                raise FileNotFoundError("TRASH_ORIGINAL_NOT_AVAILABLE_OR_UNSAFE")
+            if destination.parent.is_symlink() or destination.exists() or same_stem_files(destination.parent, destination.name):
+                raise FileExistsError("RESTORE_TARGET_ALREADY_EXISTS_NO_OVERWRITE")
+            # Atomic create-only; retain the trash source until settings
+            # metadata is durably committed, so failure cannot lose content.
+            os.link(str(source), str(destination))
             # ayarlar.json'a geri ekle
             with AYARLAR_LOCK:
                 with acquire_os_lock(AYARLAR_PATH):
