@@ -82,7 +82,7 @@ def test_preview_is_preview_only():
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
         working, backup = setup_root(root)
-        staging = root / "YENI-BOS MOCKUP SABLON HAVUZU" / CAT
+        staging = root / "_ONIZLEME_SABLONLAR" / CAT
         staging.mkdir(parents=True)
         path = working / "Wifi_Kutusu_001.png"
         png_file(path, sample(7))
