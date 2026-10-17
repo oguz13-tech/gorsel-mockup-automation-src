@@ -51,7 +51,9 @@ def _within(parent: Path, child: Path) -> Path:
             if ancestor.exists() and os.path.samefile(ancestor, base):
                 suffix = candidate.relative_to(ancestor)
                 normalized = base / suffix
-                if normalized.resolve().exists() and os.path.samefile(normalized, candidate):
+                # Missing approved files must still be reported as MISSING,
+                # not incorrectly rejected as a path escape on 8.3 aliases.
+                if not normalized.exists() or os.path.samefile(normalized, candidate):
                     return normalized
         except (OSError, ValueError):
             continue
