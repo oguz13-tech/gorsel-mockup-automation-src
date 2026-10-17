@@ -21,6 +21,19 @@ CATEGORY = "03_Ahsap_Tablo"
 TEMPLATE = "AhsapTablo_015.png"
 
 
+def is_same_physical_target(actual, expected):
+    """Windows 8.3 and long aliases can name the same existing directory.
+
+    Compare the existing parent inode/file identity, not path strings; the
+    target itself is intentionally absent just before the race injection.
+    """
+    actual, expected = Path(actual), Path(expected)
+    return (
+        actual.name.casefold() == expected.name.casefold()
+        and os.path.samefile(actual.parent, expected.parent)
+    )
+
+
 def image_bytes(value: int) -> bytes:
     pixels = np.full((18, 27, 3), value, dtype=np.uint8)
     success, encoded = cv2.imencode(".png", pixels)
@@ -75,7 +88,7 @@ class TestNoOverwriteSourceReplacement(unittest.TestCase):
         def inject_race(src, dst):
             # New backup target was moved to recovery; another writer wins
             # the name just before we publish this operation's bytes.
-            if Path(dst) == self.backup:
+            if is_same_physical_target(dst, self.backup):
                 Path(dst).write_bytes(b"OTHER-WRITER")
                 raise FileExistsError(errno.EEXIST, "target exists", str(dst))
             return real_link(src, dst)
@@ -102,7 +115,7 @@ class TestNoOverwriteSourceReplacement(unittest.TestCase):
         real_link = os.link
 
         def inject_race(src, dst):
-            if Path(dst) == self.working:
+            if is_same_physical_target(dst, self.working):
                 Path(dst).write_bytes(b"WORKER-OWNED")
                 raise FileExistsError(errno.EEXIST, "target exists", str(dst))
             return real_link(src, dst)

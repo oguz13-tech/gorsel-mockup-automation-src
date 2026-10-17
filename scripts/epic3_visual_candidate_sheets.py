@@ -34,12 +34,49 @@ class AuditBlocked(RuntimeError):
 
 
 def _within(parent: Path, child: Path) -> Path:
-    base = parent.resolve()
-    candidate = child.resolve()
-    if not candidate.is_relative_to(base):
-        raise AuditBlocked(f"UNSAFE_SOURCE_PATH:{child.name}")
-    return candidate
+    """Resolve a child only when physically beneath the trusted pool.
 
+    Windows can return different aliases (RUNNER~1 vs runneradmin) from
+    Path.resolve() for the same NTFS directory. Compare actual ancestor file
+    identities, never mere path string prefixes, to avoid both false BLOCKED
+    and symlink/prefix escape bypasses.
+    """
+    base = Path(parent).resolve()
+    candidate = Path(child).resolve()
+    if candidate.is_relative_to(base):
+        return candidate
+    # Exact samefile comparison works across Windows 8.3 alias paths.
+    for ancestor in (candidate, *candidate.parents):
+        try:
+            if ancestor.exists() and os.path.samefile(ancestor, base):
+                suffix = candidate.relative_to(ancestor)
+                normalized = base / suffix
+                # Missing approved files must still be reported as MISSING,
+                # not incorrectly rejected as a path escape on 8.3 aliases.
+                if not normalized.exists() or os.path.samefile(normalized, candidate):
+                    return normalized
+        except (OSError, ValueError):
+            continue
+    raise AuditBlocked(f"UNSAFE_SOURCE_PATH:{child.name}")
+
+
+
+def _relative_physical(pool: Path, child: Path) -> str:
+    """Safe physical relative name, including NTFS short/long path aliases.
+
+    pathlib.relative_to compares spelling only; for the same real NTFS
+    directory it can raise when one side uses RUNNER~1 and the other the
+    expanded account name. Resolve containment by samefile on ancestors.
+    """
+    root = Path(pool).resolve()
+    target = Path(child).resolve()
+    for ancestor in (target, *target.parents):
+        try:
+            if ancestor.is_dir() and os.path.samefile(ancestor, root):
+                return target.relative_to(ancestor).as_posix()
+        except (OSError, ValueError):
+            continue
+    raise AuditBlocked(f"UNSAFE_SOURCE_PATH:{Path(child).name}")
 
 def _load_approved(db_path: Path, pool: Path) -> dict[str, list[dict[str, Any]]]:
     if not db_path.is_file():
@@ -92,7 +129,7 @@ def _physical_files(pool: Path, cat: str) -> list[Path]:
         if not path.is_file() or path.suffix.casefold() not in IMAGE_SUFFIXES:
             continue
         images.append(_within(pool, path))
-    return sorted(images, key=lambda p: str(p.relative_to(pool)).casefold())
+    return sorted(images, key=lambda p: _relative_physical(pool, p).casefold())
 
 
 def _render_sheet(PIL_Image, PIL_Draw, PIL_Font, group: str,
@@ -169,12 +206,12 @@ def run(runtime: Path, dest: Path) -> dict:
     for category in CATEGORIES:
         physical = _physical_files(pool, category)
         approved_for_cat = approved[category]
-        approved_map = {r["source"]: r for r in approved_for_cat}
+        approved_map = {_relative_physical(pool, r["source"]): r for r in approved_for_cat}
         records = []
         for source in physical:
-            review = approved_map.get(source)
+            review = approved_map.get(_relative_physical(pool, source))
             records.append({
-                "relative": str(source.relative_to(pool)),
+                "relative": _relative_physical(pool, source),
                 "source": source,
                 "uid": review["uid"] if review else None,
                 "status": "APPROVED" if review else "NOT_APPROVED_OR_NO_ACTIVE_PROFILE",
@@ -182,9 +219,10 @@ def run(runtime: Path, dest: Path) -> dict:
         if category == "01_Wifi_Kutusu":
             # Keep contact sheets targeted: the user's 31 approved candidates.
             records = [r for r in records if r["status"]=="APPROVED"]
+        physical_names = {_relative_physical(pool, source) for source in physical}
         missing_approved = [
             r["relative"] for r in approved_for_cat
-            if r["source"] not in physical
+            if _relative_physical(pool, r["source"]) not in physical_names
         ]
         safe_name = "WIFI_APPROVED" if category=="01_Wifi_Kutusu" else "CAM_DOGRAMA_ALL"
         pages, items = _render_sheet(

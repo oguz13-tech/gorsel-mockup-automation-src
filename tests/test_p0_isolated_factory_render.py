@@ -8,6 +8,9 @@ import hashlib
 import json
 import sqlite3
 import tempfile
+import subprocess
+import sys
+import os
 from pathlib import Path
 
 import cv2
@@ -61,7 +64,25 @@ def test_factory_renders_approved_synthetic_wifi_template_3x4():
 
         original = digest(scene)
         original_db = digest(db)
-        report = smoke(runtime, base / "TEMP_REPORT_ONLY", root)
+        # Factory imports are stateful. Run in a disposable child interpreter
+        # so unrelated earlier tests cannot silently reuse a non-preflight
+        # pc_master_factory module from sys.modules.
+        report_path = base / "isolated_render_result.json"
+        script = (
+            "import json, sys; from pathlib import Path; "
+            "from scripts.epic3_six_template_smoke import smoke; "
+            "root=Path(sys.argv[1]); temp=Path(sys.argv[2]); repo=Path(sys.argv[3]); "
+            "output=Path(sys.argv[4]); "
+            "output.write_text(json.dumps(smoke(root,temp,repo),default=str),encoding='utf-8')"
+        )
+        child = subprocess.run(
+            [sys.executable, "-B", "-c", script, str(runtime),
+             str(base / "TEMP_REPORT_ONLY"), str(root), str(report_path)],
+            cwd=str(root), capture_output=True, text=True,
+            timeout=90, env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+        )
+        assert child.returncode == 0, child.stdout + "\\n" + child.stderr
+        report = json.loads(report_path.read_text(encoding="utf-8"))
         records = {row["uid"]: row for row in report["results"]}
         wifi = records[CATEGORY_UIDS[CATEGORY]]
         assert wifi["status"] == "PASS", wifi

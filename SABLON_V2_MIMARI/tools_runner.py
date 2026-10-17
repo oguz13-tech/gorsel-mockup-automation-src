@@ -225,11 +225,22 @@ def rename_images(
                 "Dosyalar değiştirilmedi."
             )
 
-    # Keep the shared lock across BOTH claims and filesystem publication.
-    # The registry is still durable if any disk operation later fails.
+    # Independent utility mode is intentionally supported even without a
+    # production runtime/SQLite: files must be OUTSIDE protected templates.
+    # These are local provisional names; safe watcher will assign new permanent
+    # identities on eventual ingest. A runtime that has any production marker
+    # must fail closed if its DB is absent, never silently switch to offline.
     root = Path(runtime_root or RUNTIME_ROOT).resolve()
-    with (_template_rename_lock(root) if template_category else contextlib.nullcontext()):
-        if template_category:
+    db = root / "SABLON_V2_MIMARI" / "ayarlar.db"
+    known_production = any((root / marker).exists() for marker in (
+        "2_SABLON_HAVUZU", "2_SABLON_HAVUZU_ORIJINAL_YEDEK",
+        "ayarlar.json", "99_SISTEM_MOTORLARI_VE_KODLAR",
+    ))
+    local_offline_only = bool(template_category and not db.is_file() and not known_production)
+    if template_category and not db.is_file() and known_production:
+        raise RuntimeError("NUMBER_REGISTRY_DB_MISSING_FAIL_CLOSED")
+    with (_template_rename_lock(root) if template_category and not local_offline_only else contextlib.nullcontext()):
+        if template_category and not local_offline_only:
             claim_number_block_once(
                 root, template_category, start_number, len(selected),
                 canonical_names=[target.name for target in targets],
