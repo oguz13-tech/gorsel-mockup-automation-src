@@ -33,6 +33,12 @@ def verify_approved_source(runtime_root: Path, category: str, image: Path) -> di
     if not db.is_file():
         raise SourceApprovalBlocked("APPROVAL_DATABASE_MISSING")
     digest = hashlib.sha256(image.read_bytes()).hexdigest()
+    from .visual_qa_audit import KNOWN_BLOCKED_TEMPLATE_SHAS
+    if digest in KNOWN_BLOCKED_TEMPLATE_SHAS:
+        defect = KNOWN_BLOCKED_TEMPLATE_SHAS[digest]
+        if defect[0] == category:
+            raise SourceApprovalBlocked("KNOWN_VISUAL_DEFECT_REVIEW_REQUIRED")
+
     conn = sqlite3.connect(db.resolve().as_uri() + "?mode=ro", uri=True)
     try:
         conn.execute("PRAGMA query_only=ON")

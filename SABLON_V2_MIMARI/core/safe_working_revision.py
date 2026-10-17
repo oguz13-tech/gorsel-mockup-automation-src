@@ -177,9 +177,14 @@ def save_preview_only(runtime_root, category: str, template: str, image: np.ndar
     root = Path(runtime_root).resolve()
     if category not in CATEGORY_PREFIXES or Path(template).name != template or not template:
         raise WorkingRevisionBlocked("INVALID_PREVIEW_TEMPLATE")
-    directory = root / "YENI-BOS MOCKUP SABLON HAVUZU" / category
-    if directory.is_symlink() or not directory.is_dir():
-        raise WorkingRevisionBlocked("PREVIEW_DIR_NOT_FOUND_OR_UNSAFE")
+    # Never write previews into watcher intake. The separate preview root
+    # must not be under working, backup, or a staging inbox.
+    directory = root / "_ONIZLEME_SABLONLAR" / category
+    if (root / "_ONIZLEME_SABLONLAR").is_symlink() or directory.is_symlink():
+        raise WorkingRevisionBlocked("PREVIEW_SYMLINK_BLOCKED")
+    directory.mkdir(parents=True, exist_ok=True)
+    if directory.resolve().parent != (root / "_ONIZLEME_SABLONLAR").resolve():
+        raise WorkingRevisionBlocked("PREVIEW_PATH_OUTSIDE_ISOLATED_DIR")
     target = directory / (Path(template).stem + "-beyazlatilmis-onizleme.png")
     if target.is_symlink():
         raise WorkingRevisionBlocked("PREVIEW_SYMLINK_BLOCKED")

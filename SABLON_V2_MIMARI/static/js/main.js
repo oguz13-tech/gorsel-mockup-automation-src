@@ -345,6 +345,9 @@ window.onerror = function(msg, url, line, col, error) {
         if (sourceViewMode === 'original') {
             el.innerHTML = '🟣 <b>HAM ORİJİNAL önizleniyor.</b> Bu sadece görüntülemedir; dosya değişmedi.';
             el.style.borderColor = '#8b5cf6';
+        } else if (sourceViewMode === 'preview') {
+            el.innerHTML = '🟡 <b>SADECE BEYAZLATMA ÖNİZLEMESİ.</b> Çalışma, orijinal ve onay değişmedi.';
+            el.style.borderColor = '#eab308';
         } else {
             el.innerHTML = '🟢 <b>Çalışma görseli gösteriliyor.</b> Sistem işlemlerinde kullanılan aktif kopya budur.';
             el.style.borderColor = '#2e7d32';
@@ -389,6 +392,45 @@ window.onerror = function(msg, url, line, col, error) {
             encodeURIComponent(currentCat) + '/' +
             encodeURIComponent(currentTmpl) +
             '?t=' + new Date().getTime();
+    }
+
+    async function showIsolatedWhitePreview() {
+        if (!currentCat || !currentTmpl) {
+            showMessage('Önce bir şablon seçin.');
+            return;
+        }
+        const requestCat = currentCat;
+        const requestTmpl = currentTmpl;
+        try {
+            const response = await fetch('/api/anlik_beyazlat', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Active-Category': requestCat,
+                    'X-Active-Template': requestTmpl
+                },
+                body: JSON.stringify({kategori: requestCat, sablon: requestTmpl})
+            });
+            const result = await response.json();
+            if (!response.ok || !result.success || !result.preview_only) {
+                showMessage('Beyazlatma önizlemesi başarısız: ' + (result.error || response.status));
+                return;
+            }
+            const img = new Image();
+            img.onload = () => {
+                if (currentCat !== requestCat || currentTmpl !== requestTmpl) return;
+                currentImg = img;
+                originalImgObj = img;
+                sourceViewMode = 'preview';
+                updateSourceViewStatus();
+                resetView();
+                draw();
+            };
+            img.onerror = () => showMessage('Önizleme görseli yüklenemedi; çalışma dosyası değişmedi.');
+            img.src = result.preview_url + '?t=' + Date.now();
+        } catch (error) {
+            showMessage('Beyazlatma sunucu hatası: ' + error);
+        }
     }
 
     function showOriginalPreview() {

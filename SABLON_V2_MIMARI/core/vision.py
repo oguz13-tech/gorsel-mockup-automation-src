@@ -461,14 +461,21 @@ class MockupHandler(http.server.SimpleHTTPRequestHandler):
             if len(parts) >= 3:
                 cat = parts[1]
                 tmpl = parts[2]
-                safe_onizleme_base = os.path.abspath(os.path.join(BASE_DIR, "YENI-BOS MOCKUP SABLON HAVUZU"))
-                stem = Path(tmpl).stem
-                img_path = os.path.abspath(os.path.join(safe_onizleme_base, cat, stem + "-beyazlatilmis-onizleme.png"))
-                
-                if not img_path.startswith(safe_onizleme_base):
-                    self.send_error(403, "Erisim engellendi")
+                # P0: previews are derived images outside the watcher inbox.
+                # Reject traversal, spoofed category IDs and symlink redirects.
+                from SABLON_V2_MIMARI.core.template_identity import CATEGORY_PREFIXES
+                if cat not in CATEGORY_PREFIXES or Path(tmpl).name != tmpl:
+                    self.send_error(403, "Gecersiz onizleme konumu")
                     return
-                    
+                preview_base = Path(BASE_DIR).resolve() / "_ONIZLEME_SABLONLAR"
+                image = preview_base / cat / (Path(tmpl).stem + "-beyazlatilmis-onizleme.png")
+                if (preview_base.is_symlink() or image.parent.is_symlink()
+                        or image.is_symlink()
+                        or not image.resolve().is_relative_to(preview_base.resolve())):
+                    self.send_error(403, "Onizleme erisimi engellendi")
+                    return
+                img_path = str(image)
+
                 if os.path.exists(img_path):
                     self.send_file_download(img_path, send_body=True)
                 else:

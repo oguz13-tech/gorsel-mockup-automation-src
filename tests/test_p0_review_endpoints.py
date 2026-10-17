@@ -105,7 +105,7 @@ def test_instant_whiten_is_preview_only_and_no_false_success(monkeypatch, name):
         mod.MockupHandler._handle_api_anlik_beyazlat(request)
         assert request.status == 200
         assert request.response()["preview_only"] is True
-        assert (root / "YENI-BOS MOCKUP SABLON HAVUZU" / CAT / "Wifi_Kutusu_001-beyazlatilmis-onizleme.png").is_file()
+        assert (root / "_ONIZLEME_SABLONLAR" / CAT / "Wifi_Kutusu_001-beyazlatilmis-onizleme.png").is_file()
         assert work.read_bytes() == old_work and backup.read_bytes() == old_backup
 
 
