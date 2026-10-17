@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import hashlib
 import importlib.util
 import json
 import os
@@ -285,6 +286,115 @@ def rename_images(
                         pass
             raise
 
+
+
+def stage_incoming_safely(
+    files: list[Path], category: str, runtime_root: Path | None = None,
+) -> dict:
+    """Create-only external image intake with durable receipts (no Explorer Replace).
+
+    Source files are NEVER renamed or deleted. Temporary content is not given
+    an image extension, so a watcher cannot process incomplete bytes. A hard
+    link atomically publishes only complete images; failure keeps the original.
+    """
+    from core.template_identity import CATEGORY_PREFIXES
+    root = Path(runtime_root or RUNTIME_ROOT).resolve()
+    if category not in CATEGORY_PREFIXES:
+        raise ValueError("INVALID_TEMPLATE_CATEGORY")
+    if not (root / "SABLON_V2_MIMARI" / "ayarlar.db").is_file():
+        raise FileNotFoundError("RUNTIME_DATABASE_NOT_FOUND_NO_INTAKE")
+    inbox = root / "YENI-BOS MOCKUP SABLON HAVUZU" / category
+    receipts_dir = root / "SABLON_V2_MIMARI" / "recovery" / "intake_receipts"
+    if inbox.is_symlink() or receipts_dir.is_symlink():
+        raise ValueError("STAGING_OR_RECEIPT_SYMLINK_BLOCKED")
+    inbox.mkdir(parents=True, exist_ok=True)
+    receipts_dir.mkdir(parents=True, exist_ok=True)
+    records = []
+    if not files:
+        raise ValueError("NO_INPUT_FILES_SELECTED")
+    for source in files:
+        source = Path(source)
+        if source.is_symlink() or not source.is_file():
+            raise ValueError("SOURCE_MISSING_OR_SYMLINK")
+        if source.suffix.lower() not in IMAGE_EXTS:
+            raise ValueError("UNSUPPORTED_IMAGE_EXTENSION")
+        if _is_under(source, root):
+            raise ValueError("ONLY_EXTERNAL_SOURCE_PATHS_ALLOWED")
+        # Fresh nonce means even two accounts uploading same names cannot
+        # collide. The incoming source's SHA is recorded without alteration.
+        token = uuid.uuid4().hex
+        timestamp = time.strftime("%Y%m%d_%H%M%S")
+        target = inbox / (source.stem + "__intake_" + timestamp + "_" +
+                          token + source.suffix.lower())
+        receipt_path = receipts_dir / (token + ".json")
+        temp = inbox / ("." + token + ".p0tmp")
+        payload = {
+            "receipt_id": token, "status": "PREPARED",
+            "category": category, "source_name": source.name,
+            "staged_name": target.name, "source_path": str(source),
+            "sha256": None,
+        }
+        with receipt_path.open("xb") as fh:
+            fh.write(json.dumps(payload, ensure_ascii=False).encode("utf-8"))
+            fh.flush(); os.fsync(fh.fileno())
+        published = False
+        try:
+            hash_value = hashlib.sha256()
+            with source.open("rb") as src, temp.open("xb") as dst:
+                while True:
+                    chunk = src.read(1024 * 1024)
+                    if not chunk: break
+                    hash_value.update(chunk)
+                    dst.write(chunk)
+                dst.flush(); os.fsync(dst.fileno())
+            # Copy is complete before visibility. Source might change while
+            # read, therefore the intake SHA is the snapshot's bytes.
+            payload["sha256"] = hash_value.hexdigest()
+            os.link(temp, target)
+            published = True
+            payload["status"] = "COMMITTED"
+            rp_temp = receipts_dir / ("." + token + ".tmp")
+            with rp_temp.open("xb") as fh:
+                fh.write(json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8"))
+                fh.flush(); os.fsync(fh.fileno())
+            os.replace(rp_temp, receipt_path)
+            records.append(payload)
+        finally:
+            temp.unlink(missing_ok=True)
+            # If final receipt update fails, leave both the PREPARED receipt
+            # and the staged file for recovery. Never silently delete either.
+            if published and payload["status"] != "COMMITTED":
+                raise RuntimeError("INTAKE_RECEIPT_RECOVERY_REQUIRED")
+    return {"staged_count": len(records), "receipts": records}
+
+
+def interactive_safe_stage() -> int:
+    root, filedialog, messagebox, simpledialog = _ui()
+    try:
+        files = [Path(p) for p in filedialog.askopenfilenames(
+            title="Yeni şablonlar — dış klasörden dosya seçin",
+            filetypes=[("Görseller", "*.png *.jpg *.jpeg *.webp *.bmp")],
+        )]
+        if not files:
+            return 0
+        from core.template_identity import CATEGORY_PREFIXES
+        categories = sorted(CATEGORY_PREFIXES)
+        prompt = "\n".join(f"{i+1}. {name}" for i, name in enumerate(categories))
+        index = simpledialog.askinteger(
+            "Yeni şablon kategorisi", prompt + "\n\nKategori numarası:",
+            minvalue=1, maxvalue=len(categories), parent=root,
+        )
+        if index is None: return 0
+        output = stage_incoming_safely(files, categories[index - 1])
+        messagebox.showinfo("Güvenli içe alma hazır",
+            f"{output['staged_count']} dosya benzersiz kimlikle sıraya alındı.\n"
+            "Orijinal dış dosyalar değiştirilmedi.", parent=root)
+        return 0
+    except Exception as exc:
+        messagebox.showerror("İçe alma engellendi", str(exc), parent=root)
+        return 1
+    finally:
+        root.destroy()
 
 def _unique_destination(path: Path) -> Path:
     if not path.exists():
@@ -1140,6 +1250,7 @@ def interactive_4k() -> int:
 
 
 TOOLS = {
+    "stage": interactive_safe_stage,
     "rename": interactive_rename,
     "convert": interactive_convert,
     "png_recursive": interactive_recursive_png,
