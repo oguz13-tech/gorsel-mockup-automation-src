@@ -383,6 +383,9 @@ def api_orijinal_yukle():
     The replacement is atomic. Any APPROVED profile bound to different source
     bytes is immediately marked stale, so the UI and production gate agree.
     """
+    from SABLON_V2_MIMARI.core.safe_working_revision import (
+        working_png_revision, WorkingRevisionBlocked,
+    )
     try:
         active_cat = request.headers.get('X-Active-Category', '')
         active_tmpl = request.headers.get('X-Active-Template', '')
