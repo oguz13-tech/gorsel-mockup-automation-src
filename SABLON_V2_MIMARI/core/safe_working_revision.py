@@ -98,6 +98,7 @@ def working_png_revision(runtime_root, category: str, template: str, image: np.n
 
     opdir = revisions / (time.strftime("%Y%m%d_%H%M%S") + "__" + uuid.uuid4().hex)
     published = False
+    caller_committed = False
     before = None
     entry = None
     tmp = path.with_name("." + path.name + "." + uuid.uuid4().hex + ".p0tmp")
@@ -132,10 +133,21 @@ def working_png_revision(runtime_root, category: str, template: str, image: np.n
         except BaseException:
             raise
         else:
+            # The caller's settings/DB may now be committed. A failure to
+            # persist the final audit state must NOT roll back only the PNG.
+            # Mark for review instead of silently diverging DB and pixels.
+            caller_committed = True
             entry["state"] = "COMMITTED"
             _manifest(opdir, entry)
     except BaseException as error:
-        if published and entry is not None:
+        if published and entry is not None and caller_committed:
+            entry["state"] = "RECOVERY_REQUIRED"
+            entry["error"] = "POST_COMMIT_MANIFEST_WRITE_FAILED:" + type(error).__name__
+            try:
+                _manifest(opdir, entry)
+            except OSError:
+                pass
+        elif published and entry is not None:
             # Never undo someone else's concurrent edits.
             if path.is_file() and _sha(path.read_bytes()) == entry["after_sha256"]:
                 restore = path.with_name("." + path.name + "." + uuid.uuid4().hex + ".rollback")
