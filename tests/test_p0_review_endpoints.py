@@ -90,7 +90,7 @@ def fixture_root(root):
     config.parent.mkdir(parents=True)
     initial = {"kategoriler": {CAT: {"sablonlar": {name: {"koseler": [[1,1],[2,1],[2,2],[1,2]]}}}}}
     config.write_text(json.dumps(initial), encoding="utf-8")
-    (root / "YENI-BOS MOCKUP SABLON HAVUZU" / CAT).mkdir(parents=True)
+    (root / "_ONIZLEME_SABLONLAR" / CAT).mkdir(parents=True)
     return work, backup, config, initial
 
 
@@ -105,7 +105,7 @@ def test_instant_whiten_is_preview_only_and_no_false_success(monkeypatch, name):
         mod.MockupHandler._handle_api_anlik_beyazlat(request)
         assert request.status == 200
         assert request.response()["preview_only"] is True
-        assert (root / "YENI-BOS MOCKUP SABLON HAVUZU" / CAT / "Wifi_Kutusu_001-beyazlatilmis-onizleme.png").is_file()
+        assert (root / "_ONIZLEME_SABLONLAR" / CAT / "Wifi_Kutusu_001-beyazlatilmis-onizleme.png").is_file()
         assert work.read_bytes() == old_work and backup.read_bytes() == old_backup
 
 
