@@ -69,12 +69,20 @@ def working_png_revision(runtime_root, category: str, template: str, image: np.n
     """
     root = Path(runtime_root).resolve()
     path = _working_path(root, category, template)
-    if image is None or image.size == 0:
-        raise WorkingRevisionBlocked("INVALID_WORKING_IMAGE")
-    ok, encoded = cv2.imencode(".png", image)
-    if not ok:
-        raise WorkingRevisionBlocked("PNG_ENCODING_FAILED")
-    after = encoded.tobytes()
+    if isinstance(image, (bytes, bytearray)):
+        # Exact PNG bytes preserve alpha, metadata and byte-for-byte restores.
+        after = bytes(image)
+        if not after.startswith(bytes.fromhex("89504e470d0a1a0a")) or cv2.imdecode(
+            np.frombuffer(after, dtype=np.uint8), cv2.IMREAD_UNCHANGED
+        ) is None:
+            raise WorkingRevisionBlocked("INVALID_PNG_BYTES")
+    else:
+        if image is None or image.size == 0:
+            raise WorkingRevisionBlocked("INVALID_WORKING_IMAGE")
+        ok, encoded = cv2.imencode(".png", image)
+        if not ok:
+            raise WorkingRevisionBlocked("PNG_ENCODING_FAILED")
+        after = encoded.tobytes()
     revisions = root / "_P0_WORKING_REVISIONS"
     if revisions.is_symlink():
         raise WorkingRevisionBlocked("REVISION_ARCHIVE_SYMLINK_BLOCKED")
