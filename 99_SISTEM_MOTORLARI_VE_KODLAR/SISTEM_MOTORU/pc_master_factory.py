@@ -3753,8 +3753,17 @@ class MockupRenderer:
                         raise PetekGeometryError("INVALID_PETEK_SLOT_SPEC")
                     slot_spec = SlotSpec(**values)
                     mids = config.get("petek_edge_midpoints")
-                    if mids is not None and not config.get("petek_curve_reviewed", False):
-                        raise PetekGeometryError("CURVE_REQUIRES_REVIEW")
+                    if mids is not None:
+                        if not config.get("petek_curve_reviewed", False):
+                            raise PetekGeometryError("CURVE_REQUIRES_REVIEW")
+                        if not isinstance(mids, dict) or set(mids) != {"top", "bottom"}:
+                            raise PetekGeometryError("CURVE_MIDPOINTS_INVALID")
+                        # Work canvas and corners are rescaled together;
+                        # reviewed midpoint coordinates must follow that scale.
+                        mids = {
+                            edge: [float(v) * render_scale for v in coords]
+                            for edge, coords in mids.items()
+                        }
                     final_cv = render_front(
                         art_cv, bg_cv, koseler, spec=slot_spec,
                         edge_midpoints=mids,
