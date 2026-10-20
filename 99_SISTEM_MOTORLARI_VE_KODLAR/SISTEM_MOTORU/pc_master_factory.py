@@ -223,6 +223,16 @@ PRODUCT_CATALOG: Dict[str, ProductDefinition] = {
         orientation="H",
         is_glass=True,
         folder_name="05_Ocak_Arkasi"
+    ),
+    "06_Petek_Dolabi": ProductDefinition(
+        key="06_Petek_Dolabi",
+        etiket="Petek Dolabi",
+        barkod_prefix="pdk-M",
+        model_prefix="M-pdk-M",
+        boyut_cm="86x96 cm",
+        orientation="H",
+        is_glass=False,
+        folder_name="06_Petek_Dolabi",
     )
 }
 
@@ -3617,17 +3627,22 @@ class MockupRenderer:
             # done after the physical-orientation gate: H/V intent is never
             # inferred from perspective geometry or changed by the renderer.
             nominal_aspect = config.get("nominal_aspect", "UNKNOWN")
-            try:
-                prepared_art = cls.prepare_artwork_for_nominal_aspect(
-                    art_cv,
-                    nominal_aspect,
-                )
-            except ValueError as exc:
-                logger.warning(
-                    f"⏭️ Fiziksel en-boy uyumsuzluğu nedeniyle render atlandı: "
-                    f"{raw_path.name} -> {template_path.name}: {exc}"
-                )
-                return False
+            if category_name == "06_Petek_Dolabi":
+                # PETEK preserves the whole design in its own opaque front composer.
+                # The global ratio adapter must not crop/warp it first.
+                prepared_art = art_cv
+            else:
+                try:
+                    prepared_art = cls.prepare_artwork_for_nominal_aspect(
+                        art_cv,
+                        nominal_aspect,
+                    )
+                except ValueError as exc:
+                    logger.warning(
+                        f"⏭️ Fiziksel en-boy uyumsuzluğu nedeniyle render atlandı: "
+                        f"{raw_path.name} -> {template_path.name}: {exc}"
+                    )
+                    return False
             if prepared_art.shape[:2] != art_cv.shape[:2]:
                 logger.info(
                     f"  ↔️ Artwork fiziksel orana geometri korunarak uyarlandı: "
@@ -3725,32 +3740,64 @@ class MockupRenderer:
                 )
             )
 
-            final_cv = cls.render_cv2_optik(
-                art_cv, bg_cv, koseler, is_glass, 
-                on_plan=on_plan, template_name=template_path.name, 
-                category_name=category_name, orig_bg_cv=orig_bg_cv,
-                alpha_mask=alpha_mask,
-                source_design_identity=source_design_identity,
-                template_identity=template_identity,
-                recipe_version=recipe_version,
-                template_sha=template_sha,
-                auto_foreground=auto_foreground,
-                foreground_required=foreground_required,
-                camera_artifacts=bool(config.get("camera_artifacts", True)),
-                scene_realism_enabled=bool(
-                    config.get("scene_realism_enabled", True)
-                ),
-                scene_realism_strength=float(
-                    1.0
-                    if config.get("scene_realism_strength", 1.0) is None
-                    else config.get("scene_realism_strength", 1.0)
-                ),
-                glass_corner_radius_fraction=(
-                    glass_corner_radius_fraction
-                    if is_glass
-                    else 0.0
-                ),
-            )
+            if category_name == "06_Petek_Dolabi":
+                # Category-specific visual composite. Guarded source-bound
+                # human approval happens in the caller (manual production).
+                if tip != "perspektif" or not config.get("koseler"):
+                    logger.warning("PETEK_REQUIRES_REVIEWED_FRONT_QUAD")
+                    return False
+                from core.petek_dolabi import SlotSpec, render_front, PetekGeometryError
+                try:
+                    values = config.get("petek_slot_spec") or {}
+                    if not isinstance(values, dict):
+                        raise PetekGeometryError("INVALID_PETEK_SLOT_SPEC")
+                    slot_spec = SlotSpec(**values)
+                    mids = config.get("petek_edge_midpoints")
+                    if mids is not None:
+                        if not config.get("petek_curve_reviewed", False):
+                            raise PetekGeometryError("CURVE_REQUIRES_REVIEW")
+                        if not isinstance(mids, dict) or set(mids) != {"top", "bottom"}:
+                            raise PetekGeometryError("CURVE_MIDPOINTS_INVALID")
+                        # Work canvas and corners are rescaled together;
+                        # reviewed midpoint coordinates must follow that scale.
+                        mids = {
+                            edge: [float(v) * render_scale for v in coords]
+                            for edge, coords in mids.items()
+                        }
+                    final_cv = render_front(
+                        art_cv, bg_cv, koseler, spec=slot_spec,
+                        edge_midpoints=mids,
+                    )
+                except (PetekGeometryError, TypeError, ValueError) as exc:
+                    logger.warning(f"PETEK_GEOMETRY_REVIEW_REQUIRED: {exc}")
+                    return False
+            else:
+                final_cv = cls.render_cv2_optik(
+                    art_cv, bg_cv, koseler, is_glass, 
+                    on_plan=on_plan, template_name=template_path.name, 
+                    category_name=category_name, orig_bg_cv=orig_bg_cv,
+                    alpha_mask=alpha_mask,
+                    source_design_identity=source_design_identity,
+                    template_identity=template_identity,
+                    recipe_version=recipe_version,
+                    template_sha=template_sha,
+                    auto_foreground=auto_foreground,
+                    foreground_required=foreground_required,
+                    camera_artifacts=bool(config.get("camera_artifacts", True)),
+                    scene_realism_enabled=bool(
+                        config.get("scene_realism_enabled", True)
+                    ),
+                    scene_realism_strength=float(
+                        1.0
+                        if config.get("scene_realism_strength", 1.0) is None
+                        else config.get("scene_realism_strength", 1.0)
+                    ),
+                    glass_corner_radius_fraction=(
+                        glass_corner_radius_fraction
+                        if is_glass
+                        else 0.0
+                    ),
+                )
 
             # Kalite Kontrol Denetimi (Quality Inspector)
             valid, msg = QualityInspector.inspect_mockup(final_cv, koseler if "koseler" in config else None)
