@@ -37,6 +37,7 @@ import json
 import random
 import sqlite3
 import hashlib
+import uuid
 import logging
 import threading
 import argparse
@@ -147,7 +148,7 @@ db_lock = threading.RLock()
 # Render recipe participates in immutable artifact identity. Bump whenever
 # renderer/aspect/occlusion behavior changes so old artifacts are never silently
 # reused under a new visual contract.
-RECIPE_VERSION = "v3_epic3_20261007_r12"
+RECIPE_VERSION = "v3_epic3_20261007_r12_fill_v1"
 
 # ==============================================================================
 # 2. ÜRÜN VE FORMAT SÖZLEŞMESİ (URUN_FORMAT_HARITASI)
@@ -2999,6 +3000,37 @@ class MockupRenderer:
         return final
 
     @staticmethod
+    def fit_artwork_fill(image_cv: np.ndarray, nominal_aspect,
+                         max_aspect_error: float = 0.15) -> np.ndarray:
+        """Fill the approved physical surface with a proportional center crop.
+
+        No padding, blur, tint or geometric stretching is introduced. Source
+        files and approved geometry are never edited. Existing orientation and
+        excessive-aspect mismatch gates remain in process_mockup/the caller.
+        """
+        if image_cv is None or not getattr(image_cv, "size", 0):
+            raise ValueError("Artwork is empty")
+        try:
+            ratio = float(nominal_aspect)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Approved nominal aspect is required") from exc
+        if not np.isfinite(ratio) or ratio <= 0:
+            raise ValueError("Approved nominal aspect must be positive/finite")
+        h, w = image_cv.shape[:2]
+        if h <= 0 or w <= 0:
+            raise ValueError("Artwork dimensions are invalid")
+        actual = w / float(h)
+        if abs(actual / ratio - 1.0) > float(max_aspect_error):
+            raise ValueError("Artwork aspect mismatch exceeds the existing safety limit")
+        if actual > ratio:
+            crop_w = min(w, max(1, int(round(h * ratio))))
+            left = (w - crop_w) // 2
+            return image_cv[:, left:left + crop_w].copy()
+        crop_h = min(h, max(1, int(round(w / ratio))))
+        top = (h - crop_h) // 2
+        return image_cv[top:top + crop_h, :].copy()
+
+    @staticmethod
     def prepare_artwork_for_nominal_aspect(
         image_cv: np.ndarray,
         nominal_aspect,
@@ -3618,7 +3650,7 @@ class MockupRenderer:
             # inferred from perspective geometry or changed by the renderer.
             nominal_aspect = config.get("nominal_aspect", "UNKNOWN")
             try:
-                prepared_art = cls.prepare_artwork_for_nominal_aspect(
+                prepared_art = cls.fit_artwork_fill(
                     art_cv,
                     nominal_aspect,
                 )
@@ -3827,10 +3859,13 @@ class MockupRenderer:
                 return False
 
             tmp_output = output_path.with_name(
-                output_path.name + ".writing"
+                "." + uuid.uuid4().hex + ".writing"
             )
             try:
-                enc_img.tofile(str(tmp_output))
+                with tmp_output.open("xb") as stream:
+                    stream.write(enc_img.tobytes())
+                    stream.flush()
+                    os.fsync(stream.fileno())
                 persisted = cv2.imdecode(
                     np.fromfile(str(tmp_output), dtype=np.uint8),
                     cv2.IMREAD_COLOR,
@@ -3861,7 +3896,10 @@ class MockupRenderer:
                         f"{persisted_msg}"
                     )
                     return False
-                os.replace(tmp_output, output_path)
+                from core.file_safety import reject_redirect
+                reject_redirect(output_path)
+                # Atomic create-only publication; existing outputs are immutable.
+                os.link(tmp_output, output_path)
                 return True
             finally:
                 if tmp_output.exists():
@@ -4901,7 +4939,7 @@ class PCMasterFactory:
                     # Otherwise a new renderer recipe could overwrite a file
                     # still referenced by an older immutable artifact record.
                     out_filename = (
-                        f"{sku}_{sablon_path.stem}_{recipe_version}.jpg"
+                        f"{sku}_{hashlib.sha256(artifact_key.encode('utf-8')).hexdigest()}.jpg"
                     )
 
                     if self.mode == "coklu":

@@ -1,5 +1,6 @@
 import importlib.util
 import os
+import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -55,33 +56,40 @@ class TestSafeTwoPhaseRename(unittest.TestCase):
             first.write_bytes(b"alpha")
             second.write_bytes(b"beta")
 
-            real_rename = os.rename
-            calls = {"count": 0}
-
-            def flaky_rename(src, dst):
-                calls["count"] += 1
-                # 2 staging moves, first final move succeeds, second final move
-                # fails. Rollback calls after this must be allowed to complete.
-                if calls["count"] == 4:
+            real_link = os.link
+            failures = []
+            published = []
+            def flaky_link(src, dst, *args, **kwargs):
+                if Path(dst).name == "renamed_002.txt":
+                    self.assertTrue((root / "renamed_001.txt").is_file())
+                    failures.append(str(dst))
                     raise OSError("synthetic phase-2 failure")
-                return real_rename(src, dst)
-
-            with patch.object(control.os, "rename", side_effect=flaky_rename):
+                result = real_link(src, dst, *args, **kwargs)
+                if Path(dst).name == "renamed_001.txt":
+                    published.append(str(dst))
+                return result
+            with patch.object(control.os, "link", side_effect=flaky_link):
                 with self.assertRaises(OSError):
-                    control.safe_two_phase_rename(
-                        [str(first), str(second)],
-                        "renamed_",
-                    )
+                    control.safe_two_phase_rename([str(first), str(second)], "renamed_")
 
+            self.assertEqual(len(failures), 1)
+            self.assertEqual(len(published), 1)
+            journals = list((root / "_GORSEL_ISIMLENDIRME_YEDEKLERI").glob("*/manifest.json"))
+            self.assertEqual(len(journals), 1)
+            journal = json.loads(journals[0].read_text(encoding="utf-8"))
+            self.assertEqual(journal["state"], "ROLLED_BACK")
+            self.assertEqual([Path(x["snapshot"]).read_bytes() for x in journal["files"]], [b"alpha", b"beta"])
+            self.assertFalse((root / "_GORSEL_ISIMLENDIRME_YEDEKLERI" / "RENAME_IN_PROGRESS.lock").exists())
             self.assertTrue(first.is_file())
             self.assertTrue(second.is_file())
             self.assertEqual(first.read_bytes(), b"alpha")
             self.assertEqual(second.read_bytes(), b"beta")
             self.assertEqual(
                 sorted(path.name for path in root.iterdir()),
-                ["a.txt", "b.txt"],
+                ["_GORSEL_ISIMLENDIRME_YEDEKLERI", "a.txt", "b.txt"],
             )
 
 
 if __name__ == "__main__":
     unittest.main()
+

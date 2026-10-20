@@ -96,59 +96,34 @@ def collision_safe_path(path):
 
 
 def safe_two_phase_rename(files, prefix):
-    """Rename a selected set without collisions or partial name swaps."""
+    """One naming policy for both panels; no legacy overwrite path."""
     if not files:
         return []
-
-    prefix = str(prefix or "")
     if not prefix or "/" in prefix or "\\" in prefix or prefix in {".", ".."}:
         raise ValueError("Dosya adı öneki klasör yolu içeremez.")
+    if SOURCE_ROOT not in sys.path:
+        sys.path.insert(0, SOURCE_ROOT)
+    from pathlib import Path
+    from SABLON_V2_MIMARI.tools_runner import rename_images
+    return [str(path) for path in rename_images(
+        [Path(path) for path in files], prefix, runtime_root=Path(BASE_DIR), _allow_non_images=True,
+    )]
 
-    normalized = [os.path.abspath(path) for path in files]
-    folder = os.path.dirname(normalized[0])
-    if any(os.path.dirname(path) != folder for path in normalized):
-        raise ValueError("Toplu isimlendirme aynı klasördeki dosyalarla yapılmalı.")
+def safe_format_conversion(files, target_format):
+    if SOURCE_ROOT not in sys.path:
+        sys.path.insert(0, SOURCE_ROOT)
+    from pathlib import Path
+    from SABLON_V2_MIMARI.tools_runner import convert_images
+    return convert_images([Path(p) for p in files], target_format, runtime_root=Path(BASE_DIR))
 
-    token = f".rename_tmp_{int(time.time() * 1000)}_"
-    staged = []
-    finalized = []
-    results = []
-    try:
-        # Stage first so target names can overlap original selected names.
-        for idx, source in enumerate(normalized, 1):
-            ext = os.path.splitext(source)[1]
-            temp_path = os.path.join(folder, f"{token}{idx:04d}{ext}")
-            while os.path.exists(temp_path):
-                temp_path += "_"
-            os.rename(source, temp_path)
-            staged.append((source, temp_path, ext))
 
-        for idx, (source, temp_path, ext) in enumerate(staged, 1):
-            requested = os.path.join(folder, f"{prefix}{idx:03d}{ext}")
-            target = collision_safe_path(requested)
-            os.rename(temp_path, target)
-            finalized.append((source, temp_path, target))
-            results.append(target)
-        return results
-    except Exception:
-        # Roll completed phase-2 moves back into their unique staging names
-        # first. Directly moving target -> source is unsafe when a target name
-        # overlaps another selected file's original path (rename chains/swaps).
-        for _, temp_path, target in reversed(finalized):
-            if os.path.exists(target) and not os.path.exists(temp_path):
-                try:
-                    os.rename(target, temp_path)
-                except OSError:
-                    pass
+def safe_watermark_conversion(logo, files):
+    if SOURCE_ROOT not in sys.path:
+        sys.path.insert(0, SOURCE_ROOT)
+    from pathlib import Path
+    from SABLON_V2_MIMARI.tools_runner import watermark_images
+    return watermark_images(Path(logo), [Path(p) for p in files], runtime_root=Path(BASE_DIR))
 
-        # Once every recoverable file is back in staging, restore originals.
-        for source, temp_path, _ in reversed(staged):
-            if os.path.exists(temp_path) and not os.path.exists(source):
-                try:
-                    os.rename(temp_path, source)
-                except OSError:
-                    pass
-        raise
 
 def show_colored_popup(task_name, display_name, start_time):
     duration = time.time() - start_time
@@ -478,30 +453,13 @@ def format_convert():
         
     def process():
         start_time = time.time()
-        folder_path = os.path.dirname(files[0]) if files else ""
-        for file in files:
-            try:
-                if target_format == 'JPG' and file.lower().endswith('.png'):
-                    img = Image.open(file)
-                    rgb_im = img.convert('RGB')
-                    target = collision_safe_path(
-                        os.path.splitext(file)[0] + '.jpg'
-                    )
-                    rgb_im.save(target, quality=95)
-                elif target_format == 'PNG' and file.lower().endswith(('.jpg', '.jpeg')):
-                    img = Image.open(file)
-                    target = collision_safe_path(
-                        os.path.splitext(file)[0] + '.png'
-                    )
-                    img.save(target)
-            except Exception as e:
-                print(f"Hata: {e}")
-                
-        # İşlem bitince klasörü aç ve bilgi ver
-        if folder_path:
-            os.startfile(folder_path)
+        try:
+            output_dir, outputs = safe_format_conversion(files, target_format)
+            os.startfile(str(output_dir))
             show_colored_popup("format_convert", f"Format Çevirici ({target_format})", start_time)
-                
+        except Exception as e:
+            print(f"Format işlemi durdu; orijinaller korundu: {e}")
+
     threading.Thread(target=process).start()
     return jsonify({"status": "success", "message": f"Arka planda tüm görseller {target_format} formatına çevriliyor. Bittiğinde klasör otomatik açılacak!"})
 
@@ -561,43 +519,12 @@ def watermark():
     
     def process():
         start_time = time.time()
-        folder_path = os.path.dirname(files[0]) if files else ""
-        out_dir = os.path.join(folder_path, "Filigranli_Gorseller")
-        if not os.path.exists(out_dir): os.makedirs(out_dir)
-        
         try:
-            watermark_img = Image.open(logo_path).convert("RGBA")
-            for file in files:
-                img = Image.open(file)
-                if img.mode != 'RGBA':
-                    img = img.convert('RGBA')
-                    
-                # Logoyu resmin %20'si boyutuna ayarla
-                wm_width = int(img.width * 0.20)
-                wm_ratio = wm_width / watermark_img.width
-                wm_height = int(watermark_img.height * wm_ratio)
-                wm_resized = watermark_img.resize((wm_width, wm_height), Image.Resampling.LANCZOS)
-                
-                # Pozisyon: Sağ Alt (Kenarlardan %5 boşluk)
-                padding_x = int(img.width * 0.05)
-                padding_y = int(img.height * 0.05)
-                position = (img.width - wm_width - padding_x, img.height - wm_height - padding_y)
-                
-                img.paste(wm_resized, position, wm_resized)
-                
-                out_path = collision_safe_path(
-                    os.path.join(out_dir, os.path.basename(file))
-                )
-                if file.lower().endswith(('.jpg', '.jpeg')):
-                    img.convert('RGB').save(out_path, quality=100, subsampling=0)
-                else:
-                    img.save(out_path)
-        except Exception as e:
-            print(f"Hata: {e}")
-            
-        if folder_path:
-            os.startfile(out_dir)
+            output_dir, outputs = safe_watermark_conversion(logo_path, files)
+            os.startfile(str(output_dir))
             show_colored_popup("watermark", "Filigran Motoru", start_time)
+        except Exception as e:
+            print(f"Filigran işlemi durdu; orijinaller korundu: {e}")
 
     threading.Thread(target=process).start()
     return jsonify({"status": "success", "message": "Logo ve görseller alındı. Filigran basılıyor..."})
@@ -740,3 +667,4 @@ if __name__ == '__main__':
     print("\n--- ANA KONTROL MERKEZI BASLATILIYOR (http://127.0.0.1:5000) ---")
     debug_enabled = str(os.environ.get("MOCKUP_FLASK_DEBUG", "")).strip().lower() in {"1", "true", "yes", "on"}
     app.run(host='127.0.0.1', port=5000, debug=debug_enabled, use_reloader=False)
+

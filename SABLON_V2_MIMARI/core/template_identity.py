@@ -9,6 +9,7 @@ the active file was later deleted or moved to trash.
 from __future__ import annotations
 
 import json
+import os
 import re
 import sqlite3
 import unicodedata
@@ -82,7 +83,10 @@ def extract_number(category: str, name: str) -> int | None:
     if not match:
         return None
     try:
-        return int(match.group(1))
+        value = int(match.group(1))
+        if value > 9223372036854775806:
+            raise OverflowError("TEMPLATE_NUMBER_OUT_OF_RANGE")
+        return value
     except (TypeError, ValueError):
         return None
 
@@ -575,6 +579,9 @@ def claim_number_once(runtime_root: Path, category: str, number: int, *, canonic
             first_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (category, template_number)
         )""")
+        highest = conn.execute("SELECT MAX(template_number) FROM template_number_registry WHERE category=?", (category,)).fetchone()[0]
+        if highest is not None and int(number) <= int(highest):
+            raise TemplateNumberConflictError(category, [number], suggested_start=int(highest) + 1)
         try:
             conn.execute(
                 """INSERT INTO template_number_registry
@@ -631,6 +638,9 @@ def claim_number_block_once(
             first_seen_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (category, template_number)
         )""")
+        highest = conn.execute("SELECT MAX(template_number) FROM template_number_registry WHERE category=?", (category,)).fetchone()[0]
+        if highest is not None and int(start) <= int(highest):
+            raise TemplateNumberConflictError(category, numbers, suggested_start=int(highest) + 1)
         for number, name in zip(numbers, names):
             try:
                 conn.execute(
@@ -754,6 +764,19 @@ def _numbers_from_category_dir(
     return numbers
 
 
+def _history_files(root: Path):
+    def unreadable(error):
+        raise RuntimeError("NUMBER_HISTORY_UNREADABLE:" + str(root)) from error
+    for folder, directories, names in os.walk(root, followlinks=False, onerror=unreadable):
+        for name in directories + names:
+            path = Path(folder) / name
+            info = path.lstat()
+            if path.is_symlink() or getattr(info, "st_reparse_tag", 0) in (0xA0000003, 0xA000000C):
+                raise RuntimeError("NUMBER_HISTORY_REDIRECT_BLOCKED:" + str(path))
+        for name in names:
+            yield Path(folder) / name
+
+
 def _numbers_from_trash(
     trash_dir: Path,
     category: str,
@@ -765,10 +788,10 @@ def _numbers_from_trash(
     for meta in trash_dir.glob("*.json"):
         try:
             data = json.loads(meta.read_text(encoding="utf-8"))
-        except Exception:
-            continue
+        except (OSError, ValueError) as exc:
+            raise RuntimeError("NUMBER_TRASH_HISTORY_UNREADABLE:" + str(meta)) from exc
         if not isinstance(data, dict):
-            continue
+            raise RuntimeError("NUMBER_TRASH_HISTORY_INVALID:" + str(meta))
         meta_category = str(
             data.get("kategori")
             or data.get("category")
@@ -792,7 +815,7 @@ def _numbers_from_trash(
         rf"(?:^|__){prefix}_(\d+)(?:__|\.|$)",
         flags=re.IGNORECASE,
     )
-    for path in trash_dir.iterdir():
+    for path in _history_files(trash_dir):
         match = pattern.search(path.name)
         if match:
             numbers.add(int(match.group(1)))
@@ -813,15 +836,57 @@ def _numbers_from_output_history(
         flags=re.IGNORECASE,
     )
     try:
-        iterator = output_root.rglob("*")
+        iterator = _history_files(output_root)
         for path in iterator:
             if not path.is_file():
                 continue
             match = pattern.search(path.name)
             if match:
                 numbers.add(int(match.group(1)))
-    except OSError:
-        pass
+    except OSError as exc:
+        raise RuntimeError("NUMBER_OUTPUT_HISTORY_UNREADABLE") from exc
+    return numbers
+
+
+def _numbers_from_durable_recovery(root: Path, category: str) -> set[int]:
+    """Account for raw files and committed/interrupted recovery journals."""
+    numbers: set[int] = set()
+    raw_root = root / "_GUVENLI_GELEN_HAM_GORSELLER" / category
+    if raw_root.exists():
+        for path in _history_files(raw_root):
+            if path.is_file():
+                number = extract_number(category, path.name)
+                if number is not None:
+                    numbers.add(number)
+    for location, pattern in (
+        (root / "SABLON_V2_MIMARI" / "recovery" / "staging_transactions", "*.json"),
+        (root / "SABLON_V2_MIMARI" / "recovery" / "lifecycle", "*/manifest.json"),
+        (root / "_P0_WORKING_REVISIONS", "*/manifest.json"),
+    ):
+        if not location.exists():
+            continue
+        for path in location.glob(pattern):
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError) as exc:
+                raise RuntimeError("NUMBER_HISTORY_UNREADABLE:" + str(path)) from exc
+            if not isinstance(data, dict):
+                raise RuntimeError("NUMBER_HISTORY_INVALID:" + str(path))
+            cat = data.get("category") or data.get("cat_key")
+            if cat and cat != category:
+                continue
+            for key in ("canonical_name", "template", "keep_filename", "incoming_name", "staging_original_path", "working_path", "backup_path"):
+                value = data.get(key)
+                if value:
+                    number = extract_number(category, str(value).replace("\\", "/").rsplit("/", 1)[-1])
+                    if number is not None:
+                        numbers.add(number)
+            if cat == category and data.get("assigned_number") is not None:
+                numbers.add(int(data["assigned_number"]))
+            for row in data.get("moved", []) or []:
+                number = extract_number(category, str(row.get("name") or ""))
+                if number is not None:
+                    numbers.add(number)
     return numbers
 
 
@@ -870,6 +935,7 @@ def collect_reserved_numbers(
         "SILINEN_SABLONLAR_COP_KUTUSU",
         "_COP_KUTUSU",
         "_KURTARMA_PROCESSING",
+        "_GUVENLI_GELEN_HAM_GORSELLER",
     ):
         numbers.update(
             _numbers_from_trash(
@@ -877,6 +943,8 @@ def collect_reserved_numbers(
                 category,
             )
         )
+
+    numbers.update(_numbers_from_durable_recovery(runtime_root, category))
 
     numbers.update(
         _numbers_from_output_history(
@@ -967,3 +1035,4 @@ def backfill_registry(runtime_root: Path) -> dict[str, int]:
             )
         summary[category] = len(numbers)
     return summary
+
