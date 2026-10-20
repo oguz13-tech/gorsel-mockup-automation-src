@@ -72,6 +72,7 @@ from sablon_beyazlatma_motoru import (
     whiten_canvas,
     get_polygon_points
 )
+from core.file_safety import move_create_only, reject_redirect
 from core.db import get_all_ayarlar, save_template, delete_template
 from core.template_intelligence import TemplateAnalyzer, save_template_profile
 from core.template_identity import (
@@ -603,7 +604,7 @@ def recover_stale_processing_files(
 
         try:
             if not original_path.exists():
-                processing_path.rename(original_path)
+                move_create_only(processing_path, original_path)
                 result["restored"].append(str(original_path))
                 logger.warning(
                     f"↩️ Eski .processing dosyası geri yüklendi: "
@@ -630,7 +631,7 @@ def recover_stale_processing_files(
                     Path(original_name).stem + "__IDENTICAL__"
                     + uuid.uuid4().hex + Path(original_name).suffix
                 )
-                shutil.move(str(processing_path), str(candidate))
+                move_create_only(processing_path, candidate)
                 result["quarantined"].append(str(candidate))
                 continue
 
@@ -647,7 +648,7 @@ def recover_stale_processing_files(
                     f"{base_name}_{counter}{suffix}"
                 )
                 counter += 1
-            shutil.move(str(processing_path), str(candidate))
+            move_create_only(processing_path, candidate)
             result["quarantined"].append(str(candidate))
             logger.warning(
                 "⚠️ Eski .processing ile aktif dosya farklıydı; "
@@ -669,7 +670,7 @@ def _restore_processing_file(processing_path: Path, original_path: Path) -> None
     if not processing_path.exists() or original_path.exists():
         return
     try:
-        processing_path.rename(original_path)
+        move_create_only(processing_path, original_path)
         logger.warning(
             f"↩️ İşlem tamamlanamadı; staging dosyası geri yüklendi: "
             f"{original_path.name}"
@@ -758,7 +759,7 @@ def _process_from_staging_locked(staging_path: Path, thread_lock=None) -> bool:
         logger.error("P0 BLOCKED: existing processing file: %s", processing_path)
         return False
     try:
-        staging_path.rename(processing_path)
+        move_create_only(staging_path, processing_path)
     except Exception:
         # Another process may already own the file.
         return False
@@ -769,9 +770,9 @@ def _process_from_staging_locked(staging_path: Path, thread_lock=None) -> bool:
             processing_path,
         )
     except Exception as exc:
-        logger.warning(
-            f"Staging transaction journal başlatılamadı: {exc}"
-        )
+        logger.error("STAGING_JOURNAL_REQUIRED_NO_INGEST: %s", exc)
+        _restore_processing_file(processing_path, original_staging_path)
+        return False
 
     cat_key = processing_path.parent.name
     if cat_key not in KNOWN_CATEGORIES:
@@ -944,7 +945,7 @@ def _process_from_staging_locked(staging_path: Path, thread_lock=None) -> bool:
             raw_dir.mkdir(parents=True, exist_ok=False)
             raw_archive_path = raw_dir / original_staging_path.name
             before_hash = _sha256_file(processing_path)
-            shutil.move(str(processing_path), str(raw_archive_path))
+            move_create_only(processing_path, raw_archive_path)
             if _sha256_file(raw_archive_path) != before_hash:
                 raise IOError("RAW_ARCHIVE_HASH_MISMATCH")
             _update_staging_txn(
@@ -1225,3 +1226,4 @@ if __name__ == "__main__":
         )
         raise SystemExit(1 if recovery["failed"] else 0)
     run_watcher()
+

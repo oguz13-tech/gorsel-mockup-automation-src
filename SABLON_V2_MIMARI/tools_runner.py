@@ -29,6 +29,7 @@ from openpyxl import Workbook
 from PIL import Image
 
 try:
+    from .core.file_safety import (reject_redirect, rename_safety_transaction, save_image_create_only, move_create_only)
     from .core.template_identity import (
         CATEGORY_PREFIXES,
         TemplateNumberConflictError,
@@ -42,6 +43,7 @@ try:
         runtime_path,
     )
 except ImportError:
+    from core.file_safety import (reject_redirect, rename_safety_transaction, save_image_create_only, move_create_only)
     from core.template_identity import (
         CATEGORY_PREFIXES,
         TemplateNumberConflictError,
@@ -95,6 +97,12 @@ def _protected_template_roots(runtime_root: Path | None = None) -> list[Path]:
     return [
         runtime_path("WORKING_POOL", root),
         runtime_path("ORIGINAL_ARCHIVE", root),
+        runtime_path("STAGING_INBOX", root),
+        runtime_path("RECOVERABLE_TRASH", root),
+        runtime_path("PROCESSING_RECOVERY", root),
+        root / "_GUVENLI_GELEN_HAM_GORSELLER",
+        root / "_P0_WORKING_REVISIONS",
+        root / "SABLON_V2_MIMARI" / "recovery",
     ]
 
 
@@ -104,8 +112,10 @@ def ensure_not_live_template_path(
 ) -> None:
     protected = _protected_template_roots(runtime_root)
     for path in paths:
+        if "_GORSEL_ISIMLENDIRME_YEDEKLERI" in Path(path).parts:
+            raise ValueError("RENAME_SNAPSHOT_IMMUTABLE")
         for root in protected:
-            if root.exists() and _is_under(path, root):
+            if _is_under(path, root):
                 raise ValueError(
                     "Bu araç aktif şablon veya orijinal-yedek klasöründe "
                     "dosya adı değiştiremez. Bu klasörleri İnceleme Merkezi "
@@ -154,14 +164,19 @@ def rename_images(
     prefix: str,
     runtime_root: Path | None = None,
     start_number: int = 1,
+    *, _allow_non_images: bool = False,
 ) -> list[Path]:
     """Collision-safe, two-phase rename for selected files in one folder."""
+    for value in files:
+        reject_redirect(value)
     selected = [Path(p).resolve() for p in files]
+    if len(set(selected)) != len(selected):
+        raise ValueError("DUPLICATE_SOURCE_SELECTION")
     if not selected:
         raise ValueError("İsimlendirilecek görsel seçilmedi.")
     if any(not p.is_file() for p in selected):
         raise ValueError("Seçim içinde bulunamayan dosya var.")
-    if any(p.suffix.lower() not in IMAGE_EXTS for p in selected):
+    if not _allow_non_images and any(p.suffix.lower() not in IMAGE_EXTS for p in selected):
         raise ValueError("Seçimde desteklenmeyen dosya türü var.")
 
     parents = {p.parent for p in selected}
@@ -182,6 +197,8 @@ def rename_images(
     selected_set = {p.resolve() for p in selected}
 
     template_category = category_for_prefix(prefix)
+    if template_category:
+        prefix = CATEGORY_PREFIXES[template_category] + "_"
     if template_category and start_number < 1:
         raise ValueError("Şablon numarası 1 veya daha büyük olmalıdır.")
 
@@ -251,42 +268,43 @@ def rename_images(
                 ignore_paths=selected,
             )
 
-        temp_pairs: list[tuple[Path, Path]] = []
-        final_pairs: list[tuple[Path, Path]] = []
-        try:
-            for source in selected:
-                temp = source.with_name(
-                    f".__jarvis_rename_{uuid.uuid4().hex}{source.suffix.lower()}"
-                )
-                source.rename(temp)
-                temp_pairs.append((source, temp))
+        with rename_safety_transaction(selected, targets):
+            temp_pairs: list[tuple[Path, Path]] = []
+            final_pairs: list[tuple[Path, Path]] = []
+            try:
+                for source in selected:
+                    temp = source.with_name(
+                        f".__jarvis_rename_{uuid.uuid4().hex}{source.suffix.lower()}"
+                    )
+                    move_create_only(source, temp)
+                    temp_pairs.append((source, temp))
 
-            for (source, temp), target in zip(temp_pairs, targets):
-                # Exclusive publication: Path.rename can overwrite targets on
-                # POSIX after the precheck; hard-link creation cannot.
-                os.link(str(temp), str(target))
-                final_pairs.append((temp, target))
-            # Only remove temporary names once EVERY final target exists.
-            for original, temp in temp_pairs:
-                temp.unlink()
-            return targets
-        except Exception:
-            # Remove ONLY published files still hard-linked to our temp;
-            # never delete another process's later edits.
-            for temp, target in reversed(final_pairs):
-                try:
-                    if temp.exists() and target.exists() and os.path.samefile(temp, target):
-                        target.unlink()
-                except OSError:
-                    pass
-            for original, temp in reversed(temp_pairs):
-                if temp.exists() and not original.exists():
+                for (source, temp), target in zip(temp_pairs, targets):
+                    # Exclusive publication: Path.rename can overwrite targets on
+                    # POSIX after the precheck; hard-link creation cannot.
+                    os.link(str(temp), str(target))
+                    final_pairs.append((temp, target))
+                # Only remove temporary names once EVERY final target exists.
+                for original, temp in temp_pairs:
+                    temp.unlink()
+                return targets
+            except Exception:
+                # Remove ONLY published files still hard-linked to our temp;
+                # never delete another process's later edits.
+                for temp, target in reversed(final_pairs):
                     try:
-                        temp.rename(original)
+                        if temp.exists() and target.exists() and os.path.samefile(temp, target):
+                            target.unlink()
                     except OSError:
-                        # Keep recoverable .__jarvis_rename temp; never unlink.
                         pass
-            raise
+                for original, temp in reversed(temp_pairs):
+                    if temp.exists() and not original.exists():
+                        try:
+                            move_create_only(temp, original)
+                        except OSError:
+                            # Keep recoverable .__jarvis_rename temp; never unlink.
+                            pass
+                raise
 
 
 
@@ -299,6 +317,7 @@ def stage_incoming_safely(
     an image extension, so a watcher cannot process incomplete bytes. A hard
     link atomically publishes only complete images; failure keeps the original.
     """
+    reject_redirect(runtime_root or RUNTIME_ROOT)
     root = Path(runtime_root or RUNTIME_ROOT).resolve()
     if category not in CATEGORY_PREFIXES:
         raise ValueError("INVALID_TEMPLATE_CATEGORY")
@@ -306,6 +325,8 @@ def stage_incoming_safely(
         raise FileNotFoundError("RUNTIME_DATABASE_NOT_FOUND_NO_INTAKE")
     inbox = root / "YENI-BOS MOCKUP SABLON HAVUZU" / category
     receipts_dir = root / "SABLON_V2_MIMARI" / "recovery" / "intake_receipts"
+    reject_redirect(inbox)
+    reject_redirect(receipts_dir)
     if inbox.is_symlink() or receipts_dir.is_symlink():
         raise ValueError("STAGING_OR_RECEIPT_SYMLINK_BLOCKED")
     inbox.mkdir(parents=True, exist_ok=True)
@@ -315,6 +336,7 @@ def stage_incoming_safely(
         raise ValueError("NO_INPUT_FILES_SELECTED")
     for source in files:
         source = Path(source)
+        reject_redirect(source)
         if source.is_symlink() or not source.is_file():
             raise ValueError("SOURCE_MISSING_OR_SYMLINK")
         if source.suffix.lower() not in IMAGE_EXTS:
@@ -339,6 +361,7 @@ def stage_incoming_safely(
             fh.write(json.dumps(payload, ensure_ascii=False).encode("utf-8"))
             fh.flush(); os.fsync(fh.fileno())
         published = False
+        receipt_committed = False
         try:
             hash_value = hashlib.sha256()
             with source.open("rb") as src, temp.open("xb") as dst:
@@ -359,12 +382,13 @@ def stage_incoming_safely(
                 fh.write(json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8"))
                 fh.flush(); os.fsync(fh.fileno())
             os.replace(rp_temp, receipt_path)
+            receipt_committed = True
             records.append(payload)
         finally:
             temp.unlink(missing_ok=True)
             # If final receipt update fails, leave both the PREPARED receipt
             # and the staged file for recovery. Never silently delete either.
-            if published and payload["status"] != "COMMITTED":
+            if published and not receipt_committed:
                 raise RuntimeError("INTAKE_RECEIPT_RECOVERY_REQUIRED")
     return {"staged_count": len(records), "receipts": records}
 
@@ -378,7 +402,7 @@ def interactive_safe_stage() -> int:
         )]
         if not files:
             return 0
-            categories = sorted(CATEGORY_PREFIXES)
+        categories = sorted(CATEGORY_PREFIXES)
         prompt = "\n".join(f"{i+1}. {name}" for i, name in enumerate(categories))
         index = simpledialog.askinteger(
             "Yeni şablon kategorisi", prompt + "\n\nKategori numarası:",
@@ -411,6 +435,7 @@ def _unique_destination(path: Path) -> Path:
 def convert_images(
     files: list[Path],
     target_format: str,
+    *, runtime_root: Path | None = None,
 ) -> tuple[Path, list[Path]]:
     target = str(target_format or "").upper().strip()
     if target not in {"JPG", "PNG"}:
@@ -424,31 +449,23 @@ def convert_images(
         raise ValueError("Görseller aynı klasörden seçilmelidir.")
 
     output_dir = selected[0].parent / f"FORMAT_{target}_CIKTILARI"
+    ensure_not_live_template_path([output_dir], runtime_root)
+    reject_redirect(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     outputs = []
-
     for source in selected:
         if source.suffix.lower() not in IMAGE_EXTS:
             continue
         with Image.open(source) as image:
             if target == "JPG":
-                destination = _unique_destination(
-                    output_dir / f"{source.stem}.jpg"
-                )
-                image.convert("RGB").save(
-                    destination,
-                    format="JPEG",
-                    quality=95,
-                    optimize=True,
+                destination = save_image_create_only(
+                    image.convert("RGB"), output_dir / f"{source.stem}.jpg",
+                    format="JPEG", quality=95, optimize=True,
                 )
             else:
-                destination = _unique_destination(
-                    output_dir / f"{source.stem}.png"
-                )
-                image.convert("RGBA").save(
-                    destination,
-                    format="PNG",
-                    optimize=True,
+                destination = save_image_create_only(
+                    image.convert("RGBA"), output_dir / f"{source.stem}.png",
+                    format="PNG", optimize=True,
                 )
             outputs.append(destination)
 
@@ -491,6 +508,8 @@ def convert_folder_to_png_recursive(
         if "recursive döngü" in str(exc):
             raise
 
+    ensure_not_live_template_path([destination_root], runtime_root)
+    reject_redirect(destination_root)
     destination_root.mkdir(parents=True, exist_ok=True)
 
     report = {
@@ -511,6 +530,7 @@ def convert_folder_to_png_recursive(
         (
             path for path in source.rglob("*")
             if path.is_file() and path.suffix.lower() in IMAGE_EXTS
+            and "_GORSEL_ISIMLENDIRME_YEDEKLERI" not in path.relative_to(source).parts
         ),
         key=lambda path: path.as_posix().casefold(),
     )
@@ -549,10 +569,9 @@ def convert_folder_to_png_recursive(
         try:
             destination.parent.mkdir(parents=True, exist_ok=True)
             with Image.open(source_file) as image:
-                image.convert("RGBA").save(
-                    destination,
-                    format="PNG",
-                    optimize=True,
+                save_image_create_only(
+                    image.convert("RGBA"), destination,
+                    format="PNG", unique=False, optimize=True,
                 )
             report["converted_count"] += 1
             report["converted"].append({
@@ -561,6 +580,9 @@ def convert_folder_to_png_recursive(
                     destination_root
                 ).as_posix(),
             })
+        except FileExistsError:
+            report["skipped_existing_count"] += 1
+            report["skipped_existing"].append(destination.relative_to(destination_root).as_posix())
         except Exception as exc:
             report["failed_count"] += 1
             report["failed"].append({
@@ -580,6 +602,7 @@ def convert_folder_to_png_recursive(
 def watermark_images(
     logo_path: Path,
     files: list[Path],
+    *, runtime_root: Path | None = None,
 ) -> tuple[Path, list[Path]]:
     logo_path = Path(logo_path).resolve()
     selected = [Path(p).resolve() for p in files]
@@ -593,6 +616,8 @@ def watermark_images(
         raise ValueError("Görseller aynı klasörden seçilmelidir.")
 
     output_dir = selected[0].parent / "FILIGRANLI_GORSELLER"
+    ensure_not_live_template_path([output_dir], runtime_root)
+    reject_redirect(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     outputs = []
 
@@ -617,17 +642,18 @@ def watermark_images(
                 composed = image.copy()
                 composed.alpha_composite(resized, position)
 
-                destination = _unique_destination(
-                    output_dir / source.name
-                )
-                if destination.suffix.lower() in {".jpg", ".jpeg"}:
-                    composed.convert("RGB").save(
-                        destination,
-                        quality=95,
-                        optimize=True,
+                ensure_not_live_template_path([output_dir], runtime_root)
+                desired = output_dir / source.name
+                if desired.suffix.lower() in {".jpg", ".jpeg"}:
+                    destination = save_image_create_only(
+                        composed.convert("RGB"), desired, format="JPEG",
+                        quality=95, optimize=True,
                     )
                 else:
-                    composed.save(destination)
+                    image_format = {".png":"PNG", ".webp":"WEBP", ".bmp":"BMP"}.get(desired.suffix.lower())
+                    if image_format is None:
+                        raise ValueError("UNSUPPORTED_WATERMARK_OUTPUT_EXTENSION")
+                    destination = save_image_create_only(composed, desired, format=image_format)
                 outputs.append(destination)
 
     return output_dir, outputs
@@ -1273,3 +1299,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
