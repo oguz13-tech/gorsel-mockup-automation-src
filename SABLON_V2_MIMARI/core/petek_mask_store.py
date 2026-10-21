@@ -28,8 +28,15 @@ LOG = logging.getLogger("petek.registry")
 
 
 def private_root(runtime_root: Path) -> Path:
-    """Keep PETEK writes in a dedicated directory, outside protected assets."""
+    """Use a local SSD state directory on Windows, away from OneDrive SQLite."""
     root = Path(runtime_root).resolve()
+    override = str(os.environ.get("PETEK_V3_PRIVATE_ROOT") or "").strip()
+    if override:
+        return Path(override).expanduser().resolve()
+    appdata = str(os.environ.get("LOCALAPPDATA") or "").strip()
+    if os.name == "nt" and appdata:
+        identity = hashlib.sha256(str(root).casefold().encode("utf-8")).hexdigest()[:12]
+        return Path(appdata).expanduser().resolve() / "GorselMockup" / ("PetekV3_" + identity)
     return root / "PETEK_V3_PRIVATE"
 
 
