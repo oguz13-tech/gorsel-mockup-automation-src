@@ -267,7 +267,10 @@ def register_petek_v3(app, runtime_root: Path) -> None:
             batch_context.update({"runner":runner,"error":None,"result":None})
             folder=root/"1_GELEN_KAGGLE_BASKILARI"/relative
             group=str(payload.get("store_group") or "MAIN")
-            limit=int(payload.get("max_items") or 1000)
+            try:
+                limit=int(payload.get("max_items") or 1000)
+            except (ValueError,TypeError) as exc:
+                raise PetekSafetyError("MAX_ITEMS_MUST_BE_INTEGER") from exc
             def task():
                 """Persist state in private ledger; failures never imply success."""
                 try:
