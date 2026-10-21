@@ -81,6 +81,16 @@ def read_image(path: Path, mode: int = cv2.IMREAD_COLOR) -> np.ndarray:
     """Read Unicode paths and reject oversized or corrupted encoded images."""
     path = require_safe_file(path)
     # cv2 has codec size checks; the post-decode pixel cap is a further guard.
+    try:
+        from PIL import Image
+        with Image.open(path) as meta:
+            mw, mh = meta.size
+            if mw * mh > LIMITS.max_image_pixels:
+                raise PetekSafetyError("IMAGE_TOO_LARGE_BEFORE_DECODE")
+    except ImportError:
+        LOGGER.warning("Pillow metadata guard unavailable; enforcing post-decode bounds")
+    except (OSError, ValueError) as exc:
+        raise PetekSafetyError("IMAGE_METADATA_UNREADABLE") from exc
     arr = np.fromfile(str(path), dtype=np.uint8)
     try:
         image = cv2.imdecode(arr, mode)
@@ -172,7 +182,7 @@ def candidate_print_mask(scene: np.ndarray, quad: object) -> tuple[np.ndarray, d
     proposed = np.where(valid, 255, 0).astype(np.uint8)
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
     proposed = cv2.morphologyEx(proposed, cv2.MORPH_OPEN, kernel)
-    n, labels, stats, _ = cv2.connectedComponentsWithStats(proposed, 8)
+    n, labels, stats, _ = cv2.connectedComponentsWithStats(proposed, connectivity=8)
     min_area = max(3, int(np.count_nonzero(region) * LIMITS.min_component_area_fraction))
     for component in range(1, n):
         if int(stats[component, cv2.CC_STAT_AREA]) < min_area:
