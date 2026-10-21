@@ -283,9 +283,15 @@ def publish_image_create_only(image: np.ndarray, destination: Path) -> str:
     destination.parent.mkdir(parents=True, exist_ok=True)
     if destination.parent.is_symlink():
         raise PetekSafetyError("OUTPUT_DIRECTORY_SYMLINK")
-    ok, data = cv2.imencode(".png", image, [cv2.IMWRITE_PNG_COMPRESSION, 3])
+    ext = destination.suffix.lower()
+    if ext == ".png":
+        ok, data = cv2.imencode(".png", image, [cv2.IMWRITE_PNG_COMPRESSION, 3])
+    elif ext in (".jpg", ".jpeg"):
+        ok, data = cv2.imencode(".jpg", image, [cv2.IMWRITE_JPEG_QUALITY, 98])
+    else:
+        raise PetekSafetyError("UNSUPPORTED_OUTPUT_EXTENSION")
     if not ok:
-        raise PetekSafetyError("PNG_ENCODE_FAILED")
+        raise PetekSafetyError("IMAGE_ENCODE_FAILED")
     fd, name = tempfile.mkstemp(prefix=".petek-", suffix=".tmp", dir=str(destination.parent))
     try:
         with os.fdopen(fd, "wb") as stream:
