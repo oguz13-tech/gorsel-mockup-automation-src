@@ -252,47 +252,75 @@ class CommerceExport:
         self.root.mkdir(parents=True,exist_ok=True)
 
     def write(self,ledger:BatchLedger)->tuple[Path,Path,int]:
-        """Export verified receipts; refuse silent overwrite or corrupt references."""
-        from openpyxl import Workbook,load_workbook
-        records=list(ledger.iter_verified())
-        keys=[r["artifact_key"]+":"+r["output_sha"] for r in records]
-        digest=hashlib.sha256("|".join(keys).encode("utf-8")).hexdigest()[:24]
+        """Stream an immutable CSV and XLSX with bounded memory, verify by re-reading."""
+        from itertools import zip_longest
+        from openpyxl import Workbook, load_workbook
+
+        receipt=hashlib.sha256()
+        count=0
+        for record in ledger.iter_verified():
+            receipt.update((record["artifact_key"]+":"+record["output_sha"]+"\n").encode())
+            count+=1
+        digest=receipt.hexdigest()[:24]
         csv_path=self.root/f"PETEK_LOCAL_{digest}.csv"
         xlsx_path=self.root/f"PETEK_LOCAL_{digest}.xlsx"
+
         if not csv_path.exists():
             fd,temp=tempfile.mkstemp(dir=str(self.root),prefix=".export-",suffix=".csv")
             try:
                 with os.fdopen(fd,"w",encoding="utf-8-sig",newline="") as stream:
-                    writer=csv.writer(stream);writer.writerow(CSV_HEADERS)
-                    for record in records:writer.writerow(_row(record))
-                    stream.flush();os.fsync(stream.fileno())
-                try:os.link(temp,csv_path)
-                except FileExistsError:pass
+                    writer=csv.writer(stream)
+                    writer.writerow(CSV_HEADERS)
+                    for record in ledger.iter_verified():
+                        writer.writerow(_row(record))
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                try:
+                    os.link(temp,csv_path)
+                except FileExistsError:
+                    pass
             finally:
-                if os.path.exists(temp):os.unlink(temp)
+                if os.path.exists(temp):
+                    os.unlink(temp)
+
+        # Re-validate CSV rather than silently trusting pre-existing files.
         with csv_path.open(encoding="utf-8-sig",newline="") as stream:
-            rows=list(csv.reader(stream))
-        expected=[list(CSV_HEADERS)]+[_row(record) for record in records]
-        if rows!=expected:raise PetekSafetyError("CSV_EXPORT_CONTENT_MISMATCH")
+            reader=csv.reader(stream)
+            if next(reader,None)!=list(CSV_HEADERS):
+                raise PetekSafetyError("CSV_EXPORT_HEADER_MISMATCH")
+            if any(a!=b for a,b in zip_longest(reader,
+                    (_row(record) for record in ledger.iter_verified()))):
+                raise PetekSafetyError("CSV_EXPORT_CONTENT_MISMATCH")
+
         if not xlsx_path.exists():
-            wb=Workbook(write_only=True)
-            sheet=wb.create_sheet("PETEK_YEREL_KAYIT")
+            workbook=Workbook(write_only=True)
+            sheet=workbook.create_sheet("PETEK_YEREL_KAYIT")
             sheet.append(list(CSV_HEADERS))
-            for record in records:sheet.append(_row(record))
+            for record in ledger.iter_verified():
+                sheet.append(_row(record))
             fd,temp=tempfile.mkstemp(dir=str(self.root),prefix=".export-",suffix=".xlsx")
             os.close(fd)
             try:
-                wb.save(temp)
-                try:os.link(temp,xlsx_path)
-                except FileExistsError:pass
+                workbook.save(temp)
+                try:
+                    os.link(temp,xlsx_path)
+                except FileExistsError:
+                    pass
             finally:
-                if os.path.exists(temp):os.unlink(temp)
-        wb=load_workbook(xlsx_path,read_only=True,data_only=True)
+                if os.path.exists(temp):
+                    os.unlink(temp)
+
+        workbook=load_workbook(xlsx_path,read_only=True,data_only=True)
         try:
-            content=[list(row) for row in wb.active.iter_rows(values_only=True)]
-            if content!=expected:raise PetekSafetyError("XLSX_EXPORT_CONTENT_MISMATCH")
-        finally:wb.close()
-        return csv_path,xlsx_path,len(records)
+            values=workbook.active.iter_rows(values_only=True)
+            if list(next(values,()))!=list(CSV_HEADERS):
+                raise PetekSafetyError("XLSX_EXPORT_HEADER_MISMATCH")
+            if any(list(actual or [])!=expected for actual,expected in zip_longest(
+                  values,(_row(record) for record in ledger.iter_verified()))):
+                raise PetekSafetyError("XLSX_EXPORT_CONTENT_MISMATCH")
+        finally:
+            workbook.close()
+        return csv_path,xlsx_path,count
 
 
 class PetekBatchRunner:
