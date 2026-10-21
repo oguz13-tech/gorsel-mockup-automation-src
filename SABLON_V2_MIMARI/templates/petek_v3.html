@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PETEK V3 — Orijinal Detay Maske İncelemesi</title>
+<style>
+:root{font:15px system-ui,Segoe UI,sans-serif;color:#e4eaf1;background:#17212f}
+body{margin:0;padding:16px}header{display:flex;justify-content:space-between;align-items:center}
+main{display:grid;grid-template-columns:minmax(270px,350px) minmax(480px,1fr);gap:14px}
+aside,section{border:1px solid #42546b;background:#202e3f;border-radius:10px;padding:15px}
+label{display:block;margin:13px 0 5px}input,select,button{box-sizing:border-box;width:100%;padding:10px;border-radius:6px;border:1px solid #617289;background:#101e2d;color:white;font:inherit}
+button{margin-top:10px;cursor:pointer;background:#225a82}button:disabled{opacity:.4}
+button.warn{background:#a0631d}button.good{background:#237b57}
+button.danger{background:#954b4b}
+#stage{position:relative;border:1px solid #536779;overflow:auto;max-height:76vh}
+#source{display:block;width:100%;height:auto}
+#paint{position:absolute;left:0;top:0;width:100%;height:100%;touch-action:none;cursor:crosshair}
+#notice{white-space:pre-wrap;background:#101e2d;padding:10px;border-radius:6px;min-height:50px}
+small{color:#a5bdcd}strong{color:#d8efff}
+.toolbar{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.toolbar button{padding:7px;font-size:13px}
+@media(max-width:850px){main{grid-template-columns:1fr}}
+</style>
+</head>
+<body data-token="{{ csrf_token }}">
+<header><h2>PETEK V3 — Ahşap Baskı Yüzeyi ve Orijinal Detay Koruma</h2>
+<a href="/" style="color:#91d6ff">← Şablon İnceleme Merkezi</a></header>
+<p><strong>İşlem kuralı:</strong> Beyaz maske = baskıya izin verilen ahşap.
+Siyah maske = dokunulmayacak kaynak piksel (delikler, üst/alt kavis, parke, gölge).
+Maske yalnızca kaynak fotoğrafa aittir. Onay verilene kadar hiçbir üretimde kullanılmaz.</p>
+<main>
+<aside>
+<label for="template">PETEK Şablonu</label><select id="template"></select>
+<label for="uid">Şablon UID (değişmez)</label><input id="uid" placeholder="PetekDolabi_001">
+<label for="aspect">Fiziksel yüzey genişlik/yükseklik oranı</label>
+<input id="aspect" type="number" min="0.1" max="12" step="0.0001" value="1.1163">
+<small>96/86 yalnızca örnek başlangıç oranıdır; her şablon farklı olabilir.</small>
+<button id="load">Görseli Aç / Onaylı Köşeleri Bul</button>
+<div class="toolbar">
+<button id="corners">4 köşeyi işaretle</button>
+<button id="wood">Ahşap ekle</button>
+<button id="protect">Koru / Sil</button>
+</div>
+<label for="brush">Fırça çapı (kaynak piksel)</label>
+<input id="brush" type="range" min="2" max="90" value="22">
+<small>4 köşe için sırayla: sol üst → sağ üst → sağ alt → sol alt.
+Bu adım mevcut onaylı geometriyi değiştirmez.</small>
+<button class="warn" id="draft">Taslak Baskı Maskesi Analiz Et</button>
+<button id="save">Düzelttiğim Maskeyi Kaydet</button>
+<label for="reviewer">İnceleyen kişi</label><input id="reviewer" autocomplete="off">
+<label><input id="checked" type="checkbox" style="width:auto"> Delik, gölge, kavis, parke ve kenarları görsel olarak doğruladım.</label>
+<button class="good" id="approve">Maskeyi İnsan Onayıyla Kilitle</button>
+<hr style="border:0;border-top:1px solid #42546b;margin:19px 0">
+<h3>Yerel Seri Üretim</h3>
+<p><small>Yalnız insan onaylı PETEK maskeleri kullanılır. Bulut/pazaryeri gönderimi kapalıdır.</small></p>
+<label for="batchFolder">Gelen tasarım klasörü</label><select id="batchFolder"></select>
+<label for="batchTemplates">Üretilecek PETEK şablonları</label>
+<select id="batchTemplates" multiple size="6"></select>
+<label for="storeGroup">Mağaza / ürün grubu</label><input id="storeGroup" value="MAIN">
+<label for="maxJobs">Bu turda azami görsel</label><input type="number" id="maxJobs" min="1" max="10000" value="250">
+<button class="good" id="batchStart">▶ Yerel Seri Üretimi Başlat</button>
+<button class="danger" id="batchStop">■ Güvenli Durdur</button>
+<pre id="batchStatus" style="white-space:pre-wrap;background:#101e2d;padding:10px;border-radius:6px">İş başlatılmadı.</pre>
+<a id="exportCsv" style="color:#91d6ff;display:none" download>CSV dosyasını indir</a>
+<a id="exportXlsx" style="color:#91d6ff;display:none" download>Excel dosyasını indir</a>
+
+<div id="notice" role="status" aria-live="polite">Görsel seçerek başlayın.</div>
+</aside>
+<section>
+<div id="stage">
+<img id="source" alt="Orijinal PETEK mockup önizlemesi">
+<canvas id="paint"></canvas>
+</div>
+<p><small>Turuncu alan yalnızca maskenin görsel önizlemesidir; asıl maskenin kaydı gri tonlu PNG'dir.
+Kırmızı noktalar dört köşeyi gösterir. Boyama doğrudan orijinal görsele yapılmaz.</small></p>
+<p id="meta"></p>
+</section>
+</main>
+<script src="/static/js/petek_v3.js"></script>
+</body>
+</html>

@@ -19,6 +19,7 @@ class CategoryRuleEngine:
         "03_Ahsap_Tablo": {"V": 2.0 / 3.0},
         "04_Cam_Dograma": {"H": 4.0 / 3.0, "V": 3.0 / 4.0},
         "05_Ocak_Arkasi": {"H": 4.0 / 3.0},
+        "06_Petek_Dolabi": {"H": 96.0 / 86.0},  # informational reference, per-template may differ
     }
 
     RULES = {
@@ -76,6 +77,17 @@ class CategoryRuleEngine:
             "expected_orientation": "ANY",
             "physical_orientation": "H",
             "folders": ["01_Wifi_Kutusu"]
+        },
+        "RADIATOR_CABINET_SOURCE_PRESERVED": {
+            "product_class": "Petek Dolabı",
+            "has_frame": True,
+            "has_mat": False,
+            "has_reflection": False,
+            "print_policy": "source_preserving_reviewed_wood_mask",
+            "orientation_strict": True,
+            "expected_orientation": "H",
+            "physical_orientation": "H",
+            "folders": ["06_Petek_Dolabi"]
         },
         "GLASS_BACKSPLASH": {
             "product_class": "Ocak Arkası Cam",

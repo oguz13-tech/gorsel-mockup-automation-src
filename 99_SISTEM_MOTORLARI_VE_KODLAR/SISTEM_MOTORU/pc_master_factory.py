@@ -224,6 +224,16 @@ PRODUCT_CATALOG: Dict[str, ProductDefinition] = {
         orientation="H",
         is_glass=True,
         folder_name="05_Ocak_Arkasi"
+    ),
+    "06_Petek_Dolabi": ProductDefinition(
+        key="06_Petek_Dolabi",
+        etiket="Dekoratif Ahşap Petek Dolabı",
+        barkod_prefix="pk-M",
+        model_prefix="M-pk-M",
+        boyut_cm="86x96 cm",
+        orientation="H",
+        is_glass=False,
+        folder_name="06_Petek_Dolabi"
     )
 }
 
@@ -3565,6 +3575,13 @@ class MockupRenderer:
     def process_mockup(cls, raw_path: Path, template_path: Path,
                        config: dict, is_glass: bool, output_path: Path, source_design_identity: str = None, template_identity: str = None, recipe_version: str = None, template_sha: str = None) -> bool:
         try:
+            # PETEK must reach guarded loader BEFORE legacy OpenCV full decode.
+            if template_path.parent.name == "06_Petek_Dolabi":
+                from core.petek_factory_adapter import render_from_legacy_factory
+                return render_from_legacy_factory(
+                    raw_path=raw_path,template_path=template_path,config=config,
+                    output_path=output_path,runtime_root=USER_WORKSPACE_DIR,
+                    template_sha=template_sha)
             # Unicode güvenli okuma (Numpy decode)
             art_cv = cv2.imdecode(np.fromfile(str(raw_path), dtype=np.uint8), cv2.IMREAD_COLOR)
             bg_cv_raw = cv2.imdecode(np.fromfile(str(template_path), dtype=np.uint8), cv2.IMREAD_UNCHANGED)
@@ -4332,7 +4349,8 @@ def build_factory_preflight() -> dict:
                             + ", ".join(duplicate_approved_uids)
                         )
                     if usable == 0:
-                        report["errors"].append(
+                        target = report["warnings"] if category == "06_Petek_Dolabi" else report["errors"]
+                        target.append(
                             f"{category}: source-valid APPROVED şablon yok."
                         )
             finally:
@@ -4717,6 +4735,12 @@ class PCMasterFactory:
 
             # 1 Master -> ürün kategorileri genişletmesi
             for prod_key, prod_def in PRODUCT_CATALOG.items():
+                if prod_key == "06_Petek_Dolabi":
+                    # PETEK belongs to the same Windows UI, but its local-only
+                    # reviewed-mask batch avoids the legacy cloud-first path.
+                    # No implicit image upload or marketplace publication.
+                    logger.info("PETEK V3: local reviewed-mask production is available in the PETEK tab.")
+                    continue
                 template_pool = self.get_template_pool(prod_key)
                 if not template_pool:
                     logger.warning(f"  ⚠️ Onaylı şablon havuzu boş: {prod_key}")

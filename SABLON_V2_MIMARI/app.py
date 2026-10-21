@@ -81,6 +81,10 @@ from functools import wraps
 
 app = Flask(__name__)
 
+# PETEK mask review is part of the existing center; no runtime writes on import.
+from core.petek_v3_routes import register_petek_v3
+register_petek_v3(app, Path(BASE_DIR))
+
 
 def _template_guard_values(source):
     if source == "headers":
