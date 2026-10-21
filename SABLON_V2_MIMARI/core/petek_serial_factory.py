@@ -173,6 +173,14 @@ class BatchLedger:
     def rendered(self,key:str,output_sha:str) -> None:
         """Atomically checkpoint the completed local image, not commercial publication."""
         with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            record = db.execute("SELECT output_path FROM artifacts WHERE artifact_key=?", (key,)).fetchone()
+            if record is None:
+                raise PetekSafetyError("UNKNOWN_ARTIFACT")
+            path = Path(record["output_path"])
+            if (not path.is_file() or path.is_symlink() or
+                    sha256_file(path) != output_sha):
+                raise PetekSafetyError("UNVERIFIED_OUTPUT_CANNOT_SUCCEED")
             res=db.execute("""UPDATE artifacts SET output_sha=?,status='RENDERED',
               updated_at=CURRENT_TIMESTAMP
               WHERE artifact_key=? AND status='PENDING'""",(output_sha,key))

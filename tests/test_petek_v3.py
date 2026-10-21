@@ -345,3 +345,37 @@ def test_render_identity_quad_and_marketplace(samples, approved, tmp_path):
     with pytest.raises((FileExistsError, PetekSafetyError)):
         render_approved(art, source, profile, mask, tmp_path/'first.png')
     assert (tmp_path/'first.png').read_bytes() == original
+
+
+def test_missing_receipt_quarantines_without_overwrite(samples, approved):
+    runtime, source, art, _, _ = samples
+    runner = PetekBatchRunner(runtime)
+    assert runner.run(art.parent, [source.name]).rendered == 1
+    with runner.ledger.connect() as db:
+        row = dict(db.execute('SELECT * FROM artifacts').fetchone())
+    output = Path(row['output_path'])
+    before = output.read_bytes()
+    output.with_suffix('.receipt.json').unlink()
+    result = runner.run(art.parent, [source.name])
+    assert result.rejected == 1 and result.reused == 0
+    assert output.read_bytes() == before
+    assert runner.ledger.get(row['artifact_key'])['status'] == 'REVIEW_REQUIRED'
+
+
+def test_concurrent_reservations_and_collision(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    from core.petek_serial_factory import BatchLedger
+    ledger = BatchLedger(tmp_path/'ledger')
+    fields = dict(artifact_key='key', sku='sku', template_uid='uid', template_sha='src',
+                  mask_sha='mask', art_sha='art', artwork_name='135.png', output_path=str(tmp_path/'out.png'))
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        rows = list(pool.map(lambda _: ledger.reserve(fields), range(32)))
+    assert all(row['status'] == 'PENDING' for row in rows)
+    with ledger.connect() as db:
+        assert db.execute('SELECT count(*) FROM artifacts').fetchone()[0] == 1
+    with pytest.raises(PetekSafetyError):
+        ledger.reserve(dict(fields, art_sha='different'))
+    assert ledger.get('key')['art_sha'] == 'art'
+    with pytest.raises(PetekSafetyError):
+        ledger.rendered('key', 'fake-sha-with-no-output')
+    assert ledger.get('key')['status'] == 'PENDING'

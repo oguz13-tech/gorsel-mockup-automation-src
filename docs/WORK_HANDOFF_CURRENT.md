@@ -4,3 +4,6 @@ Milestone A implemented: reproduced same-key/different-image physical-aspect bug
 22 synthetic Linux tests PASS; Windows/Ubuntu CI pending for this commit. Native Windows acceptance not run.
 A limitations: receipt partial-write crash fails closed and needs review (no automatic repair); source read/hash race and full adversarial concurrency remain B work.
 B/C and private V3.7 reconciliation remain incomplete. No merge/live install/user data changes.
+
+## Milestone B partial checkpoint
+Added 32 concurrent reservations through 8 independent SQLite connections, immutable same-key/different-SHA collision check, missing-receipt quarantine/no-overwrite test. Red regression proved ledger.rendered could accept nonexistent output; fixed with BEGIN IMMEDIATE and output existence/symlink/SHA verification before SUCCESS. Linux full PETEK suite: 24 PASS. These are threaded connections, NOT two native Windows processes. B still open: multiprocess kill/restart, stale lock, Unicode/extension/numbering matrix, audit chain. C 100-item batch still open.
