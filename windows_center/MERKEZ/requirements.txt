@@ -1,0 +1,8 @@
+# Windows Python 3.11 / 3.12 — GUI, image engine, 6-category legacy and PETEK V3
+numpy>=2.0,<3
+opencv-python-headless>=4.10,<5
+Pillow>=11.0,<13
+openpyxl>=3.1,<4
+Flask>=3.1,<4
+requests>=2.31,<3
+pytest>=8,<10

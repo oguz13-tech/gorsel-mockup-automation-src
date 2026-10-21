@@ -1,7 +1,6 @@
 # Next exact task
-Start latest remote fix/final-18-no-loss-identity (draft PR against PR26). Read issue18 Sprint2 comment6324992407 and issue24. Verify CI at HEAD.
-Milestone A now implemented and tested: versioned render identity, immutable receipt and per-job SKU. Continue B in separate tested commit: concurrent SQLite reserve/producer tests; same basename different SHA and extension/Unicode/135 numbering tests; interrupted output/receipt and stale-lock recovery. Do not mark uncertain failed job SUCCESS without output SHA evidence. Missing/partial receipts currently quarantine safely; recovery still manual.
-Then C: 100-item durable batch, cancellation/resume and CSV/XLSX audit. Keep legacy user data immutable, no schema migration/live writes/merge. Private V3.7 sources not imported. Update docs and push each completed unit.
-
-## Milestone B partial checkpoint
-Added 32 concurrent reservations through 8 independent SQLite connections, immutable same-key/different-SHA collision check, missing-receipt quarantine/no-overwrite test. Red regression proved ledger.rendered could accept nonexistent output; fixed with BEGIN IMMEDIATE and output existence/symlink/SHA verification before SUCCESS. Linux full PETEK suite: 24 PASS. These are threaded connections, NOT two native Windows processes. B still open: multiprocess kill/restart, stale lock, Unicode/extension/numbering matrix, audit chain. C 100-item batch still open.
+Continue fix/petek-solid-brush-coverage. windows_center/MERKEZ now contains inspected sanitized V3.8 Tk sources and continuous stroke/cursor correction. User source photos/configs excluded. Read WORK_HANDOFF_CURRENT.
+1. Run Tk GUI tests under Xvfb or Windows; currently 9 skipped. Capture actual before/after image and cursor tests; preserve actual private images outside public repository.
+2. Implement explicit protected-region and paint-intent maps with undo persistence for safe small-hole cleanup + QA. Never close real slots globally. Verify original curve bounds explain any remaining masked orange patches with real source/profile pair.
+3. Replace missing private daily config with generic setup that discovers only explicitly selected existing read-only runtime; keep ten-template selection compatible, no invented approval/DB.
+4. Build full staging package from tracked source, include isolated dependencies, metadata and rollback. Resolve PR27 B/C crash/Unicode/100-item tests. No auto merge or live installation.
