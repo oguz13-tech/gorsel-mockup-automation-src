@@ -14,6 +14,7 @@ import os
 import sqlite3
 import tempfile
 from pathlib import Path
+from logging.handlers import RotatingFileHandler
 
 import cv2
 import numpy as np
@@ -98,7 +99,33 @@ class PetekProfileStore:
         self.root = private_root(runtime_root)
         if self.root.is_symlink():
             raise PetekSafetyError("UNSAFE_PRIVATE_ROOT")
+        # Never allow optional state overrides to write into source templates,
+        # the legacy database directory, or protected originals.
+        runtime = Path(runtime_root).resolve()
+        protected = [
+            runtime,
+            runtime / "2_SABLON_HAVUZU",
+            runtime / "2_SABLON_HAVUZU_ORIJINAL_YEDEK",
+            runtime / "SABLON_V2_MIMARI",
+        ]
+        state = self.root.resolve()
+        if any(state == p.resolve() or p.resolve() in state.parents
+               for p in protected):
+            raise PetekSafetyError("PRIVATE_STORE_OVERLAPS_PROTECTED_RUNTIME")
         self.root.mkdir(parents=True, exist_ok=True)
+        log_file = (self.root / "app.log").resolve()
+        parent_logger = logging.getLogger("petek")
+        if not any(isinstance(handler, RotatingFileHandler) and
+                   Path(handler.baseFilename) == log_file
+                   for handler in parent_logger.handlers):
+            handler = RotatingFileHandler(
+                log_file, maxBytes=5 * 1024 * 1024, backupCount=3,
+                encoding="utf-8",
+            )
+            handler.setFormatter(logging.Formatter(
+                "%(asctime)s %(levelname)s %(name)s: %(message)s"))
+            parent_logger.addHandler(handler)
+            parent_logger.setLevel(logging.INFO)
         self.mask_root = self.root / "masks"
         self.mask_root.mkdir(exist_ok=True)
         self.db_path = self.root / "petek_v3_profiles.sqlite3"
