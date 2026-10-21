@@ -39,7 +39,7 @@ def choose_workspace() -> Path:
             title="Var olan Görsel Üretim ve Mockup Otomasyonu çalışma klasörünü seç",
             mustexist=True)
         root.destroy()
-    except (ImportError,RuntimeError,tk.TclError) as exc:
+    except Exception as exc:
         raise LaunchRejected("WINDOWS_FOLDER_PICKER_UNAVAILABLE") from exc
     if not location:
         raise LaunchRejected("WORKSPACE_SELECTION_CANCELLED")
