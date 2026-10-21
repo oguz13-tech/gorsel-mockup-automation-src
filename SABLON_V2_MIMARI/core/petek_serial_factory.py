@@ -364,7 +364,7 @@ class PetekBatchRunner:
             uid=source.stem
             profile,_=self.store.find(uid,source,approved_only=True)
             approved.append((source,uid,profile))
-        self.cancel.clear()
+        # Do not erase an early stop request racing the worker startup.
         self._status={"running":True,"requested":0,"rendered":0,
                       "reused":0,"rejected":0,"last_error":""}
         try:
