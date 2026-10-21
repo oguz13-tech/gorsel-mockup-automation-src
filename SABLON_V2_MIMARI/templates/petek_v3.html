@@ -51,6 +51,20 @@ Bu adım mevcut onaylı geometriyi değiştirmez.</small>
 <label for="reviewer">İnceleyen kişi</label><input id="reviewer" autocomplete="off">
 <label><input id="checked" type="checkbox" style="width:auto"> Delik, gölge, kavis, parke ve kenarları görsel olarak doğruladım.</label>
 <button class="good" id="approve">Maskeyi İnsan Onayıyla Kilitle</button>
+<hr style="border:0;border-top:1px solid #42546b;margin:19px 0">
+<h3>Yerel Seri Üretim</h3>
+<p><small>Yalnız insan onaylı PETEK maskeleri kullanılır. Bulut/pazaryeri gönderimi kapalıdır.</small></p>
+<label for="batchFolder">Gelen tasarım klasörü</label><select id="batchFolder"></select>
+<label for="batchTemplates">Üretilecek PETEK şablonları</label>
+<select id="batchTemplates" multiple size="6"></select>
+<label for="storeGroup">Mağaza / ürün grubu</label><input id="storeGroup" value="MAIN">
+<label for="maxJobs">Bu turda azami görsel</label><input type="number" id="maxJobs" min="1" max="10000" value="250">
+<button class="good" id="batchStart">▶ Yerel Seri Üretimi Başlat</button>
+<button class="danger" id="batchStop">■ Güvenli Durdur</button>
+<pre id="batchStatus" style="white-space:pre-wrap;background:#101e2d;padding:10px;border-radius:6px">İş başlatılmadı.</pre>
+<a id="exportCsv" style="color:#91d6ff;display:none" download>CSV dosyasını indir</a>
+<a id="exportXlsx" style="color:#91d6ff;display:none" download>Excel dosyasını indir</a>
+
 <div id="notice" role="status" aria-live="polite">Görsel seçerek başlayın.</div>
 </aside>
 <section>
