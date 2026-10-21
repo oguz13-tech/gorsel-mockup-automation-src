@@ -1,8 +1,7 @@
-# Exact next task
-Read issue #24 and current handoff. Start from fix/final-15-package-tests-20261021, latest remote HEAD; never reset another agent's work.
-1. Verify new PR CI including extracted-package tests on Windows/Ubuntu. Local Linux results are in TEST_EVIDENCE.md.
-2. Obtain private GORSEL_MOCKUP_WINDOWS_V3_7_MANUEL_KAVIS_DUZELTME.zip (available in user Library); inspect hash against 0bdd30067bd272acefc6a7dd2b978fd94b31b140bcff6a3f32002c5ee47b169c. Use current Library skill. Never publish photos, DB, masks, customer config or ZIP.
-3. Preserve sanitized generic MERKEZ source on this integration branch; compare PR13/14 and choose one Windows UI retaining old six-category daily workflow. Do not claim code from PR comments has been imported.
-4. Issue #18: inspect make_artifact_key and profile identity, bind geometry/aspect/recipe/fit settings, add regression showing same mask with changed quad cannot reuse old output. Preserve old immutable records and SKU compatibility.
-5. Follow #16 → #17 → #19 → #20 → #21 → #22 → #23; checkpoint each tested unit and keep draft PR.
-No merge/live installation/migration/marketplace publication. Windows native acceptance and real photo quality remain open.
+# Next exact task
+Start latest remote fix/final-18-no-loss-identity (draft PR against PR26). Read issue18 Sprint2 comment6324992407 and issue24. Verify CI at HEAD.
+Milestone A now implemented and tested: versioned render identity, immutable receipt and per-job SKU. Continue B in separate tested commit: concurrent SQLite reserve/producer tests; same basename different SHA and extension/Unicode/135 numbering tests; interrupted output/receipt and stale-lock recovery. Do not mark uncertain failed job SUCCESS without output SHA evidence. Missing/partial receipts currently quarantine safely; recovery still manual.
+Then C: 100-item durable batch, cancellation/resume and CSV/XLSX audit. Keep legacy user data immutable, no schema migration/live writes/merge. Private V3.7 sources not imported. Update docs and push each completed unit.
+
+## Milestone B partial checkpoint
+Added 32 concurrent reservations through 8 independent SQLite connections, immutable same-key/different-SHA collision check, missing-receipt quarantine/no-overwrite test. Red regression proved ledger.rendered could accept nonexistent output; fixed with BEGIN IMMEDIATE and output existence/symlink/SHA verification before SUCCESS. Linux full PETEK suite: 24 PASS. These are threaded connections, NOT two native Windows processes. B still open: multiprocess kill/restart, stale lock, Unicode/extension/numbering matrix, audit chain. C 100-item batch still open.

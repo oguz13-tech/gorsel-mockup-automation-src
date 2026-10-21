@@ -1,4 +1,6 @@
-# Final release status
-NOT FINAL. #15 packaging correction implemented; source reconciliation incomplete. #18/#16/#17/#19/#20/#21/#22/#23 remain open.
-Windows launchers now create local .venv (Python 3.11 required); network dependency installation still required. Offline wheels and tested rollback pending.
-No private V3.7 source imported in this checkpoint. Native Windows acceptance not performed.
+# NOT FINAL
+Sprint2 A implemented; Linux 22 tests pass, new Windows/Ubuntu CI pending. Native Windows acceptance absent.
+B/C, private V3.7 integration, seven-category golden QA and Windows final rollback remain open. Existing six-category source untouched.
+
+## Milestone B partial checkpoint
+Added 32 concurrent reservations through 8 independent SQLite connections, immutable same-key/different-SHA collision check, missing-receipt quarantine/no-overwrite test. Red regression proved ledger.rendered could accept nonexistent output; fixed with BEGIN IMMEDIATE and output existence/symlink/SHA verification before SUCCESS. Linux full PETEK suite: 24 PASS. These are threaded connections, NOT two native Windows processes. B still open: multiprocess kill/restart, stale lock, Unicode/extension/numbering matrix, audit chain. C 100-item batch still open.
