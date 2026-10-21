@@ -109,8 +109,8 @@ class PetekProfileStore:
             runtime / "SABLON_V2_MIMARI",
         ]
         state = self.root.resolve()
-        if any(state == p.resolve() or p.resolve() in state.parents
-               for p in protected):
+        if state == runtime or any(state == p.resolve() or p.resolve() in state.parents
+               for p in protected[1:]):
             raise PetekSafetyError("PRIVATE_STORE_OVERLAPS_PROTECTED_RUNTIME")
         self.root.mkdir(parents=True, exist_ok=True)
         log_file = (self.root / "app.log").resolve()
