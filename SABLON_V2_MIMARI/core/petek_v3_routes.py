@@ -110,13 +110,13 @@ def register_petek_v3(app, runtime_root: Path) -> None:
             LOG.warning("Legacy read-only quad lookup: %s", type(exc).__name__)
             return None
 
-    @blueprint.app_errorhandler(PetekSafetyError)
+    @blueprint.errorhandler(PetekSafetyError)
     def on_rejected(exc):
         """Return structured errors without Flask 500 or private path leakage."""
         LOG.warning("PETEK rejected: %s", exc)
         return jsonify({"ok":False, "error":str(exc)}), 422
 
-    @blueprint.app_errorhandler(Exception)
+    @blueprint.errorhandler(Exception)
     def on_unexpected(exc):
         """Log unexpected errors, avoid reporting success on partial writes."""
         LOG.exception("PETEK unexpected error: %s", type(exc).__name__)
