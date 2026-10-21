@@ -130,6 +130,7 @@ def test_arbitrary_vent_count_no_thirteen(samples):
             cv2.rectangle(candidate,(x,130),(x+5,250),(22,22,22),-1)
         mask=np.where(np.all(candidate==[233,236,239],axis=2),
                       255,0).astype(np.uint8)
+        mask=cv2.erode(mask,np.ones((19,19),dtype=np.uint8))
         painted=project_print(read_image(art),scene.shape[:2],quad,1.93)
         result,_=composite_original_details(candidate,painted,mask,quad)
         assert np.array_equal(result[mask==0],candidate[mask==0])
