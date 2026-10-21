@@ -1,0 +1,4 @@
+Günlük üretim: 10 şablon / 6 kategori.
+Dikey cam CamTabloDikey_013 önceki Windows genişletme raporunda üretim ve tekrar kontrolünü geçti.
+Diğer dokuz şablon ve çıktı kimlikleri korunur. Kaynak/onay/yedek kontrolleri aynıdır.
+Sonuçlar C:\AI_LOCAL_OUTPUTS\GorselMockup\GORSELLER.

@@ -30,3 +30,5 @@ Sprint2 B partial: missing-receipt test PASS; concurrent reservation test initia
 
 ## Brush hotfix
 Node24.19: node --test tests/js/petek_brush.test.cjs: 3 PASS (solid continuous sweep, quad clip with outside center, cursor scaling). node --check static JS PASS. These are helper tests, not native Windows GUI or real-photo visual acceptance.
+
+Actual Windows V3.8 sanitized source: 74/74 package hash manifest verified before copying. Linux `pytest -q windows_center/TESTLER`: 49 passed, 9 display-dependent skipped. Three new tests target actual MaskEditor methods and engine; no native Windows or screenshot acceptance.
