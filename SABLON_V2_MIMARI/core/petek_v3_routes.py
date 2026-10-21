@@ -11,13 +11,15 @@ import json
 import logging
 import secrets
 import sqlite3
+import threading
+import dataclasses
 from pathlib import Path
 
 import cv2
 import numpy as np
 from flask import Blueprint, jsonify, render_template, request, send_file
 
-from .petek_mask_store import PetekProfileStore, safe_uid
+from .petek_mask_store import PetekProfileStore, safe_uid, private_root
 from .petek_surface_v3 import (
     CATEGORY, PetekSafetyError, quad_mask, read_image, require_safe_file,
     sha256_file, validate_quad,
@@ -214,5 +216,92 @@ def register_petek_v3(app, runtime_root: Path) -> None:
                                   str(body.get("confirmation") or ""))
         return jsonify({"ok":True,"status":profile["review_status"],
                         "source_sha256":profile["source_sha256"]})
+
+
+    batch_guard = threading.RLock()
+    batch_context = {"worker":None,"runner":None,"result":None,"error":None}
+
+    @blueprint.get("/api/design-folders")
+    def design_folders():
+        """List local incoming folders without exposing arbitrary disk browsing."""
+        ensure_local()
+        incoming = root / "1_GELEN_KAGGLE_BASKILARI"
+        folders = ["."]
+        if incoming.is_dir():
+            folders.extend(sorted((f.name for f in incoming.iterdir()
+                                   if f.is_dir() and not f.is_symlink()),
+                                  key=str.casefold))
+        return jsonify({"ok":True,"folders":folders})
+
+    @blueprint.get("/api/batch/status")
+    def batch_status():
+        """Expose live in-process job counters and previous terminal result."""
+        ensure_local()
+        with batch_guard:
+            worker = batch_context["worker"]
+            runner = batch_context["runner"]
+            return jsonify({"ok":True,"running":bool(worker and worker.is_alive()),
+                            "progress":runner.status() if runner else {},
+                            "result":batch_context["result"],
+                            "error":batch_context["error"]})
+
+    @blueprint.post("/api/batch/start")
+    def batch_start():
+        """Start a single approved-mask local production worker, no cloud."""
+        authorize()
+        payload = parse_body()
+        relative = str(payload.get("folder") or ".")
+        if relative not in (".","") and (
+            "/" in relative or "\\" in relative or relative in (".","..")
+        ):
+            raise PetekSafetyError("DESIGN_FOLDER_MUST_BE_SELECTED_CHILD")
+        filenames=payload.get("templates")
+        if not isinstance(filenames,list) or not filenames or len(filenames)>500:
+            raise PetekSafetyError("SELECT_APPROVED_TEMPLATES")
+        from .petek_serial_factory import PetekBatchRunner
+        with batch_guard:
+            worker=batch_context["worker"]
+            if worker and worker.is_alive():
+                return jsonify({"ok":False,"error":"PETEK_BATCH_ALREADY_RUNNING"}),409
+            runner=PetekBatchRunner(root)
+            batch_context.update({"runner":runner,"error":None,"result":None})
+            folder=root/"1_GELEN_KAGGLE_BASKILARI"/relative
+            group=str(payload.get("store_group") or "MAIN")
+            limit=int(payload.get("max_items") or 1000)
+            def task():
+                """Persist state in private ledger; failures never imply success."""
+                try:
+                    report=runner.run(folder,filenames,store_group=group,max_items=limit)
+                    with batch_guard:
+                        batch_context["result"]=dataclasses.asdict(report)
+                except Exception as exc:
+                    LOG.exception("PETEK local batch failed")
+                    with batch_guard:
+                        batch_context["error"]=str(exc)
+            worker=threading.Thread(target=task,name="petek-v3-local-batch",daemon=True)
+            batch_context["worker"]=worker
+            worker.start()
+        return jsonify({"ok":True,"status":"STARTED_LOCAL_ONLY"})
+
+    @blueprint.post("/api/batch/stop")
+    def batch_stop():
+        """Request safe stop after active artifact finishes publishing."""
+        authorize()
+        with batch_guard:
+            runner=batch_context["runner"]
+            if runner:
+                runner.stop()
+        return jsonify({"ok":True,"status":"STOP_REQUESTED"})
+
+    @blueprint.get("/api/batch/download/<name>")
+    def batch_download(name):
+        """Download only generated private PETEK CSV/XLSX exports."""
+        ensure_local()
+        if Path(name).name!=name or Path(name).suffix.lower() not in (".csv",".xlsx"):
+            raise PetekSafetyError("INVALID_EXPORT_NAME")
+        from .petek_surface_v3 import require_safe_file
+        location = private_root(root) / "exports"
+        file = require_safe_file(location / name, location)
+        return send_file(file, as_attachment=True, download_name=name)
 
     app.register_blueprint(blueprint)
