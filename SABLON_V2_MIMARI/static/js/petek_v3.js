@@ -207,6 +207,60 @@
     } catch(err){notice(err.message,true);}
   }
 
+
+  function selectedBatchTemplates() {
+    return Array.from($("batchTemplates").selectedOptions).map(item=>item.value);
+  }
+
+  async function batchProgress() {
+    try {
+      const response=await api("/petek-v3/api/batch/status");
+      $("batchStatus").textContent=JSON.stringify({
+        running:response.running, progress:response.progress,
+        result:response.result, error:response.error
+      },null,2);
+      for(const [id,key] of [["exportCsv","export_csv"],["exportXlsx","export_xlsx"]]){
+        const element=$(id),output=response.result && response.result[key];
+        if(output){
+          element.style.display="block";
+          element.href="/petek-v3/api/batch/download/"+encodeURIComponent(output.replace(/^.*[\\/]/,""));
+        }else {element.style.display="none";}
+      }
+    }catch(err){$("batchStatus").textContent=err.message;}
+  }
+
+  async function batchStart() {
+    try {
+      const templates=selectedBatchTemplates();
+      if(!templates.length)throw new Error("Seri üretim için en az 1 şablon seçin");
+      const response=await api("/petek-v3/api/batch/start","POST",{
+        folder:$("batchFolder").value,
+        templates:templates,
+        store_group:$("storeGroup").value,
+        max_items:Number($("maxJobs").value)
+      });
+      notice("Seri üretim başlatıldı: "+response.status);
+      await batchProgress();
+    }catch(err){notice(err.message,true);}
+  }
+
+  async function batchStop() {
+    try {
+      await api("/petek-v3/api/batch/stop","POST",{});
+      notice("Güvenli durdurma istendi. Aktif görüntü atomik kaydedildikten sonra duracak.");
+    }catch(err){notice(err.message,true);}
+  }
+
+  async function loadBatchFolders() {
+    const data=await api("/petek-v3/api/design-folders");
+    $("batchFolder").replaceChildren();
+    for(const name of data.folders){
+      const option=document.createElement("option");
+      option.value=name;option.textContent=name==="."?"Ana gelen tasarım klasörü":name;
+      $("batchFolder").append(option);
+    }
+  }
+
   async function start() {
     try {
       const data=await api("/petek-v3/api/templates");
@@ -216,6 +270,13 @@
         const option=document.createElement("option");
         option.value=name;option.textContent=name;select.append(option);
       }
+      $("batchTemplates").replaceChildren();
+      for(const name of data.templates){
+        const option=document.createElement("option");
+        option.value=name;option.textContent=name;option.selected=false;
+        $("batchTemplates").append(option);
+      }
+      await loadBatchFolders();
       if(data.templates.length)await load();
       else notice("06_Petek_Dolabi kaynak klasöründe henüz görsel yok.");
     }catch(err){notice(err.message,true);}
@@ -224,5 +285,8 @@
   $("draft").addEventListener("click",draft);
   $("save").addEventListener("click",save);
   $("approve").addEventListener("click",approve);
+  $("batchStart").addEventListener("click",batchStart);
+  $("batchStop").addEventListener("click",batchStop);
+  setInterval(batchProgress,2500);
   start();
 })();
