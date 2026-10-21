@@ -25,3 +25,17 @@ PR #9 Windows 321/321 and Linux PASS were reported earlier. PR #12 Windows/Linux
 ## Failures
 
 No failures among the 22 executed V3 tests. Known untested gaps are tracked in WORK_HANDOFF_CURRENT.md and WINDOWS_RELEASE_STATUS.md. Passing synthetic tests does not remove those release gates.
+
+## Post-publication preservation checks
+
+- GitHub implementation checkpoint: `a950a85b055835231fb30750da9f336f250fcc71`, PR #14; exact tree `80572f87a27f04a8cd4741632b2c11f9dfe0e7bb`.
+- All 145 tracked Python sources compile; four inherited invalid-escape SyntaxWarnings, zero syntax errors.
+- `python scripts/build_windows_factory.py --output <outside-repo>/candidate.zip`: PASS, 245 entries, CRC/hash checks PASS, `tests/test_factory_v3.py` included, no image/DB entries. Build performed at local metadata-equivalent commit `b6fceca3e2491d99d84672ee2db8e99efb9a7498` with the exact same tree.
+- Candidate ZIP SHA256: `7926ac59f43bd2e583ddae0fae1fbd91c02fff19d4e6fb59f3aad9d9a45797c8`. Private local build evidence only; not a Windows final delivery.
+- PR #13 separate exact-head Windows/Ubuntu CI was verified; URLs and limits are in PARALLEL_IMPLEMENTATION_RECONCILIATION.md.
+
+## First checkpoint CI failure and correction
+
+Initial dedicated CI run https://github.com/oguz13-tech/gorsel-mockup-automation-src/actions/runs/39586751089 failed BEFORE tests because workflow referenced absent `requirements.txt`. Actual root lockfile is `requirements-core.lock.txt`. Corrected the workflow and all new launcher/docs references; no test failures are hidden. Rerun pending for the correction commit. Independent full audit ran its own dependency installation and Ubuntu passed.
+
+The exact preserved source tree's local suite was rerun: 22 tests PASS, 7.366 seconds.

@@ -9,7 +9,7 @@ This branch adds a single V3 factory GUI, reviewed original-detail masks and a c
 ## Rebuild from GitHub
 
 1. Checkout the exact active branch commit; use a clean worktree.
-2. Python 3.11+ recommended. `python -m pip install -r requirements.txt` in an isolated environment (existing production environment must not be modified).
+2. Python 3.11+ recommended. `python -m pip install -r requirements-core.lock.txt` in an isolated environment (existing production environment must not be modified).
 3. `python -B -m unittest tests.test_factory_v3 -v`.
 4. `python scripts/build_windows_factory.py --output <outside-checkout>/GORSEL_URETIM_FABRIKASI_WINDOWS_ADAY.zip`.
 5. The builder includes source, tests, docs, Windows launcher and SHA256 manifest. It excludes photos, DBs, live `ayarlar.json`, private settings and untracked files.

@@ -16,7 +16,7 @@ Read `AGENTS.md` and these five docs before modifying code. Fetch the remote bra
 
 ## 1. Verify the saved code
 
-From a clean checkout, use an isolated Python environment and root `requirements.txt`.
+From a clean checkout, use an isolated Python environment and root `requirements-core.lock.txt`.
 Run `python -B -m unittest tests.test_factory_v3 -v` and the existing full test command in `.github/workflows/epic3-full-audit.yml`. Inspect the new Windows/Ubuntu Factory V3 workflow for the exact head. Record actual results, not assumptions.
 
 ## 2. Immediate next implementation

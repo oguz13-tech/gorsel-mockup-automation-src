@@ -17,7 +17,7 @@ $chosen = $null
 foreach ($option in $options) {
     try { $exe=$option.exe; $prefix=$option.prefix; & $exe @prefix -B -c $probe 2>$null; if ($LASTEXITCODE -eq 0) {$chosen=$option;break} } catch { continue }
 }
-if (-not $chosen) { Write-Host 'Gerekli bagimliliklari olan Python bulunamadi. requirements.txt ve WINDOWS_RELEASE_STATUS.md dosyalarini kontrol edin.'; exit 2 }
+if (-not $chosen) { Write-Host 'Gerekli bagimliliklari olan Python bulunamadi. requirements-core.lock.txt ve WINDOWS_RELEASE_STATUS.md dosyalarini kontrol edin.'; exit 2 }
 $exe=$chosen.exe; $prefix=$chosen.prefix
 if ($Test) {
     & $exe @prefix -B -m unittest tests.test_factory_v3 -v

@@ -13,8 +13,8 @@ Goal: one local Windows factory for seven categories, source-detail-preserving P
 
 - Active branch: `checkpoint/astra-petek-v3-local-20261021`
 - Integration parent: `7d4d42a6b0ec8015a4080e8e6cdcec71b13cecb8` (PR #12)
-- Latest code checkpoint SHA: pending initial publication; this document will be updated immediately after the checkpoint.
-- Draft PR: pending initial publication.
+- Latest published implementation checkpoint SHA: `a950a85b055835231fb30750da9f336f250fcc71`. Later docs-only updates are identified by the branch HEAD (`git rev-parse HEAD`); a commit cannot contain its own SHA.
+- Draft preservation PR: [#14](https://github.com/oguz13-tech/gorsel-mockup-automation-src/pull/14). Active integrated candidate remains PR #13.
 - Writer policy: one agent owns this branch. Fetch and compare HEAD before writing; use a separate branch if it moved. Never force-push or merge without explicit approval.
 
 ## Verified PR topology
@@ -60,3 +60,9 @@ All three were read from GitHub during this session: open, draft, unmerged. PR #
 ## Next exact step
 
 First verify PR #13 and this separate preservation checkpoint. Compare implementations before selective porting; continue the integrated release on a fresh branch from PR #13. For this archived variant, run `python -B -m unittest tests.test_factory_v3 -v` from repo root in the pinned environment, close protected-output/profile-path gaps, add regression cases for those gaps, and commit/push. Next evaluate the two private original PETEK JPEGs with four explicitly reviewed corners, inspect masks and preserve pixel-difference evidence. Do not invent source geometry approval or claim Windows acceptance. See NEXT_AGENT_TASK.md for commands and acceptance gates.
+
+## Preservation verification
+
+48 changed files are published in PR #14. GitHub tree `80572f87a27f04a8cd4741632b2c11f9dfe0e7bb` matches the locally tested checkpoint tree exactly. All 145 tracked Python files compiled (four inherited invalid-escape SyntaxWarnings, no syntax errors). Clean-checkout source-only builder produced 245 ZIP entries, CRC/hash verified, with the test file present and no image/DB entries. Local build used commit `b6fceca3e2491d99d84672ee2db8e99efb9a7498`, whose tree is identical to remote implementation commit `a950a85b055835231fb30750da9f336f250fcc71`; commit metadata differs. This is candidate-builder evidence, not Windows acceptance.
+
+Dedicated checkpoint CI initially failed because a requirements filename was wrong; fixed to `requirements-core.lock.txt`. The failing run and pending rerun are recorded in TEST_EVIDENCE.md. This packaging configuration correction does not alter rendering.
