@@ -3575,6 +3575,13 @@ class MockupRenderer:
     def process_mockup(cls, raw_path: Path, template_path: Path,
                        config: dict, is_glass: bool, output_path: Path, source_design_identity: str = None, template_identity: str = None, recipe_version: str = None, template_sha: str = None) -> bool:
         try:
+            # PETEK must reach guarded loader BEFORE legacy OpenCV full decode.
+            if template_path.parent.name == "06_Petek_Dolabi":
+                from core.petek_factory_adapter import render_from_legacy_factory
+                return render_from_legacy_factory(
+                    raw_path=raw_path,template_path=template_path,config=config,
+                    output_path=output_path,runtime_root=USER_WORKSPACE_DIR,
+                    template_sha=template_sha)
             # Unicode güvenli okuma (Numpy decode)
             art_cv = cv2.imdecode(np.fromfile(str(raw_path), dtype=np.uint8), cv2.IMREAD_COLOR)
             bg_cv_raw = cv2.imdecode(np.fromfile(str(template_path), dtype=np.uint8), cv2.IMREAD_UNCHANGED)
@@ -3593,15 +3600,6 @@ class MockupRenderer:
             tip = config.get("tip", "duz")
             on_plan = config.get("on_plan", None)
             category_name = template_path.parent.name
-            if category_name == "06_Petek_Dolabi":
-                # Opaque category-only route: no procedural slots, global
-                # blur, source mutation or other-category behavior changes.
-                from core.petek_factory_adapter import render_from_legacy_factory
-                return render_from_legacy_factory(
-                    raw_path=raw_path, template_path=template_path,
-                    config=config, output_path=output_path,
-                    runtime_root=USER_WORKSPACE_DIR, template_sha=template_sha,
-                )
             # Cutting-board templates are the highest-occlusion category
             # (food/knife/utensil objects in front of the printable glass).
             # Templates can override this explicitly with auto_foreground.
