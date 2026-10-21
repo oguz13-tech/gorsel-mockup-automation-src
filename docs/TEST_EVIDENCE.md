@@ -39,3 +39,9 @@ No failures among the 22 executed V3 tests. Known untested gaps are tracked in W
 Initial dedicated CI run https://github.com/oguz13-tech/gorsel-mockup-automation-src/actions/runs/39586751089 failed BEFORE tests because workflow referenced absent `requirements.txt`. Actual root lockfile is `requirements-core.lock.txt`. Corrected the workflow and all new launcher/docs references; no test failures are hidden. Rerun pending for the correction commit. Independent full audit ran its own dependency installation and Ubuntu passed.
 
 The exact preserved source tree's local suite was rerun: 22 tests PASS, 7.366 seconds.
+
+## Corrected exact-head checkpoint CI
+
+At `402fe3e4c5ba2080f6545f7e67f15ef4b3c03141`, https://github.com/oguz13-tech/gorsel-mockup-automation-src/actions/runs/39587055251 completed SUCCESS (Windows and Ubuntu synthetic suite plus compilation). Pinned dependencies installed successfully. The earlier missing-requirements failure is resolved. The separate full-suite rerun 39587055351 was still running at this document update, so no success claim is made for it yet.
+
+PR13 package omission was reproduced locally against exact head `ca6314af44491136373a0c807df732403c37c71b`: test BAT references the test path=True, `git_items()` includes required test=False, core lockfile included=True. No private data used.

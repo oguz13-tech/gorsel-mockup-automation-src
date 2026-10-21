@@ -13,7 +13,7 @@ Goal: one local Windows factory for seven categories, source-detail-preserving P
 
 - Active branch: `checkpoint/astra-petek-v3-local-20261021`
 - Integration parent: `7d4d42a6b0ec8015a4080e8e6cdcec71b13cecb8` (PR #12)
-- Latest published implementation checkpoint SHA: `a950a85b055835231fb30750da9f336f250fcc71`. Later docs-only updates are identified by the branch HEAD (`git rev-parse HEAD`); a commit cannot contain its own SHA.
+- Latest verified code/config checkpoint SHA: `402fe3e4c5ba2080f6545f7e67f15ef4b3c03141` (initial implementation: `a950a85b055835231fb30750da9f336f250fcc71`). Later docs-only updates are identified by the branch HEAD (`git rev-parse HEAD`); a commit cannot contain its own SHA.
 - Draft preservation PR: [#14](https://github.com/oguz13-tech/gorsel-mockup-automation-src/pull/14). Active integrated candidate remains PR #13.
 - Writer policy: one agent owns this branch. Fetch and compare HEAD before writing; use a separate branch if it moved. Never force-push or merge without explicit approval.
 
@@ -66,3 +66,9 @@ First verify PR #13 and this separate preservation checkpoint. Compare implement
 48 changed files are published in PR #14. GitHub tree `80572f87a27f04a8cd4741632b2c11f9dfe0e7bb` matches the locally tested checkpoint tree exactly. All 145 tracked Python files compiled (four inherited invalid-escape SyntaxWarnings, no syntax errors). Clean-checkout source-only builder produced 245 ZIP entries, CRC/hash verified, with the test file present and no image/DB entries. Local build used commit `b6fceca3e2491d99d84672ee2db8e99efb9a7498`, whose tree is identical to remote implementation commit `a950a85b055835231fb30750da9f336f250fcc71`; commit metadata differs. This is candidate-builder evidence, not Windows acceptance.
 
 Dedicated checkpoint CI initially failed because a requirements filename was wrong; fixed to `requirements-core.lock.txt`. The failing run and pending rerun are recorded in TEST_EVIDENCE.md. This packaging configuration correction does not alter rendering.
+
+## Latest CI and concrete next task
+
+At code/config checkpoint `402fe3e4c5ba2080f6545f7e67f15ef4b3c03141`, dedicated V3 checkpoint CI passed on Windows and Ubuntu: https://github.com/oguz13-tech/gorsel-mockup-automation-src/actions/runs/39587055251 . Full-suite rerun https://github.com/oguz13-tech/gorsel-mockup-automation-src/actions/runs/39587055351 was still running when this evidence update was written; inspect before claiming completion.
+
+PR13 packaging omission was reproduced by importing `scripts/petek_v3_windows_release.py` and evaluating `git_items()`: generated test BAT requires `tests/test_petek_v3.py`, but that file is absent from the packaging allowlist. This is the next focused fix on a fresh branch from PR13, followed by packaged-test smoke coverage and canonical handoff/evidence updates. No new application needs to be built from scratch. All local source work in this checkpoint is now on GitHub; private inputs remain excluded.
