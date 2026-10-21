@@ -24,6 +24,7 @@ CATEGORY_PREFIXES = {
     "03_Ahsap_Tablo": "AhsapTablo",
     "04_Cam_Dograma": "CamDograma",
     "05_Ocak_Arkasi": "OcakArkasi",
+    "06_Petek_Dolabi": "PetekDolabi",
 }
 PREFIX_TO_CATEGORY = {
     prefix.casefold(): category
