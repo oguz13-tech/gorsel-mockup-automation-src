@@ -13,3 +13,12 @@ python scripts/petek_v3_windows_release.py build --destination dist
 python scripts/petek_v3_windows_release.py inspect <zip>
 
 Record OS, commit SHA, actual counts/failures, CI URLs and screenshots AFTER execution. Passing synthetic pixel checks is not the same as approved real mockup appearance or safe Windows live installation.
+
+## Issue #15 packaging checkpoint, 2026-10-21
+Executed Linux Python 3.12 with preinstalled integration-deps:
+- Before fix: git_items excluded tests/test_petek_v3.py (False).
+- python -m pytest -q tests/test_petek_v3.py: 19 passed (1.43 s).
+- Clean committed candidate build and manifest inspection: 113 files, OK.
+- Extracted candidate into independent temporary folder; ran python -m pytest -q tests/test_petek_v3.py there: 19 passed. PYTHONPATH supplied only external installed dependencies, not checkout source.
+- git diff --check: PASS.
+Windows BAT execution and native GUI NOT run locally. Added Windows/Ubuntu CI extracted-package test; result pending.

@@ -1,27 +1,24 @@
-# Active PETEK V3 agent handoff
+# Current checkpoint — 2026-10-21
 
-Repo: oguz13-tech/gorsel-mockup-automation-src
-Branch: feature/petek-v3-source-preserving-factory-20261021
-Branch starting commit: 7d4d42a6b0ec8015a4080e8e6cdcec71b13cecb8 (PR #12, based on PR #9)
-Old PETEK: PR #11 49a169806c84686db789f5906563d87006caf5a8 (DRAFT, separate).
+Master: issue #24. Branch: fix/final-15-package-tests-20261021.
+Base PR13 ca6314af44491136373a0c807df732403c37c71b. Resolve latest checkpoint SHA with git rev-parse HEAD.
 
-## Actual code changed
-- SABLON_V2_MIMARI/core/petek_surface_v3.py — source preservation, no 13-slot model, anti-blur bounds, immutable output.
-- SABLON_V2_MIMARI/core/petek_mask_store.py — private SHA-bound profiles, draft/edit/human approval.
-- SABLON_V2_MIMARI/core/petek_v3_routes.py — local guarded Flask endpoints, native one-window tab.
-- SABLON_V2_MIMARI/templates/petek_v3.html — mask editor and local batch controls.
-- SABLON_V2_MIMARI/static/js/petek_v3.js — browser 4-corner selection and paint.
-- SABLON_V2_MIMARI/core/petek_serial_factory.py — local-only batch, resume ledger and Excel/CSV.
-- SABLON_V2_MIMARI/core/petek_factory_adapter.py — isolated entry into existing renderer.
-- Existing category identity, rule, UI index, app register, factory catalog adapted only for PETEK.
-- scripts/petek_v3_windows_launcher.py + scripts/petek_v3_windows_release.py — Windows staging and safe source ZIP.
-- tests/test_petek_v3.py and GitHub Actions candidate workflow.
+## Completed in this checkpoint
+Reproduced missing tests/test_petek_v3.py in PR13 release enumeration.
+Explicitly allowlisted and required that synthetic test plus dependency files.
+Windows launch/test scripts use a package-local Python 3.11 venv, pinned test dependencies, and preserve test exit status.
+CI builds on Windows and Ubuntu and runs tests from extracted ZIP outside checkout, with checkout PYTHONPATH removed.
+No merge, installation, data migration or private file publication.
 
-## Non-negotiable
-Read AGENTS.md first. Original templates, ayarlar.db/json, approved 4 corners and OneDrive backups were not changed during repository development. No PR merge, no Windows installation, no private photos or API keys in public Git.
+## Source reconciliation
+| Source | Verified state | Integration status |
+|---|---|---|
+| PR13 ca6314af | Flask PETEK, source-preserving mask, batch, release | Base; packaging fixed here |
+| PR14 b936a6b8 | Independent Tk/queue preservation, 22-test suite | Retained separately; no wholesale merge |
+| Private V3.7 | PR13 comments describe Tk curves/viewport/registry and 48 reported tests | Bytes not yet inspected in this checkpoint; do not claim integration |
+| Old daily center | Six categories / ten-template workflow described in prior evidence | No files changed in this patch |
 
-## Release reality
-Code on this branch is a CANDIDATE. It is not a proven final Windows commercial production release until tests, Windows customer-machine run, correct source masks and visual acceptance are complete. Automatic candidate masking is not semantic ground truth. Existing six-category full commerce workflow still has separate release gaps.
-
-## Next resume
-Read docs/ARCHITECTURE_DECISIONS.md, docs/TEST_EVIDENCE.md, docs/NEXT_AGENT_TASK.md and docs/WINDOWS_RELEASE_STATUS.md; inspect latest PR head and CI logs. Compare with future Astra Work artifacts without blind merging or overriding legacy approved data.
+## Remaining
+#15 remains partial: inspect private V3.7 source, verify manifest, sanitize and checkpoint source; choose canonical UI after source comparison.
+#18 next: artifact identity must bind quad and physical aspect; review mask-store compatibility before changing identity. Then #16, #17, #19, #20, #21, #22, #23.
+Native Windows GUI, seven-category golden set, real masking QA, crash recovery and final installation/rollback are NOT accepted.

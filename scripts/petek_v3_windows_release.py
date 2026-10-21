@@ -33,22 +33,29 @@ EXCLUDED_FRAGMENTS = frozenset({
     ".pytest_cache", "node_modules", "secrets", "backup",
     "cache", "masks", "private", "output", "image",
 })
+RELEASE_TESTS = frozenset({"tests/test_petek_v3.py"})
 MAX_SOURCE_FILE_BYTES = 4 * 1024 * 1024
 WINDOWS_START = r"""@echo off
 setlocal
 cd /d "%~dp0"
-py -3 -m pip install -r requirements-core.lock.txt
+if not exist ".venv\Scripts\python.exe" py -3.11 -m venv .venv
 if errorlevel 1 exit /b 1
-py -3 scripts\petek_v3_windows_launcher.py --stage
+".venv\Scripts\python.exe" -m pip install -r requirements-core.lock.txt
+if errorlevel 1 exit /b 1
+".venv\Scripts\python.exe" scripts\petek_v3_windows_launcher.py --stage
 pause
 """
 WINDOWS_TEST = r"""@echo off
 setlocal
 cd /d "%~dp0"
-py -3 -m pip install -r requirements-core.lock.txt pytest
+if not exist ".venv\Scripts\python.exe" py -3.11 -m venv .venv
 if errorlevel 1 exit /b 1
-py -3 -m pytest -q tests\test_petek_v3.py
+".venv\Scripts\python.exe" -m pip install -r requirements-petek-v3.txt
+if errorlevel 1 exit /b 1
+".venv\Scripts\python.exe" -m pytest -q tests\test_petek_v3.py
+set "TEST_RESULT=%ERRORLEVEL%"
 pause
+exit /b %TEST_RESULT%
 """
 README = """PETEK V3 / Gorsel Mockup Windows staging
 ================================================
@@ -80,7 +87,7 @@ def git_items() -> list[Path]:
         parts = {part.casefold() for part in rel.parts}
         if any(x in parts for x in EXCLUDED_FRAGMENTS):
             continue
-        if rel.name in ROOT_NAMES or (
+        if rel.as_posix() in RELEASE_TESTS or rel.name in ROOT_NAMES or (
             rel.parts[0] in CODE_DIRS and rel.suffix.casefold() in CODE_EXTS
         ):
             path = ROOT/rel
@@ -107,6 +114,9 @@ def build(destination: Path) -> Path:
         "SABLON_V2_MIMARI/static/js/petek_v3.js",
         "SABLON_V2_MIMARI/templates/petek_v3.html",
         "scripts/petek_v3_windows_launcher.py",
+        "tests/test_petek_v3.py",
+        "requirements-core.lock.txt",
+        "requirements-petek-v3.txt",
     }
     present = {p.as_posix() for p in paths}
     if not required <= present:

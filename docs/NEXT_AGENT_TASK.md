@@ -1,12 +1,8 @@
-# Next engineer or Astra continuation
-
-1. Read AGENTS.md and active PETEK V3 branch diff before touching any code or Windows runtime.
-2. Fetch current PR #9/#11/#12 state. Retain NumberGuard/Fill improvements; DO NOT port fixed 13-slot recipe back as PETEK default.
-3. Verify Windows/Ubuntu CI logs, run source-preserving tests and legacy suite. Fix failures and document actual results (not guesses).
-4. Visually validate multiple privately supplied real PETEK mockups: variations in vent count, top/low arches, floor, hard shadows, white floor false positives, dark surfaces, extreme camera angles. Keep the real customer images outside public Git.
-5. Evaluate improved segmentation/alpha matting only if benchmark proves gains. Current automatic segmentation yields DRAFT requiring human review. Do not auto approve.
-6. Reconcile installed portable Günlük V2 with source branch. Do not assume GitHub source equals current Windows binaries. Windows local database and original backup changes require explicit user approval.
-7. Build Windows ZIP candidate through scripts/petek_v3_windows_release.py; inspect manifest SHA. Stage in separate directory and pass real Windows acceptance with user.
-8. If Astra has private uncommitted Work files, export them and diff against this branch. Preserve branch and PR checkpoint for continued handoff.
-
-No unattended marketplace publication, no default cloud upload. Local PETEK CSV 'Barkod (Dahili)' is not a registered GS1 barcode.
+# Exact next task
+Read issue #24 and current handoff. Start from fix/final-15-package-tests-20261021, latest remote HEAD; never reset another agent's work.
+1. Verify new PR CI including extracted-package tests on Windows/Ubuntu. Local Linux results are in TEST_EVIDENCE.md.
+2. Obtain private GORSEL_MOCKUP_WINDOWS_V3_7_MANUEL_KAVIS_DUZELTME.zip (available in user Library); inspect hash against 0bdd30067bd272acefc6a7dd2b978fd94b31b140bcff6a3f32002c5ee47b169c. Use current Library skill. Never publish photos, DB, masks, customer config or ZIP.
+3. Preserve sanitized generic MERKEZ source on this integration branch; compare PR13/14 and choose one Windows UI retaining old six-category daily workflow. Do not claim code from PR comments has been imported.
+4. Issue #18: inspect make_artifact_key and profile identity, bind geometry/aspect/recipe/fit settings, add regression showing same mask with changed quad cannot reuse old output. Preserve old immutable records and SKU compatibility.
+5. Follow #16 → #17 → #19 → #20 → #21 → #22 → #23; checkpoint each tested unit and keep draft PR.
+No merge/live installation/migration/marketplace publication. Windows native acceptance and real photo quality remain open.
