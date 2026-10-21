@@ -22,3 +22,6 @@ Executed Linux Python 3.12 with preinstalled integration-deps:
 - Extracted candidate into independent temporary folder; ran python -m pytest -q tests/test_petek_v3.py there: 19 passed. PYTHONPATH supplied only external installed dependencies, not checkout source.
 - git diff --check: PASS.
 Windows BAT execution and native GUI NOT run locally. Added Windows/Ubuntu CI extracted-package test; result pending.
+
+## Sprint2 Milestone A
+Linux Python3.12, external integration-deps. Before fix: pytest -q tests/test_petek_v3.py -k physical_aspect FAILED: distinct output SHAs but identical artifact key. After fix: pytest -q tests/test_petek_v3.py: 22 PASS (including geometry, ratio, recipe, art, marketplace, numeric canonicalization, no-overwrite and existing batch reuse). New CI/native Windows not claimed.

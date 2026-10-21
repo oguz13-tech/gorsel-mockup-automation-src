@@ -379,12 +379,16 @@ class PetekBatchRunner:
                             break
                         self._status["requested"]+=1
                         key=make_artifact_key(profile["source_sha256"],art_sha,
-                                              profile["mask_sha256"],uid)
+                                              profile["mask_sha256"],uid,
+                                              front_quad=profile["front_quad"],
+                                              physical_aspect=profile["physical_aspect"])
                         # Store group participates in identity: separate sellers
                         # have separate immutable product records even if same art.
+                        render_key=key
                         key=hashlib.sha256((key+"|"+group).encode()).hexdigest()[:24]
-                        sku="PK-"+group+"-"+art_sha[:16].upper()
+                        sku="PK-"+group+"-"+key.upper()
                         output=self.private/"outputs"/CATEGORY/(sku+"_"+key+".png")
+                        receipt_path=output.with_suffix(".receipt.json")
                         fields=dict(artifact_key=key,sku=sku,template_uid=uid,
                                     template_sha=profile["source_sha256"],
                                     mask_sha=profile["mask_sha256"],art_sha=art_sha,
@@ -394,11 +398,25 @@ class PetekBatchRunner:
                             if saved["status"]=="RENDERED":
                                 if not output.is_file() or sha256_file(output)!=saved["output_sha"]:
                                     raise PetekSafetyError("REUSED_OUTPUT_CHANGED_OR_MISSING")
+                                receipt=json.loads(receipt_path.read_text(encoding="utf-8"))
+                                if (receipt.get("artifact_key") != render_key or
+                                    receipt.get("job_key") != key or
+                                    receipt.get("output_sha256") != saved["output_sha"]):
+                                    raise PetekSafetyError("REUSE_RECEIPT_MISMATCH")
                                 self._status["reused"]+=1
                                 continue
                             if saved["status"]!="PENDING" or output.exists():
                                 raise PetekSafetyError("UNCERTAIN_OUTPUT_REQUIRES_REVIEW")
                             result=self.store.render(uid,src,art,output,marketplace=True)
+                            if result["artifact_key"] != render_key:
+                                raise PetekSafetyError("RENDER_IDENTITY_CHANGED_DURING_JOB")
+                            if sha256_file(output) != result["output_sha256"]:
+                                raise PetekSafetyError("OUTPUT_CHANGED_BEFORE_CHECKPOINT")
+                            receipt=dict(result, job_key=key, sku=sku)
+                            with receipt_path.open("x", encoding="utf-8") as stream:
+                                json.dump(receipt, stream, sort_keys=True, allow_nan=False)
+                                stream.flush()
+                                os.fsync(stream.fileno())
                             self.ledger.rendered(key,result["output_sha256"])
                             self._status["rendered"]+=1
                         except (PetekSafetyError,ValueError,OSError) as exc:

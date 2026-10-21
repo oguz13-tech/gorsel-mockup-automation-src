@@ -298,6 +298,50 @@ def test_legacy_six_rules_unchanged():
 
 def test_artifact_key_changes_with_mask():
     """A new approved mask must create a new immutable artifact identity."""
-    a=make_artifact_key("source","art","mask_a","UID")
-    b=make_artifact_key("source","art","mask_b","UID")
+    a=make_artifact_key("source","art","mask_a","UID", front_quad=[[0,0],[10,0],[10,10],[0,10]], physical_aspect=1)
+    b=make_artifact_key("source","art","mask_b","UID", front_quad=[[0,0],[10,0],[10,10],[0,10]], physical_aspect=1)
     assert a!=b
+
+
+def test_render_identity_changes_with_physical_aspect(samples, approved, tmp_path):
+    _, source, art, _, _ = samples
+    _, profile, mask = approved
+    a = render_approved(art, source, profile, mask, tmp_path/'a.png')
+    changed = dict(profile, physical_aspect=1.5)
+    b = render_approved(art, source, changed, mask, tmp_path/'b.png')
+    assert a['artifact_key'] != b['artifact_key']
+
+
+def test_identity_canonical_and_every_render_setting(monkeypatch):
+    import core.petek_surface_v3 as renderer
+    settings = dict(front_quad=[[0,0],[10,0],[10,10],[0,10]], physical_aspect=1)
+    def key(**overrides):
+        return make_artifact_key('src','art','mask','uid', **(settings | overrides))
+    first = key()
+    assert first == key(front_quad=np.array(settings['front_quad'], dtype=np.float32), physical_aspect=1.0)
+    assert first != key(front_quad=[[0,0],[11,0],[10,10],[0,10]])
+    assert first != key(physical_aspect=1.1)
+    assert first != key(marketplace=False)
+    assert first != make_artifact_key('src','other-art','mask','uid', **settings)
+    monkeypatch.setattr(renderer, 'RECIPE', 'future-tested-recipe')
+    assert first != key()
+    with pytest.raises(TypeError):
+        make_artifact_key('src','art','mask','uid')
+    with pytest.raises(PetekSafetyError):
+        key(physical_aspect=float('nan'))
+
+
+def test_render_identity_quad_and_marketplace(samples, approved, tmp_path):
+    _, source, art, _, _ = samples
+    _, profile, mask = approved
+    a = render_approved(art, source, profile, mask, tmp_path/'first.png')
+    quad = np.array(profile['front_quad'], dtype=float)
+    quad[:2,1] -= 2  # Enlarge safely: original mask still entirely contained.
+    b = render_approved(art, source, dict(profile, front_quad=quad.tolist()), mask, tmp_path/'quad.png')
+    c = render_approved(art, source, profile, mask, tmp_path/'native.png', marketplace=False)
+    assert len({a['artifact_key'], b['artifact_key'], c['artifact_key']}) == 3
+    assert a['render_identity']['identity_version'] == 2
+    original = (tmp_path/'first.png').read_bytes()
+    with pytest.raises((FileExistsError, PetekSafetyError)):
+        render_approved(art, source, profile, mask, tmp_path/'first.png')
+    assert (tmp_path/'first.png').read_bytes() == original

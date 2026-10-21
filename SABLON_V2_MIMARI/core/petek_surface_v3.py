@@ -315,11 +315,37 @@ def publish_image_create_only(image: np.ndarray, destination: Path) -> str:
             os.unlink(name)
 
 
+def render_identity(source_sha: str, art_sha: str, mask_sha: str,
+                    template_uid: str, *, front_quad, physical_aspect,
+                    marketplace: bool = True) -> dict:
+    """Canonical v2 contract for settings actually consumed by this renderer."""
+    quad = np.asarray(front_quad, dtype=np.float32)
+    ratio = float(physical_aspect)
+    if quad.shape != (4, 2) or not np.isfinite(quad).all():
+        raise PetekSafetyError("INVALID_IDENTITY_GEOMETRY")
+    if not np.isfinite(ratio) or not 0.1 < ratio < 12:
+        raise PetekSafetyError("INVALID_IDENTITY_ASPECT")
+    if not isinstance(marketplace, bool):
+        raise PetekSafetyError("INVALID_IDENTITY_MARKETPLACE")
+    return {"identity_version": 2, "recipe": RECIPE, "category": CATEGORY,
+            "template_uid": template_uid, "source_sha256": source_sha,
+            "art_sha256": art_sha, "mask_sha256": mask_sha,
+            "front_quad": [[0.0 if v == 0 else float(v) for v in row] for row in quad],
+            "physical_aspect": ratio, "fit": "contain_white",
+            "marketplace": {"enabled": marketplace,
+                            "size": [1200, 1600] if marketplace else None}}
+
+
 def make_artifact_key(source_sha: str, art_sha: str, mask_sha: str,
-                      template_uid: str) -> str:
-    """Version immutable artifact identity by all visual inputs."""
-    joined = "|".join((RECIPE, CATEGORY, template_uid, source_sha, art_sha, mask_sha))
-    return hashlib.sha256(joined.encode("utf-8")).hexdigest()[:24]
+                      template_uid: str, *, front_quad, physical_aspect,
+                      marketplace: bool = True) -> str:
+    """Missing geometry fails closed; legacy records are never rewritten."""
+    identity = render_identity(source_sha, art_sha, mask_sha, template_uid,
+                               front_quad=front_quad, physical_aspect=physical_aspect,
+                               marketplace=marketplace)
+    payload = json.dumps(identity, sort_keys=True, separators=(",", ":"),
+                         ensure_ascii=True, allow_nan=False)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:24]
 
 
 def render_approved(art_path: Path, source_path: Path, profile: dict,
@@ -351,5 +377,10 @@ def render_approved(art_path: Path, source_path: Path, profile: dict,
     LOGGER.info("PETEK_RENDER %s %s %s", profile["template_uid"], output_path, result_sha)
     return {"output_sha256": result_sha,
             "artifact_key": make_artifact_key(source_sha, art_sha, mask_sha,
-                                              profile["template_uid"]),
+                                              profile["template_uid"], front_quad=quad,
+                                              physical_aspect=profile["physical_aspect"],
+                                              marketplace=marketplace),
+            "render_identity": render_identity(source_sha, art_sha, mask_sha,
+                profile["template_uid"], front_quad=quad,
+                physical_aspect=profile["physical_aspect"], marketplace=marketplace),
             "quality": qa, "recipe": RECIPE}

@@ -1,24 +1,6 @@
-# Current checkpoint — 2026-10-21
-
-Master: issue #24. Branch: fix/final-15-package-tests-20261021.
-Base PR13 ca6314af44491136373a0c807df732403c37c71b. Resolve latest checkpoint SHA with git rev-parse HEAD.
-
-## Completed in this checkpoint
-Reproduced missing tests/test_petek_v3.py in PR13 release enumeration.
-Explicitly allowlisted and required that synthetic test plus dependency files.
-Windows launch/test scripts use a package-local Python 3.11 venv, pinned test dependencies, and preserve test exit status.
-CI builds on Windows and Ubuntu and runs tests from extracted ZIP outside checkout, with checkout PYTHONPATH removed.
-No merge, installation, data migration or private file publication.
-
-## Source reconciliation
-| Source | Verified state | Integration status |
-|---|---|---|
-| PR13 ca6314af | Flask PETEK, source-preserving mask, batch, release | Base; packaging fixed here |
-| PR14 b936a6b8 | Independent Tk/queue preservation, 22-test suite | Retained separately; no wholesale merge |
-| Private V3.7 | PR13 comments describe Tk curves/viewport/registry and 48 reported tests | Bytes not yet inspected in this checkpoint; do not claim integration |
-| Old daily center | Six categories / ten-template workflow described in prior evidence | No files changed in this patch |
-
-## Remaining
-#15 remains partial: inspect private V3.7 source, verify manifest, sanitize and checkpoint source; choose canonical UI after source comparison.
-#18 next: artifact identity must bind quad and physical aspect; review mask-store compatibility before changing identity. Then #16, #17, #19, #20, #21, #22, #23.
-Native Windows GUI, seven-category golden set, real masking QA, crash recovery and final installation/rollback are NOT accepted.
+# Sprint 2 checkpoint — 2026-10-21
+Branch fix/final-18-no-loss-identity; base PR26 3a771533977255d9ec2b9f28b1d8c9c3dea45539. Resolve latest commit via git rev-parse HEAD.
+Milestone A implemented: reproduced same-key/different-image physical-aspect bug with failing real synthetic render test. Version-2 canonical identity binds source/art/mask, UID, float32 renderer quad, physical ratio, current recipe, actual contain-white fit and marketplace dimensions. Missing geometry fails closed. Batch derives seller-specific job key from render key, verifies returned key, writes exclusive receipt with identity/output SHA, validates receipt on reuse. New SKU uses job key so different mockups do not collide. Old ledger/SKU/profile/output rows are neither migrated nor rewritten; old v1 jobs are not silently reused.
+22 synthetic Linux tests PASS; Windows/Ubuntu CI pending for this commit. Native Windows acceptance not run.
+A limitations: receipt partial-write crash fails closed and needs review (no automatic repair); source read/hash race and full adversarial concurrency remain B work.
+B/C and private V3.7 reconciliation remain incomplete. No merge/live install/user data changes.
