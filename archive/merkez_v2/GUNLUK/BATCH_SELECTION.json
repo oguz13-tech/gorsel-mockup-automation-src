@@ -1,0 +1,52 @@
+[
+  {
+    "category": "01_Wifi_Kutusu",
+    "uid": "01_Wifi_Kutusu_Wifi_Kutusu_012.png",
+    "relative": "01_Wifi_Kutusu/Wifi_Kutusu_012.png"
+  },
+  {
+    "category": "01_Wifi_Kutusu",
+    "uid": "01_Wifi_Kutusu_Wifi_Kutusu_013.png",
+    "relative": "01_Wifi_Kutusu/Wifi_Kutusu_013.png"
+  },
+  {
+    "category": "01_Wifi_Kutusu",
+    "uid": "01_Wifi_Kutusu_Wifi_Kutusu_014.png",
+    "relative": "01_Wifi_Kutusu/Wifi_Kutusu_014.png"
+  },
+  {
+    "category": "01_Wifi_Kutusu",
+    "uid": "01_Wifi_Kutusu_Wifi_Kutusu_015.png",
+    "relative": "01_Wifi_Kutusu/Wifi_Kutusu_015.png"
+  },
+  {
+    "category": "02_Cam_Tablo_Yatay",
+    "uid": "02_Cam_Tablo_Yatay_CamTabloYatay_001.png",
+    "relative": "02_Cam_Tablo_Yatay/CamTabloYatay_001.png"
+  },
+  {
+    "category": "03_Ahsap_Tablo",
+    "uid": "03_Ahsap_Tablo_AhsapTablo_001.png",
+    "relative": "03_Ahsap_Tablo/AhsapTablo_001.png"
+  },
+  {
+    "category": "04_Cam_Dograma",
+    "uid": "04_Cam_Dograma_CamDograma_001.png",
+    "relative": "04_Cam_Dograma/CamDograma_001.png"
+  },
+  {
+    "category": "05_Ocak_Arkasi",
+    "uid": "05_Ocak_Arkasi_OcakArkasi_007.png",
+    "relative": "05_Ocak_Arkasi/OcakArkasi_007.png"
+  },
+  {
+    "category": "05_Ocak_Arkasi",
+    "uid": "05_Ocak_Arkasi_OcakArkasi_008.png",
+    "relative": "05_Ocak_Arkasi/OcakArkasi_008.png"
+  },
+  {
+    "category": "02_Cam_Tablo_Dikey",
+    "uid": "02_Cam_Tablo_Dikey_CamTabloDikey_013.png",
+    "relative": "02_Cam_Tablo_Dikey/CamTabloDikey_013.png"
+  }
+]
