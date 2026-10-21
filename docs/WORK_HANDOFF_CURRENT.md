@@ -1,9 +1,7 @@
-# Sprint 2 checkpoint — 2026-10-21
-Branch fix/final-18-no-loss-identity; base PR26 3a771533977255d9ec2b9f28b1d8c9c3dea45539. Resolve latest commit via git rev-parse HEAD.
-Milestone A implemented: reproduced same-key/different-image physical-aspect bug with failing real synthetic render test. Version-2 canonical identity binds source/art/mask, UID, float32 renderer quad, physical ratio, current recipe, actual contain-white fit and marketplace dimensions. Missing geometry fails closed. Batch derives seller-specific job key from render key, verifies returned key, writes exclusive receipt with identity/output SHA, validates receipt on reuse. New SKU uses job key so different mockups do not collide. Old ledger/SKU/profile/output rows are neither migrated nor rewritten; old v1 jobs are not silently reused.
-22 synthetic Linux tests PASS; Windows/Ubuntu CI pending for this commit. Native Windows acceptance not run.
-A limitations: receipt partial-write crash fails closed and needs review (no automatic repair); source read/hash race and full adversarial concurrency remain B work.
-B/C and private V3.7 reconciliation remain incomplete. No merge/live install/user data changes.
-
-## Milestone B partial checkpoint
-Added 32 concurrent reservations through 8 independent SQLite connections, immutable same-key/different-SHA collision check, missing-receipt quarantine/no-overwrite test. Red regression proved ledger.rendered could accept nonexistent output; fixed with BEGIN IMMEDIATE and output existence/symlink/SHA verification before SUCCESS. Linux full PETEK suite: 24 PASS. These are threaded connections, NOT two native Windows processes. B still open: multiprocess kill/restart, stale lock, Unicode/extension/numbering matrix, audit chain. C 100-item batch still open.
+# PETEK brush hotfix checkpoint
+Branch fix/petek-solid-brush-coverage, base PR27 ad0a0694a92cd70f8250cd5b7096448b13ee908c. Resolve latest remote HEAD for exact revision.
+Implemented in GitHub Flask editor: source-resolution binary stroke rasterizer; interpolated segment coverage between pointer events; every touched paint pixel 255; convex quad containment; live double outline brush diameter/center and source-pixel size message. No renderer texture changes or old approved-mask rewrites.
+Root causes observed in GitHub JS: independent antialiased canvas circles with no segment connection, no polygon clipping, no hover cursor. This is NOT evidence for the user's private Tk V3.8 symptom.
+Tests: 3 Node behavioral cases PASS; JS syntax check PASS. Python regression result recorded in TEST_EVIDENCE. Windows/Ubuntu new CI pending, native Windows GUI screenshots not obtained.
+Partial delivery: private Tk V3.8 not inspected/integrated; real before/after screenshots, safe protected-hole cleanup/QA, physical border option not implemented. Never blanket-close source holes: actual slots/arches cannot be distinguished from accidental gaps without reviewed protection/intent data. New interpolated strokes prevent gaps inside their geometric sweep but do not repair preexisting masks.
+No user DB/source photos changed, no merge or live installation.

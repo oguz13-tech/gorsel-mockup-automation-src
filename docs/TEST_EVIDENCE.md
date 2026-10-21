@@ -27,3 +27,6 @@ Windows BAT execution and native GUI NOT run locally. Added Windows/Ubuntu CI ex
 Linux Python3.12, external integration-deps. Before fix: pytest -q tests/test_petek_v3.py -k physical_aspect FAILED: distinct output SHAs but identical artifact key. After fix: pytest -q tests/test_petek_v3.py: 22 PASS (including geometry, ratio, recipe, art, marketplace, numeric canonicalization, no-overwrite and existing batch reuse). New CI/native Windows not claimed.
 
 Sprint2 B partial: missing-receipt test PASS; concurrent reservation test initially FAIL because nonexistent output accepted as rendered. Fixed transaction-level file/SHA check; full `python -m pytest -q tests/test_petek_v3.py`: 24 PASS on Linux. No native Windows/process-kill claim.
+
+## Brush hotfix
+Node24.19: node --test tests/js/petek_brush.test.cjs: 3 PASS (solid continuous sweep, quad clip with outside center, cursor scaling). node --check static JS PASS. These are helper tests, not native Windows GUI or real-photo visual acceptance.

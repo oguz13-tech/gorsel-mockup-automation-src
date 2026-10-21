@@ -4,6 +4,8 @@ on:
     paths:
       - 'SABLON_V2_MIMARI/core/petek_*'
       - 'SABLON_V2_MIMARI/static/js/petek_v3.js'
+      - 'SABLON_V2_MIMARI/static/js/petek_brush.js'
+      - 'tests/js/petek_brush.test.cjs'
       - 'SABLON_V2_MIMARI/templates/petek_v3.html'
       - 'tests/test_petek_v3.py'
       - 'scripts/petek_v3_*'
@@ -28,6 +30,11 @@ jobs:
           python-version: '3.11'
       - name: Install pinned local dependencies
         run: python -m pip install -r requirements-petek-v3.txt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Source-coordinate brush coverage tests
+        run: node --test tests/js/petek_brush.test.cjs
       - name: Compile PETEK V3 source modules
         run: python -m compileall -q SABLON_V2_MIMARI/core scripts/petek_v3_windows_launcher.py scripts/petek_v3_windows_release.py
       - name: PETEK V3 unit and isolation tests

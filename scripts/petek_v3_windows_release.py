@@ -112,6 +112,7 @@ def build(destination: Path) -> Path:
         "SABLON_V2_MIMARI/core/petek_serial_factory.py",
         "SABLON_V2_MIMARI/core/petek_v3_routes.py",
         "SABLON_V2_MIMARI/static/js/petek_v3.js",
+        "SABLON_V2_MIMARI/static/js/petek_brush.js",
         "SABLON_V2_MIMARI/templates/petek_v3.html",
         "scripts/petek_v3_windows_launcher.py",
         "tests/test_petek_v3.py",

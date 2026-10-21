@@ -10,6 +10,7 @@
   const mc = painter.getContext("2d", {willReadFrequently:true});
   const state = {name:"", mode:"corners", corners:[], drawing:false, dirty:false};
   let animationPending = false;
+  let lastPoint=null, hoverPoint=null;
 
   function notice(message, error=false) {
     $("notice").textContent = String(message);
@@ -73,6 +74,14 @@
         }
       }
       oc.putImageData(out,0,0);
+      if(hoverPoint && state.mode!=="corners") {
+        oc.save();
+        oc.beginPath();oc.arc(...hoverPoint,Number($("brush").value)/2,0,2*Math.PI);
+        oc.strokeStyle="#000";oc.lineWidth=4;oc.stroke();
+        oc.strokeStyle="#fff";oc.lineWidth=2;oc.stroke();
+        oc.fillStyle="#ff3355";oc.fillRect(hoverPoint[0]-1,hoverPoint[1]-1,3,3);
+        oc.restore();
+      }
       if(state.corners.length) {
         oc.strokeStyle="#ff4c64";oc.lineWidth=Math.max(2,w/800);
         oc.fillStyle="#ff4c64";
@@ -101,9 +110,16 @@
   }
 
   function paintBrush(point) {
-    const radius=Number($("brush").value)/2;
-    mc.fillStyle=state.mode==="wood"?"#fff":"#000";
-    mc.beginPath();mc.arc(point[0],point[1],radius,0,Math.PI*2);mc.fill();
+    if(state.corners.length!==4){notice("Önce dört köşeyi seçin",true);return;}
+    const w=painter.width,h=painter.height;
+    const image=mc.getImageData(0,0,w,h), coverage=new Uint8Array(w*h);
+    for(let i=0;i<coverage.length;i++)coverage[i]=image.data[i*4];
+    PetekBrush.stroke(coverage,w,h,state.corners,lastPoint||point,point,
+                     Number($("brush").value),state.mode==="wood");
+    for(let i=0;i<coverage.length;i++) {
+      const k=i*4;image.data[k]=image.data[k+1]=image.data[k+2]=coverage[i];image.data[k+3]=255;
+    }
+    mc.putImageData(image,0,0);lastPoint=point;
     state.dirty=true;schedulePaint();
   }
 
@@ -117,15 +133,18 @@
       schedulePaint();
       return;
     }
-    state.drawing=true;
+    lastPoint=null;state.drawing=true;
     overlay.setPointerCapture(ev.pointerId);
     paintBrush(point);
   });
   overlay.addEventListener("pointermove",ev=>{
-    if(state.drawing)paintBrush(cursorPoint(ev));
+    hoverPoint=cursorPoint(ev);
+    if(state.drawing)paintBrush(hoverPoint);else schedulePaint();
   });
-  overlay.addEventListener("pointerup",()=>{state.drawing=false;});
-  overlay.addEventListener("pointercancel",()=>{state.drawing=false;});
+  overlay.addEventListener("pointerup",()=>{state.drawing=false;lastPoint=null;});
+  overlay.addEventListener("pointercancel",()=>{state.drawing=false;lastPoint=null;});
+  overlay.addEventListener("pointerleave",()=>{hoverPoint=null;schedulePaint();});
+  $("brush").addEventListener("input",()=>{notice("Fırça çapı: "+$("brush").value+" kaynak px");schedulePaint();});
   ["corners","wood","protect"].forEach(id=>{
     $(id).addEventListener("click",()=>{state.mode=id;notice(
       id==="corners"?"Dört köşe tıklayın (TL/TR/BR/BL).":

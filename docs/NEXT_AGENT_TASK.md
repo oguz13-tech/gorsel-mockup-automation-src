@@ -1,7 +1,7 @@
-# Next exact task
-Start latest remote fix/final-18-no-loss-identity (draft PR against PR26). Read issue18 Sprint2 comment6324992407 and issue24. Verify CI at HEAD.
-Milestone A now implemented and tested: versioned render identity, immutable receipt and per-job SKU. Continue B in separate tested commit: concurrent SQLite reserve/producer tests; same basename different SHA and extension/Unicode/135 numbering tests; interrupted output/receipt and stale-lock recovery. Do not mark uncertain failed job SUCCESS without output SHA evidence. Missing/partial receipts currently quarantine safely; recovery still manual.
-Then C: 100-item durable batch, cancellation/resume and CSV/XLSX audit. Keep legacy user data immutable, no schema migration/live writes/merge. Private V3.7 sources not imported. Update docs and push each completed unit.
-
-## Milestone B partial checkpoint
-Added 32 concurrent reservations through 8 independent SQLite connections, immutable same-key/different-SHA collision check, missing-receipt quarantine/no-overwrite test. Red regression proved ledger.rendered could accept nonexistent output; fixed with BEGIN IMMEDIATE and output existence/symlink/SHA verification before SUCCESS. Linux full PETEK suite: 24 PASS. These are threaded connections, NOT two native Windows processes. B still open: multiprocess kill/restart, stale lock, Unicode/extension/numbering matrix, audit chain. C 100-item batch still open.
+# Next task
+Continue fix/petek-solid-brush-coverage. Read WORK_HANDOFF_CURRENT and issue24.
+1. Obtain private latest Windows Tk package and source/mask/example pair through Library; do not publish it. Compare actual Tk pipeline before claiming the reported user defect fixed.
+2. Verify live Flask canvas screenshot at zoom/size changes and pointer capture outside panel; Node tests cover rasterizer not browser rendering. Screenshot before/after still required.
+3. Implement reviewed protected-region map + explicit paint-intent map for safe 1–2px hole cleanup; do not morphological-close an entire approved mask because real vents may be tiny. Add coverage QA and debug overlay before approval; never rewrite APPROVED.
+4. Compare light-white render using exact user mask; texture/lighting separate from opacity. Add optional physical border only with known measurements and default off.
+5. Continue Sprint2 B/C still open in PR27 handoff history: native multiprocess crash/recovery and naming matrix. Checkpoint all changes; no merge/live writes.
