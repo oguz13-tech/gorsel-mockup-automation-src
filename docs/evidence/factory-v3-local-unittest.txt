@@ -1,0 +1,27 @@
+test_cancel_and_resume (tests.test_factory_v3.FactoryV3Tests.test_cancel_and_resume) ... ok
+test_center_crop_and_interpolation_variants (tests.test_factory_v3.FactoryV3Tests.test_center_crop_and_interpolation_variants) ... ok
+test_corrupted_output_blocks_no_overwrite (tests.test_factory_v3.FactoryV3Tests.test_corrupted_output_blocks_no_overwrite) ... ok
+test_crash_after_publish_recovers_identical_orphan (tests.test_factory_v3.FactoryV3Tests.test_crash_after_publish_recovers_identical_orphan) ... ok
+test_export_interruption_recovers_without_overwrite (tests.test_factory_v3.FactoryV3Tests.test_export_interruption_recovers_without_overwrite) ... ok
+test_export_tamper_blocks (tests.test_factory_v3.FactoryV3Tests.test_export_tamper_blocks) ... ok
+test_failed_template_continues_other_jobs (tests.test_factory_v3.FactoryV3Tests.test_failed_template_continues_other_jobs) ... ok
+test_immutable_never_overwrites (tests.test_factory_v3.FactoryV3Tests.test_immutable_never_overwrites) ... ok
+test_lock_blocks_second_and_releases (tests.test_factory_v3.FactoryV3Tests.test_lock_blocks_second_and_releases) ... ok
+test_mask_cannot_escape_quad (tests.test_factory_v3.FactoryV3Tests.test_mask_cannot_escape_quad) ... ok
+test_mask_review_and_source_binding (tests.test_factory_v3.FactoryV3Tests.test_mask_review_and_source_binding) ... ok
+test_mask_tamper_and_quad_crossing_rejected (tests.test_factory_v3.FactoryV3Tests.test_mask_tamper_and_quad_crossing_rejected) ... ok
+test_number_is_not_reused_after_deleted_product (tests.test_factory_v3.FactoryV3Tests.test_number_is_not_reused_after_deleted_product) ... ok
+test_pause_waits_until_continue (tests.test_factory_v3.FactoryV3Tests.test_pause_waits_until_continue) ... ok
+test_preserved_details_exact_and_no_blur_fill (tests.test_factory_v3.FactoryV3Tests.test_preserved_details_exact_and_no_blur_fill) ... ok
+test_product_identity_compatible_with_prior_petek (tests.test_factory_v3.FactoryV3Tests.test_product_identity_compatible_with_prior_petek) ... ok
+test_recipe_changes_identity (tests.test_factory_v3.FactoryV3Tests.test_recipe_changes_identity) ... ok
+test_repeat_retains_outputs_sku_export_and_sources (tests.test_factory_v3.FactoryV3Tests.test_repeat_retains_outputs_sku_export_and_sources) ... ok
+test_same_name_different_content_and_extension (tests.test_factory_v3.FactoryV3Tests.test_same_name_different_content_and_extension) ... ok
+test_strong_downsample_has_prefilter (tests.test_factory_v3.FactoryV3Tests.test_strong_downsample_has_prefilter) ... ok
+test_untrusted_nested_output_rejected (tests.test_factory_v3.FactoryV3Tests.test_untrusted_nested_output_rejected) ... ok
+test_variable_slots_curves_perspective_masks (tests.test_factory_v3.FactoryV3Tests.test_variable_slots_curves_perspective_masks) ... ok
+
+----------------------------------------------------------------------
+Ran 22 tests in 8.236s
+
+OK
