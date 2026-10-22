@@ -191,7 +191,7 @@ class BatchLedger:
         """Quarantine an uncertain artifact; never overwrite existing files."""
         with self.connect() as db:
             db.execute("""UPDATE artifacts SET status='REVIEW_REQUIRED',error=?,
-              updated_at=CURRENT_TIMESTAMP WHERE artifact_key=?""",(reason[:400],key))
+              updated_at=CURRENT_TIMESTAMP WHERE artifact_key=? AND status!='RENDERED'""",(reason[:400],key))
 
     def iter_verified(self) -> Iterator[dict]:
         """Read ledger rows incrementally for memory-safe commerce export."""
@@ -215,29 +215,66 @@ class BatchLedger:
 
 
 class BatchFileLock:
-    """Cross-process exclusive batch lock; never auto-break a suspicious lock."""
+    """OS-managed cross-process exclusive lock, crash-safe on Win/Linux.
 
-    def __init__(self,root:Path):
-        """Bind lock to PETEK-private runtime root."""
+    The lock file is deliberately kept on disk after release. Removing a locked
+    inode would allow another process to open a new, independently locked inode
+    at the same name. Kernel releases byte-range/flock locks on process death.
+    """
+
+    def __init__(self, root: Path):
         self.path=Path(root)/LOCK_FILENAME
-        self.held=False
+        self.stream=None
 
     def __enter__(self):
-        """Acquire lock with atomic O_EXCL; stale locks demand human inspection."""
+        if self.stream is not None:
+            raise PetekSafetyError("BATCH_LOCK_ALREADY_HELD")
         self.path.parent.mkdir(parents=True,exist_ok=True)
-        fd=os.open(str(self.path),os.O_CREAT|os.O_EXCL|os.O_WRONLY,0o600)
-        with os.fdopen(fd,"w",encoding="utf-8") as stream:
-            stream.write(json.dumps({"pid":os.getpid(),"mode":"PETEK_LOCAL_ONLY"}))
-            stream.flush();os.fsync(stream.fileno())
-        self.held=True
-        return self
+        if self.path.is_symlink():
+            raise PetekSafetyError("BATCH_LOCK_SYMLINK")
+        flags=os.O_RDWR|os.O_CREAT
+        if hasattr(os,"O_NOFOLLOW"):
+            flags|=os.O_NOFOLLOW
+        try:
+            fd=os.open(str(self.path),flags,0o600)
+        except OSError as exc:
+            raise PetekSafetyError("BATCH_LOCK_UNSAFE_PATH") from exc
+        stream=os.fdopen(fd,"r+b",buffering=0)
+        try:
+            if os.name=="nt":
+                import msvcrt
+                stream.seek(0)
+                msvcrt.locking(stream.fileno(),msvcrt.LK_NBLCK,1)
+            else:
+                import fcntl
+                fcntl.flock(stream.fileno(),fcntl.LOCK_EX|fcntl.LOCK_NB)
+            stream.seek(0)
+            stream.write(json.dumps({"pid":os.getpid(),"mode":"PETEK_LOCAL_ONLY"}).encode("ascii"))
+            stream.truncate()
+            self.stream=stream
+            return self
+        except OSError as exc:
+            stream.close()
+            raise PetekSafetyError("BATCH_ALREADY_ACTIVE") from exc
+        except Exception:
+            stream.close()
+            raise
 
     def __exit__(self,exc_type,exc_value,traceback):
-        """Remove only the lock obtained by this process."""
-        if self.held:
-            try:self.path.unlink()
-            except OSError:LOG.exception("PETEK lock cleanup requires manual review")
-        self.held=False
+        stream=self.stream
+        self.stream=None
+        if stream is None:
+            return
+        try:
+            if os.name=="nt":
+                import msvcrt
+                stream.seek(0)
+                msvcrt.locking(stream.fileno(),msvcrt.LK_UNLCK,1)
+            else:
+                import fcntl
+                fcntl.flock(stream.fileno(),fcntl.LOCK_UN)
+        finally:
+            stream.close()
 
 
 def _row(rec: dict) -> list[str]:
