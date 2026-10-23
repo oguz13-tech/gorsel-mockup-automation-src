@@ -64,7 +64,9 @@ def test_duplicate_uid_fails_closed_before_writing(tmp_path):
 def test_tk_settings_snapshot_outside_thread():
     source=(ROOT/'MERKEZ/URETIM_V4/gui_v4.py').read_text('utf-8')
     start=source.split('    def start(self) -> None:',1)[1].split('    def stop(self) -> None:',1)[0]
-    callback=start.split('        def work():',1)[1]
+    # Only the production worker closure, not the following UI-thread callbacks
+    # (A/B preview and cloud link commands also live in this class).
+    callback=start.split('        def work():',1)[1].split('        self.worker = threading.Thread(target=work',1)[0]
     assert 'self.design_folder.get()' not in callback
     assert 'self.group.get()' not in callback
     assert 'self.limit.get()' not in callback

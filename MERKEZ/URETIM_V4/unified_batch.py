@@ -55,6 +55,7 @@ from .unlimited_selection import (
 from .crash_recovery import inspect_interrupted_state, recover_interrupted_state
 from .manual_geometry import validated_legacy_manual_quad
 from .design_proxy_v43 import prepare_render_artwork
+from .upscale4k_v44 import process as upscale_new_outputs
 from .finish_v42 import GLASS, projected_rounded_alpha, subdued_reflection
 from PETEK_V3.excel_links_v42 import xlsx_with_photo_links, verify_photo_links
 
@@ -373,6 +374,9 @@ class UnifiedV4Batch:
         lighting: str = "natural",
         corner_radius: float | None = None,
         glass_effect: str = "on",
+        upscale_4k: bool = False,
+        upscale_model: str = "photo",
+        upscale_exe: Path | str | None = None,
     ) -> dict[str, Any]:
         notify = notify or (lambda msg: None)
         if corner_radius is not None and not 0 <= float(corner_radius) <= .04:
@@ -450,6 +454,9 @@ class UnifiedV4Batch:
             "marketplace_published": False,
         }
 
+        # Save new output list for optional post-processing; reused older outputs
+        # are never silently post-processed or uploaded.
+        newly_rendered: list[dict[str, str]] = []
         try:
             for art in iter_designs(designs):
                 if self.cancel.is_set() or (max_jobs is not None and stats["attempted"] >= int(max_jobs)):
@@ -582,6 +589,8 @@ class UnifiedV4Batch:
                                 "Kaynak dosya üretim sırasında değişmiş; çıktı incelemeye alındı."
                             )
                         self.ledger.complete(key, receipt_sha)
+                        newly_rendered.append({"key": key, "sku": sku, "output": str(output),
+                                               "output_sha": receipt_sha})
                         stats["rendered"] += 1
                         notify(f"ÜRETİLDİ {stats['rendered']}: [{cat}] {uid} / {art.name}")
                     except (petek_engine.MaskError, cv2.error, OSError, ValueError) as exc:
@@ -592,6 +601,17 @@ class UnifiedV4Batch:
                         )
                         notify(f"ATLANDI [{cat}] {uid}/{art.name} — {exc}")
 
+            # 4K is an explicitly selected, independent post-render step.
+            # Failures do not invalidate normal 1200x1600 mockups.
+            if upscale_4k and not self.cancel.is_set():
+                stats["upscale_4k"] = upscale_new_outputs(
+                    newly_rendered, state_root=self.root, enabled=True,
+                    model=upscale_model, exe=upscale_exe,
+                    cancel=self.cancel, notify=notify,
+                )
+            else:
+                stats["upscale_4k"] = {"status": "STOPPED" if self.cancel.is_set() else "DISABLED",
+                                       "upscaled": 0, "failed": 0, "reused": 0}
             csv_path, xlsx_path, count = self.export()
             stats.update(
                 status=(

@@ -15,6 +15,7 @@ from PETEK_V3.registry import Registry as PetekRegistry
 from .unified_batch import UnifiedV4Batch, iter_designs
 from .cloud_excel_v43 import CloudExcel
 from .design_proxy_v43 import prepare_render_artwork
+from .upscale4k_v44 import preflight as upscale_preflight, UpscaleError
 from .unified_batch import _render_legacy_six_cover, _build_legacy_category_mask
 from PETEK_V3 import engine as petek_engine
 from .finish_v42 import GLASS
@@ -40,7 +41,7 @@ class UnifiedV4BatchWindow:
             petek_registry=self.petek_registry,
         )
         self.window = tk.Toplevel(parent)
-        self.window.title("V4.3 — Birleşik 7 Kategori Seri Üretim / Excel Bulut Linkleme")
+        self.window.title("V4.4 Grup 1 — 7 Kategori Üretim / Bulut Excel / İsteğe Bağlı 4K")
         self.window.geometry("1190x920")
         self.window.transient(parent)
 
@@ -49,7 +50,7 @@ class UnifiedV4BatchWindow:
 
         ttk.Label(
             area,
-            text="7 Kategori Ortak Seri Üretim Merkezi (V4.3 — Sınırsız İş / 7 Kategori)",
+            text="7 Kategori Ortak Seri Üretim Merkezi (V4.4 Grup 1 — Sınırsız İş / 4K Seçeneği)",
             font=("Segoe UI", 15, "bold"),
         ).pack(anchor="w", pady=(0, 6))
         ttk.Label(
@@ -122,6 +123,21 @@ class UnifiedV4BatchWindow:
             "Kapalı = yansıma yok. Ahşap/Wi-Fi/PETEK'te cam yansıması uygulanmaz.\n"
             "Köşe yuvarlatması burada değil, 4 Köşe İnceleme > Bu Şablonu Onayla bölümünde ayrı kaydedilir."
         ), wraplength=1100).pack(anchor="w", pady=(2, 6))
+
+        # Normal render is always preserved. 4K is a separate opt-in job, and
+        # cannot silently fall back to non-AI resizing if the binary is absent.
+        upscale_row = ttk.Frame(area)
+        upscale_row.pack(fill="x", pady=(5, 3))
+        self.upscale_4k = tk.BooleanVar(value=False)
+        self.upscale_model = tk.StringVar(value="Fotoğraf — Real-ESRGAN x4plus")
+        ttk.Checkbutton(upscale_row, text="Üretimden sonra isteğe bağlı AI 4K (2880×3840)",
+                        variable=self.upscale_4k).pack(side="left")
+        ttk.Combobox(upscale_row, textvariable=self.upscale_model, state="readonly", width=33,
+                     values=("Fotoğraf — Real-ESRGAN x4plus", "Hızlı — Real-ESRGAN general x4v3")) \
+            .pack(side="left", padx=(12, 4))
+        ttk.Label(area, text=("Varsayılan KAPALI; orijinal 1200×1600 çıktı korunur. 4K ayrı klasöre + SHA makbuzuna yazılır. "
+                              "Bilgisayarda resmi Real-ESRGAN programı ve model dosyaları bulunmalıdır; yoksa üretimden önce uyarılır."),
+                  wraplength=1120).pack(anchor="w", pady=(0, 4))
 
         actions = ttk.Frame(area)
         actions.pack(fill="x", pady=8)
@@ -242,7 +258,11 @@ class UnifiedV4BatchWindow:
             glass_effect = "off" if lighting == "off" else "on"
             # Cam köşesi onaylı şablonda saklanır; arayüzde global override yok.
             corner_radius = None
-        except (ValueError, KeyError) as exc:
+            upscale_4k = bool(self.upscale_4k.get())
+            upscale_model = "fast" if self.upscale_model.get().startswith("Hızlı") else "photo"
+            if upscale_4k:
+                upscale_preflight(enabled=True, model=upscale_model)
+        except (ValueError, KeyError, UpscaleError) as exc:
             messagebox.showwarning("Üretim Ayarları", str(exc), parent=self.window)
             return
 
@@ -274,6 +294,8 @@ class UnifiedV4BatchWindow:
                     lighting=lighting,
                     corner_radius=corner_radius,
                     glass_effect=glass_effect,
+                    upscale_4k=upscale_4k,
+                    upscale_model=upscale_model,
                 )
                 self.messages.put(("done", res))
             except Exception as exc:
@@ -463,6 +485,13 @@ class UnifiedV4BatchWindow:
                     )
                     self.start_button.configure(state="normal")
                     self.cloud_button.configure(state="normal")
+                    quality = value.get("upscale_4k", {})
+                    if quality.get("status") != "DISABLED":
+                        info = (f"4K: başarılı {quality.get('upscaled', 0)}, "
+                                f"tekrar {quality.get('reused', 0)}, hata {quality.get('failed', 0)}. "
+                                f"4K Excel: {quality.get('report', '(çıktı yok)')}")
+                        self._log(info)
+                        self.progress.set(self.progress.get() + " | " + info)
                 elif kind == "ab_done":
                     self.show_ab(*value)
                     self.progress.set('Cam A/B gerçek baskı önizlemesi hazır. Kaynak veya DB değiştirilmedi.')

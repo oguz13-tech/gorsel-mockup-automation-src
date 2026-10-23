@@ -1,3 +1,16 @@
+# [GÜNCEL 2026-10-23] V4.4 ÜÇ GRUP KONTROL NOKTASI — ÖNCE BUNU OKU
+
+- **103 görevün tamamı** `docs/THREE_GROUP_103_TASK_PLAN.md`: Grup 1 maddeler 1–40,101–103 (43); Grup 2 41–75,95–100 (41); Grup 3 76–94 (19).
+- **Aktif:** Grup 1; taslak [PR #45](https://github.com/oguz13-tech/gorsel-mockup-automation-src/pull/45), branch `feature/v44-group1-ui-upscale-20261023`. Grup 2 [#43](https://github.com/oguz13-tech/gorsel-mockup-automation-src/issues/43) ve Grup 3 [#44](https://github.com/oguz13-tech/gorsel-mockup-automation-src/issues/44) *sırada*, tamamlandı değiller.
+- G1 kod checkpoint: ana merkez tek 7 kategori üretim, eski 10 şablon GUI shortcut kaldırıldı, bakım araçları gizlenebilir alanda; isteğe bağlı Real-ESRGAN-NCNN 4K 2880×3840 ayrı SHA korumalı çıktı + yerel Excel; katı salt-okunur SHA denetimi. Gerçek `.exe`/model dosyaları ZIP'e dahil değil; kullanıcı güvenli şekilde temin etmeli.
+- Yerel **107 seçili regresyon PASS**; ayrıca GitHub Windows/Linux G1 test workflow'su eklenmiştir, anlık CI sonucunu GitHub Actions'tan doğrula. Sentetik ≠ gerçek kullanıcı kabulü.
+- Grup 1 **PENDING**: gerçek cam A/B (4 cam kategori), HTTPS ImgBB/FreeImage ağ + Excel tıklama, canlı DB approved köşe revizyon testi, 415MP PNG/WebP stratejisi, Real-ESRGAN gerçek GPU ve 4K A/B, ticari Excel SEO/mağaza sütunları.
+- G2 **PENDING**: eski araçlar/şablon tarama/SAM denemeleri/PETEK maske ve Golden Dataset. G3 **PENDING**: 1000 iş, 2x crash, SQLite backup/restore, iki process, 8080, factory doctor, Windows rollback, tek final ZIP. `main` değiştirme; PR auto merge yapma.
+- Grup 1 test/checkpoint paketi **final değildir**. 386 dosya, SHA256 `61cb1f434cc7937c6c72814da2cb8d0b7e869ead735fb7344c630f922cea9de6` ve özel Library `/Gorsel-Uretim-Merkezi/V4.4-G1/`. Eski kullanıcı V4.2.2/V4.3 ve onaylı `ayarlar.db`, orijinal fotoğraflar, maskeler korunuyor.
+- G1 kabul bitince G2'ye, G2 kabul bitince G3'e geç; final GO yalnız #35 gerçek Windows kabulüyle.
+
+---
+
 # V4.2.2 TEK Windows FABRİKA — KABUL MATRİSİ
 
 **Kod mevcut** `CODE` ≠ **sentetik test raporu** `SYN` ≠ **kullanıcı Windows kabulü** `WIN`. Her hücre için delil gerekir. `PENDING` bitmiş değildir.
