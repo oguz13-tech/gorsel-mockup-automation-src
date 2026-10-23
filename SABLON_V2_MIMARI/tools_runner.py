@@ -1399,8 +1399,116 @@ def interactive_4k() -> int:
         root.destroy()
 
 
+def extend_to_portrait_3x4(files: list[Path], *, method: str = "blur", output_dir: Path | None = None,
+                          runtime_root: Path | None = None) -> tuple[Path, list[Path]]:
+    """3:4 foreground never cropped; background filled, original files untouched."""
+    from PIL import ImageFilter, ImageOps
+    if method not in {"blur", "mosaic", "frosted"}:
+        raise ValueError("BACKGROUND_MODE_NOT_SUPPORTED")
+    sources = [Path(p).absolute() for p in files]
+    if not sources or len({p.parent for p in sources}) != 1:
+        raise ValueError("Görseller aynı klasörden seçilmelidir.")
+    ensure_not_live_template_path(sources, runtime_root)
+    for source in sources:
+        reject_redirect(source)
+        if not source.is_file() or source.suffix.lower() not in IMAGE_EXTS:
+            raise ValueError("Görsel formatı geçersiz: " + source.name)
+    target = Path(output_dir).absolute() if output_dir else sources[0].parent / "3x4_DIKEY_UZATILANLAR"
+    ensure_not_live_template_path([target], runtime_root)
+    reject_redirect(target)
+    target.mkdir(parents=True, exist_ok=True)
+    outputs = []
+    width, height = 1200, 1600
+    for source in sources:
+        with Image.open(source) as opened:
+            src = ImageOps.exif_transpose(opened).convert("RGB")
+            background = ImageOps.fit(src, (width, height), Image.Resampling.LANCZOS)
+            if method == "mosaic":
+                tiny = background.resize((max(8,width//30),max(8,height//30)),Image.Resampling.BOX)
+                background = tiny.resize((width,height),Image.Resampling.NEAREST)
+            else:
+                background = background.filter(ImageFilter.GaussianBlur(32 if method=="blur" else 55))
+                if method == "frosted":
+                    background = Image.blend(background, Image.new("RGB",(width,height),(225,226,226)),.38)
+            foreground = ImageOps.contain(src,(width,height),Image.Resampling.LANCZOS)
+            background.paste(foreground,((width-foreground.width)//2,(height-foreground.height)//2))
+            outputs.append(save_image_create_only(background,target/f"{source.stem}_3x4_{method}.png",format="PNG"))
+    return target,outputs
+
+
+def interactive_extend_3x4() -> int:
+    root, filedialog, messagebox, simpledialog = _ui()
+    try:
+        files=filedialog.askopenfilenames(parent=root,title="3:4 uzatılacak görseller",filetypes=[("Görsel", "*.png *.jpg *.jpeg *.webp *.bmp")])
+        if not files:return 0
+        method=(simpledialog.askstring("Arka Plan", "blur / mosaic / frosted seçin:",parent=root) or "blur").strip().lower()
+        dest,results=extend_to_portrait_3x4([Path(p) for p in files], method=method)
+        messagebox.showinfo("3:4 Dikey Uzatma",f"{len(results)} kopya oluşturuldu.\nOrijinaller değişmedi.\n{dest}",parent=root)
+        return 0
+    except Exception as exc:
+        messagebox.showerror("3:4 Dikey Uzatma",str(exc),parent=root)
+        return 1
+    finally:
+        root.destroy()
+
+
+def _write_g2_report_create_only(path,report):
+    target=Path(path).absolute()
+    ensure_not_live_template_path([target])
+    reject_redirect(target)
+    payload=json.dumps(report,ensure_ascii=False,indent=2).encode("utf-8")
+    with target.open("xb") as stream:
+        stream.write(payload);stream.flush();os.fsync(stream.fileno())
+    return target
+
+
+def interactive_review_folder() -> int:
+    root,filedialog,messagebox,simpledialog=_ui()
+    try:
+        folder=filedialog.askdirectory(parent=root,title="KONTROL_GEREKENLER klasörünü seç")
+        if not folder:return 0
+        category=simpledialog.askstring("Kategori", "Kategori kodu (ör. 01_Wifi_Kutusu):\n"+", ".join(k for k,_ in RENAME_CATEGORIES),parent=root)
+        if not category:return 0
+        try:from .core.group2_quality import inventory_review_folder
+        except ImportError:from core.group2_quality import inventory_review_folder
+        report=inventory_review_folder(RUNTIME_ROOT,Path(folder),category.strip())
+        if messagebox.askyesno("4 Köşe Tekrar Analizi", "Seçilen klasördeki ilk 24 dosya için\nmevcut otomatik 4 köşe algoritmasını\nSADECE TASLAK öneri olarak çalıştırmak ister misiniz?\n\nAktif onaylı profiller ve çalışma havuzu DEĞİŞMEZ.",parent=root):
+            try:from .core.group2_quality import propose_review_folder_corners
+            except ImportError:from core.group2_quality import propose_review_folder_corners
+            report=propose_review_folder_corners(RUNTIME_ROOT,Path(folder),category.strip())
+        target=filedialog.asksaveasfilename(parent=root,title="Raporu ayrı klasöre kaydet (isteğe bağlı)",defaultextension=".json",filetypes=[("JSON","*.json")])
+        if target:_write_g2_report_create_only(target,report)
+        messagebox.showinfo("KONTROL_GEREKENLER Raporu",f"{report['count']} dosya.\nTaşınan: 0, onaylanan: 0.\n"+(target or "Rapor saklanmadı."),parent=root)
+        return 0
+    except Exception as exc:
+        messagebox.showerror("Kontrol Raporu",str(exc),parent=root);return 1
+    finally:root.destroy()
+
+
+def interactive_golden_audit() -> int:
+    root,filedialog,messagebox,_=_ui()
+    try:
+        folder=filedialog.askdirectory(parent=root,title="ÖZEL Golden Dataset klasörünü seç")
+        if not folder:return 0
+        manifest=filedialog.askopenfilename(parent=root,initialdir=folder,title="Özel kalite manifest.json dosyasını seç",filetypes=[("JSON","*.json")])
+        if not manifest:return 0
+        try:from .core.group2_quality import evaluate_private_golden_manifest
+        except ImportError:from core.group2_quality import evaluate_private_golden_manifest
+        report=evaluate_private_golden_manifest(Path(manifest),Path(folder))
+        target=filedialog.asksaveasfilename(parent=root,title="Denetim raporu ayrı klasöre kaydet (isteğe bağlı)",defaultextension=".json",filetypes=[("JSON","*.json")])
+        if target:_write_g2_report_create_only(target,report)
+        messagebox.showinfo("Özel Golden QA",f"{report['count']} vaka, {report['fail_count']} uyarı.\nOtomatik onay yok; insan kabulü gereklidir.",parent=root)
+        return 0
+    except Exception as exc:
+        messagebox.showerror("Golden QA",str(exc),parent=root);return 1
+    finally:root.destroy()
+
+
 TOOLS = {
     "stage": interactive_safe_stage,
+    "portrait_3x4": interactive_extend_3x4,
+    "review_folder": interactive_review_folder,
+    "golden_audit": interactive_golden_audit,
     "rename": interactive_rename,
     "convert": interactive_convert,
     "png_recursive": interactive_recursive_png,

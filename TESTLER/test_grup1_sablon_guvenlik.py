@@ -37,12 +37,19 @@ def digest(p: Path) -> str:
 def store(tmp_path):
     db_path = tmp_path / 'SABLON_V2_MIMARI' / 'ayarlar.db'
     db_path.parent.mkdir(parents=True)
-    with sqlite3.connect(db_path) as con:
-        con.execute('CREATE TABLE categories (id TEXT PRIMARY KEY, label TEXT)')
-        con.execute('CREATE TABLE templates (category_id TEXT, filename TEXT, data TEXT, PRIMARY KEY(category_id,filename))')
-        con.execute('CREATE TABLE template_profiles (template_uid TEXT PRIMARY KEY, category TEXT, review_status TEXT, manually_verified INTEGER, surface_quad TEXT)')
-        for cat in CATEGORIES:
-            con.execute('INSERT INTO categories VALUES (?,?)', (cat, cat))
+    con = sqlite3.connect(db_path)
+    try:
+        with con:
+            con.execute('CREATE TABLE categories (id TEXT PRIMARY KEY, label TEXT)')
+            con.execute('CREATE TABLE templates (category_id TEXT, filename TEXT, data TEXT, PRIMARY KEY(category_id,filename))')
+            con.execute('CREATE TABLE template_profiles (template_uid TEXT PRIMARY KEY, category TEXT, review_status TEXT, manually_verified INTEGER, surface_quad TEXT)')
+            for cat in CATEGORIES:
+                con.execute('INSERT INTO categories VALUES (?,?)', (cat, cat))
+    finally:
+        # sqlite3.Connection.__exit__ commits, but DOES NOT close the handle.
+        # Windows cannot unlink the fixture DB while the generator keeps con
+        # alive. Close it before yielding the path (real runtime untouched).
+        con.close()
     with patch.dict(os.environ, {'LOCALAPPDATA': str(tmp_path / 'LOCAL_STATE')}):
         yield tmp_path
 
