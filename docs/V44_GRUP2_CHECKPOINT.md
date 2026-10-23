@@ -31,3 +31,6 @@
 
 ## Sıradaki otomasyon görevi
 Grup 2 taslak PR üzerinde CI ve gerçek Windows koşullarını belirle. Özel gerçek örnekler yalnız kullanıcı bilgisayarında işlensin, GitHub'a yüklenmesin. Tam G2 kabulü tamamlanmadan Grup 3'ü "güvenli final" ilan etme. `main` / canlı DB / dört köşe / master / mask / eski ZIP'e yazma yasak.
+
+## GitHub Windows CI test-harness notu
+İlk Windows CI koşusu `TESTLER/test_grup1_sablon_guvenlik.py::store` fixture'ında açık kalan SQLite bağlantısı nedeniyle WinError 32 verdi; Linux'ta kapatılmamış dosya unlink edilebildiği için gizlenmişti. Fixture artık `finally: con.close()` yapıyor. Bu yalnız **sentetik test hazırlığı düzeltmesidir**, kullanıcı canlı DB kodu değiştirilmedi.
