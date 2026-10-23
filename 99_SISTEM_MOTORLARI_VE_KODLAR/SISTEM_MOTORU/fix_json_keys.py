@@ -1,29 +1,20 @@
-import json
-from pathlib import Path
+# -*- coding: utf-8 -*-
+"""Legacy fix_json_keys.py: preserved SAFE entrypoint for recovery previews.
 
-BASE_DIR = Path(r"C:\Users\oguzc\OneDrive\Masaüstü\GörselÜretme-ve-Mockup Otomasyonu")
-AYARLAR = BASE_DIR / "99_SISTEM_MOTORLARI_VE_KODLAR" / "SISTEM_MOTORU" / "ayarlar.json"
+The historical script previously wrote over current settings or physically
+removed backups at import. Its mutating implementation is intentionally not
+executed. Review the snapshot comparison before a separately approved restore.
+"""
 
-with open(AYARLAR, "r", encoding="utf-8") as f:
-    data = json.load(f)
+try:
+    from .legacy_recovery_preview import inspect, main
+except ImportError:
+    from legacy_recovery_preview import inspect, main
 
-for cat_name, cat_data in data.get("kategoriler", {}).items():
-    old_sablonlar = cat_data.get("sablonlar", {})
-    new_sablonlar = {}
-    
-    for old_name, conf in old_sablonlar.items():
-        base_name = Path(old_name).stem
-        new_name = f"{base_name}.png"
-        
-        # If there's a collision (e.g. both .webp and .jpeg existed with same base), we just keep one or rename
-        if new_name in new_sablonlar:
-            new_name = f"{base_name}_duplicate.png"
-            
-        new_sablonlar[new_name] = conf
-        
-    cat_data["sablonlar"] = new_sablonlar
 
-with open(AYARLAR, "w", encoding="utf-8") as f:
-    json.dump(data, f, ensure_ascii=False, indent=2)
+def preview(runtime_root=None):
+    return inspect("fix_json_keys.py", runtime_root)
 
-print("Veritabanı anahtarları zorla PNG olarak güncellendi.")
+
+if __name__ == "__main__":
+    raise SystemExit(main("fix_json_keys.py"))
