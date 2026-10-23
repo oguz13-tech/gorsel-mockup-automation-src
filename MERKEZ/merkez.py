@@ -18,7 +18,7 @@ import webbrowser
 
 HERE=Path(__file__).resolve().parent
 ROOT=HERE.parent
-VERSION='V4.2.1 — Grup 1 + Grup 2 (Son Denetim)'
+VERSION='V4.3 — Grup 1 + Grup 2 (Son Denetim)'
 
 class Center:
     def __init__(self):
@@ -80,8 +80,8 @@ class Center:
         self.daily.pack(side='left',fill='x',expand=True,padx=(0,6))
         ttk.Button(row2,text='Eski inceleme sunucusunu durdur',command=self.stop_legacy_editor).pack(side='left',padx=(6,0))
         row_v4=ttk.Frame(p);row_v4.pack(fill='x',pady=(2,7))
-        ttk.Button(row_v4,text='7 KATEGORİ — TÜM ONAYLI ŞABLONLARLA SERİ ÜRETİM (V4.2.1)',command=self.open_unified_v4).pack(side='left',fill='x',expand=True,padx=(0,6))
-        ttk.Button(row_v4,text='Kesinti / Kilit Kurtarma (V4.2.1)',command=self.open_crash_recovery).pack(side='left',padx=(6,0))
+        ttk.Button(row_v4,text='7 KATEGORİ — TÜM ONAYLI ŞABLONLARLA SERİ ÜRETİM (V4.3)',command=self.open_unified_v4).pack(side='left',fill='x',expand=True,padx=(0,6))
+        ttk.Button(row_v4,text='Kesinti / Kilit Kurtarma (V4.3)',command=self.open_crash_recovery).pack(side='left',padx=(6,0))
         ttk.Separator(p).pack(fill='x',pady=(7,10))
         ttk.Label(p,text='2 — PETEK DOLABI: ŞABLON, MASKE VE SERİ ÜRETİM',
                   font=('Segoe UI',12,'bold')).pack(anchor='w',pady=(0,3))

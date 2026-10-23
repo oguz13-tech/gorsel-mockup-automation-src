@@ -166,6 +166,15 @@
             <button type="button" onclick="toggleReviewOverlay()" style="background:#17a2b8; width:100%; padding:12px 10px; margin-top:5px; font-weight:bold;">👁️ Yerleşimi Kontrol Et</button>
             <div class="tool-note">Baskı alanını yeşil kaplama ile daha net görmenizi sağlar.</div>
 
+            <div id="glassCornerWrap" class="tool-note" style="padding:7px; margin:6px 0; border:1px solid #64748b;">
+                <label for="glassCornerRadiusApproval">Cam baskı köşesi (yalnız cam ürünleri):</label>
+                <select id="glassCornerRadiusApproval" style="color:#fff;background:#273142; padding:5px; margin-left:6px;">
+                    <option value="0">Keskin (%0)</option>
+                    <option value="0.008" selected>Hafif (%0,8)</option>
+                    <option value="0.015">Belirgin (%1,5)</option>
+                </select>
+                <div>4 köşe noktalarını değiştirmez; onaylanınca sonraki üretimlere uygulanır. Eski çıktı dosyaları korunur.</div>
+            </div>
             <button type="button" onclick="approveTemplate()" style="background:#28a745; width:100%; padding:12px 10px; margin-top:5px; font-weight:bold;">✅ Bu Şablonu Onayla</button>
             <div class="tool-note">Dört köşe doğruysa şablonu üretimde kullanılabilir hale getirir.</div>
 

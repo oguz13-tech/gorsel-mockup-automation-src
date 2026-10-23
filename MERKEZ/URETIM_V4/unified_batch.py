@@ -54,11 +54,12 @@ from .unlimited_selection import (
 )
 from .crash_recovery import inspect_interrupted_state, recover_interrupted_state
 from .manual_geometry import validated_legacy_manual_quad
+from .design_proxy_v43 import prepare_render_artwork
 from .finish_v42 import GLASS, projected_rounded_alpha, subdued_reflection
 from PETEK_V3.excel_links_v42 import xlsx_with_photo_links, verify_photo_links
 
 EXT = {".jpg", ".jpeg", ".png", ".webp"}
-V4_RECIPE = "v4-2-unified-7category-optical-finish-20261023"
+V4_RECIPE = "v4-3-unlimited-explicit-glass-20261023"
 
 UNIFIED_HEADERS = [
     "Stok Kodu",
@@ -106,6 +107,7 @@ def unified_receipt_identity(
     lighting: str,
     recipe: str = V4_RECIPE,
     corner_radius: float = .008,
+    glass_effect: str = "on",
 ) -> tuple[str, dict[str, Any]]:
     """Deterministic versioned identity covering category, template SHA, mask SHA, quad, aspect, and art SHA."""
     quad = item.get("quad")
@@ -131,6 +133,7 @@ def unified_receipt_identity(
         "placement": str(placement),
         "lighting": str(lighting),
         "corner_radius": round(float(corner_radius), 6),
+        "glass_effect": str(glass_effect),
     }
     stamp = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True, allow_nan=False)
     digest = hashlib.sha256(stamp.encode("utf-8")).hexdigest()
@@ -163,6 +166,7 @@ def _render_legacy_six_cover(
     edge_feather_px: float = 1.4,
     category: str = "",
     corner_radius: float = .008,
+    glass_effect: str = "on",
     marketplace: bool = True,
 ) -> tuple[np.ndarray, dict[str, Any]]:
     """Render categories 01..05 with full-bleed cover projection, natural lighting, and strict background preservation."""
@@ -179,8 +183,8 @@ def _render_legacy_six_cover(
         raise petek_engine.MaskError(f"Baskı alanı oranı geçersiz ({fraction:.1%}).")
     projected = petek_engine.warp_artwork(design, q, scene.shape, physical_aspect, placement=placement)
     lit = realism.apply(scene, projected, mask, lighting)
-    if category in GLASS:
-        lit = subdued_reflection(scene, lit, mask, q, category, lighting)
+    if category in GLASS and glass_effect == "on":
+        lit = subdued_reflection(scene, lit, mask, q, category, "strong")
     out = scene.copy()
     active = mask > 0
     alpha = mask.astype(np.float32) / 255.0
@@ -206,7 +210,8 @@ def _render_legacy_six_cover(
         "zero_blur_padding": placement == "cover",
         "lighting": lighting,
         "corner_radius": corner_radius if category in GLASS else 0.0,
-        "optical_finish": category in GLASS and lighting != "off",
+        "optical_finish": category in GLASS and glass_effect == "on",
+        "glass_effect": glass_effect if category in GLASS else "not_applicable",
     }
     return (petek_engine.canvas_3x4(out) if marketplace else out), qa
 
@@ -363,20 +368,23 @@ class UnifiedV4Batch:
         per_category_limit: int | None = None,
         group: str = "LOCAL",
         notify=None,
-        max_jobs: int = 25000,
+        max_jobs: int | None = None,
         placement: str = "cover",
         lighting: str = "natural",
-        corner_radius: float = .008,
+        corner_radius: float | None = None,
+        glass_effect: str = "on",
     ) -> dict[str, Any]:
         notify = notify or (lambda msg: None)
-        if not 0 <= float(corner_radius) <= .04:
+        if corner_radius is not None and not 0 <= float(corner_radius) <= .04:
             raise petek_engine.MaskError("Köşe yuvarlatma %0-%4 arasında olmalı.")
+        if glass_effect not in ("on", "off"):
+            raise petek_engine.MaskError("Cam efekti Açık veya Kapalı olmalı.")
         if placement not in petek_engine.PLACEMENT_MODES:
             raise petek_engine.MaskError("Yerleşim modu geçersiz: cover veya contain.")
         if not re.fullmatch(r"[A-Za-z0-9_-]{2,36}", str(group)):
             raise petek_engine.MaskError("Mağaza grubu yalnızca harf, sayı, alt çizgi, tire içerebilir.")
-        if not (1 <= int(max_jobs) <= 100000):
-            raise petek_engine.MaskError("İş limiti 1-100000 arasında olmalı.")
+        if max_jobs is not None and int(max_jobs) < 1:
+            raise petek_engine.MaskError("İş limiti pozitif olmalı veya sınırsız bırakılmalı.")
 
         designs = Path(design_folder).resolve(strict=True)
         if not designs.is_dir():
@@ -428,6 +436,8 @@ class UnifiedV4Batch:
             "status": "RUNNING",
             "placement": placement,
             "lighting": lighting,
+            "glass_effect": glass_effect,
+            "unlimited_jobs_enabled": max_jobs is None,
             "unlimited_templates_enabled": per_category_limit is None,
             "approved_template_count": len(templates),
             "per_category_templates": discovery_audit["per_category_counts"],
@@ -442,13 +452,21 @@ class UnifiedV4Batch:
 
         try:
             for art in iter_designs(designs):
-                if self.cancel.is_set() or stats["attempted"] >= int(max_jobs):
+                if self.cancel.is_set() or (max_jobs is not None and stats["attempted"] >= int(max_jobs)):
                     break
-                art = petek_engine.safe_file(art)
-                art_sha = petek_engine.digest(art)
+                original_art = art
+                try:
+                    render_art, art_sha = prepare_render_artwork(
+                        original_art, self.root / "working_art_proxies")
+                except (petek_engine.MaskError, cv2.error, OSError, ValueError) as exc:
+                    stats["rejected"] += 1
+                    stats["errors"].append({"design": original_art.name,
+                                            "reason": "TASARIM_BOYUTU_VE_GUVENLIK: " + str(exc)})
+                    notify(f"ATLANDI TASARIM {original_art.name}: {exc}")
+                    continue
 
                 for item in templates:
-                    if self.cancel.is_set() or stats["attempted"] >= int(max_jobs):
+                    if self.cancel.is_set() or (max_jobs is not None and stats["attempted"] >= int(max_jobs)):
                         break
                     stats["attempted"] += 1
                     cat = item["category"]
@@ -470,7 +488,10 @@ class UnifiedV4Batch:
                             mask = _build_legacy_category_mask(scene_for_mask, item["quad"], item.get("legacy_data"))
                             mask_sha = petek_engine.mask_hash(mask)
                         item_with_mask = dict(item, mask_sha=mask_sha)
-                        active_corner_radius = float(corner_radius) if cat in GLASS else 0.0
+                        saved_radius = item.get("legacy_data", {}).get("glass_corner_radius", .008)
+                        active_corner_radius = (float(corner_radius) if corner_radius is not None else float(saved_radius)) if cat in GLASS else 0.0
+                        if not 0 <= active_corner_radius <= .04:
+                            raise petek_engine.MaskError("Şablondaki cam köşesi ayarı geçersiz.")
                         full_key, _ = unified_receipt_identity(
                             item_with_mask,
                             art_sha,
@@ -478,6 +499,7 @@ class UnifiedV4Batch:
                             placement=placement,
                             lighting=lighting,
                             corner_radius=active_corner_radius,
+                            glass_effect=glass_effect if cat in GLASS else "not_applicable",
                         )
                     except (petek_engine.MaskError, cv2.error, OSError, ValueError, KeyError, TypeError) as exc:
                         stats["rejected"] += 1
@@ -526,7 +548,7 @@ class UnifiedV4Batch:
                         if item["engine_type"] == "PETEK_V3_CUTOUT":
                             picture, _, _ = render_with_cutout_paste(
                                 source_path,
-                                art,
+                                render_art,
                                 item["quad"],
                                 mask,
                                 item["physical_aspect"],
@@ -537,7 +559,7 @@ class UnifiedV4Batch:
                         else:
                             picture, _ = _render_legacy_six_cover(
                                 source_path,
-                                art,
+                                render_art,
                                 item["quad"],
                                 mask,
                                 item["physical_aspect"],
@@ -546,6 +568,7 @@ class UnifiedV4Batch:
                                 lighting=lighting,
                                 category=cat,
                                 corner_radius=active_corner_radius,
+                                glass_effect=glass_effect,
                             )
 
                         encoded_png = petek_engine.encode_png(picture)
@@ -553,7 +576,7 @@ class UnifiedV4Batch:
                         receipt_sha = petek_engine.digest(output)
                         if (
                             petek_engine.digest(source_path) != source_sha
-                            or petek_engine.digest(art) != art_sha
+                            or petek_engine.digest(original_art) != art_sha
                         ):
                             raise petek_engine.MaskError(
                                 "Kaynak dosya üretim sırasında değişmiş; çıktı incelemeye alındı."
