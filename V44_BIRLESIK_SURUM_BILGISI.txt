@@ -1,0 +1,10 @@
+GORSEL URETIM MERKEZI V4.4 - GRUP 1 + GRUP 2 + GRUP 3 BIRLESIK WINDOWS KABUL ADAYI
+24 Ekim 2026
+
+Bu ZIP tek program kod paketi: Grup 1 arayuz/4K/HTTPS Excel, Grup 2 sablon/PETEK/golden, Grup 3 guvenlik/backup/WAL/1000 kayit testleri.
+BASLAT: BIRLESIK_V42_BASLAT_WINDOWS.bat (dosya adi eski, bu 3 grup birlesik kodu baslatir)
+Oncelikle: docs/V44_BIRLESIK_WINDOWS_KURULUM_VE_GERI_DONUS.md
+G3: docs/V44_GRUP3_19_GOREV_DURUMU.md
+
+CI sentetik sonuc Windows kullanici gercek QA degildir. 34+ PETEK Golden, onayli 4 kose, bulut Excel, 4K GPU, 1000 gercek render, offline Windows kurulum, restore basari kaniti PENDING.
+Orijinal goruseller, SQLite ayarlar.db, kuadrilateral onaylar, model exe/agrlklari ZIP ile degistirilmez.

@@ -18,7 +18,7 @@ import webbrowser
 
 HERE=Path(__file__).resolve().parent
 ROOT=HERE.parent
-VERSION='V4.4 — Grup 1 (Üretim Ekranı ve 4K)'
+VERSION='V4.4 — Grup 1+2+3 (Windows Kabul Adayı)'
 
 class Center:
     def __init__(self):
@@ -102,6 +102,9 @@ class Center:
         ttk.Button(r6,text='PETEK Çıktı Klasörü',command=self.open_petek_results).pack(side='left',fill='x',expand=True,padx=3)
         ttk.Button(r6,text='PETEK Eski Ayrı Seri Üretimi',command=self.open_petek).pack(side='left',fill='x',expand=True,padx=3)
         ttk.Button(r6,text='4 Köşe Servisini Durdur',command=self.stop_legacy_editor).pack(side='left',fill='x',expand=True,padx=3)
+        r7=ttk.Frame(self.advanced_panel);r7.pack(fill='x',pady=3)
+        ttk.Button(r7,text='G3 Salt-Okunur Veri / SHA Denetimi',command=self.g3_audit).pack(side='left',fill='x',expand=True,padx=3)
+        ttk.Button(r7,text='G3 Onaylı İki DB Yedeği + Geri Yükleme Provası',command=self.g3_backup).pack(side='left',fill='x',expand=True,padx=3)
         ttk.Label(self.advanced_panel,text=(
             'Kesinti/Kilit Kurtarma: yarım işleri inceler, yalnız onayla güvenli kurtarır. '
             'SHA kayıt denetimi yalnız okur; mevcut görsellere dokunmaz. '
@@ -115,8 +118,39 @@ class Center:
                     'Çakışmalar incelemeye, mevcut kopyalar ayrı klasöre, yeni şablonlar dört köşe onayına gider.',
                   foreground=MUTED,wraplength=920).pack(anchor='w',pady=(3,3))
         ttk.Label(p,text='Koruma: kaynak görüntüler, orijinal yedek ve onaylı profiller kendiliğinden değiştirilmez.\n'
-                    'Günlük V2 hâlen 10 onaylı şablona bağlıdır; bütün şablonlar için üretim geçerlilik kontrolüne tabidir.',
+                    'Tek güncel seri üretim yolu 7 Kategoridir; şablonlar üretim öncesi onay ve SHA kontrolünden geçer.',
                   foreground=MUTED,wraplength=920).pack(anchor='w',pady=(7,0))
+
+    def g3_audit(self):
+        """Only reads live databases, original folders and local output receipts."""
+        try:
+            import json
+            from URETIM_V4.final_guard_v44 import inspect_workspaces
+            summary = inspect_workspaces(self.runtime)
+            pretty = json.dumps(summary, ensure_ascii=False, indent=2)
+            self._log('G3 salt-okunur denetim:\n' + pretty)
+            messagebox.showinfo('G3 Veri / SHA denetimi', pretty[:3500], parent=self.root)
+        except Exception as exc:
+            messagebox.showerror('G3 salt-okunur denetim başarısız', str(exc), parent=self.root)
+
+    def g3_backup(self):
+        """Operator-approved online backups; no live DB migration or restore."""
+        if not messagebox.askyesno('G3 - açık onay gerekli',
+                'Mevcut onaylı şablon veritabanı ve üretim kayıt veritabanının '
+                'yerel, senkronize olmayan klasöre ayrı SQLite yedekleri alınacak. '
+                'Yedeklerin KOPYASI ile geri yükleme provası yapılacak. '
+                'Canlı dosyalar değiştirilmeyecek. Devam edilsin mi?',parent=self.root):
+            return
+        try:
+            from URETIM_V4.final_guard_v44 import backup_and_restore_trial, BACKUP_CONFIRM
+            info = backup_and_restore_trial(self.runtime, confirm=BACKUP_CONFIRM)
+            report = info['report_path']
+            self._log('G3 iki DB güvenli yedek + prova PASS: ' + report)
+            messagebox.showinfo('G3 yedek doğrulandı',
+                'Her iki SQLite dosyası tutarlı yedeklendi ve izole geri yükleme provasını geçti.\n'
+                'Kanıt raporu: ' + report, parent=self.root)
+        except Exception as exc:
+            messagebox.showerror('G3 güvenli yedek başarısız', str(exc), parent=self.root)
 
     def toggle_advanced(self):
         """Keep rarely used maintenance actions available without crowding the UI."""
