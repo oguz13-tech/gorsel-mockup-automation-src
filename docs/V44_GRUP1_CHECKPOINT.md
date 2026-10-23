@@ -15,7 +15,7 @@
 - Ek hotfix, son güvenlik, Factory Doctor: 56 PASS; bir eski UI testi yeni karara güncellendi, thread snapshot test sınırı düzeltildi.
 - **Toplam 107 benzersiz seçilmiş test PASS**. Ayrıca `python -m compileall -q .` PASS (eski string escape uyarıları var).
 - Fake-engine mock testi: normal PNG korunur, ayrı 4K PNG 2880x3840, SHA receipt ve Excel hyperlink, idempotent tekrar, kaynak SHA uyuşmazlığında fail-closed, motor hata kodunda orijinal korunumu.
-- **Gerçek Real-ESRGAN GPU çalıştırması ve yüksek hacimli 4K üretim yapılmadı.** Windows ticari kalite kabulü eksik. Tüm suite tek komutta çalıştırılmadı.
+- **Yeni `.github/workflows/v44-group1-gate.yml` Windows/Linux sözdizimi ve grup testlerini otomatik çalıştırır; GitHub sonucu ayrıca beklenir. Gerçek Real-ESRGAN GPU çalıştırması ve yüksek hacimli 4K üretim yapılmadı.** Windows ticari kalite kabulü eksik. Tüm suite tek komutta çalıştırılmadı.
 
 ## Kesin açık kalan Grup 1 işler
 - #19–#27: dört cam kategorisi gerçek kullanıcı A/B onayı.
