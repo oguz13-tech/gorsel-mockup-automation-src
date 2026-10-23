@@ -3,8 +3,8 @@
 ## Başlangıç
 
 - Grup 1 kaynak: PR #45, Grup 2: PR #46, Grup 3: branch `feature/v44-group3-release-safety-20261024` (yeni DRAFT PR eklenecek).
-- Son birleşik kabul adayı: `GORSEL_URETIM_MERKEZI_V44_GRUP1_GRUP2_GRUP3_TEK_WINDOWS_KABUL_ADAYI.zip`, SHA-256 değeri ZIP dışındaki `V44_3GRUP_SHA256.txt` dosyasında, **402 dosya** (401 + iç manifest), ZIP CRC/extraction PASS.
-- Değişen kaynaklar: `MERKEZ/URETIM_V4/final_guard_v44.py`, `MERKEZ/G3_GUVENLIK_KONTROLU.py`, `MERKEZ/merkez.py`, `MERKEZ/URETIM_V4/gui_v4.py`, iki Windows BAT, `TESTLER/test_v44_group3_release_safety.py`, `.github/workflows/v44-group3-gate.yml`, `docs/*` durum/release belgeleri. Grup 1/2 önceki üretim motorları korunur.
+- Son birleşik kabul adayı: `GORSEL_URETIM_MERKEZI_V44_GRUP1_GRUP2_GRUP3_TEK_WINDOWS_KABUL_ADAYI.zip`, SHA-256 değeri ZIP dışındaki `V44_3GRUP_SHA256.txt` dosyasında, **403 dosya** (402 + iç manifest), ZIP CRC/extraction PASS.
+- Değişen kaynaklar: `MERKEZ/URETIM_V4/final_guard_v44.py`, `MERKEZ/G3_GUVENLIK_KONTROLU.py`, `MERKEZ/merkez.py`, `MERKEZ/URETIM_V4/gui_v4.py`, iki eski Windows BAT ve yeni `BASLAT_V44_TEK_MERKEZ_WINDOWS.bat`, `TESTLER/test_v44_group3_release_safety.py`, `.github/workflows/v44-group3-gate.yml`, `docs/*` durum/release belgeleri. Grup 1/2 önceki üretim motorları korunur.
 - Yeni G3 modülünde: salt-okunur iki-DB schema/quick_check, 7 kategori output root/SHA; açık onaylı WAL-aware online SQLite backup/iki DB, restore copy doğrulaması, manifest SHA, bulut klasörüne yedek engeli, orijinal DB'ye yazmama.
 - `docs/V44_GRUP3_19_GOREV_DURUMU.md` 076–094'ü satır satır açık kod/sentetik/Windows ayrımıyla işaretler.
 

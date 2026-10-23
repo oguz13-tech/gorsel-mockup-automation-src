@@ -2,7 +2,7 @@ GORSEL URETIM MERKEZI V4.4 - GRUP 1 + GRUP 2 + GRUP 3 BIRLESIK WINDOWS KABUL ADA
 24 Ekim 2026
 
 Bu ZIP tek program kod paketi: Grup 1 arayuz/4K/HTTPS Excel, Grup 2 sablon/PETEK/golden, Grup 3 guvenlik/backup/WAL/1000 kayit testleri.
-BASLAT: BIRLESIK_V42_BASLAT_WINDOWS.bat (dosya adi eski, bu 3 grup birlesik kodu baslatir)
+BASLAT: BASLAT_V44_TEK_MERKEZ_WINDOWS.bat (yeni net Windows baslatma dosyasi)
 Oncelikle: docs/V44_BIRLESIK_WINDOWS_KURULUM_VE_GERI_DONUS.md
 G3: docs/V44_GRUP3_19_GOREV_DURUMU.md
 

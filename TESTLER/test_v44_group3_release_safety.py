@@ -191,3 +191,11 @@ def test_audit_does_not_trust_output_path_outside_managed_root(tmp_path):
     result = inspect_workspaces(runtime, state)
     assert result["production"]["unfinished"] == 1
     assert outside.read_bytes() == b"personally_owned_original"
+
+
+def test_v44_friendly_single_launcher_exists_and_calls_isolated_bootstrap():
+    launcher = ROOT / "BASLAT_V44_TEK_MERKEZ_WINDOWS.bat"
+    data = launcher.read_text(encoding="utf-8")
+    assert "WINDOWS_HIZLI_BASLAT.bat" in data
+    assert "call " in data.lower()
+    assert "exit /b %ERRORLEVEL%" in data

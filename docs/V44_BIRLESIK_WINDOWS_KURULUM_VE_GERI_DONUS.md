@@ -4,7 +4,7 @@
 
 1. Mevcut programda dört köşe işini kaydedin ve eski GUI/8080 pencerelerini kapatın. Hiçbir eski klasör/ZIP'i silmeyin.
 2. ZIP'i **ayrı yeni bir yere** açın: `C:\GorselMockup_V44_ADAY`. `C:\AI_WORK`, önceki V4.2.2/V4.3 ve OneDrive ana çalışma klasörünün ÜZERİNE açmayın.
-3. `BIRLESIK_V42_BASLAT_WINDOWS.bat` başlatıcısı kullanıcı dostu tek giriş noktasıdır; dosya adında tarihî V42 referansı bulunsa bile G1+G2+G3 kodlarını içerir. GERÇEK sürüm için paket manifest/hash kullanılmalı.
+3. **`BASLAT_V44_TEK_MERKEZ_WINDOWS.bat`** dosyasına çift tıklayın. Eski `BIRLESIK_V42_BASLAT_WINDOWS.bat` geriye dönük uyumluluk için tutuldu. Her ikisi aynı güncel G1+G2+G3 programını açar.
 4. Ana çalışma klasörü olarak eski onayları içeren gerçek `GörselÜretme-ve-Mockup Otomasyonu` kökünü seçin. **Şablon görsellerini, `ayarlar.db` dosyasını veya `.db-wal` dosyasını yeni kurulum klasörüne kopyalamayın.**
 5. **Gelişmiş Araçlar** menüsünden `G3 Salt-Okunur Veri / SHA Denetimi`ne basın. Kayıtlar, SHA veya tablo sayısı hatalıysa üretime geçmeyin.
 6. **G3 Onaylı İki DB Yedeği + Geri Yükleme Provası** yalnız kullanıcının açık onayıyla çalışır. İki SQLite snapshot ve test geri yükleme kanıtı varsayılan olarak `%LOCALAPPDATA%\GorselMockup\G3_GUVENLI_YEDEK\...` altına ayrı kaydedilir. OneDrive'daki kaynak SQLite'lar değişmez.
