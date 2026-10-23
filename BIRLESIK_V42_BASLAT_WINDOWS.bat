@@ -1,8 +1,8 @@
-@echo off
+﻿@echo off
 setlocal
 chcp 65001 >nul
 cd /d "%~dp0"
-title GORSEL URETIM MERKEZI V4.3 - FACTORY DOCTOR GUVENLI BILGILENDIRME
+title GORSEL URETIM MERKEZI V4.4 - 3 GRUP BIRLESIK KABUL ADAYI
 if not exist "%~dp0WINDOWS_HIZLI_BASLAT.bat" (
  echo Eksik dosya: WINDOWS_HIZLI_BASLAT.bat
  pause

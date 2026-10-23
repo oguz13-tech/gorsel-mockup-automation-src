@@ -1,0 +1,29 @@
+name: V4.4 Group 3 SQLite safety and ledger gate
+on:
+  push:
+    branches:
+      - feature/v44-group3-release-safety-20261024
+  pull_request:
+    paths:
+      - 'MERKEZ/URETIM_V4/final_guard_v44.py'
+      - 'TESTLER/test_v44_group3_release_safety.py'
+      - '.github/workflows/v44-group3-gate.yml'
+  workflow_dispatch:
+jobs:
+  group3:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install isolated test dependencies
+        run: python -m pip install --disable-pip-version-check -r MERKEZ/requirements.txt
+      - name: Compile G3 pure Python safety modules
+        run: python -m compileall -q MERKEZ/URETIM_V4/final_guard_v44.py MERKEZ/G3_GUVENLIK_KONTROLU.py
+      - name: SQLite online backup, WAL, restore and 1000 receipts
+        run: python -m pytest -q TESTLER/test_v44_group3_release_safety.py

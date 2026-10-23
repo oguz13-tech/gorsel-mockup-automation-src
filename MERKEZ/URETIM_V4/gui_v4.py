@@ -41,7 +41,7 @@ class UnifiedV4BatchWindow:
             petek_registry=self.petek_registry,
         )
         self.window = tk.Toplevel(parent)
-        self.window.title("V4.4 Grup 1 — 7 Kategori Üretim / Bulut Excel / İsteğe Bağlı 4K")
+        self.window.title("V4.4 Grup 1+2+3 — 7 Kategori Üretim / Bulut Excel / İsteğe Bağlı 4K")
         self.window.geometry("1190x920")
         self.window.transient(parent)
 
@@ -50,7 +50,7 @@ class UnifiedV4BatchWindow:
 
         ttk.Label(
             area,
-            text="7 Kategori Ortak Seri Üretim Merkezi (V4.4 Grup 1 — Sınırsız İş / 4K Seçeneği)",
+            text="7 Kategori Ortak Seri Üretim Merkezi (V4.4 Birleşik Aday — Sınırsız İş / 4K Seçeneği)",
             font=("Segoe UI", 15, "bold"),
         ).pack(anchor="w", pady=(0, 6))
         ttk.Label(

@@ -1,10 +1,10 @@
-@echo off
+﻿@echo off
 setlocal
 chcp 65001 >nul
 cd /d "%~dp0"
-title GORSEL URETIM MERKEZI - V4.3 FACTORY DOCTOR
+title GORSEL URETIM MERKEZI - V4.4 GRUP 1+2+3 KABUL ADAYI
 echo =======================================================
-echo  GORSEL URETIM MERKEZI V4.3 - GRUP 1 + GRUP 2
+echo  GORSEL URETIM MERKEZI V4.4 - GRUP 1 + GRUP 2 + GRUP 3
 echo =======================================================
 echo Eski onayli sablonlar ve kullanici verileri degistirilmez.
 echo.

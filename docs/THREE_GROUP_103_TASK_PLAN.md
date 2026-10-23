@@ -98,7 +98,7 @@ Durum: KOD CHECKPOINT BAŞLADI. Yeni salt-okunur KONTROL_GEREKENLER envanteri + 
 - [ ] **100** — Lifestyle şablon otomasyonu üst pipeline araştırması
 
 ## Grup 3 — Kalıcı kuyruk, veri güvenliği, Windows dayanıklılığı ve nihai kabul
-Durum: SIRADA. Bütün kabul şartları kanıtla PASS yapılana kadar ticari GO kapalı. Ana sürüm birleştirme yalnız sonra.
+Durum: GRUP 3 KOD CHECKPOINT / TEK BIRLESIK WINDOWS KABUL ADAYI oluşturuldu. Gerçek Windows ve kullanıcı kabulü henüz tamamlanmadı; final ticari GO kapalı. Ayrıntı docs/V44_GRUP3_19_GOREV_DURUMU.md.
 
 - [ ] **076** — 100/200/1000 gerçekçi/sentetik iş batch testi
 - [ ] **077** — İki kez kill/restart/kesinti toparlama
