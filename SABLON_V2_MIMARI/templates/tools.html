@@ -157,6 +157,24 @@
         </div>
 
         <div class="card">
+            <div class="title">📐 3:4 Dikey Uzatma — Blur / Mozaik / Buzlu</div>
+            <div class="desc">Yatay fotoğrafı kırpmadan 1200×1600 dikey görsele dönüştürür. Üç sabit arka plan yöntemi.</div>
+            <div class="tiny">Orijinaller korunur; yalnız ayrı 3x4_DIKEY_UZATILANLAR klasörüne create-only kopyalar yazılır. Baskı master çözünürlüğünü artırmaz.</div>
+            <button onclick="launchTool('portrait_3x4', this)">Başlat</button>
+        </div>
+        <div class="card">
+            <div class="title">🔎 KONTROL_GEREKENLER — Seçmeli İnceleme</div>
+            <div class="desc">Kategori ve KONTROL_GEREKENLER içindeki klasörü seç; isim, SHA ve eşleşme raporu çıkar.</div>
+            <div class="tiny">Yalnızca okur. Aktif havuza taşımaz, köşe tespitini çalıştırmaz, onayları değiştirmez.</div>
+            <button onclick="launchTool('review_folder', this)">Raporla</button>
+        </div>
+        <div class="card">
+            <div class="title">🧪 Golden Dataset — Gerçek Kalite Denetimi</div>
+            <div class="desc">Özel manifestteki gerçek kaynak, maske ve çıktıları SHA, oran, maske dışı piksel bakımından denetler.</div>
+            <div class="tiny">Görseller yerel kalır. Otomatik kalite/onay kararı vermez, insan değerlendirmesi gerekir.</div>
+            <button onclick="launchTool('golden_audit', this)">Denetle</button>
+        </div>
+        <div class="card">
             <div class="title">✨ Görsel Kalite Artırıcı AI / 4K</div>
             <div class="desc">Real-ESRGAN ile seçtiğiniz klasördeki görselleri yüksek çözünürlüğe çıkarır.</div>
             <div class="tiny">Factory artifact zincirinden bağımsızdır ve orijinallerin üzerine yazmaz.</div>

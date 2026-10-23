@@ -268,6 +268,9 @@ _ALLOWED_USER_TOOLS = {
     "links",
     "seo_titles",
     "seo_descriptions",
+    "portrait_3x4",
+    "review_folder",
+    "golden_audit",
 }
 
 
