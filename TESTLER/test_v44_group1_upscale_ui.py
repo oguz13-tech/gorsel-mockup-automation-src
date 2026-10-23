@@ -112,3 +112,27 @@ def test_ui_no_daily_button_and_optional_checkbox():
     from URETIM_V4.unified_batch import UnifiedV4Batch
     import inspect
     assert 'upscale_4k: bool = False' in inspect.getsource(UnifiedV4Batch.run)
+
+
+def test_advanced_sha_audit_strictly_readonly_when_no_ledger(tmp_path):
+    from URETIM_V4.read_only_audit_v44 import inspect
+    root=tmp_path/'not_created'
+    assert inspect(root)=={'total':0,'verified':0,'review_required':0}
+    assert not root.exists()
+
+
+def test_advanced_sha_audit_verifies_without_writing(tmp_path):
+    import sqlite3
+    from URETIM_V4.read_only_audit_v44 import inspect
+    root=tmp_path/'state';root.mkdir()
+    produced=root/'uretilen_gorseller'/'mockup.png';produced.parent.mkdir()
+    produced.write_bytes(b'unmodified original mockup')
+    ledger=root/'v4_ortak_uretim.sqlite3'
+    with sqlite3.connect(ledger) as db:
+        db.execute('CREATE TABLE artifact(key TEXT, status TEXT, output TEXT, output_sha TEXT)')
+        db.execute('INSERT INTO artifact VALUES(?,?,?,?)',
+                   ('one','RENDERED',str(produced),hashlib.sha256(produced.read_bytes()).hexdigest()))
+    before=ledger.read_bytes()
+    assert inspect(root)=={'total':1,'verified':1,'review_required':0}
+    assert ledger.read_bytes()==before
+    assert not (root/'raporlar').exists()

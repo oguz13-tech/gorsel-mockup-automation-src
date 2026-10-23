@@ -274,8 +274,8 @@ class Center:
     def open_unified_audit(self):
         """Perform a read-only SHA receipt scan from the advanced menu."""
         try:
-            from URETIM_V4.unified_batch import UnifiedV4Batch
-            summary = UnifiedV4Batch(runtime_root=self.runtime).audit()["summary"]
+            from URETIM_V4.read_only_audit_v44 import inspect
+            summary = inspect()
             text = (f"SHA denetimi: {summary['verified']}/{summary['total']} doğrulandı; "
                     f"{summary['review_required']} inceleme bekliyor.")
             self.status.set(text)
