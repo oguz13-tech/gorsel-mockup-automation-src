@@ -37,9 +37,11 @@ import json
 import random
 import sqlite3
 import hashlib
+import uuid
 import logging
 import threading
 import argparse
+import importlib.util
 from pathlib import Path
 from dataclasses import dataclass, field
 from concurrent.futures import ThreadPoolExecutor
@@ -70,44 +72,83 @@ from openpyxl.styles import Font, Alignment, PatternFill
 # 1. DİZİN VE YAPILANDIRMA TANIMLARI
 # ==============================================================================
 BASE_DIR = Path(__file__).resolve().parent
-USER_WORKSPACE_DIR = Path(__file__).resolve().parent.parent.parent
-if USER_WORKSPACE_DIR.exists():
-    FACTORY_DIR = USER_WORKSPACE_DIR / "1_GELEN_KAGGLE_BASKILARI"
-    SABLON_DIR = USER_WORKSPACE_DIR / "2_SABLON_HAVUZU"
-    OUTPUT_DIR = USER_WORKSPACE_DIR / "3_URETILEN_MOCKUPLAR"
-    OUTPUT_COKLU_DIR = USER_WORKSPACE_DIR / "Mockup_Magaza_Klasorleri"
-    EXCEL_DIR = USER_WORKSPACE_DIR / "4_EXCEL_YUKLEME_LISTELERI"
-    AYARLAR_PATH = USER_WORKSPACE_DIR / "99_SISTEM_MOTORLARI_VE_KODLAR" / "SISTEM_MOTORU" / "ayarlar.json"
-    LOG_DIR = USER_WORKSPACE_DIR / "99_SISTEM_MOTORLARI_VE_KODLAR" / "SISTEM_MOTORU" / "logs"
-    DB_PATH = USER_WORKSPACE_DIR / "99_SISTEM_MOTORLARI_VE_KODLAR" / "SISTEM_MOTORU" / "commerce_state.db"
-    SEO_DIR = USER_WORKSPACE_DIR / "99_SISTEM_MOTORLARI_VE_KODLAR" / "SISTEM_MOTORU" / "SEO_Verileri"
-else:
-    FACTORY_DIR = BASE_DIR / "factory_outputs"
-    SABLON_DIR = BASE_DIR / "Sablonlar"
-    OUTPUT_DIR = BASE_DIR / "Mockup_Dongusel_Dagitim"
-    OUTPUT_COKLU_DIR = BASE_DIR / "Mockup_Hazir_Urunler"
-    EXCEL_DIR = BASE_DIR / "Mockup_Dongusel_Dagitim"
-    AYARLAR_PATH = BASE_DIR / "ayarlar.json"
-    LOG_DIR = BASE_DIR / "logs"
-    DB_PATH = BASE_DIR / "commerce_state.db"
-    SEO_DIR = BASE_DIR / "SEO_Verileri"
+SOURCE_ROOT = Path(__file__).resolve().parent.parent.parent
 
-for d in [FACTORY_DIR, SABLON_DIR, SEO_DIR, OUTPUT_DIR, OUTPUT_COKLU_DIR, EXCEL_DIR, LOG_DIR]:
-    d.mkdir(parents=True, exist_ok=True)
 
-# Logging Kurulumu
+def resolve_runtime_workspace(source_root: Path = SOURCE_ROOT) -> Path:
+    """Resolve mutable runtime data separately from the checked-out source tree."""
+    override = str(os.environ.get("MOCKUP_RUNTIME_WORKSPACE") or "").strip()
+    if not override:
+        return source_root.resolve()
+    return Path(override).expanduser().resolve()
+
+
+USER_WORKSPACE_DIR = resolve_runtime_workspace()
+RUNTIME_ENGINE_DIR = (
+    USER_WORKSPACE_DIR
+    / "99_SISTEM_MOTORLARI_VE_KODLAR"
+    / "SISTEM_MOTORU"
+)
+FACTORY_DIR = USER_WORKSPACE_DIR / "1_GELEN_KAGGLE_BASKILARI"
+SABLON_DIR = USER_WORKSPACE_DIR / "2_SABLON_HAVUZU"
+OUTPUT_DIR = USER_WORKSPACE_DIR / "3_URETILEN_MOCKUPLAR"
+OUTPUT_COKLU_DIR = USER_WORKSPACE_DIR / "Mockup_Magaza_Klasorleri"
+EXCEL_DIR = USER_WORKSPACE_DIR / "4_EXCEL_YUKLEME_LISTELERI"
+AYARLAR_PATH = RUNTIME_ENGINE_DIR / "ayarlar.json"
+LOG_DIR = RUNTIME_ENGINE_DIR / "logs"
+DB_PATH = RUNTIME_ENGINE_DIR / "commerce_state.db"
+SEO_DIR = RUNTIME_ENGINE_DIR / "SEO_Verileri"
+MASK_CACHE_DIR = RUNTIME_ENGINE_DIR / "masks"
+
+# Preflight is intentionally read-only. Do not create missing runtime
+# directories or log files before readiness is measured; doing so would make
+# preflight validate side effects it created itself.
+PREFLIGHT_MODE = "--preflight" in sys.argv
+if not PREFLIGHT_MODE:
+    for d in [
+        FACTORY_DIR,
+        SABLON_DIR,
+        SEO_DIR,
+        OUTPUT_DIR,
+        OUTPUT_COKLU_DIR,
+        EXCEL_DIR,
+        LOG_DIR,
+        MASK_CACHE_DIR,
+    ]:
+        d.mkdir(parents=True, exist_ok=True)
+
+# Logging Kurulumu. Preflight logs only to stdout to remain read-only.
+_log_handlers = [logging.StreamHandler(sys.stdout)]
+if not PREFLIGHT_MODE:
+    _log_handlers.insert(
+        0,
+        logging.FileHandler(
+            LOG_DIR / "pc_master_factory.log",
+            encoding="utf-8",
+        ),
+    )
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[
-        logging.FileHandler(LOG_DIR / "pc_master_factory.log", encoding="utf-8"),
-        logging.StreamHandler(sys.stdout)
-    ]
+    handlers=_log_handlers,
 )
 logger = logging.getLogger("Factory")
 
+# Production must validate approved quads with the exact same contract used by
+# the review/analyzer layer. Code always comes from this checked-out branch,
+# while mutable DB/templates/manifest may live in a separate runtime workspace.
+ARCH_DIR = SOURCE_ROOT / "SABLON_V2_MIMARI"
+if str(ARCH_DIR) not in sys.path:
+    sys.path.insert(0, str(ARCH_DIR))
+from core.template_intelligence import GeometryValidator as ApprovedGeometryValidator
+
 excel_lock = threading.RLock()
 db_lock = threading.RLock()
+
+# Render recipe participates in immutable artifact identity. Bump whenever
+# renderer/aspect/occlusion behavior changes so old artifacts are never silently
+# reused under a new visual contract.
+RECIPE_VERSION = "v3_epic3_20261007_r12_fill_v1"
 
 # ==============================================================================
 # 2. ÜRÜN VE FORMAT SÖZLEŞMESİ (URUN_FORMAT_HARITASI)
@@ -186,10 +227,184 @@ PRODUCT_CATALOG: Dict[str, ProductDefinition] = {
     )
 }
 
+
+def physical_aspect_for_product(
+    product: ProductDefinition,
+    orientation: str,
+) -> Optional[float]:
+    """Return trusted physical width/height from product size metadata.
+
+    boyut_cm stores the two physical side lengths. Orientation decides which
+    side is width. No projected template geometry is used.
+    """
+    try:
+        raw = str(product.boyut_cm).lower().replace("cm", "").strip()
+        first, second = [float(part.strip()) for part in raw.split("x", 1)]
+        short_side = min(first, second)
+        long_side = max(first, second)
+        if short_side <= 0:
+            return None
+        orient = str(orientation or "").upper()
+        if orient == "H":
+            return long_side / short_side
+        if orient == "V":
+            return short_side / long_side
+    except (TypeError, ValueError):
+        return None
+    return None
+
+
+def foreground_ai_dependency_status() -> dict:
+    """Check import/API availability without loading model weights."""
+    status = {
+        "torch": False,
+        "transformers": False,
+        "transformers_required_symbols": False,
+        "missing": [],
+        "errors": [],
+    }
+
+    if importlib.util.find_spec("torch") is None:
+        status["missing"].append("torch")
+    else:
+        status["torch"] = True
+
+    if importlib.util.find_spec("transformers") is None:
+        status["missing"].append("transformers")
+        return status
+
+    status["transformers"] = True
+    required_symbols = (
+        "AutoProcessor",
+        "AutoModelForZeroShotObjectDetection",
+        "Sam2Processor",
+        "Sam2Model",
+    )
+    try:
+        transformers_mod = importlib.import_module("transformers")
+        missing_symbols = [
+            name
+            for name in required_symbols
+            if not hasattr(transformers_mod, name)
+        ]
+        if missing_symbols:
+            status["missing"].extend(
+                f"transformers.{name}" for name in missing_symbols
+            )
+        else:
+            status["transformers_required_symbols"] = True
+    except Exception as exc:
+        status["errors"].append(f"transformers import: {exc}")
+
+    return status
+
+
+def duplicate_profile_uids(rows) -> list[str]:
+    """Return sorted non-empty template UIDs appearing more than once."""
+    counts = {}
+    for row in rows:
+        try:
+            uid = str(row["template_uid"] or "")
+        except (TypeError, KeyError, IndexError):
+            uid = str(getattr(row, "template_uid", "") or "")
+        counts[uid] = counts.get(uid, 0) + 1
+    return sorted(uid for uid, count in counts.items() if uid and count > 1)
+
+
+def cached_foreground_mask_usable(mask: np.ndarray | None, foreground_required: bool) -> bool:
+    """Accept empty masks only when foreground evidence is not mandatory."""
+    if mask is None:
+        return False
+    if foreground_required:
+        return bool(np.any(mask))
+    return True
+
+
+def foreground_plan_has_positive_selection(plan) -> bool:
+    """Return True only when a manual plan proves foreground pixels exist.
+
+    Only automatic object boxes count as explicit foreground evidence.
+    """
+    if not isinstance(plan, dict):
+        return False
+    boxes = plan.get("object_boxes")
+    return bool(isinstance(boxes, list) and boxes)
+
+
+def foreground_is_required(config: dict, on_plan) -> bool:
+    """Fail closed only for source-reviewed/explicit foreground evidence."""
+    return bool(
+        (config or {}).get("has_occlusion")
+        or foreground_plan_has_positive_selection(on_plan)
+    )
+
+
+def artifact_record_is_complete_on_disk(record) -> bool:
+    """A completed DB artifact is reusable only while its local file exists."""
+    if not record or record.get("status") != "COMPLETED":
+        return False
+    local_output_path = str(record.get("local_output_path") or "").strip()
+    if not local_output_path:
+        return False
+    return Path(local_output_path).is_file()
+
+
+def choose_stable_template_record(
+    records: list,
+    sequence_number: int,
+    persisted_name: str | None = None,
+):
+    """Choose one template deterministically and preserve prior assignment.
+
+    Mutable confidence/update timestamps must never silently change which scene
+    an existing SKU uses. A persisted name wins while still eligible; otherwise
+    selection falls back to a name-sorted round robin.
+    """
+    if not records:
+        return None
+    persisted = str(persisted_name or "").strip()
+    if persisted:
+        for record in records:
+            if str(record.get("name") or "") == persisted:
+                return record
+
+    ordered = sorted(
+        records,
+        key=lambda record: str(record.get("name") or "").casefold(),
+    )
+    index = (max(int(sequence_number), 1) - 1) % len(ordered)
+    return ordered[index]
+
+
+def physical_orientation_verified(component_confidences) -> bool:
+    """Return whether physical H/V provenance was explicitly trusted/reviewed."""
+    payload = component_confidences
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except (TypeError, json.JSONDecodeError):
+            return False
+    if not isinstance(payload, dict):
+        return False
+    marker = payload.get("physical_orientation_verified")
+    if isinstance(marker, str):
+        return marker.strip().lower() in {"1", "true", "yes"}
+    return bool(marker)
+
+
 # ==============================================================================
 # 3. AYARLAR.JSON YÜKLEYİCİ VE ŞABLON YÖNETİCİSİ
 # ==============================================================================
 import sqlite3
+
+
+def open_sqlite_readonly(path: Path) -> sqlite3.Connection:
+    """Open a SQLite database with an OS-enforced read-only connection."""
+    uri = path.resolve().as_uri() + "?mode=ro"
+    conn = sqlite3.connect(uri, uri=True)
+    conn.execute("PRAGMA query_only = ON")
+    return conn
+
 
 def load_ayarlar() -> dict:
     # SABLON_V2_MIMARI'daki SQLite db'sine baglanti
@@ -207,7 +422,7 @@ def load_ayarlar() -> dict:
         }
         
     try:
-        conn = sqlite3.connect(str(db_path))
+        conn = open_sqlite_readonly(db_path)
         conn.row_factory = sqlite3.Row
         c = conn.cursor()
         
@@ -216,7 +431,12 @@ def load_ayarlar() -> dict:
         # 1. Genel Ayarlar
         c.execute("SELECT key, value FROM settings")
         for row in c.fetchall():
-            result[row["key"]] = json.loads(row["value"])
+            try:
+                result[row["key"]] = json.loads(row["value"])
+            except (TypeError, json.JSONDecodeError) as exc:
+                logger.warning(
+                    f"Geçersiz settings JSON atlandı: {row['key']} ({exc})"
+                )
             
         # 2. Kategoriler
         c.execute("SELECT id, label FROM categories")
@@ -232,7 +452,18 @@ def load_ayarlar() -> dict:
         for row in c.fetchall():
             cat_id = row["category_id"]
             tmpl = row["filename"]
-            data = json.loads(row["data"])
+            try:
+                data = json.loads(row["data"])
+            except (TypeError, json.JSONDecodeError) as exc:
+                logger.warning(
+                    f"Geçersiz şablon JSON atlandı: {cat_id}/{tmpl} ({exc})"
+                )
+                continue
+            if not isinstance(data, dict):
+                logger.warning(
+                    f"Şablon verisi nesne değil, atlandı: {cat_id}/{tmpl}"
+                )
+                continue
             
             if cat_id not in result["kategoriler"]:
                 result["kategoriler"][cat_id] = {"sablonlar": {}}
@@ -346,13 +577,24 @@ class StateManager:
             row = self.conn.execute("SELECT status FROM products WHERE sku = ?", (sku,)).fetchone()
             return row is not None and row["status"] == "COMPLETED"
 
-    def is_artifact_completed(self, artifact_key: str) -> bool:
+    def get_artifact(self, artifact_key: str) -> Optional[dict]:
         with db_lock, self.conn:
-            row = self.conn.execute("SELECT status FROM render_artifacts WHERE artifact_key = ?", (artifact_key,)).fetchone()
-            return row is not None and row["status"] in ("COMPLETED", "UPLOADED")
+            row = self.conn.execute(
+                "SELECT * FROM render_artifacts WHERE artifact_key = ?",
+                (artifact_key,),
+            ).fetchone()
+            return dict(row) if row is not None else None
 
-    def save_render_artifact(self, data: dict):
-        if not data: return
+    def is_artifact_completed(self, artifact_key: str) -> bool:
+        row = self.get_artifact(artifact_key)
+        # Legacy "UPLOADED" means cloud upload succeeded, but older code wrote
+        # that state before the Excel row was durably flushed. Only COMPLETED
+        # proves the full render -> upload -> Excel transaction finished.
+        return row is not None and row.get("status") == "COMPLETED"
+
+    def save_render_artifact(self, data: dict) -> bool:
+        if not data:
+            return False
         with db_lock, self.conn:
             try:
                 self.conn.execute("""
@@ -360,21 +602,86 @@ class StateManager:
                                               template_identity, local_output_path, upload_url, status, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
                 ON CONFLICT(artifact_key) DO UPDATE SET
+                    sku=excluded.sku,
+                    source_identity=excluded.source_identity,
+                    category=excluded.category,
+                    template_identity=excluded.template_identity,
+                    local_output_path=excluded.local_output_path,
                     upload_url=excluded.upload_url,
                     status=excluded.status,
                     updated_at=CURRENT_TIMESTAMP
                 """, (
                     data.get("artifact_key", ""), data.get("sku", ""), data.get("source_identity", ""),
-                    data.get("category", ""), data.get("template_identity", ""), 
+                    data.get("category", ""), data.get("template_identity", ""),
                     data.get("local_output_path", ""), data.get("upload_url", ""), data.get("status", "COMPLETED")
                 ))
-            except Exception as e:
-                import logging
-                logging.getLogger("StateDB").error(f"Veritabani yazim hatasi (save_render_artifact): {e}")
+                return True
+            except Exception as exc:
+                logging.getLogger("StateDB").error(
+                    f"Veritabani yazim hatasi (save_render_artifact): {exc}"
+                )
+                return False
 
-    def save_product(self, data: dict):
-        if not data:
+    def mark_artifacts_completed(
+        self,
+        artifact_keys: List[str],
+        recipe_version: Optional[str] = None,
+    ):
+        keys = [str(key) for key in artifact_keys if key]
+        if not keys:
             return
+        with db_lock, self.conn:
+            placeholders = ",".join("?" for _ in keys)
+            sku_rows = self.conn.execute(
+                f"""SELECT DISTINCT sku FROM render_artifacts
+                    WHERE artifact_key IN ({placeholders})""",
+                keys,
+            ).fetchall()
+
+            self.conn.executemany(
+                """UPDATE render_artifacts
+                   SET status='COMPLETED', updated_at=CURRENT_TIMESTAMP
+                   WHERE artifact_key=?""",
+                [(key,) for key in keys],
+            )
+
+            # The products row represents the current logical master/category
+            # run. Historical recipe artifacts remain for audit/recovery but
+            # must not permanently block a newer recipe from completing.
+            recipe_suffix = (
+                f"_{recipe_version}" if recipe_version else None
+            )
+            for row in sku_rows:
+                sku = row["sku"]
+                if recipe_suffix:
+                    pending = self.conn.execute(
+                        """SELECT COUNT(*) AS c
+                           FROM render_artifacts
+                           WHERE sku=?
+                             AND status <> 'COMPLETED'
+                             AND substr(artifact_key, ?) = ?""",
+                        (sku, -len(recipe_suffix), recipe_suffix),
+                    ).fetchone()["c"]
+                else:
+                    pending = self.conn.execute(
+                        """SELECT COUNT(*) AS c
+                           FROM render_artifacts
+                           WHERE sku=?
+                             AND status <> 'COMPLETED'""",
+                        (sku,),
+                    ).fetchone()["c"]
+                if int(pending) == 0:
+                    self.conn.execute(
+                        """UPDATE products
+                           SET status='COMPLETED',
+                               updated_at=CURRENT_TIMESTAMP
+                           WHERE sku=?""",
+                        (sku,),
+                    )
+
+    def save_product(self, data: dict) -> bool:
+        if not data:
+            return False
         with db_lock, self.conn:
             try:
                 self.conn.execute("""
@@ -390,14 +697,18 @@ class StateManager:
                     status=excluded.status,
                     updated_at=CURRENT_TIMESTAMP
                 """, (
-                    data.get("sku", ""), data.get("master_id", ""), data.get("kategori_key", ""), 
-                    data.get("barkod", ""), data.get("model_kodu", ""), data.get("urun_adi", ""), 
+                    data.get("sku", ""), data.get("master_id", ""),
+                    data.get("kategori_key") or data.get("category", ""),
+                    data.get("barkod", ""), data.get("model_kodu", ""), data.get("urun_adi", ""),
                     data.get("aciklama", ""), data.get("ham_baski_dosyasi", ""), data.get("mockup_dosyasi", ""),
                     data.get("magaza_grubu", ""), data.get("resim_linki", ""), data.get("status", "COMPLETED")
                 ))
-            except Exception as e:
-                import logging
-                logging.getLogger("StateDB").error(f"Veritabani yazim hatasi (save_product): {e}")
+                return True
+            except Exception as exc:
+                logging.getLogger("StateDB").error(
+                    f"Veritabani yazim hatasi (save_product): {exc}"
+                )
+                return False
 
     def get_summary(self) -> dict:
         with db_lock, self.conn:
@@ -415,60 +726,137 @@ class StateManager:
 class AsyncCloudUploader:
     def __init__(self):
         cloud_cfg = AYARLAR.get("bulut_ayarlari", {})
-        self.imgbb_keys = cloud_cfg.get("imgbb_keys") or [k for k in os.environ.get("IMGBB_KEYS", "").split(",") if k]
-        self.freeimage_key = cloud_cfg.get("freeimage_key") or os.environ.get("FREEIMAGE_KEY", "")
+        configured_keys = cloud_cfg.get("imgbb_keys") or []
+        env_keys = os.environ.get("IMGBB_KEYS", "").split(",")
+        self.imgbb_keys = [
+            str(key).strip()
+            for key in (configured_keys or env_keys)
+            if str(key).strip()
+        ]
+        self.freeimage_key = str(
+            cloud_cfg.get("freeimage_key")
+            or os.environ.get("FREEIMAGE_KEY", "")
+            or ""
+        ).strip()
         self.active_key_idx = 0
         self.key_lock = threading.Lock()
-        self.freeimage_active = True
+        self.freeimage_active = bool(self.freeimage_key)
+
+    def has_provider(self) -> bool:
+        with self.key_lock:
+            has_imgbb = self.active_key_idx < len(self.imgbb_keys)
+        return has_imgbb or (self.freeimage_active and bool(self.freeimage_key))
+
+    def _get_imgbb_key(self):
+        with self.key_lock:
+            if self.active_key_idx >= len(self.imgbb_keys):
+                return None
+            return self.active_key_idx, self.imgbb_keys[self.active_key_idx]
+
+    def _retire_imgbb_key(self, expected_idx: int, reason: str):
+        with self.key_lock:
+            # Another upload thread may already have advanced the pool. Never
+            # advance twice for the same failed key.
+            if self.active_key_idx == expected_idx:
+                logger.warning(
+                    f"ImgBB Key-{expected_idx + 1} devre dışı: {reason}. "
+                    "Sıradaki anahtara geçiliyor..."
+                )
+                self.active_key_idx += 1
 
     def upload_sync(self, file_path: Path) -> Optional[str]:
         if not file_path.exists():
             return None
 
-        # 1. ImgBB Rotasyonu
-        while self.active_key_idx < len(self.imgbb_keys):
-            key = self.imgbb_keys[self.active_key_idx]
+        # 1. ImgBB rotation. Credentials are never logged.
+        while True:
+            key_info = self._get_imgbb_key()
+            if key_info is None:
+                break
+            key_idx, key = key_info
+
             try:
-                with open(file_path, "rb") as f:
+                with open(file_path, "rb") as handle:
                     res = requests.post(
                         "https://api.imgbb.com/1/upload",
                         data={"key": key},
-                        files={"image": f},
-                        timeout=25
+                        files={"image": handle},
+                        timeout=25,
                     )
-                if res.status_code == 200:
-                    data = res.json()
-                    return data.get("data", {}).get("url")
-                
-                # Rate limit / Kota aşımı
-                if "Rate limit" in res.text or res.status_code == 400:
-                    with self.key_lock:
-                        logger.warning(f"ImgBB Key-{self.active_key_idx+1} kotası doldu. Sıradakine geçiliyor...")
-                        self.active_key_idx += 1
-                        time.sleep(0.5)
-                    continue
-            except Exception as e:
-                logger.warning(f"ImgBB bağlantı hatası: {e}")
-                with self.key_lock:
-                    self.active_key_idx += 1
 
-        # 2. FreeImage Failover
-        if self.freeimage_active:
+                if res.status_code == 200:
+                    try:
+                        data = res.json()
+                    except ValueError:
+                        data = {}
+                    url = data.get("data", {}).get("url")
+                    if url:
+                        return url
+                    self._retire_imgbb_key(key_idx, "geçersiz başarı yanıtı")
+                    continue
+
+                body = (res.text or "").lower()
+                if (
+                    res.status_code in (400, 401, 403, 429)
+                    or "rate limit" in body
+                    or "quota" in body
+                ):
+                    self._retire_imgbb_key(
+                        key_idx,
+                        f"HTTP {res.status_code}",
+                    )
+                    continue
+
+                logger.warning(
+                    f"ImgBB geçici hata HTTP {res.status_code}; "
+                    "aynı anahtar daha sonra tekrar denenebilir."
+                )
+                break
+            except requests.RequestException as exc:
+                logger.warning(f"ImgBB bağlantı hatası: {exc}")
+                # Network failures do not prove the API key is bad; keep it.
+                break
+            except OSError as exc:
+                logger.error(f"Yüklenecek dosya okunamadı: {exc}")
+                return None
+
+        # 2. FreeImage failover. Do not call the service with an empty key.
+        if self.freeimage_active and self.freeimage_key:
             try:
-                with open(file_path, "rb") as f:
+                with open(file_path, "rb") as handle:
                     res = requests.post(
                         "https://freeimage.host/api/1/upload",
-                        data={"key": self.freeimage_key, "action": "upload", "format": "json"},
-                        files={"source": f},
-                        timeout=30
+                        data={
+                            "key": self.freeimage_key,
+                            "action": "upload",
+                            "format": "json",
+                        },
+                        files={"source": handle},
+                        timeout=30,
                     )
                 if res.status_code == 200:
-                    data = res.json()
-                    if "image" in data and "url" in data["image"]:
-                        return data["image"]["url"]
-            except Exception as e:
-                logger.warning(f"FreeImage bağlantı hatası: {e}")
-                self.freeimage_active = False
+                    try:
+                        data = res.json()
+                    except ValueError:
+                        data = {}
+                    url = data.get("image", {}).get("url")
+                    if url:
+                        return url
+
+                if res.status_code in (400, 401, 403):
+                    logger.warning(
+                        f"FreeImage sağlayıcısı devre dışı: HTTP {res.status_code}"
+                    )
+                    self.freeimage_active = False
+                else:
+                    logger.warning(
+                        f"FreeImage geçici hata: HTTP {res.status_code}"
+                    )
+            except requests.RequestException as exc:
+                logger.warning(f"FreeImage bağlantı hatası: {exc}")
+            except OSError as exc:
+                logger.error(f"Yüklenecek dosya okunamadı: {exc}")
+                return None
 
         return None
 
@@ -519,11 +907,26 @@ class SeoEngine:
                 "aciklama": desc_text
             }
 
-    def generate_title(self, prod_key: str, theme_title: str) -> str:
+    def generate_title(
+        self,
+        prod_key: str,
+        theme_title: str,
+        identity_seed: str = "",
+    ) -> str:
         data = self.cache.get(prod_key, {"keywords": ["Dekoratif", "Modern", "Lüks"]})
-        words = data["keywords"]
+        words = list(data["keywords"])
         prod_def = PRODUCT_CATALOG[prod_key]
-        sample_words = random.sample(words, min(3, len(words)))
+
+        # Product metadata must be idempotent across upload/Excel retries.
+        # Use a local deterministic RNG so the same logical product identity
+        # always receives the same keyword selection without mutating global RNG.
+        seed_material = f"{prod_key}|{theme_title}|{identity_seed}"
+        seed_value = int(
+            hashlib.sha256(seed_material.encode("utf-8")).hexdigest()[:16],
+            16,
+        )
+        rng = random.Random(seed_value)
+        sample_words = rng.sample(words, min(3, len(words)))
         clean_theme = theme_title.replace("_", " ").strip()
         
         # Trendyol için 80-100 karakter dengesi
@@ -545,8 +948,12 @@ class RealESRGANQualityEngine:
     @staticmethod
     def get_exe_path() -> Optional[Path]:
         candidates = [
-            USER_WORKSPACE_DIR / "AI_Kalite_Artirici" / "realesrgan-ncnn-vulkan.exe",
-            BASE_DIR.parent / "AI_Kalite_Artirici" / "realesrgan-ncnn-vulkan.exe"
+            USER_WORKSPACE_DIR
+            / "AI_Kalite_Artirici"
+            / "realesrgan-ncnn-vulkan.exe",
+            SOURCE_ROOT
+            / "AI_Kalite_Artirici"
+            / "realesrgan-ncnn-vulkan.exe",
         ]
         for c in candidates:
             if c.exists():
@@ -608,6 +1015,127 @@ class QualityInspector:
         
         return True, f"Kalite Onaylandı (Keskinlik: {laplacian_var:.1f})"
 
+    @staticmethod
+    def inspect_final_output(
+        img_cv: np.ndarray,
+        expected_width: int | None = None,
+        expected_height: int | None = None,
+        product_quad=None,
+        smart_product_focus: bool = False,
+        foreground_fill_fraction: float | None = None,
+        minimum_width: int | None = None,
+        minimum_height: int | None = None,
+        expected_aspect: float | None = None,
+    ) -> Tuple[bool, str]:
+        """Validate the image the customer/marketplace will actually receive.
+
+        This deliberately runs after marketplace composition and final quality
+        processing. It catches failures that pre-composition render QA cannot
+        see: wrong output size/aspect, product cropped out of frame, nearly-flat
+        images, excessive smart-focus letterboxing, and severe final blur.
+        """
+        if img_cv is None or img_cv.size == 0:
+            return False, "Final çıktı boş veya okunamıyor"
+
+        h, w = img_cv.shape[:2]
+        if expected_width is not None and w != int(expected_width):
+            return False, f"Final genişlik yanlış: {w} != {expected_width}"
+        if expected_height is not None and h != int(expected_height):
+            return False, f"Final yükseklik yanlış: {h} != {expected_height}"
+        if minimum_width is not None and w < int(minimum_width):
+            return False, f"Final genişlik küçülmüş: {w} < {minimum_width}"
+        if minimum_height is not None and h < int(minimum_height):
+            return False, f"Final yükseklik küçülmüş: {h} < {minimum_height}"
+
+        actual_aspect = w / float(max(h, 1))
+        target_aspect = expected_aspect
+        if (
+            target_aspect is None
+            and expected_width is not None
+            and expected_height is not None
+        ):
+            target_aspect = float(expected_width) / float(expected_height)
+        if target_aspect is not None:
+            rel_error = abs(actual_aspect - float(target_aspect)) / max(
+                abs(float(target_aspect)),
+                1e-6,
+            )
+            if rel_error > 0.01:
+                return False, (
+                    f"Final en-boy oranı yanlış: {actual_aspect:.4f} "
+                    f"(beklenen {float(target_aspect):.4f})"
+                )
+
+        gray = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
+        if float(np.std(gray)) < 4.0:
+            return False, "Final çıktı neredeyse tek renk/boş"
+
+        laplacian_var = float(
+            cv2.Laplacian(gray, cv2.CV_64F).var()
+        )
+        if laplacian_var < 28.0:
+            return False, (
+                f"Final çıktı aşırı bulanık "
+                f"(Laplacian: {laplacian_var:.1f})"
+            )
+
+        product_area_fraction = None
+        if product_quad is not None:
+            try:
+                quad = np.asarray(
+                    product_quad,
+                    dtype=np.float32,
+                ).reshape(-1, 2)
+            except Exception:
+                return False, "Final ürün dörtgeni okunamıyor"
+            if quad.shape[0] < 4 or not np.isfinite(quad).all():
+                return False, "Final ürün dörtgeni geçersiz"
+
+            tolerance = 3.0
+            if (
+                float(np.min(quad[:, 0])) < -tolerance
+                or float(np.min(quad[:, 1])) < -tolerance
+                or float(np.max(quad[:, 0])) > w - 1 + tolerance
+                or float(np.max(quad[:, 1])) > h - 1 + tolerance
+            ):
+                return False, "Ürün final 3:4 çerçevede kırpılmış/taşmış"
+
+            area = abs(
+                float(cv2.contourArea(quad.astype(np.float32)))
+            )
+            product_area_fraction = area / float(max(w * h, 1))
+            if product_area_fraction < 0.004:
+                return False, (
+                    "Ürün final görselde kullanılamayacak kadar küçük "
+                    f"({product_area_fraction:.2%})"
+                )
+            if product_area_fraction > 0.94:
+                return False, (
+                    "Ürün final görseli anormal biçimde tamamen kaplıyor "
+                    f"({product_area_fraction:.2%})"
+                )
+
+        if (
+            smart_product_focus
+            and foreground_fill_fraction is not None
+            and float(foreground_fill_fraction) < 0.55
+        ):
+            return False, (
+                "Akıllı 3:4 kadraj sahneyi yeterince dolduramadı "
+                f"({float(foreground_fill_fraction):.1%})"
+            )
+
+        return True, (
+            "Final kalite onaylandı "
+            f"(keskinlik={laplacian_var:.1f}"
+            + (
+                f", ürün_alanı={product_area_fraction:.1%}"
+                if product_area_fraction is not None
+                else ""
+            )
+            + ")"
+        )
+
 # ==============================================================================
 # 9. MOCKUP MOTORU (Optik Cam Parlaması, Bevel Pahı, Gün Işığı & Sıfır Kenar Hatası)
 # ==============================================================================
@@ -615,56 +1143,47 @@ class MockupRenderer:
     @staticmethod
     def build_foreground_mask(
         bg_cv: np.ndarray,
-        on_plan: dict | list | None,
+        on_plan: dict | None,
+        base_mask: np.ndarray | None = None,
     ) -> np.ndarray:
-        """
-        Photoshop benzeri Object Selection & Brush mantığı.
-        on_plan formatı:
-        {
-            "object_boxes": [[x1, y1, x2, y2], ...],
-            "add_brush": [[x, y, radius], ...],
-            "subtract_brush": [[x, y, radius], ...],
-            "feather": 1.2,
-            "grabcut_iterations": 5
-        }
-        veya geriye dönük uyumlu polygon listesi.
-        """
+        """Build an occlusion mask from automatic object boxes only."""
         h, w = bg_cv.shape[:2]
         empty_mask = np.zeros((h, w), dtype=np.uint8)
 
-        if not on_plan:
-            return empty_mask
+        if base_mask is not None:
+            base = np.asarray(base_mask)
+            if base.ndim == 3:
+                base = cv2.cvtColor(
+                    base.astype(np.uint8),
+                    cv2.COLOR_BGR2GRAY,
+                )
+            if base.shape[:2] != (h, w):
+                base = cv2.resize(
+                    base,
+                    (w, h),
+                    interpolation=cv2.INTER_NEAREST,
+                )
+            final_mask = np.clip(base, 0, 255).astype(np.uint8)
+        else:
+            final_mask = empty_mask.copy()
 
-        # Eski polygon formatı geldiyse kırılmasın
-        if isinstance(on_plan, list):
-            if len(on_plan) >= 3:
-                try:
-                    pts = np.asarray(on_plan, dtype=np.int32)
-                    mask = np.zeros((h, w), dtype=np.uint8)
-                    pts[:, 0] = np.clip(pts[:, 0], 0, w - 1)
-                    pts[:, 1] = np.clip(pts[:, 1], 0, h - 1)
-                    cv2.fillPoly(mask, [pts], 255)
-                    mask = cv2.GaussianBlur(mask, (0, 0), 1.2)
-                    return mask
-                except Exception:
-                    return empty_mask
-            return empty_mask
+        if not isinstance(on_plan, dict):
+            return final_mask
 
-        object_boxes = on_plan.get("object_boxes", [])
-        add_brush = on_plan.get("add_brush", [])
-        subtract_brush = on_plan.get("subtract_brush", [])
-        feather = float(on_plan.get("feather", 1.2))
-        iterations = int(on_plan.get("grabcut_iterations", 5))
+        object_boxes = on_plan.get("object_boxes")
+        if not isinstance(object_boxes, list):
+            object_boxes = []
 
-        final_mask = np.zeros((h, w), dtype=np.uint8)
+        feather = float(on_plan.get("feather", 1.2) or 1.2)
+        iterations = int(on_plan.get("grabcut_iterations", 5) or 5)
+        iterations = int(np.clip(iterations, 1, 10))
 
-        # 1. OBJECT SELECTION (Her kutu ayrı GrabCut'tan geçirilir)
         for box in object_boxes:
-            if not box or len(box) != 4:
+            if not isinstance(box, (list, tuple)) or len(box) != 4:
                 continue
             try:
                 x1, y1, x2, y2 = map(int, box)
-            except Exception:
+            except (TypeError, ValueError):
                 continue
 
             x1, x2 = sorted((x1, x2))
@@ -698,60 +1217,54 @@ class MockupRenderer:
                     bg_model,
                     fg_model,
                     iterations,
-                    cv2.GC_INIT_WITH_RECT
+                    cv2.GC_INIT_WITH_RECT,
                 )
                 object_mask = np.where(
-                    (gc_mask == cv2.GC_FGD) | (gc_mask == cv2.GC_PR_FGD),
+                    (gc_mask == cv2.GC_FGD)
+                    | (gc_mask == cv2.GC_PR_FGD),
                     255,
-                    0
+                    0,
                 ).astype(np.uint8)
                 final_mask = cv2.max(final_mask, object_mask)
             except cv2.error as exc:
                 logger.warning(f"[MASK] GrabCut uyarisi: {exc}")
-                cv2.rectangle(final_mask, (x1, y1), (x2, y2), 255, -1)
-
-        # 2. MANUEL + FIRÇA
-        for stroke in add_brush:
-            if not stroke or len(stroke) < 2:
-                continue
-            x = int(np.clip(int(stroke[0]), 0, w - 1))
-            y = int(np.clip(int(stroke[1]), 0, h - 1))
-            radius = int(stroke[2] if len(stroke) >= 3 else 20)
-            cv2.circle(final_mask, (x, y), max(1, radius), 255, -1, lineType=cv2.LINE_AA)
-
-        # 3. MANUEL - FIRÇA
-        for stroke in subtract_brush:
-            if not stroke or len(stroke) < 2:
-                continue
-            x = int(np.clip(int(stroke[0]), 0, w - 1))
-            y = int(np.clip(int(stroke[1]), 0, h - 1))
-            radius = int(stroke[2] if len(stroke) >= 3 else 20)
-            cv2.circle(final_mask, (x, y), max(1, radius), 0, -1, lineType=cv2.LINE_AA)
+                cv2.rectangle(
+                    final_mask,
+                    (x1, y1),
+                    (x2, y2),
+                    255,
+                    -1,
+                )
 
         if not np.any(final_mask):
             return final_mask
 
-        # 4. MASK TEMİZLİĞİ (Morphology Close & Küçük Leke Filtresi)
         kernel_close = np.ones((3, 3), np.uint8)
-        final_mask = cv2.morphologyEx(final_mask, cv2.MORPH_CLOSE, kernel_close, iterations=1)
+        final_mask = cv2.morphologyEx(
+            final_mask,
+            cv2.MORPH_CLOSE,
+            kernel_close,
+            iterations=1,
+        )
 
         num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(
             (final_mask > 127).astype(np.uint8),
-            connectivity=8
+            connectivity=8,
         )
         cleaned = np.zeros_like(final_mask)
         min_component_area = max(20, int((w * h) * 0.000005))
         for i in range(1, num_labels):
-            area = stats[i, cv2.CC_STAT_AREA]
-            if area >= min_component_area:
+            if stats[i, cv2.CC_STAT_AREA] >= min_component_area:
                 cleaned[labels == i] = 255
-        final_mask = cleaned
 
-        # 5. EDGE FEATHER (Kenar Yumuşatma)
         if feather > 0:
-            final_mask = cv2.GaussianBlur(final_mask, (0, 0), feather)
+            cleaned = cv2.GaussianBlur(
+                cleaned,
+                (0, 0),
+                max(0.1, feather),
+            )
 
-        return final_mask
+        return cleaned
 
     @staticmethod
     def restore_foreground(
@@ -791,6 +1304,92 @@ class MockupRenderer:
         mask_lg_blur = cv2.GaussianBlur(mask_lg, (ksize, ksize), feather_px * scale * 0.5)
         mask_aa = cv2.resize(mask_lg_blur, (w_bg, h_bg), interpolation=cv2.INTER_AREA)
         return np.clip(mask_aa, 0.0, 1.0)
+
+    @staticmethod
+    def create_perspective_rounded_mask(
+        h_bg: int,
+        w_bg: int,
+        src_width: int,
+        src_height: int,
+        matrix: np.ndarray,
+        radius_fraction: float,
+        feather_px: float = 1.2,
+    ) -> np.ndarray:
+        """Create a perspective-correct rounded-rectangle surface mask.
+
+        The four reviewed corner points remain the authoritative geometry.
+        Rounding is applied only to the render mask in artwork/source space,
+        then projected with the same homography. This preserves perspective
+        accuracy while avoiding unnaturally razor-sharp glass corners.
+        """
+        radius_fraction = float(np.clip(radius_fraction, 0.0, 0.12))
+        if radius_fraction <= 0.0:
+            return np.ones((h_bg, w_bg), dtype=np.float32)
+
+        src_width = max(2, int(src_width))
+        src_height = max(2, int(src_height))
+        supersample = 4
+        sw = src_width * supersample
+        sh = src_height * supersample
+        radius = int(
+            round(min(sw, sh) * radius_fraction)
+        )
+        radius = max(2, min(radius, min(sw, sh) // 3))
+
+        source_mask_hi = np.zeros((sh, sw), dtype=np.float32)
+        x1 = sw - 1
+        y1 = sh - 1
+
+        cv2.rectangle(
+            source_mask_hi,
+            (radius, 0),
+            (x1 - radius, y1),
+            1.0,
+            thickness=-1,
+        )
+        cv2.rectangle(
+            source_mask_hi,
+            (0, radius),
+            (x1, y1 - radius),
+            1.0,
+            thickness=-1,
+        )
+        for center in (
+            (radius, radius),
+            (x1 - radius, radius),
+            (x1 - radius, y1 - radius),
+            (radius, y1 - radius),
+        ):
+            cv2.circle(
+                source_mask_hi,
+                center,
+                radius,
+                1.0,
+                thickness=-1,
+                lineType=cv2.LINE_AA,
+            )
+
+        source_mask = cv2.resize(
+            source_mask_hi,
+            (src_width, src_height),
+            interpolation=cv2.INTER_AREA,
+        )
+        rounded = cv2.warpPerspective(
+            source_mask,
+            matrix,
+            (w_bg, h_bg),
+            flags=cv2.INTER_LINEAR,
+            borderMode=cv2.BORDER_CONSTANT,
+            borderValue=0.0,
+        )
+        if feather_px > 0:
+            rounded = cv2.GaussianBlur(
+                rounded,
+                (0, 0),
+                sigmaX=max(0.35, float(feather_px) * 0.42),
+                sigmaY=max(0.35, float(feather_px) * 0.42),
+            )
+        return np.clip(rounded, 0.0, 1.0)
 
     @staticmethod
     def generate_window_reflection(gw: int, gh: int, intensity: float = 0.48) -> np.ndarray:
@@ -838,6 +1437,78 @@ class MockupRenderer:
         refl = np.clip(refl, 0.0, 0.85)
 
         return np.stack([refl * 1.0, refl * 0.98, refl * 0.96], axis=-1)
+
+    @staticmethod
+    def generate_subtle_glass_streak(
+        gw: int,
+        gh: int,
+        intensity: float = 0.075,
+    ) -> np.ndarray:
+        """Small, soft translucent highlight for glass cutting-board realism."""
+        y, x = np.mgrid[0:gh, 0:gw].astype(np.float32)
+        cx = gw * 0.73
+        cy = gh * 0.24
+        angle = np.radians(-18.0)
+        ca, sa = np.cos(angle), np.sin(angle)
+        xr = (x - cx) * ca - (y - cy) * sa
+        yr = (x - cx) * sa + (y - cy) * ca
+
+        streak = np.exp(
+            -((xr / max(gw * 0.24, 1.0)) ** 2)
+            -((yr / max(gh * 0.032, 1.0)) ** 2)
+        )
+        envelope = np.exp(
+            -((xr / max(gw * 0.30, 1.0)) ** 2)
+            -((yr / max(gh * 0.18, 1.0)) ** 2)
+        )
+        streak = cv2.GaussianBlur(
+            streak * envelope,
+            (0, 0),
+            sigmaX=2.2,
+            sigmaY=2.2,
+        )
+        streak = np.clip(streak * float(intensity), 0.0, 0.12)
+        return np.stack(
+            [streak, streak * 0.985, streak * 0.96],
+            axis=-1,
+        )
+
+    @staticmethod
+    def protect_artwork_detail_from_reflection(
+        reflection: np.ndarray,
+        artwork_cv: np.ndarray,
+        surface_mask: np.ndarray,
+        min_reflection_fraction: float = 0.30,
+    ) -> np.ndarray:
+        """Keep reflection while reducing it over dense artwork detail."""
+        art_u8 = np.clip(artwork_cv, 0, 255).astype(np.uint8)
+        gray = cv2.cvtColor(art_u8, cv2.COLOR_BGR2GRAY).astype(np.float32)
+
+        gx = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3)
+        gy = cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3)
+        grad = cv2.magnitude(gx, gy)
+        inside = np.asarray(surface_mask) > 0.08
+
+        if np.any(inside):
+            values = grad[inside]
+            positive = values[values > 0]
+            reference = float(np.percentile(positive, 82.0)) if positive.size else 1.0
+        else:
+            reference = 1.0
+        reference = max(reference, 1.0)
+
+        detail = np.clip(grad / reference, 0.0, 1.0)
+        detail = cv2.GaussianBlur(detail, (0, 0), sigmaX=2.0, sigmaY=2.0)
+        luminance_cue = np.clip((gray - 145.0) / 90.0, 0.0, 1.0)
+        protection = np.clip(
+            np.maximum(detail, luminance_cue) * np.asarray(surface_mask),
+            0.0,
+            1.0,
+        )
+        attenuation = 1.0 - protection * (
+            1.0 - float(min_reflection_fraction)
+        )
+        return reflection * attenuation[..., None]
 
     @staticmethod
     def generate_glass_bevel(h_bg: int, w_bg: int, dst_pts: np.ndarray):
@@ -959,6 +1630,731 @@ class MockupRenderer:
         return result.astype(np.uint8)
 
     @staticmethod
+    def _scene_realism_profile(category_name: str) -> dict:
+        """Category-aware subtle environment realism defaults.
+
+        Values are intentionally conservative. Scene realism should be felt
+        before it is consciously noticed; material-specific reflections remain
+        the responsibility of the glass/wood render branches above.
+        """
+        profiles = {
+            "01_Wifi_Kutusu": {
+                "style": "soft_window",
+                "light": 0.042,
+                "shadow": 0.032,
+                "organic": 0.010,
+                "room_light": 0.070,
+                "room_shadow": 0.060,
+                "product_protection": 0.992,
+            },
+            "02_Cam_Tablo_Dikey": {
+                "style": "window_gallery",
+                "light": 0.044,
+                "shadow": 0.032,
+                "organic": 0.006,
+                "room_light": 0.090,
+                "room_shadow": 0.076,
+                "product_protection": 0.995,
+            },
+            "02_Cam_Tablo_Yatay": {
+                "style": "window_gallery",
+                "light": 0.044,
+                "shadow": 0.032,
+                "organic": 0.006,
+                "room_light": 0.055,
+                "room_shadow": 0.046,
+                "product_protection": 0.988,
+            },
+            "03_Ahsap_Tablo": {
+                "style": "warm_window_leaf",
+                "light": 0.055,
+                "shadow": 0.040,
+                "organic": 0.022,
+                "room_light": 0.115,
+                "room_shadow": 0.088,
+                "product_protection": 0.990,
+            },
+            "04_Cam_Dograma": {
+                "style": "countertop_bounce",
+                "light": 0.034,
+                "shadow": 0.022,
+                "organic": 0.000,
+                "room_light": 0.072,
+                "room_shadow": 0.058,
+                "product_protection": 0.982,
+            },
+            "05_Ocak_Arkasi": {
+                "style": "kitchen_daylight",
+                "light": 0.030,
+                "shadow": 0.020,
+                "organic": 0.000,
+                "room_light": 0.062,
+                "room_shadow": 0.052,
+                "product_protection": 0.995,
+            },
+        }
+        return dict(
+            profiles.get(
+                category_name,
+                {
+                    "style": "soft_window",
+                    "light": 0.036,
+                    "shadow": 0.024,
+                    "organic": 0.004,
+                    "room_light": 0.045,
+                    "room_shadow": 0.035,
+                    "product_protection": 0.982,
+                },
+            )
+        )
+
+    @staticmethod
+    def _scene_realism_product_protection(
+        height: int,
+        width: int,
+        dst_pts: np.ndarray,
+    ) -> np.ndarray:
+        """Return a soft protection mask around the reviewed product surface."""
+        mask = np.zeros((height, width), dtype=np.uint8)
+        quad = np.asarray(dst_pts, dtype=np.float32).reshape(-1, 2)
+        if quad.shape[0] >= 4:
+            cv2.fillConvexPoly(
+                mask,
+                np.round(quad[:4]).astype(np.int32),
+                255,
+                lineType=cv2.LINE_AA,
+            )
+
+        radius = max(3, int(round(min(height, width) * 0.025)))
+        kernel_size = radius * 2 + 1
+        kernel = cv2.getStructuringElement(
+            cv2.MORPH_ELLIPSE,
+            (kernel_size, kernel_size),
+        )
+        expanded = cv2.dilate(mask, kernel, iterations=1)
+        sigma = max(2.0, min(height, width) * 0.010)
+        soft = cv2.GaussianBlur(
+            expanded.astype(np.float32) / 255.0,
+            (0, 0),
+            sigmaX=sigma,
+            sigmaY=sigma,
+        )
+        return np.clip(soft, 0.0, 1.0)
+
+    @staticmethod
+    def _select_scene_realism_anchor(
+        image_cv: np.ndarray,
+        dst_pts: np.ndarray,
+        protection: np.ndarray,
+        deterministic_seed: int,
+    ) -> tuple[float, float, float]:
+        """Pick a quiet scene zone near the product, never a random position.
+
+        Candidate regions are placed around the product corners and scene
+        corners. Low texture, sufficient product clearance and usable luminance
+        increase the score. Seed is used only for deterministic tie-breaking.
+        """
+        h, w = image_cv.shape[:2]
+        quad = np.asarray(dst_pts, dtype=np.float32).reshape(-1, 2)
+        x0 = float(np.min(quad[:, 0]))
+        x1 = float(np.max(quad[:, 0]))
+        y0 = float(np.min(quad[:, 1]))
+        y1 = float(np.max(quad[:, 1]))
+        pw = max(x1 - x0, w * 0.08)
+        ph = max(y1 - y0, h * 0.08)
+
+        raw_candidates = [
+            (x0 - pw * 0.20, y0 + ph * 0.15),
+            (x1 + pw * 0.20, y0 + ph * 0.15),
+            (x0 - pw * 0.16, y1 - ph * 0.10),
+            (x1 + pw * 0.16, y1 - ph * 0.10),
+            (w * 0.16, h * 0.18),
+            (w * 0.84, h * 0.18),
+            (w * 0.16, h * 0.78),
+            (w * 0.84, h * 0.78),
+        ]
+        margin_x = max(2.0, w * 0.06)
+        margin_y = max(2.0, h * 0.06)
+        candidates = [
+            (
+                float(np.clip(cx, margin_x, w - 1 - margin_x)),
+                float(np.clip(cy, margin_y, h - 1 - margin_y)),
+            )
+            for cx, cy in raw_candidates
+        ]
+
+        gray = cv2.cvtColor(
+            np.clip(image_cv, 0, 255).astype(np.uint8),
+            cv2.COLOR_BGR2GRAY,
+        ).astype(np.float32)
+        gx = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3)
+        gy = cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3)
+        gradient = cv2.magnitude(gx, gy)
+
+        patch_rx = max(8, int(round(w * 0.12)))
+        patch_ry = max(8, int(round(h * 0.10)))
+        rng = np.random.default_rng(int(deterministic_seed) & 0xFFFFFFFF)
+
+        scored = []
+        for idx, (cx, cy) in enumerate(candidates):
+            ix = int(round(cx))
+            iy = int(round(cy))
+            xa = max(0, ix - patch_rx)
+            xb = min(w, ix + patch_rx + 1)
+            ya = max(0, iy - patch_ry)
+            yb = min(h, iy + patch_ry + 1)
+            if xb <= xa or yb <= ya:
+                continue
+
+            p_protect = protection[ya:yb, xa:xb]
+            clearance = float(np.mean(1.0 - p_protect))
+            if clearance < 0.55:
+                continue
+
+            p_grad = gradient[ya:yb, xa:xb]
+            texture = float(np.mean(np.clip(p_grad / 45.0, 0.0, 1.0)))
+            p_gray = gray[ya:yb, xa:xb]
+            mean_lum = float(np.mean(p_gray))
+            # Prefer useful mid-tone regions where subtle light/shadow can read.
+            luminance_score = 1.0 - min(abs(mean_lum - 145.0) / 145.0, 1.0)
+            jitter = float(rng.uniform(0.0, 0.012))
+            score = (
+                clearance * 0.50
+                + (1.0 - texture) * 0.34
+                + luminance_score * 0.16
+                + jitter
+            )
+            scored.append((score, idx, cx, cy))
+
+        if not scored:
+            # Conservative fallback: scene corner furthest from product center.
+            product_center = np.mean(quad, axis=0)
+            fallback = [
+                (w * 0.14, h * 0.16),
+                (w * 0.86, h * 0.16),
+                (w * 0.14, h * 0.82),
+                (w * 0.86, h * 0.82),
+            ]
+            cx, cy = max(
+                fallback,
+                key=lambda pt: (
+                    (pt[0] - product_center[0]) ** 2
+                    + (pt[1] - product_center[1]) ** 2
+                ),
+            )
+            return float(cx), float(cy), 0.0
+
+        best = max(scored, key=lambda item: item[0])
+        return float(best[2]), float(best[3]), float(best[0])
+
+    @staticmethod
+    def apply_scene_realism_layer(
+        image_cv: np.ndarray,
+        dst_pts: np.ndarray,
+        category_name: str,
+        deterministic_key: str,
+        return_metadata: bool = False,
+        strength_multiplier: float = 1.0,
+    ):
+        """Apply localized, product-safe environmental realism.
+
+        The effect lives mainly in the surrounding scene: a soft warm daylight
+        pool, faint architectural window shadow and (for suitable room scenes)
+        an extremely subtle organic/leaf shadow. The product receives only a
+        tiny residual amount so its print, reflections and edges stay readable.
+        """
+        if image_cv is None or image_cv.size == 0:
+            metadata = {
+                "applied": False,
+                "reason": "empty_image",
+            }
+            return (image_cv, metadata) if return_metadata else image_cv
+
+        h, w = image_cv.shape[:2]
+        quad = np.asarray(dst_pts, dtype=np.float32).reshape(-1, 2)
+        if quad.shape[0] < 4 or not np.isfinite(quad).all():
+            metadata = {
+                "applied": False,
+                "reason": "invalid_quad",
+            }
+            return (image_cv, metadata) if return_metadata else image_cv
+
+        profile = MockupRenderer._scene_realism_profile(category_name)
+        strength_multiplier = float(
+            np.clip(float(strength_multiplier), 0.0, 1.5)
+        )
+        for key in ("light", "shadow", "organic"):
+            profile[key] = float(profile.get(key, 0.0)) * strength_multiplier
+        seed_hex = hashlib.sha256(
+            str(deterministic_key or category_name or "scene").encode("utf-8")
+        ).hexdigest()
+        seed = int(seed_hex[:8], 16)
+
+        protection = MockupRenderer._scene_realism_product_protection(
+            h,
+            w,
+            quad,
+        )
+        cx, cy, anchor_score = MockupRenderer._select_scene_realism_anchor(
+            image_cv,
+            quad,
+            protection,
+            seed,
+        )
+
+        y, x = np.mgrid[0:h, 0:w].astype(np.float32)
+        max_dim = float(max(h, w))
+        rng = np.random.default_rng(seed)
+
+        # Light enters diagonally from the selected quiet zone.
+        angle_deg = float(28.0 + rng.uniform(-9.0, 9.0))
+        if cx > w * 0.5:
+            angle_deg = 180.0 - angle_deg
+        angle = np.radians(angle_deg)
+        ca, sa = np.cos(angle), np.sin(angle)
+        xr = (x - cx) * ca + (y - cy) * sa
+        yr = -(x - cx) * sa + (y - cy) * ca
+
+        envelope = np.exp(
+            -(
+                (xr / max(max_dim * 0.34, 1.0)) ** 2
+                + (yr / max(max_dim * 0.22, 1.0)) ** 2
+            )
+        ).astype(np.float32)
+
+        # Three soft architectural bars + one faint crossbar. This reads as
+        # off-camera window light rather than a filter placed on the product.
+        shadow = np.zeros((h, w), dtype=np.float32)
+        offsets = (-0.12, 0.00, 0.12)
+        bar_sigma = max(max_dim * 0.018, 2.0)
+        for offset in offsets:
+            center = max_dim * offset
+            shadow = np.maximum(
+                shadow,
+                np.exp(-0.5 * ((xr - center) / bar_sigma) ** 2),
+            )
+        cross_sigma = max(max_dim * 0.024, 2.0)
+        cross = np.exp(
+            -0.5 * ((yr - max_dim * 0.025) / cross_sigma) ** 2
+        )
+        shadow = np.clip(
+            (shadow * 0.78 + cross * 0.34) * envelope,
+            0.0,
+            1.0,
+        )
+        shadow = cv2.GaussianBlur(
+            shadow,
+            (0, 0),
+            sigmaX=max(1.5, min(h, w) * 0.004),
+            sigmaY=max(1.5, min(h, w) * 0.004),
+        )
+
+        # Organic/leaf silhouettes are intentionally weak and only enabled in
+        # profiles where a living-space shadow is plausible.
+        organic = np.zeros((h, w), dtype=np.float32)
+        organic_strength = float(profile.get("organic", 0.0))
+        if organic_strength > 0.0:
+            for _ in range(4):
+                ox = cx + float(rng.uniform(-0.15, 0.15)) * max_dim
+                oy = cy + float(rng.uniform(-0.10, 0.12)) * max_dim
+                sx = max(max_dim * float(rng.uniform(0.025, 0.050)), 2.0)
+                sy = max(max_dim * float(rng.uniform(0.012, 0.030)), 2.0)
+                blob = np.exp(
+                    -0.5 * (
+                        ((x - ox) / sx) ** 2
+                        + ((y - oy) / sy) ** 2
+                    )
+                )
+                organic = np.maximum(organic, blob.astype(np.float32))
+            organic = cv2.GaussianBlur(
+                organic * envelope,
+                (0, 0),
+                sigmaX=max(2.0, min(h, w) * 0.006),
+                sigmaY=max(2.0, min(h, w) * 0.006),
+            )
+
+        product_protection = float(
+            profile.get("product_protection", 0.98)
+        )
+        scene_weight = 1.0 - protection * product_protection
+        scene_weight = np.clip(scene_weight, 0.0, 1.0)
+
+        before = np.clip(image_cv, 0, 255).astype(np.uint8)
+        work = before.astype(np.float32)
+
+        shadow_amount = (
+            float(profile.get("shadow", 0.02)) * shadow
+            + organic_strength * organic
+        ) * scene_weight
+        work *= (1.0 - shadow_amount[..., None])
+
+        # Warm local daylight: BGR weights keep the lift photographic and avoid
+        # yellow paint-over. The scene is lifted most in red, least in blue.
+        light_amount = (
+            float(profile.get("light", 0.03))
+            * envelope
+            * scene_weight
+        )
+        warm_weights = np.array([0.42, 0.72, 1.00], dtype=np.float32)
+        work = work + (
+            (255.0 - work)
+            * light_amount[..., None]
+            * warm_weights.reshape(1, 1, 3)
+        )
+
+        result = np.clip(work, 0.0, 255.0).astype(np.uint8)
+        delta = np.mean(
+            np.abs(
+                result.astype(np.float32)
+                - before.astype(np.float32)
+            ),
+            axis=2,
+        )
+        product_pixels = protection > 0.55
+        scene_pixels = protection < 0.15
+        product_delta = (
+            float(np.mean(delta[product_pixels]))
+            if np.any(product_pixels)
+            else 0.0
+        )
+        scene_delta = (
+            float(np.mean(delta[scene_pixels]))
+            if np.any(scene_pixels)
+            else 0.0
+        )
+
+        metadata = {
+            "applied": True,
+            "style": profile.get("style", "soft_window"),
+            "anchor": [round(cx, 2), round(cy, 2)],
+            "anchor_score": round(anchor_score, 4),
+            "angle_deg": round(angle_deg, 2),
+            "product_delta_mean": round(product_delta, 4),
+            "scene_delta_mean": round(scene_delta, 4),
+        }
+        return (result, metadata) if return_metadata else result
+
+    @staticmethod
+    def apply_room_sunlight_layer(
+        image_cv: np.ndarray,
+        dst_pts: np.ndarray,
+        category_name: str,
+        deterministic_key: str,
+        return_metadata: bool = False,
+        strength_multiplier: float = 1.0,
+    ):
+        """Apply visible but product-safe room sunlight/window shadows.
+
+        r10 does not choose an arbitrary corner. It estimates the dominant
+        incoming-light side from scene borders (left/right/top), then projects
+        a broad warm sun patch plus soft window-frame shadows into a quiet
+        nearby area. Product pixels remain strongly protected.
+        """
+        if image_cv is None or image_cv.size == 0:
+            meta = {"applied": False, "reason": "empty_image"}
+            return (image_cv, meta) if return_metadata else image_cv
+
+        h, w = image_cv.shape[:2]
+        quad = np.asarray(dst_pts, dtype=np.float32).reshape(-1, 2)
+        if quad.shape[0] < 4 or not np.isfinite(quad).all():
+            meta = {"applied": False, "reason": "invalid_quad"}
+            return (image_cv, meta) if return_metadata else image_cv
+
+        profile = MockupRenderer._scene_realism_profile(category_name)
+        strength_multiplier = float(
+            np.clip(float(strength_multiplier), 0.0, 1.6)
+        )
+        room_light_strength = float(
+            profile.get("room_light", 0.055)
+        ) * strength_multiplier
+        room_shadow_strength = float(
+            profile.get("room_shadow", 0.045)
+        ) * strength_multiplier
+        product_protection = float(
+            profile.get("product_protection", 0.99)
+        )
+
+        seed_hex = hashlib.sha256(
+            str(
+                deterministic_key
+                or category_name
+                or "room-sunlight-r10"
+            ).encode("utf-8")
+        ).hexdigest()
+        seed = int(seed_hex[:8], 16)
+        rng = np.random.default_rng(seed)
+
+        protection = MockupRenderer._scene_realism_product_protection(
+            h,
+            w,
+            quad,
+        )
+        before = np.clip(image_cv, 0, 255).astype(np.uint8)
+        gray = cv2.cvtColor(before, cv2.COLOR_BGR2GRAY).astype(np.float32)
+        gx = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3)
+        gy = cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3)
+        grad = cv2.magnitude(gx, gy)
+
+        # -------------------------------------------------------------
+        # 1. Estimate incoming light side from scene borders.
+        # -------------------------------------------------------------
+        band_x = max(12, int(round(w * 0.10)))
+        band_y = max(12, int(round(h * 0.10)))
+        border_slices = {
+            "left": (slice(0, h), slice(0, band_x)),
+            "right": (slice(0, h), slice(w - band_x, w)),
+            "top": (slice(0, band_y), slice(0, w)),
+        }
+        border_scores = {}
+        for side, (ys, xs) in border_slices.items():
+            p = protection[ys, xs]
+            clear = p < 0.35
+            if np.count_nonzero(clear) < 64:
+                clear = np.ones_like(p, dtype=bool)
+            lum_values = gray[ys, xs][clear]
+            grad_values = grad[ys, xs][clear]
+            brightness = float(np.mean(lum_values)) / 255.0
+            texture = float(
+                np.mean(np.clip(grad_values / 55.0, 0.0, 1.0))
+            )
+            clearance = float(np.mean(1.0 - p))
+            border_scores[side] = (
+                brightness * 0.62
+                + clearance * 0.23
+                + (1.0 - texture) * 0.15
+            )
+
+        light_side = max(border_scores, key=border_scores.get)
+        product_center = np.mean(quad, axis=0)
+        max_dim = float(max(h, w))
+
+        # Anchor light just inside the detected source side. Deterministic
+        # jitter prevents every template from looking mechanically identical.
+        jitter = float(rng.uniform(-0.10, 0.10))
+        if light_side == "left":
+            anchor_x = w * 0.08
+            anchor_y = float(
+                np.clip(
+                    product_center[1] + jitter * h,
+                    h * 0.18,
+                    h * 0.72,
+                )
+            )
+            angle_deg = float(26.0 + rng.uniform(-7.0, 7.0))
+        elif light_side == "right":
+            anchor_x = w * 0.92
+            anchor_y = float(
+                np.clip(
+                    product_center[1] + jitter * h,
+                    h * 0.18,
+                    h * 0.72,
+                )
+            )
+            angle_deg = float(154.0 + rng.uniform(-7.0, 7.0))
+        else:
+            anchor_x = float(
+                np.clip(
+                    product_center[0] + jitter * w,
+                    w * 0.20,
+                    w * 0.80,
+                )
+            )
+            anchor_y = h * 0.07
+            angle_deg = float(88.0 + rng.uniform(-8.0, 8.0))
+
+        angle = np.radians(angle_deg)
+        ca, sa = np.cos(angle), np.sin(angle)
+        y, x = np.mgrid[0:h, 0:w].astype(np.float32)
+        xr = (x - anchor_x) * ca + (y - anchor_y) * sa
+        yr = -(x - anchor_x) * sa + (y - anchor_y) * ca
+
+        # -------------------------------------------------------------
+        # 2. Broad sunlight patch: visible enough to read as directional
+        #    daylight, but localized rather than a whole-image filter.
+        # -------------------------------------------------------------
+        along_center = max_dim * 0.22
+        sun_patch = np.exp(
+            -(
+                ((xr - along_center) / max(max_dim * 0.46, 1.0)) ** 4
+                + (yr / max(max_dim * 0.30, 1.0)) ** 4
+            )
+        ).astype(np.float32)
+
+        # Keep the patch away from extreme opposite corners.
+        distance_from_anchor = np.sqrt(
+            (x - anchor_x) ** 2 + (y - anchor_y) ** 2
+        )
+        distance_gate = np.clip(
+            1.0 - distance_from_anchor / max(max_dim * 1.05, 1.0),
+            0.0,
+            1.0,
+        )
+        sun_patch *= np.sqrt(distance_gate)
+
+        # -------------------------------------------------------------
+        # 3. Soft window-frame shadows. These are broader/darker than r9,
+        #    which made them measurable but visually almost invisible.
+        # -------------------------------------------------------------
+        bars = np.zeros((h, w), dtype=np.float32)
+        bar_sigma = max(max_dim * 0.034, 3.0)
+        for offset in (-0.20, -0.065, 0.070, 0.205):
+            center = max_dim * offset
+            bars = np.maximum(
+                bars,
+                np.exp(
+                    -0.5 * ((yr - center) / bar_sigma) ** 2
+                ),
+            )
+
+        crossbars = np.zeros((h, w), dtype=np.float32)
+        cross_sigma = max(max_dim * 0.030, 3.0)
+        for offset in (0.12, 0.35):
+            center = max_dim * offset
+            crossbars = np.maximum(
+                crossbars,
+                np.exp(
+                    -0.5
+                    * ((xr - center) / cross_sigma) ** 2
+                ),
+            )
+
+        window_shadow = np.clip(
+            (bars * 0.86 + crossbars * 0.56)
+            * sun_patch,
+            0.0,
+            1.0,
+        )
+        window_shadow = cv2.GaussianBlur(
+            window_shadow,
+            (0, 0),
+            sigmaX=max(2.0, min(h, w) * 0.008),
+            sigmaY=max(2.0, min(h, w) * 0.008),
+        )
+
+        # -------------------------------------------------------------
+        # 4. Optional dappled/leaf shadow for room-oriented products.
+        # -------------------------------------------------------------
+        dapple = np.zeros((h, w), dtype=np.float32)
+        if category_name in {
+            "01_Wifi_Kutusu",
+            "03_Ahsap_Tablo",
+        }:
+            for _ in range(7):
+                along = float(rng.uniform(0.05, 0.42)) * max_dim
+                across = float(rng.uniform(-0.18, 0.18)) * max_dim
+                ox = anchor_x + along * ca - across * sa
+                oy = anchor_y + along * sa + across * ca
+                sx = max(
+                    max_dim * float(rng.uniform(0.018, 0.045)),
+                    2.0,
+                )
+                sy = max(
+                    max_dim * float(rng.uniform(0.009, 0.025)),
+                    2.0,
+                )
+                blob = np.exp(
+                    -0.5
+                    * (
+                        ((x - ox) / sx) ** 2
+                        + ((y - oy) / sy) ** 2
+                    )
+                ).astype(np.float32)
+                dapple = np.maximum(dapple, blob)
+            dapple = cv2.GaussianBlur(
+                dapple * sun_patch,
+                (0, 0),
+                sigmaX=max(2.0, min(h, w) * 0.005),
+                sigmaY=max(2.0, min(h, w) * 0.005),
+            )
+
+        # -------------------------------------------------------------
+        # 5. Product protection and adaptive contrast.
+        # -------------------------------------------------------------
+        scene_weight = 1.0 - protection * product_protection
+        scene_weight = np.clip(scene_weight, 0.0, 1.0)
+
+        # Scenes that already contain hard dramatic shadows (e.g. Wifi source)
+        # should receive less additional darkness but may still gain sunlight.
+        scene_contrast = float(np.std(gray)) / 64.0
+        contrast_shadow_scale = float(
+            np.clip(1.10 - scene_contrast * 0.30, 0.62, 1.0)
+        )
+
+        shadow_amount = (
+            room_shadow_strength
+            * window_shadow
+            * contrast_shadow_scale
+            + float(profile.get("organic", 0.0))
+            * dapple
+            * 1.45
+        ) * scene_weight
+
+        work = before.astype(np.float32)
+        work *= 1.0 - np.clip(shadow_amount, 0.0, 0.22)[..., None]
+
+        light_amount = (
+            room_light_strength
+            * sun_patch
+            * scene_weight
+        )
+        warm_weights = np.array(
+            [0.34, 0.68, 1.00],
+            dtype=np.float32,
+        )
+        work += (
+            (255.0 - work)
+            * np.clip(light_amount, 0.0, 0.18)[..., None]
+            * warm_weights.reshape(1, 1, 3)
+        )
+
+        result = np.clip(work, 0.0, 255.0).astype(np.uint8)
+        delta = np.mean(
+            np.abs(
+                result.astype(np.float32)
+                - before.astype(np.float32)
+            ),
+            axis=2,
+        )
+        product_pixels = protection > 0.55
+        scene_pixels = protection < 0.15
+        product_delta = (
+            float(np.mean(delta[product_pixels]))
+            if np.any(product_pixels)
+            else 0.0
+        )
+        scene_delta = (
+            float(np.mean(delta[scene_pixels]))
+            if np.any(scene_pixels)
+            else 0.0
+        )
+        changed_scene_fraction = (
+            float(np.mean(delta[scene_pixels] > 1.5))
+            if np.any(scene_pixels)
+            else 0.0
+        )
+
+        meta = {
+            "applied": True,
+            "light_source_side": light_side,
+            "border_scores": {
+                key: round(float(value), 4)
+                for key, value in border_scores.items()
+            },
+            "anchor": [
+                round(float(anchor_x), 2),
+                round(float(anchor_y), 2),
+            ],
+            "angle_deg": round(float(angle_deg), 2),
+            "product_delta_mean": round(product_delta, 4),
+            "scene_delta_mean": round(scene_delta, 4),
+            "changed_scene_fraction": round(
+                changed_scene_fraction,
+                4,
+            ),
+        }
+        return (result, meta) if return_metadata else result
+
+    @staticmethod
     def match_color_cast(art_cv: np.ndarray, bg_cv: np.ndarray, poly_mask: np.ndarray) -> np.ndarray:
         """
         Ortam Renk Isısı Harmanlama: Arka planın (odanın) ortalama renk ısısını
@@ -1014,11 +2410,8 @@ class MockupRenderer:
         Parlak ve karanlık alanlarda az, orta tonlarda çok kumlanma yapar.
         """
         h, w = image_cv.shape[:2]
-        if seed is not None:
-            np.random.seed(seed)
-        noise = np.random.normal(0, intensity, (h, w, 3)).astype(np.float32)
-        if seed is not None:
-            np.random.seed(None)
+        rng = np.random.default_rng(seed)
+        noise = rng.normal(0, intensity, (h, w, 3)).astype(np.float32)
         
         lum = cv2.cvtColor(np.clip(image_cv, 0, 255).astype(np.uint8), cv2.COLOR_BGR2GRAY).astype(np.float32) / 255.0
         # 4*x*(1-x) parabolü ile orta tonları (0.5) maksimize eder, 0 ve 1'i minimize eder
@@ -1029,36 +2422,91 @@ class MockupRenderer:
         return image_cv + (noise * noise_mask_3c)
 
     @staticmethod
-    def render_cv2_optik(art_cv: np.ndarray, bg_cv: np.ndarray, koseler: list, is_glass: bool, on_plan=None, template_name: str = None, category_name: str = None, orig_bg_cv: np.ndarray = None, alpha_mask: np.ndarray = None, source_design_identity: str = None, template_identity: str = None, recipe_version: str = None, template_sha: str = None) -> np.ndarray:
+    def resolve_print_mask(
+        quad_mask_f: np.ndarray,
+        alpha_mask: np.ndarray | None,
+        target_width: int,
+        target_height: int,
+    ) -> np.ndarray:
+        """Combine reviewed quad with a meaningful transparent print hole.
+
+        Ordinary RGBA PNGs are often fully opaque. Treating their alpha channel
+        as a cut-out would zero the artwork mask and produce a technically
+        successful render with no visible design. Alpha restricts the reviewed
+        quad only when there is meaningful transparency inside that quad.
+        """
+        quad_mask_f = np.clip(quad_mask_f.astype(np.float32), 0.0, 1.0)
+        if alpha_mask is None:
+            return quad_mask_f
+
+        alpha = alpha_mask
+        if alpha.ndim == 3:
+            alpha = cv2.cvtColor(alpha, cv2.COLOR_BGR2GRAY)
+        if alpha.shape[:2] != (target_height, target_width):
+            alpha = cv2.resize(
+                alpha,
+                (target_width, target_height),
+                interpolation=cv2.INTER_LINEAR,
+            )
+        transparent_hole = 1.0 - (alpha.astype(np.float32) / 255.0)
+        inside = quad_mask_f > 0.10
+        if not np.any(inside):
+            raise ValueError("Approved quad produced an empty print mask")
+
+        # Require a real transparent region inside the approved surface.
+        transparent_fraction = float(
+            np.mean(transparent_hole[inside] > 0.10)
+        )
+        if transparent_fraction < 0.02:
+            return quad_mask_f
+
+        restricted = np.clip(transparent_hole * quad_mask_f, 0.0, 1.0)
+        restricted_pixels = int(np.count_nonzero(restricted > 0.05))
+        quad_pixels = int(np.count_nonzero(inside))
+        if restricted_pixels < max(64, int(quad_pixels * 0.02)):
+            return quad_mask_f
+        return restricted
+
+    @staticmethod
+    def render_cv2_optik(
+        art_cv: np.ndarray,
+        bg_cv: np.ndarray,
+        koseler: list,
+        is_glass: bool,
+        on_plan=None,
+        template_name: str = None,
+        category_name: str = None,
+        orig_bg_cv: np.ndarray = None,
+        alpha_mask: np.ndarray = None,
+        source_design_identity: str = None,
+        template_identity: str = None,
+        recipe_version: str = None,
+        template_sha: str = None,
+        auto_foreground: bool = False,
+        foreground_required: bool = False,
+        camera_artifacts: bool = False,
+        scene_realism_enabled: bool = True,
+        scene_realism_strength: float = 1.0,
+        glass_corner_radius_fraction: float = 0.0,
+    ) -> np.ndarray:
         h_bg, w_bg = bg_cv.shape[:2]
         h_art, w_art = art_cv.shape[:2]
         p = np.float32(koseler)  # [TL, TR, BR, BL]
 
         # -------------------------------------------------------------
-        # 1. SMART-COVER: EN-BOY ORANI KORUMA (SÜNDÜRME & YAYILMA ÖNLEME)
+        # 1. CONTENT-SAFE PERSPECTIVE INPUT
         # -------------------------------------------------------------
+        # The projected quad aspect is NOT the physical print aspect. Cropping
+        # the artwork against that projected ratio can remove text/content and
+        # was explicitly unsafe for marketplace designs. The full source
+        # artwork is therefore preserved and mapped as a single physical plane.
         w_top = np.linalg.norm(p[1] - p[0])
         w_bot = np.linalg.norm(p[2] - p[3])
         h_left = np.linalg.norm(p[3] - p[0])
         h_right = np.linalg.norm(p[2] - p[1])
         target_w = max(1.0, (w_top + w_bot) / 2.0)
         target_h = max(1.0, (h_left + h_right) / 2.0)
-        target_ar = target_w / target_h
-
-        art_ar = w_art / float(h_art)
-
-        if art_ar > target_ar:
-            crop_w = int(round(h_art * target_ar))
-            crop_h = h_art
-            sx = max(0, (w_art - crop_w) // 2)
-            sy = 0
-            art_fitted = art_cv[:, sx:sx + crop_w]
-        else:
-            crop_w = w_art
-            crop_h = int(round(w_art / target_ar))
-            sx = 0
-            sy = max(0, (h_art - crop_h) // 2)
-            art_fitted = art_cv[sy:sy + crop_h, :]
+        art_fitted = art_cv
 
         # -------------------------------------------------------------
         # 2. SUB-PIXEL PERSPEKTİF HOMOGRAFİ & KENAR YUMUŞATMA (ANTI-ALIASING)
@@ -1075,12 +2523,40 @@ class MockupRenderer:
             borderValue=(0, 0, 0)
         )
 
-        # 2x Supersampled Sub-pixel Kenar Yumuşatma Maskesi
-        if alpha_mask is not None:
-            # Şeffaf Delik (Passepartout) Maskesi
-            mask_f = 1.0 - (alpha_mask.astype(np.float32) / 255.0)
-        else:
-            mask_f = MockupRenderer.create_subpixel_antialiased_mask(h_bg, w_bg, dst_pts, feather_px=1.8)
+        # 2x supersampled approved-quad mask is always the hard spatial
+        # safety boundary. A transparent passepartout may further restrict the
+        # printable hole, but it can never expand artwork outside the quad.
+        quad_mask_f = MockupRenderer.create_subpixel_antialiased_mask(
+            h_bg,
+            w_bg,
+            dst_pts,
+            feather_px=1.8,
+        )
+        if is_glass and float(glass_corner_radius_fraction or 0.0) > 0.0:
+            rounded_glass_mask = (
+                MockupRenderer.create_perspective_rounded_mask(
+                    h_bg,
+                    w_bg,
+                    fw,
+                    fh,
+                    matrix,
+                    radius_fraction=float(
+                        glass_corner_radius_fraction
+                    ),
+                    feather_px=1.2,
+                )
+            )
+            quad_mask_f = np.minimum(
+                quad_mask_f,
+                rounded_glass_mask,
+            )
+
+        mask_f = MockupRenderer.resolve_print_mask(
+            quad_mask_f,
+            alpha_mask,
+            w_bg,
+            h_bg,
+        )
         mask_3c = np.stack([mask_f] * 3, axis=-1)
 
         # -------------------------------------------------------------
@@ -1105,16 +2581,26 @@ class MockupRenderer:
         # 1. Ortam Renk Isısı Harmanlama (White Balance Match)
         warped_lit = MockupRenderer.match_color_cast(warped_lit, bg_cv, mask_f)
         
-        # 2. Lens Sapması (Chromatic Aberration)
-        warped_lit = MockupRenderer.apply_chromatic_aberration(warped_lit, intensity=1)
-        
-        # 3. Sensör Kumlanması (Camera Grain)
-        seed = None
-        if source_design_identity and template_identity and recipe_version:
-            import hashlib
-            h = hashlib.sha256(f"{source_design_identity}_{template_identity}_{recipe_version}".encode()).hexdigest()
-            seed = int(h[:8], 16)
-        warped_lit = MockupRenderer.apply_camera_grain(warped_lit, intensity=3.5, seed=seed)
+        # 2-3. Optional camera artifacts. Marketplace product imagery
+        # defaults to maximum sharpness; cinematic grain/channel shift must be
+        # explicitly opted in per template.
+        if camera_artifacts:
+            warped_lit = MockupRenderer.apply_chromatic_aberration(
+                warped_lit,
+                intensity=0.55,
+            )
+            seed = None
+            if source_design_identity and template_identity and recipe_version:
+                import hashlib
+                h = hashlib.sha256(
+                    f"{source_design_identity}_{template_identity}_{recipe_version}".encode()
+                ).hexdigest()
+                seed = int(h[:8], 16)
+            warped_lit = MockupRenderer.apply_camera_grain(
+                warped_lit,
+                intensity=1.25,
+                seed=seed,
+            )
         # ----------------------------------------------------------------
 
         # -------------------------------------------------------------
@@ -1123,16 +2609,40 @@ class MockupRenderer:
         is_cam_dograma = (category_name == "04_Cam_Dograma")
         is_wood_or_wifi = (category_name in ["03_Ahsap_Tablo", "01_Wifi_Kutusu"])
 
-        gw, gh = int(target_w), int(target_h)
+        # Optical overlays are generated in the same source coordinate
+        # system as the artwork because they use the artwork homography.
+        # Generating them at projected-quad dimensions and reusing this matrix
+        # would apply the wrong coordinate transform.
+        effect_w, effect_h = fw, fh
 
         if is_cam_dograma:
             # A) CAM DOĞRAMA / KESME TAHTASI: Mutfak Tezgahı & Dolap Altı Spot Işık Yansıması + Rodaj Kenar
-            spot_sheen = MockupRenderer.generate_kitchen_countertop_sheen(gw, gh, intensity=0.25)
+            spot_sheen = MockupRenderer.generate_kitchen_countertop_sheen(
+                effect_w,
+                effect_h,
+                intensity=0.25,
+            )
+            subtle_streak = MockupRenderer.generate_subtle_glass_streak(
+                effect_w,
+                effect_h,
+                intensity=0.075,
+            )
+            dog_reflection_local = np.clip(
+                spot_sheen + subtle_streak,
+                0.0,
+                0.32,
+            )
             spot_warped = cv2.warpPerspective(
-                spot_sheen, matrix, (w_bg, h_bg),
+                dog_reflection_local, matrix, (w_bg, h_bg),
                 flags=cv2.INTER_LINEAR,
                 borderMode=cv2.BORDER_CONSTANT,
                 borderValue=(0, 0, 0)
+            )
+            spot_warped = MockupRenderer.protect_artwork_detail_from_reflection(
+                spot_warped,
+                warped_lit,
+                mask_f,
+                min_reflection_fraction=0.38,
             )
             warped_norm = np.clip(warped_lit / 255.0, 0.0, 1.0)
             glass_art_norm = 1.0 - (1.0 - warped_norm) * (1.0 - spot_warped)
@@ -1156,12 +2666,22 @@ class MockupRenderer:
             shadow_outside = total_shadow * (1.0 - mask_f)
             bg_shadowed = bg_cv.astype(np.float32) * (1.0 - np.stack([shadow_outside] * 3, axis=-1))
 
-            refl_local = MockupRenderer.generate_window_reflection(gw, gh, intensity=0.48)
+            refl_local = MockupRenderer.generate_window_reflection(
+                effect_w,
+                effect_h,
+                intensity=0.48,
+            )
             refl_warped = cv2.warpPerspective(
                 refl_local, matrix, (w_bg, h_bg),
                 flags=cv2.INTER_LINEAR,
                 borderMode=cv2.BORDER_CONSTANT,
                 borderValue=(0, 0, 0)
+            )
+            refl_warped = MockupRenderer.protect_artwork_detail_from_reflection(
+                refl_warped,
+                warped_lit,
+                mask_f,
+                min_reflection_fraction=0.30,
             )
 
             # Screen blend: 1 - (1 - art) * (1 - refl)
@@ -1186,57 +2706,860 @@ class MockupRenderer:
             wood_surface = np.clip(warped_lit * (1.0 - inner_shadow_3c), 0.0, 255.0)
             final = bg_cv.astype(np.float32) * (1.0 - mask_3c) + wood_surface * mask_3c
 
-        final = np.clip(final, 0, 255).astype(np.uint8)
+        # Preserve the realism stack (ambient light, glass reflection,
+        # bevel, shadows, material response) while restoring bounded fine
+        # artwork detail that those low-frequency effects can soften.
+        detail_strength = 0.52 if is_glass else 0.42
+        final = MockupRenderer.restore_artwork_microdetail(
+            np.clip(final, 0, 255).astype(np.uint8),
+            warped_lit,
+            mask_f,
+            strength=detail_strength,
+        )
 
         # ---------------------------------------------------------
-        # FOREGROUND / OCCLUSION RESTORE (AI Cache + Manual on_plan)
+        # FOREGROUND / OCCLUSION RESTORE
+        # Automatic Grounding-DINO + SAM cache, then manual refinement.
+        # AI is lazy-loaded only when a template has no usable cached mask.
         # ---------------------------------------------------------
         fg_mask = None
+        cache_file = None
+        cache_loaded = False
+        foreground_analysis_completed = not auto_foreground
+        foreground_failure_reason = None
         try:
+            source_for_mask = orig_bg_cv if orig_bg_cv is not None else bg_cv
+            h_mask, w_mask = source_for_mask.shape[:2]
+
+            def _normalize_mask(mask):
+                if mask is None:
+                    return None
+                if mask.ndim == 3:
+                    mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
+                if mask.shape[:2] != (h_mask, w_mask):
+                    mask = cv2.resize(mask, (w_mask, h_mask), interpolation=cv2.INTER_NEAREST)
+                return np.clip(mask, 0, 255).astype(np.uint8)
+
+            def _read_mask(mask_path: Path):
+                if not mask_path or not mask_path.exists():
+                    return None
+                try:
+                    decoded = cv2.imdecode(
+                        np.fromfile(str(mask_path), dtype=np.uint8),
+                        cv2.IMREAD_GRAYSCALE,
+                    )
+                    return _normalize_mask(decoded)
+                except Exception as exc:
+                    logger.warning(f"[MASK] Cache okunamadı {mask_path.name}: {exc}")
+                    return None
+
+            def _save_mask_atomic(mask_path: Path, mask):
+                normalized = _normalize_mask(mask)
+                if normalized is None:
+                    return False
+                mask_path.parent.mkdir(parents=True, exist_ok=True)
+                ok, encoded = cv2.imencode(".png", normalized)
+                if not ok:
+                    return False
+                tmp_path = mask_path.with_name(mask_path.name + ".tmp")
+                encoded.tofile(str(tmp_path))
+                os.replace(tmp_path, mask_path)
+                return True
+
             if template_name:
                 stem = Path(template_name).stem
                 safe_cat = category_name if category_name else "default"
-                mask_analyzer_version = "v1"
-                cache_name = f"{safe_cat}_{template_sha}_{mask_analyzer_version}_mask.png" if template_sha else f"{safe_cat}_{stem}_foreground_mask.png"
-                cache_file = BASE_DIR / "masks" / cache_name
-                
-                # Backward compatibility for old cache mask naming
-                legacy_cache = BASE_DIR / "masks" / f"{stem}_foreground_mask.png"
-                legacy_cache_cat = BASE_DIR / "masks" / f"{safe_cat}_{stem}_foreground_mask.png"
-                
-                if cache_file.exists():
-                    fg_mask = cv2.imdecode(np.fromfile(str(cache_file), dtype=np.uint8), cv2.IMREAD_GRAYSCALE)
-                elif legacy_cache_cat.exists():
-                    fg_mask = cv2.imdecode(np.fromfile(str(legacy_cache_cat), dtype=np.uint8), cv2.IMREAD_GRAYSCALE)
-                    cv2.imencode('.png', fg_mask)[1].tofile(str(cache_file))
-                elif legacy_cache.exists():
-                    fg_mask = cv2.imdecode(np.fromfile(str(legacy_cache), dtype=np.uint8), cv2.IMREAD_GRAYSCALE)
-                    cv2.imencode('.png', fg_mask)[1].tofile(str(cache_file))
-                    
-            source_for_mask = orig_bg_cv if orig_bg_cv is not None else bg_cv
-            if on_plan:
-                manual_mask = MockupRenderer.build_foreground_mask(source_for_mask, on_plan)
-                if manual_mask is not None and np.any(manual_mask):
-                    if fg_mask is not None:
-                        fg_mask = cv2.bitwise_or(fg_mask, manual_mask)
+                mask_analyzer_version = "v3_auto_ai"
+                cache_name = (
+                    f"{safe_cat}_{template_sha}_{mask_analyzer_version}_mask.png"
+                    if template_sha
+                    else f"{safe_cat}_{stem}_{mask_analyzer_version}_mask.png"
+                )
+                cache_file = MASK_CACHE_DIR / cache_name
+
+                fg_mask = _read_mask(cache_file)
+                cache_loaded = cached_foreground_mask_usable(
+                    fg_mask,
+                    foreground_required,
+                )
+                if cache_loaded:
+                    foreground_analysis_completed = True
+                elif fg_mask is not None and foreground_required:
+                    logger.warning(
+                        "[MASK] Occlusion-kritik şablonda boş cache güvenilir "
+                        f"sayılmadı: {cache_file.name}"
+                    )
+                    fg_mask = None
+
+                # Never auto-promote filename-only legacy masks into production.
+                # Those files are not bound to source bytes and can become stale
+                # when a template image is replaced under the same filename.
+                # Production accepts only the source-hash cache name above,
+                # a current hash-bound manual plan, or a fresh AI result.
+
+            # Fully automatic object-aware occlusion discovery. The heavy AI
+            # dependencies are imported lazily so normal categories/startup do
+            # not pay the model cost.
+            if auto_foreground and not cache_loaded:
+                try:
+                    from foreground_ai import ForegroundAIEngine
+
+                    ai_cfg = on_plan if isinstance(on_plan, dict) else {}
+                    ai_result = ForegroundAIEngine.get_instance().detect_foreground(
+                        source_for_mask,
+                        dst_pts.astype(float).tolist(),
+                        prompts=ai_cfg.get("ai_prompts"),
+                        box_threshold=float(ai_cfg.get("ai_box_threshold", 0.20)),
+                        text_threshold=float(ai_cfg.get("ai_text_threshold", 0.20)),
+                        min_surface_overlap=float(ai_cfg.get("ai_min_surface_overlap", 0.02)),
+                        feather=float(ai_cfg.get("ai_feather", 1.0)),
+                    )
+                    if ai_result.get("success") and ai_result.get("mask") is not None:
+                        proposed_mask = _normalize_mask(ai_result["mask"])
+                        detected_objects = ai_result.get("objects") or []
+                        has_foreground_pixels = bool(
+                            proposed_mask is not None
+                            and np.any(proposed_mask)
+                        )
+
+                        # A profile explicitly marked as occluded is trusted
+                        # evidence that foreground exists. If zero-shot AI says
+                        # "nothing found", do not turn that false-negative into
+                        # a permanent empty cache and silently paint over the
+                        # known object. A reviewed manual plan can still satisfy
+                        # the requirement below.
+                        if (
+                            foreground_required
+                            and not detected_objects
+                            and not has_foreground_pixels
+                        ):
+                            foreground_failure_reason = (
+                                "known occlusion but AI detected no foreground"
+                            )
+                            logger.warning(
+                                "[MASK_AI] Bilinen occlusion için nesne bulunamadı; "
+                                "boş maske production cache'e yazılmadı."
+                            )
+                        else:
+                            fg_mask = proposed_mask
+                            cache_loaded = True
+                            foreground_analysis_completed = True
+                            if cache_file is not None:
+                                _save_mask_atomic(cache_file, fg_mask)
+                            logger.info(
+                                "[MASK_AI] Otomatik ön plan analizi tamamlandı: "
+                                f"{len(detected_objects)} nesne, "
+                                f"confidence={ai_result.get('confidence', 0.0)}"
+                            )
                     else:
-                        fg_mask = manual_mask
+                        foreground_failure_reason = str(
+                            ai_result.get("reason", "unknown")
+                        )
+                        logger.warning(
+                            "[MASK_AI] Otomatik ön plan analizi sonuç vermedi: "
+                            f"{foreground_failure_reason}"
+                        )
+                except Exception as exc:
+                    foreground_failure_reason = str(exc)
+                    logger.warning(
+                        f"[MASK_AI] Otomatik maskeleme kullanılamadı: {exc}"
+                    )
+
+            # Manual Object Selection / brush corrections are additive to the
+            # automatic mask. Subtract brush remains handled inside on_plan.
+            if on_plan:
+                # Apply Object Selection + add/subtract brushes on top of the
+                # AI/cache mask so the subtract brush can genuinely correct a
+                # false-positive automatic region.
+                fg_mask = MockupRenderer.build_foreground_mask(
+                    source_for_mask,
+                    on_plan,
+                    base_mask=fg_mask,
+                )
+                fg_mask = _normalize_mask(fg_mask)
+
+                # A reviewed positive manual selection is sufficient evidence
+                # even when the optional AI path is unavailable.
+                if isinstance(on_plan, dict) and on_plan.get("object_boxes"):
+                    foreground_analysis_completed = True
+
+            if auto_foreground and not foreground_analysis_completed:
+                raise RuntimeError(
+                    "Occlusion-safe render blocked: foreground analysis "
+                    "did not complete"
+                    + (
+                        f" ({foreground_failure_reason})"
+                        if foreground_failure_reason
+                        else ""
+                    )
+                )
 
             if fg_mask is not None and np.any(fg_mask):
-                source_for_restore = orig_bg_cv if orig_bg_cv is not None else bg_cv
-                final = MockupRenderer.restore_foreground(final, source_for_restore, fg_mask)
+                final = MockupRenderer.restore_foreground(
+                    final,
+                    source_for_mask,
+                    fg_mask,
+                )
         except Exception as e:
+            if auto_foreground:
+                # For occlusion-sensitive templates an uncertain foreground
+                # result is worse than a failed render. Propagate so the factory
+                # can quarantine/retry instead of silently painting over objects.
+                raise
             logger.warning(f"[FOREGROUND_RESTORE] Ön plan geri yükleme hatası: {e}")
 
         # ---------------------------------------------------------
-        # 5. GÜNEŞ & PENCERE GÖLGESİ (Ahşap & Wifi için sıcak güneş, diğerleri için genel günışığı)
+        # 5. r8 SCENE REALISM LAYER
         # ---------------------------------------------------------
-        if is_wood_or_wifi:
-            final = MockupRenderer.generate_sunlight_shadow_for_wood(final, dst_pts, intensity=0.15)
+        # Environment realism belongs primarily to the scene around the
+        # product, not on top of the artwork. The placement is deterministic
+        # and template-aware: a quiet nearby region is selected automatically,
+        # while the reviewed product quad is strongly protected.
+        realism_key = (
+            f"{source_design_identity or ''}|{template_identity or template_name or ''}|"
+            f"{recipe_version or ''}|{category_name or ''}"
+        )
+        if scene_realism_enabled:
+            final, realism_meta = MockupRenderer.apply_scene_realism_layer(
+                np.clip(final, 0, 255).astype(np.uint8),
+                dst_pts,
+                category_name or "",
+                realism_key,
+                return_metadata=True,
+                strength_multiplier=scene_realism_strength,
+            )
         else:
-            final = MockupRenderer.apply_architectural_daylight(final, angle=32.0, intensity=0.08)
+            realism_meta = {
+                "applied": False,
+                "reason": "disabled_by_template",
+            }
+        if realism_meta.get("applied"):
+            logger.info(
+                "  🌤️ Scene Realism | "
+                f"style={realism_meta.get('style')} "
+                f"anchor={realism_meta.get('anchor')} "
+                f"product_delta={realism_meta.get('product_delta_mean'):.2f} "
+                f"scene_delta={realism_meta.get('scene_delta_mean'):.2f}"
+            )
+            if float(realism_meta.get("product_delta_mean", 0.0)) > 4.5:
+                raise RuntimeError(
+                    "Scene Realism safety gate: product surface changed too much "
+                    f"({realism_meta.get('product_delta_mean'):.2f})"
+                )
+            if float(realism_meta.get("scene_delta_mean", 0.0)) > 14.0:
+                raise RuntimeError(
+                    "Scene Realism safety gate: scene effect is too strong "
+                    f"({realism_meta.get('scene_delta_mean'):.2f})"
+                )
+
+        # ---------------------------------------------------------
+        # 6. r9 ROOM-SCALE SUNLIGHT / WINDOW SHADOW
+        # ---------------------------------------------------------
+        # A second environmental layer gives the surrounding wall/floor/
+        # countertop a more visible photographic light direction while the
+        # product itself remains strongly protected.
+        if scene_realism_enabled:
+            room_key = (
+                f"{source_design_identity or ''}|"
+                f"{template_identity or template_name or ''}|"
+                f"{recipe_version or ''}|room|{category_name or ''}"
+            )
+            final, room_meta = MockupRenderer.apply_room_sunlight_layer(
+                np.clip(final, 0, 255).astype(np.uint8),
+                dst_pts,
+                category_name or "",
+                room_key,
+                return_metadata=True,
+                strength_multiplier=scene_realism_strength,
+            )
+        else:
+            room_meta = {
+                "applied": False,
+                "reason": "disabled_by_template",
+            }
+
+        if room_meta.get("applied"):
+            logger.info(
+                "  ☀️ Room Sunlight | "
+                f"anchor={room_meta.get('anchor')} "
+                f"angle={room_meta.get('angle_deg')} "
+                f"product_delta={room_meta.get('product_delta_mean'):.2f} "
+                f"scene_delta={room_meta.get('scene_delta_mean'):.2f}"
+            )
+            if float(room_meta.get("product_delta_mean", 0.0)) > 5.0:
+                raise RuntimeError(
+                    "Room Sunlight safety gate: product surface changed too much "
+                    f"({room_meta.get('product_delta_mean'):.2f})"
+                )
+            if float(room_meta.get("scene_delta_mean", 0.0)) > 22.0:
+                raise RuntimeError(
+                    "Room Sunlight safety gate: room effect is too strong "
+                    f"({room_meta.get('scene_delta_mean'):.2f})"
+                )
 
         return final
+
+    @staticmethod
+    def fit_artwork_fill(image_cv: np.ndarray, nominal_aspect,
+                         max_aspect_error: float = 0.15) -> np.ndarray:
+        """Fill the approved physical surface with a proportional center crop.
+
+        No padding, blur, tint or geometric stretching is introduced. Source
+        files and approved geometry are never edited. Existing orientation and
+        excessive-aspect mismatch gates remain in process_mockup/the caller.
+        """
+        if image_cv is None or not getattr(image_cv, "size", 0):
+            raise ValueError("Artwork is empty")
+        try:
+            ratio = float(nominal_aspect)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Approved nominal aspect is required") from exc
+        if not np.isfinite(ratio) or ratio <= 0:
+            raise ValueError("Approved nominal aspect must be positive/finite")
+        h, w = image_cv.shape[:2]
+        if h <= 0 or w <= 0:
+            raise ValueError("Artwork dimensions are invalid")
+        actual = w / float(h)
+        if abs(actual / ratio - 1.0) > float(max_aspect_error):
+            raise ValueError("Artwork aspect mismatch exceeds the existing safety limit")
+        if actual > ratio:
+            crop_w = min(w, max(1, int(round(h * ratio))))
+            left = (w - crop_w) // 2
+            return image_cv[:, left:left + crop_w].copy()
+        crop_h = min(h, max(1, int(round(w / ratio))))
+        top = (h - crop_h) // 2
+        return image_cv[top:top + crop_h, :].copy()
+
+    @staticmethod
+    def prepare_artwork_for_nominal_aspect(
+        image_cv: np.ndarray,
+        nominal_aspect,
+        max_aspect_error: float = 0.15,
+        crop_error_threshold: float = 0.075,
+    ) -> np.ndarray:
+        """Fit artwork to physical product ratio without geometric stretching.
+
+        Strategy:
+        - <=0.5% difference: keep source unchanged.
+        - modest mismatch (<=7.5%): center-crop the small excess dimension.
+          The artwork geometry stays untouched; no resize/stretch is applied.
+        - larger but accepted mismatch (<=15%): preserve the complete artwork
+          and synthesize only the required outer bleed as low-frequency color/
+          texture continuation. Sharp edge pixels are never replicated.
+        - larger mismatch: reject and require a dedicated master.
+
+        This specifically replaces the old "direct homography stretch" risk
+        detected by Factory Doctor while avoiding the prior BORDER_REPLICATE
+        streak failure.
+        """
+        if image_cv is None or image_cv.size == 0:
+            raise ValueError("Artwork is empty")
+
+        try:
+            target_ratio = float(nominal_aspect)
+        except (TypeError, ValueError):
+            return image_cv
+        if not np.isfinite(target_ratio) or target_ratio <= 0:
+            return image_cv
+
+        h, w = image_cv.shape[:2]
+        if h <= 0 or w <= 0:
+            raise ValueError("Artwork dimensions are invalid")
+
+        source_ratio = w / float(h)
+        relative_error = abs(source_ratio - target_ratio) / target_ratio
+        if relative_error <= 0.005:
+            return image_cv
+
+        if relative_error > float(max_aspect_error):
+            raise ValueError(
+                f"Artwork aspect mismatch too large: {source_ratio:.4f} "
+                f"vs physical {target_ratio:.4f}"
+            )
+
+        # Small mismatch: crop only the excess dimension. This preserves every
+        # remaining pixel's geometry and avoids any interpolation of the art.
+        if relative_error <= float(crop_error_threshold):
+            if source_ratio > target_ratio:
+                target_w = max(1, int(round(h * target_ratio)))
+                target_w = min(target_w, w)
+                x0 = max(0, (w - target_w) // 2)
+                return image_cv[:, x0:x0 + target_w].copy()
+
+            target_h = max(1, int(round(w / target_ratio)))
+            target_h = min(target_h, h)
+            y0 = max(0, (h - target_h) // 2)
+            return image_cv[y0:y0 + target_h, :].copy()
+
+        # Larger accepted mismatch: keep the complete original artwork. Create
+        # only the missing perimeter as a strongly blurred low-frequency bleed.
+        # The sharp design itself remains byte-for-byte unchanged away from a
+        # narrow feather seam.
+        if source_ratio > target_ratio:
+            target_w = w
+            target_h = max(h, int(round(w / target_ratio)))
+        else:
+            target_h = h
+            target_w = max(w, int(round(h * target_ratio)))
+
+        low_frequency = cv2.resize(
+            image_cv,
+            (target_w, target_h),
+            interpolation=cv2.INTER_AREA,
+        )
+        sigma = max(6.0, min(target_w, target_h) * 0.030)
+        low_frequency = cv2.GaussianBlur(
+            low_frequency,
+            (0, 0),
+            sigmaX=sigma,
+            sigmaY=sigma,
+        )
+
+        # Pull the bleed toward the median border color so ornament/detail does
+        # not reappear as blurry replicated bands.
+        edge = max(2, int(round(min(w, h) * 0.025)))
+        border_samples = np.concatenate(
+            [
+                image_cv[:edge, :, :].reshape(-1, 3),
+                image_cv[-edge:, :, :].reshape(-1, 3),
+                image_cv[:, :edge, :].reshape(-1, 3),
+                image_cv[:, -edge:, :].reshape(-1, 3),
+            ],
+            axis=0,
+        )
+        border_median = np.median(
+            border_samples.astype(np.float32),
+            axis=0,
+        )
+        canvas = (
+            low_frequency.astype(np.float32) * 0.24
+            + border_median.reshape(1, 1, 3) * 0.76
+        )
+
+        x0 = (target_w - w) // 2
+        y0 = (target_h - h) // 2
+
+        alpha = np.zeros((target_h, target_w), dtype=np.float32)
+        alpha[y0:y0 + h, x0:x0 + w] = 1.0
+        seam = max(2.0, min(w, h) * 0.0035)
+        alpha = cv2.GaussianBlur(
+            alpha,
+            (0, 0),
+            sigmaX=seam,
+            sigmaY=seam,
+        )
+        alpha = np.clip(alpha, 0.0, 1.0)
+
+        source_layer = canvas.copy()
+        source_layer[y0:y0 + h, x0:x0 + w] = image_cv.astype(
+            np.float32
+        )
+        blended = (
+            source_layer * alpha[..., None]
+            + canvas * (1.0 - alpha[..., None])
+        )
+
+        # Keep the interior completely untouched; feathering is only for seams.
+        inset = max(4, int(round(seam * 3.0)))
+        iy0 = min(y0 + inset, y0 + h)
+        iy1 = max(y0 + h - inset, iy0)
+        ix0 = min(x0 + inset, x0 + w)
+        ix1 = max(x0 + w - inset, ix0)
+        if iy1 > iy0 and ix1 > ix0:
+            blended[iy0:iy1, ix0:ix1] = image_cv[
+                iy0 - y0:iy1 - y0,
+                ix0 - x0:ix1 - x0,
+            ]
+
+        return np.clip(blended, 0, 255).astype(np.uint8)
+
+    @staticmethod
+    def prepare_marketplace_canvas(
+        image_cv: np.ndarray,
+        target_width: int = 1200,
+        target_height: int = 1600,
+        product_quad=None,
+        smart_product_focus: bool = False,
+        return_metadata: bool = False,
+    ):
+        """Return a marketplace-ready canvas without stretching the scene.
+
+        Normal templates retain contain semantics. For difficult wide scenes,
+        smart_product_focus may enlarge and crop expendable scene margins while
+        keeping the reviewed product quad inside the final frame.
+        """
+        if image_cv is None or image_cv.size == 0:
+            raise ValueError("Marketplace canvas received an empty image")
+        if target_width <= 0 or target_height <= 0:
+            raise ValueError("Marketplace output dimensions must be positive")
+
+        src_h, src_w = image_cv.shape[:2]
+        if src_w <= 0 or src_h <= 0:
+            raise ValueError("Marketplace source dimensions are invalid")
+
+        src_ratio = src_w / float(src_h)
+        target_ratio = target_width / float(target_height)
+
+        # r10 smart-focus pre-trim: some templates are already 3:4 but contain
+        # large uniform white bands above/below the actual lifestyle scene.
+        # Those bands made the old early-return path preserve unusable whitespace.
+        quad = None
+        if product_quad is not None:
+            try:
+                quad = np.asarray(
+                    product_quad,
+                    dtype=np.float32,
+                ).reshape(-1, 2)
+                if quad.shape[0] < 4 or not np.isfinite(quad).all():
+                    quad = None
+            except Exception:
+                quad = None
+
+        trimmed_top = 0
+        trimmed_bottom = 0
+        if smart_product_focus and quad is not None and src_h >= 200:
+            gray_src = cv2.cvtColor(
+                np.clip(image_cv, 0, 255).astype(np.uint8),
+                cv2.COLOR_BGR2GRAY,
+            ).astype(np.float32)
+            row_mean = np.mean(gray_src, axis=1)
+            row_std = np.std(gray_src, axis=1)
+            expendable = (row_mean >= 238.0) & (row_std <= 20.0)
+
+            top_run = 0
+            for flag in expendable:
+                if not bool(flag):
+                    break
+                top_run += 1
+            bottom_run = 0
+            for flag in expendable[::-1]:
+                if not bool(flag):
+                    break
+                bottom_run += 1
+
+            qmin_y = float(np.min(quad[:, 1]))
+            qmax_y = float(np.max(quad[:, 1]))
+            safe_pad = max(8.0, src_h * 0.045)
+            max_top = max(0, int(np.floor(qmin_y - safe_pad)))
+            max_bottom = max(
+                0,
+                int(np.floor(src_h - 1 - qmax_y - safe_pad)),
+            )
+            trimmed_top = min(top_run, max_top)
+            trimmed_bottom = min(bottom_run, max_bottom)
+
+            # Require meaningful removable whitespace before changing framing.
+            if (trimmed_top + trimmed_bottom) >= int(src_h * 0.08):
+                y_start = trimmed_top
+                y_end = src_h - trimmed_bottom
+                image_cv = image_cv[y_start:y_end, :].copy()
+                quad = quad.copy()
+                quad[:, 1] -= float(y_start)
+                src_h, src_w = image_cv.shape[:2]
+                src_ratio = src_w / float(src_h)
+            else:
+                trimmed_top = 0
+                trimmed_bottom = 0
+
+        # A near-target source may bypass generic composition only when smart
+        # product focus did not request a content-aware reframing.
+        if (
+            abs(src_ratio - target_ratio) <= 0.01
+            and not (smart_product_focus and quad is not None)
+        ):
+            resized = cv2.resize(
+                image_cv,
+                (target_width, target_height),
+                interpolation=cv2.INTER_LANCZOS4,
+            )
+            output_quad = None
+            if product_quad is not None:
+                try:
+                    q = np.asarray(
+                        product_quad,
+                        dtype=np.float32,
+                    ).reshape(-1, 2)
+                    if q.shape[0] >= 4:
+                        output_quad = q.copy()
+                        output_quad[:, 0] *= (
+                            target_width / float(src_w)
+                        )
+                        output_quad[:, 1] *= (
+                            target_height / float(src_h)
+                        )
+                except Exception:
+                    output_quad = None
+            metadata = {
+                "product_quad_output": (
+                    output_quad.tolist()
+                    if output_quad is not None
+                    else None
+                ),
+                "foreground_fill_fraction": 1.0,
+                "smart_product_focus": bool(smart_product_focus),
+            }
+            return (resized, metadata) if return_metadata else resized
+
+        cover_scale = max(
+            target_width / float(src_w),
+            target_height / float(src_h),
+        )
+        cover_w = max(target_width, int(round(src_w * cover_scale)))
+        cover_h = max(target_height, int(round(src_h * cover_scale)))
+        cover = cv2.resize(
+            image_cv,
+            (cover_w, cover_h),
+            interpolation=cv2.INTER_LANCZOS4,
+        )
+
+        if quad is not None and smart_product_focus:
+            product_center = np.mean(quad, axis=0) * cover_scale
+            x0 = int(round(product_center[0] - target_width * 0.5))
+            y0 = int(round(product_center[1] - target_height * 0.48))
+            x0 = int(np.clip(x0, 0, max(0, cover_w - target_width)))
+            y0 = int(np.clip(y0, 0, max(0, cover_h - target_height)))
+        else:
+            x0 = max(0, (cover_w - target_width) // 2)
+            y0 = max(0, (cover_h - target_height) // 2)
+
+        background = cover[
+            y0:y0 + target_height,
+            x0:x0 + target_width,
+        ].copy()
+        sigma = max(10.0, min(target_width, target_height) * 0.020)
+        background = cv2.GaussianBlur(
+            background,
+            (0, 0),
+            sigmaX=sigma,
+            sigmaY=sigma,
+        )
+
+        contain_scale = min(
+            target_width / float(src_w),
+            target_height / float(src_h),
+        )
+        foreground_scale = contain_scale
+
+        if quad is not None and smart_product_focus:
+            qmin = np.min(quad, axis=0)
+            qmax = np.max(quad, axis=0)
+            prod_w = max(float(qmax[0] - qmin[0]), 1.0)
+            prod_h = max(float(qmax[1] - qmin[1]), 1.0)
+            fit_product_scale = min(
+                (target_width * 0.92) / prod_w,
+                (target_height * 0.78) / prod_h,
+            )
+            foreground_scale = min(
+                max(contain_scale, fit_product_scale),
+                max(cover_scale, contain_scale) * 1.45,
+            )
+
+        fitted_w = max(1, int(round(src_w * foreground_scale)))
+        fitted_h = max(1, int(round(src_h * foreground_scale)))
+        fitted = cv2.resize(
+            image_cv,
+            (fitted_w, fitted_h),
+            interpolation=cv2.INTER_LANCZOS4,
+        )
+
+        if quad is not None and smart_product_focus:
+            center = np.mean(quad, axis=0) * foreground_scale
+            x1 = int(round(target_width * 0.5 - center[0]))
+            y1 = int(round(target_height * 0.48 - center[1]))
+        else:
+            x1 = (target_width - fitted_w) // 2
+            y1 = (target_height - fitted_h) // 2
+
+        dst_x0 = max(0, x1)
+        dst_y0 = max(0, y1)
+        dst_x1 = min(target_width, x1 + fitted_w)
+        dst_y1 = min(target_height, y1 + fitted_h)
+        src_x0 = max(0, -x1)
+        src_y0 = max(0, -y1)
+        src_x1 = src_x0 + max(0, dst_x1 - dst_x0)
+        src_y1 = src_y0 + max(0, dst_y1 - dst_y0)
+
+        if dst_x1 <= dst_x0 or dst_y1 <= dst_y0:
+            metadata = {
+                "product_quad_output": None,
+                "foreground_fill_fraction": 0.0,
+                "smart_product_focus": bool(smart_product_focus),
+            }
+            return (background, metadata) if return_metadata else background
+
+        visible = fitted[src_y0:src_y1, src_x0:src_x1]
+        alpha = np.ones(visible.shape[:2], dtype=np.float32)
+        feather_px = max(2, int(round(min(visible.shape[:2]) * 0.004)))
+        if feather_px > 1 and min(visible.shape[:2]) > feather_px * 4:
+            alpha[:feather_px, :] = 0.0
+            alpha[-feather_px:, :] = 0.0
+            alpha[:, :feather_px] = 0.0
+            alpha[:, -feather_px:] = 0.0
+            alpha = cv2.GaussianBlur(
+                alpha,
+                (0, 0),
+                sigmaX=max(1.0, feather_px * 0.45),
+                sigmaY=max(1.0, feather_px * 0.45),
+            )
+            alpha = np.clip(alpha, 0.0, 1.0)
+
+        roi = background[dst_y0:dst_y1, dst_x0:dst_x1].astype(np.float32)
+        visible_f = visible.astype(np.float32)
+        alpha_3c = alpha[..., None]
+        blended = visible_f * alpha_3c + roi * (1.0 - alpha_3c)
+        background[dst_y0:dst_y1, dst_x0:dst_x1] = np.clip(
+            blended, 0, 255
+        ).astype(np.uint8)
+
+        output_quad = None
+        if quad is not None:
+            output_quad = (
+                quad * float(foreground_scale)
+                + np.array([x1, y1], dtype=np.float32)
+            )
+        visible_area = max(0, dst_x1 - dst_x0) * max(
+            0, dst_y1 - dst_y0
+        )
+        metadata = {
+            "product_quad_output": (
+                output_quad.tolist()
+                if output_quad is not None
+                else None
+            ),
+            "foreground_fill_fraction": float(
+                visible_area
+                / float(max(target_width * target_height, 1))
+            ),
+            "smart_product_focus": bool(smart_product_focus),
+            "trimmed_top": int(trimmed_top),
+            "trimmed_bottom": int(trimmed_bottom),
+        }
+        return (background, metadata) if return_metadata else background
+
+    @staticmethod
+    def compute_quality_render_scale(
+        source_width: int,
+        source_height: int,
+        output_width: int,
+        output_height: int,
+        max_scale: float = 2.5,
+    ) -> float:
+        """Render above template-native resolution when final output needs it.
+
+        Optical/material effects are evaluated on this larger working canvas,
+        then the finished scene is reduced only once for marketplace output.
+        """
+        if source_width <= 0 or source_height <= 0:
+            return 1.0
+        requested = max(
+            output_width / float(source_width),
+            output_height / float(source_height),
+        )
+        return float(np.clip(requested, 1.0, max_scale))
+
+    @staticmethod
+    def restore_artwork_microdetail(
+        final_cv: np.ndarray,
+        warped_art_cv: np.ndarray,
+        mask_f: np.ndarray,
+        strength: float = 0.45,
+    ) -> np.ndarray:
+        """Restore artwork microdetail while protecting the physical perimeter.
+
+        Only high-frequency detail is reintroduced. The mask is contracted and
+        softly feathered first so sharpening never creates ringing/halos on the
+        outer product boundary.
+        """
+        if final_cv is None or warped_art_cv is None:
+            return final_cv
+
+        base = warped_art_cv.astype(np.float32)
+        low = cv2.GaussianBlur(base, (0, 0), sigmaX=0.85, sigmaY=0.85)
+        detail = np.clip(base - low, -24.0, 24.0)
+
+        mask = np.clip(mask_f.astype(np.float32), 0.0, 1.0)
+        binary = (mask > 0.20).astype(np.uint8)
+        if np.any(binary):
+            kernel = np.ones((5, 5), np.uint8)
+            safe_core = cv2.erode(binary, kernel, iterations=1).astype(np.float32)
+            safe_core = cv2.GaussianBlur(
+                safe_core,
+                (0, 0),
+                sigmaX=1.1,
+                sigmaY=1.1,
+            )
+            mask = np.minimum(mask, np.clip(safe_core, 0.0, 1.0))
+
+        mask_3c = mask[..., None]
+        restored = (
+            final_cv.astype(np.float32)
+            + detail * float(strength) * mask_3c
+        )
+        return np.clip(restored, 0.0, 255.0).astype(np.uint8)
+
+    @staticmethod
+    def final_master_quality_pass(
+        image_cv: np.ndarray,
+        strength: float = 0.34,
+    ) -> np.ndarray:
+        """Edge-aware final quality pass for the complete marketplace image.
+
+        The pass operates on luminance only to avoid color fringing. Moderate
+        texture/detail receives controlled high-frequency recovery, while the
+        strongest contrast boundaries are automatically protected from halo and
+        ringing. Material reflections, shadows and color response remain intact.
+        """
+        if image_cv is None or image_cv.size == 0:
+            return image_cv
+
+        image_u8 = np.clip(image_cv, 0, 255).astype(np.uint8)
+        lab = cv2.cvtColor(image_u8, cv2.COLOR_BGR2LAB)
+        l_chan, a_chan, b_chan = cv2.split(lab)
+        l_float = l_chan.astype(np.float32)
+
+        low = cv2.GaussianBlur(
+            l_float,
+            (0, 0),
+            sigmaX=0.90,
+            sigmaY=0.90,
+        )
+        detail = np.clip(l_float - low, -20.0, 20.0)
+
+        gx = cv2.Sobel(l_float, cv2.CV_32F, 1, 0, ksize=3)
+        gy = cv2.Sobel(l_float, cv2.CV_32F, 0, 1, ksize=3)
+        gradient = cv2.magnitude(gx, gy)
+
+        positive = gradient[gradient > 0]
+        if positive.size:
+            reference = float(np.percentile(positive, 92.0))
+        else:
+            reference = 1.0
+        reference = max(reference, 1.0)
+        edge_strength = np.clip(gradient / reference, 0.0, 1.5)
+        edge_protection = 1.0 - np.clip(
+            (edge_strength - 0.55) / 0.75,
+            0.0,
+            1.0,
+        )
+
+        texture = np.clip(np.abs(detail) / 7.0, 0.0, 1.0)
+        adaptive_weight = (
+            float(strength)
+            * (0.30 + 0.70 * texture)
+            * edge_protection
+        )
+
+        enhanced_l = np.clip(
+            l_float + detail * adaptive_weight,
+            0.0,
+            255.0,
+        ).astype(np.uint8)
+
+        enhanced = cv2.cvtColor(
+            cv2.merge([enhanced_l, a_chan, b_chan]),
+            cv2.COLOR_LAB2BGR,
+        )
+        return enhanced
 
     @classmethod
     def process_mockup(cls, raw_path: Path, template_path: Path,
@@ -1260,6 +3583,24 @@ class MockupRenderer:
             tip = config.get("tip", "duz")
             on_plan = config.get("on_plan", None)
             category_name = template_path.parent.name
+            # Cutting-board templates are the highest-occlusion category
+            # (food/knife/utensil objects in front of the printable glass).
+            # Templates can override this explicitly with auto_foreground.
+            # Auto foreground discovery may run on any template, but a
+            # no-object result is fatal only when reviewed evidence says an
+            # occluder truly exists. Category membership and an empty/default
+            # on_plan settings object are not occlusion evidence.
+            foreground_required = foreground_is_required(config, on_plan)
+            auto_foreground = bool(
+                config.get(
+                    "auto_foreground",
+                    (
+                        category_name == "04_Cam_Dograma"
+                        or foreground_required
+                        or bool(on_plan)
+                    ),
+                )
+            )
 
             # Perspektif Giydirme
             if tip == "perspektif" and "koseler" in config:
@@ -1273,24 +3614,148 @@ class MockupRenderer:
                 ty = config.get("y", int(h_bg * 0.25))
                 koseler = [[tx, ty], [tx + tw, ty], [tx + tw, ty + th], [tx, ty + th]]
 
-            # Akıllı Döndürme (Smart Rotation) - Sıkışmayı Önlemek İçin
-            pts = np.array(koseler)
-            tw_approx = np.linalg.norm(pts[1] - pts[0])
-            th_approx = np.linalg.norm(pts[2] - pts[1])
-            template_is_horiz = tw_approx >= th_approx
-            
+            # Orientation is a compatibility gate, never an automatic
+            # transform. IMPORTANT: physical orientation comes from the
+            # source-hash-bound approved profile, NOT from the projected quad.
+            # Perspective can make a physically vertical product look wider
+            # than tall in image coordinates.
+            profile_orientation = str(
+                config.get("profile_orientation") or ""
+            ).upper()
+            if profile_orientation not in ("H", "V"):
+                logger.warning(
+                    f"⏭️ Onaylı fiziksel yön bilgisi eksik; güvenli şekilde atlandı: "
+                    f"{template_path.name} ({profile_orientation or 'UNKNOWN'})"
+                )
+                return False
+
             art_h, art_w = art_cv.shape[:2]
-            art_is_horiz = art_w >= art_h
-            
-            if art_is_horiz != template_is_horiz:
-                art_cv = cv2.rotate(art_cv, cv2.ROTATE_90_CLOCKWISE)
-                logger.info(f"🔄 Görsel sıkışmaması için 90 derece döndürüldü: {raw_path.name}")
+            if art_w > art_h * 1.01:
+                art_orientation = "H"
+            elif art_h > art_w * 1.01:
+                art_orientation = "V"
+            else:
+                art_orientation = "SQUARE"
+
+            if art_orientation != profile_orientation:
+                logger.warning(
+                    f"⏭️ Orientation uyumsuzluğu nedeniyle şablon atlandı: "
+                    f"{raw_path.name} ({art_orientation}) -> "
+                    f"{template_path.name} ({profile_orientation})"
+                )
+                return False
+
+            # Preserve content and physical proportions. This is deliberately
+            # done after the physical-orientation gate: H/V intent is never
+            # inferred from perspective geometry or changed by the renderer.
+            nominal_aspect = config.get("nominal_aspect", "UNKNOWN")
+            try:
+                prepared_art = cls.fit_artwork_fill(
+                    art_cv,
+                    nominal_aspect,
+                )
+            except ValueError as exc:
+                logger.warning(
+                    f"⏭️ Fiziksel en-boy uyumsuzluğu nedeniyle render atlandı: "
+                    f"{raw_path.name} -> {template_path.name}: {exc}"
+                )
+                return False
+            if prepared_art.shape[:2] != art_cv.shape[:2]:
+                logger.info(
+                    f"  ↔️ Artwork fiziksel orana geometri korunarak uyarlandı: "
+                    f"{art_cv.shape[1]}x{art_cv.shape[0]} -> "
+                    f"{prepared_art.shape[1]}x{prepared_art.shape[0]} "
+                    f"(nominal={nominal_aspect})"
+                )
+            art_cv = prepared_art
+
+            # Final marketplace dimensions are known before rendering so
+            # the optical renderer can work at an appropriately high internal
+            # resolution instead of compositing small and enlarging later.
+            output_width = int(config.get("output_width", 2400) or 2400)
+            output_height = int(config.get("output_height", 3200) or 3200)
 
             # Orijinal yedek görseli yükle (True Shadow Mapping için)
             orig_path = USER_WORKSPACE_DIR / "2_SABLON_HAVUZU_ORIJINAL_YEDEK" / template_path.parent.name / template_path.name
             orig_bg_cv = None
             if orig_path.exists():
-                orig_bg_cv = cv2.imdecode(np.fromfile(str(orig_path), dtype=np.uint8), cv2.IMREAD_UNCHANGED)
+                orig_bg_cv = cv2.imdecode(
+                    np.fromfile(str(orig_path), dtype=np.uint8),
+                    cv2.IMREAD_UNCHANGED,
+                )
+                if (
+                    orig_bg_cv is not None
+                    and orig_bg_cv.ndim == 3
+                    and orig_bg_cv.shape[2] == 4
+                ):
+                    orig_bg_cv = orig_bg_cv[:, :, :3]
+
+            # High-resolution internal render: upscale the scene/corners,
+            # not the artwork separately. warpPerspective then samples the
+            # original artwork directly into the larger physical surface,
+            # avoiding an extra destructive resize.
+            src_h, src_w = bg_cv.shape[:2]
+            max_render_scale = float(config.get("max_render_scale", 2.5) or 2.5)
+            render_scale = cls.compute_quality_render_scale(
+                src_w,
+                src_h,
+                output_width,
+                output_height,
+                max_scale=max_render_scale,
+            )
+            if render_scale > 1.001:
+                work_w = max(1, int(round(src_w * render_scale)))
+                work_h = max(1, int(round(src_h * render_scale)))
+                bg_cv = cv2.resize(
+                    bg_cv,
+                    (work_w, work_h),
+                    interpolation=cv2.INTER_LANCZOS4,
+                )
+                if orig_bg_cv is not None:
+                    orig_bg_cv = cv2.resize(
+                        orig_bg_cv,
+                        (work_w, work_h),
+                        interpolation=cv2.INTER_LANCZOS4,
+                    )
+                if alpha_mask is not None:
+                    alpha_mask = cv2.resize(
+                        alpha_mask,
+                        (work_w, work_h),
+                        interpolation=cv2.INTER_LINEAR,
+                    )
+                koseler = [
+                    [float(pt[0]) * render_scale, float(pt[1]) * render_scale]
+                    for pt in koseler
+                ]
+                logger.info(
+                    f"  🔬 Yüksek çözünürlük iç render: "
+                    f"{src_w}x{src_h} -> {work_w}x{work_h} "
+                    f"(x{render_scale:.2f})"
+                )
+
+            glass_corner_radius_defaults = {
+                "02_Cam_Tablo_Dikey": 0.012,
+                "02_Cam_Tablo_Yatay": 0.012,
+                "04_Cam_Dograma": 0.018,
+                "05_Ocak_Arkasi": 0.010,
+            }
+            glass_corner_radius_fraction = float(
+                config.get(
+                    "glass_corner_radius_fraction",
+                    glass_corner_radius_defaults.get(
+                        category_name,
+                        0.0,
+                    ),
+                )
+                or 0.0
+            )
+            glass_corner_radius_fraction = float(
+                np.clip(
+                    glass_corner_radius_fraction,
+                    0.0,
+                    0.08,
+                )
+            )
 
             final_cv = cls.render_cv2_optik(
                 art_cv, bg_cv, koseler, is_glass, 
@@ -1300,7 +3765,23 @@ class MockupRenderer:
                 source_design_identity=source_design_identity,
                 template_identity=template_identity,
                 recipe_version=recipe_version,
-                template_sha=template_sha
+                template_sha=template_sha,
+                auto_foreground=auto_foreground,
+                foreground_required=foreground_required,
+                camera_artifacts=bool(config.get("camera_artifacts", True)),
+                scene_realism_enabled=bool(
+                    config.get("scene_realism_enabled", True)
+                ),
+                scene_realism_strength=float(
+                    1.0
+                    if config.get("scene_realism_strength", 1.0) is None
+                    else config.get("scene_realism_strength", 1.0)
+                ),
+                glass_corner_radius_fraction=(
+                    glass_corner_radius_fraction
+                    if is_glass
+                    else 0.0
+                ),
             )
 
             # Kalite Kontrol Denetimi (Quality Inspector)
@@ -1309,13 +3790,123 @@ class MockupRenderer:
                 logger.error(f"  ❌ Kalite Denetimi Başarısız ({raw_path.name}): {msg}. QUARANTINE!")
                 return False
 
-            # Kaydet (Unicode güvenli)
+            # Marketplace-ready output. Defaults to Trendyol-friendly 3:4
+            # while allowing an explicit per-template override.
+            marketplace_ready = bool(config.get("marketplace_ready", True))
+            smart_product_focus = bool(
+                config.get(
+                    "smart_product_focus",
+                    category_name == "05_Ocak_Arkasi",
+                )
+            )
+            framing_meta = {
+                "product_quad_output": koseler,
+                "foreground_fill_fraction": 1.0,
+                "smart_product_focus": False,
+            }
+            if marketplace_ready:
+                final_cv, framing_meta = cls.prepare_marketplace_canvas(
+                    final_cv,
+                    target_width=output_width,
+                    target_height=output_height,
+                    product_quad=koseler,
+                    smart_product_focus=smart_product_focus,
+                    return_metadata=True,
+                )
+
+            # Final whole-image quality stage. This is intentionally after
+            # composition so every visible pixel (scene, frame, artwork,
+            # material reflections and foreground) benefits from one controlled
+            # edge-aware pass.
+            final_cv = cls.final_master_quality_pass(
+                final_cv,
+                strength=float(
+                    config.get("master_quality_strength", 0.34) or 0.34
+                ),
+            )
+
+            # END-USER QA: validate the exact image that will be encoded and
+            # uploaded, not only the pre-marketplace render.
+            final_valid, final_msg = QualityInspector.inspect_final_output(
+                final_cv,
+                expected_width=(output_width if marketplace_ready else None),
+                expected_height=(output_height if marketplace_ready else None),
+                product_quad=framing_meta.get("product_quad_output"),
+                smart_product_focus=bool(
+                    framing_meta.get("smart_product_focus")
+                ),
+                foreground_fill_fraction=framing_meta.get(
+                    "foreground_fill_fraction"
+                ),
+            )
+            if not final_valid:
+                logger.error(
+                    f"  ❌ Final Kullanıcı Kalite Denetimi Başarısız "
+                    f"({raw_path.name}): {final_msg}. QUARANTINE!"
+                )
+                return False
+            logger.info(f"  ✅ {final_msg}")
+
+            # Encode and persist atomically. A crash can never leave a partial
+            # JPEG at the final artifact path.
             output_path.parent.mkdir(parents=True, exist_ok=True)
-            success, enc_img = cv2.imencode('.jpg', final_cv, [int(cv2.IMWRITE_JPEG_QUALITY), 95])
-            if success:
-                enc_img.tofile(str(output_path))
+            success, enc_img = cv2.imencode(
+                ".jpg",
+                final_cv,
+                [int(cv2.IMWRITE_JPEG_QUALITY), 98],
+            )
+            if not success:
+                return False
+
+            tmp_output = output_path.with_name(
+                "." + uuid.uuid4().hex + ".writing"
+            )
+            try:
+                with tmp_output.open("xb") as stream:
+                    stream.write(enc_img.tobytes())
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                persisted = cv2.imdecode(
+                    np.fromfile(str(tmp_output), dtype=np.uint8),
+                    cv2.IMREAD_COLOR,
+                )
+                persisted_valid, persisted_msg = (
+                    QualityInspector.inspect_final_output(
+                        persisted,
+                        expected_width=(
+                            output_width if marketplace_ready else None
+                        ),
+                        expected_height=(
+                            output_height if marketplace_ready else None
+                        ),
+                        product_quad=framing_meta.get(
+                            "product_quad_output"
+                        ),
+                        smart_product_focus=bool(
+                            framing_meta.get("smart_product_focus")
+                        ),
+                        foreground_fill_fraction=framing_meta.get(
+                            "foreground_fill_fraction"
+                        ),
+                    )
+                )
+                if not persisted_valid:
+                    logger.error(
+                        "  ❌ JPEG sonrası final kalite denetimi başarısız: "
+                        f"{persisted_msg}"
+                    )
+                    return False
+                from core.file_safety import reject_redirect
+                reject_redirect(output_path)
+                # Atomic create-only publication; existing outputs are immutable.
+                os.link(tmp_output, output_path)
                 return True
-            return False
+            finally:
+                if tmp_output.exists():
+                    try:
+                        tmp_output.unlink()
+                    except OSError:
+                        pass
 
         except Exception as e:
             logger.error(f"Mockup render hatası: {e}", exc_info=True)
@@ -1334,7 +3925,9 @@ class FastExcelManager:
     def __init__(self, file_path: Path):
         self.file_path = file_path
         self._buffer = []
+        self._known_keys = set()
         self._init_file()
+        self._load_known_keys()
 
     def _init_file(self):
         if not self.file_path.exists():
@@ -1355,18 +3948,74 @@ class FastExcelManager:
             wb.save(self.file_path)
             wb.close()
 
-    def append_row(self, row_dict: dict):
+    @staticmethod
+    def _row_key_from_values(stock_code, mockup_name):
+        stock = str(stock_code or "").strip()
+        mockup = str(mockup_name or "").strip()
+        return (stock, mockup) if stock and mockup else None
+
+    def _load_known_keys(self):
+        """Index existing output rows so resume cannot duplicate Excel entries."""
+        if not self.file_path.exists():
+            return
+        try:
+            wb = openpyxl.load_workbook(
+                self.file_path,
+                read_only=True,
+                data_only=True,
+            )
+            try:
+                ws = wb.active
+                header = {
+                    str(cell.value): idx
+                    for idx, cell in enumerate(ws[1], start=1)
+                    if cell.value is not None
+                }
+                stock_col = header.get("Stok Kodu")
+                mockup_col = header.get("Mockup Dosya Adı")
+                if not stock_col or not mockup_col:
+                    return
+                for row in ws.iter_rows(min_row=2, values_only=True):
+                    key = self._row_key_from_values(
+                        row[stock_col - 1] if len(row) >= stock_col else None,
+                        row[mockup_col - 1] if len(row) >= mockup_col else None,
+                    )
+                    if key:
+                        self._known_keys.add(key)
+            finally:
+                wb.close()
+        except Exception as exc:
+            logger.warning(f"Excel mevcut satır indeksi okunamadı: {exc}")
+
+    def append_row(self, row_dict: dict) -> bool:
         row_dict = row_dict or {}
+        key = self._row_key_from_values(
+            row_dict.get("Stok Kodu"),
+            row_dict.get("Mockup Dosya Adı"),
+        )
         with excel_lock:
+            if key and key in self._known_keys:
+                logger.info(
+                    f"    ⏭️ Excel satırı zaten var: {key[0]} / {key[1]}"
+                )
+                return True
+
             row = [row_dict.get(h, "") for h in self.HEADERS]
             self._buffer.append(row)
+            if key:
+                self._known_keys.add(key)
             if len(self._buffer) >= 50:
+                # The row is already durably represented in the in-memory
+                # buffer. A threshold flush failure must not make the caller
+                # forget this artifact; the final run-level flush is the
+                # authoritative success gate and will retry the retained buffer.
                 self.flush()
+            return True
 
-    def flush(self):
+    def flush(self) -> bool:
         with excel_lock:
             if not self._buffer:
-                return
+                return True
             try:
                 wb = openpyxl.load_workbook(self.file_path)
                 ws = wb.active
@@ -1375,12 +4024,396 @@ class FastExcelManager:
                 wb.save(self.file_path)
                 wb.close()
                 self._buffer.clear()
+                return True
             except Exception as e:
                 logger.error(f"Excel yazım hatası (flush): {e}")
+                return False
 
 # ==============================================================================
 # 9. ANA PC FABRİKA ORKESTRASYON MOTORU (Master Factory)
 # ==============================================================================
+def build_factory_preflight() -> dict:
+    """Read-only readiness report for one-button production.
+
+    This function never renders, uploads, mutates the template DB, or consumes
+    sequence numbers. It catches the common "start and fail 10 minutes later"
+    conditions before the factory is launched.
+    """
+    report = {
+        "ready": True,
+        "errors": [],
+        "warnings": [],
+        "manifest": {},
+        "templates": {},
+        "optional_ai": {},
+        "occlusion": {
+            "ai_required_templates": [],
+            "manual_or_cached_templates": [],
+        },
+        "outputs": {},
+    }
+
+    manifest_path = FACTORY_DIR / "manifest.json"
+    items = []
+    if not manifest_path.is_file():
+        report["errors"].append(f"Manifest yok: {manifest_path}")
+    else:
+        try:
+            payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+            items = payload.get("items", []) if isinstance(payload, dict) else []
+            if not isinstance(items, list) or not items:
+                report["errors"].append("Manifest items listesi boş/geçersiz.")
+                items = []
+            report["manifest"]["item_count"] = len(items)
+        except Exception as exc:
+            report["errors"].append(f"Manifest okunamadı: {exc}")
+
+    # Check artwork source availability without changing/rotating source files.
+    missing_sources = []
+    for idx, item in enumerate(items, start=1):
+        if not isinstance(item, dict):
+            missing_sources.append(f"item#{idx}: geçersiz kayıt")
+            continue
+        master_id = item.get("master_id", f"item#{idx}")
+        h_raw = (
+            item.get("horizontal", {}).get("file", "")
+            if isinstance(item.get("horizontal"), dict)
+            else ""
+        ) or item.get("horizontal_path", "")
+        v_raw = (
+            item.get("vertical", {}).get("file", "")
+            if isinstance(item.get("vertical"), dict)
+            else ""
+        ) or item.get("vertical_path", "")
+
+        def _resolve(raw, suffix):
+            candidate = Path(raw) if raw else Path()
+            if raw and not candidate.is_absolute():
+                candidate = (FACTORY_DIR / candidate).resolve()
+            if not raw or not candidate.exists():
+                fallback = FACTORY_DIR / f"{master_id}_{suffix}.png"
+                if fallback.exists():
+                    return fallback
+                return None
+            return candidate
+
+        h_path = _resolve(h_raw, "H")
+        v_path = _resolve(v_raw, "V")
+        if h_path is None:
+            missing_sources.append(f"{master_id}: H master yok")
+        if v_path is None:
+            missing_sources.append(f"{master_id}: V master yok")
+
+    report["manifest"]["missing_sources"] = missing_sources
+    if missing_sources:
+        report["errors"].append(
+            f"{len(missing_sources)} zorunlu H/V master kaynağı bulunamadı. "
+            "Eksik ürün üretmemek için fabrika başlatılmadı."
+        )
+
+    # Approved geometry must still match the exact source bytes.
+    profile_db = USER_WORKSPACE_DIR / "SABLON_V2_MIMARI" / "ayarlar.db"
+    if not profile_db.is_file():
+        report["errors"].append(f"Şablon profil DB yok: {profile_db}")
+    else:
+        try:
+            conn = open_sqlite_readonly(profile_db)
+            conn.row_factory = sqlite3.Row
+            try:
+                for category, product in PRODUCT_CATALOG.items():
+                    rows = conn.execute(
+                        """SELECT template_uid, source_relative_path,
+                                  source_asset_sha256, analyzer_version, orientation,
+                                  nominal_aspect, surface_quad, has_occlusion,
+                                  component_confidences
+                           FROM template_profiles
+                           WHERE category=? AND review_status='APPROVED'
+                             AND is_active=1""",
+                        (category,),
+                    ).fetchall()
+
+                    duplicate_approved_uids = duplicate_profile_uids(rows)
+
+                    usable = 0
+                    stale = 0
+                    invalid = 0
+                    orientation_mismatch = 0
+                    physical_orientation_unverified = 0
+                    for row in rows:
+                        if str(row["template_uid"] or "") in duplicate_approved_uids:
+                            invalid += 1
+                            continue
+                        rel = row["source_relative_path"]
+                        if not rel:
+                            invalid += 1
+                            continue
+                        path = (SABLON_DIR / rel).resolve()
+                        try:
+                            if SABLON_DIR.resolve() not in path.parents:
+                                invalid += 1
+                                continue
+                        except Exception:
+                            invalid += 1
+                            continue
+                        if not path.is_file() or not row["source_asset_sha256"]:
+                            invalid += 1
+                            continue
+
+                        digest = hashlib.sha256()
+                        try:
+                            with path.open("rb") as handle:
+                                for chunk in iter(
+                                    lambda: handle.read(1024 * 1024), b""
+                                ):
+                                    digest.update(chunk)
+                        except OSError:
+                            invalid += 1
+                            continue
+                        current_sha = digest.hexdigest()
+                        if current_sha != row["source_asset_sha256"]:
+                            stale += 1
+                            continue
+
+                        try:
+                            quad = np.asarray(
+                                json.loads(row["surface_quad"]),
+                                dtype=np.float32,
+                            )
+                            image = cv2.imdecode(
+                                np.fromfile(str(path), dtype=np.uint8),
+                                cv2.IMREAD_COLOR,
+                            )
+                            if image is None:
+                                raise ValueError("source image unreadable")
+                            h_img, w_img = image.shape[:2]
+                            quad_valid, _ = ApprovedGeometryValidator.is_valid_quad(
+                                quad,
+                                w_img,
+                                h_img,
+                            )
+                            if not quad_valid:
+                                raise ValueError("invalid approved quad")
+                        except Exception:
+                            invalid += 1
+                            continue
+
+                        orientation = str(
+                            row["orientation"] or "UNKNOWN"
+                        ).upper()
+                        if category == "04_Cam_Dograma":
+                            orient_ok = orientation in ("H", "V")
+                        else:
+                            # Must match the same physical-orientation contract
+                            # enforced by process_mockup; UNKNOWN would pass this
+                            # preflight and then be rejected during rendering.
+                            orient_ok = orientation == product.orientation
+                        if not orient_ok:
+                            orientation_mismatch += 1
+                            continue
+
+                        # Mixed-orientation templates previously could inherit
+                        # H/V from projected quad geometry. Reject those legacy
+                        # approvals unless physical direction has explicit
+                        # category/human-review provenance.
+                        if (
+                            category == "04_Cam_Dograma"
+                            and not physical_orientation_verified(
+                                row["component_confidences"]
+                            )
+                        ):
+                            physical_orientation_unverified += 1
+                            continue
+
+                        usable += 1
+
+                        # Object-aware foreground restoration is quality-critical
+                        # for cutting-board templates, explicit occlusion
+                        # profiles, and any legacy plan. Manual plans are usable
+                        # only when bound to these exact source bytes. The sole
+                        # compatibility exception is legacy_manual_v1: that
+                        # migration created the APPROVED profile and read the
+                        # plan from the same exact legacy record/source in one
+                        # source-hash-bound pass.
+                        template_name = Path(rel).name
+                        legacy_templates = (
+                            AYARLAR.get("kategoriler", {})
+                            .get(category, {})
+                            .get("sablonlar", {})
+                        )
+                        legacy_cfg = legacy_templates.get(template_name)
+                        if legacy_cfg is None:
+                            for legacy_name, candidate_cfg in legacy_templates.items():
+                                if Path(legacy_name).stem == Path(template_name).stem:
+                                    legacy_cfg = candidate_cfg
+                                    break
+                        legacy_cfg = (
+                            legacy_cfg if isinstance(legacy_cfg, dict) else {}
+                        )
+                        plan = legacy_cfg.get("on_plan")
+                        plan_source_hash = str(
+                            legacy_cfg.get("on_plan_source_sha256")
+                            or (
+                                plan.get("source_asset_sha256")
+                                if isinstance(plan, dict)
+                                else ""
+                            )
+                            or ""
+                        ).strip()
+                        plan_trusted = bool(
+                            plan
+                            and plan_source_hash
+                            and plan_source_hash == current_sha
+                        )
+
+                        requires_occlusion = bool(
+                            row["has_occlusion"]
+                            or foreground_plan_has_positive_selection(plan)
+                        )
+                        # Match render-time auto_foreground defaults. The
+                        # review UI currently persists a settings-only on_plan,
+                        # so AI may be intentionally used as an opportunistic
+                        # scan even when no occluder is known in advance.
+                        auto_foreground_requested = bool(
+                            category == "04_Cam_Dograma"
+                            or requires_occlusion
+                            or bool(plan)
+                        )
+                        if auto_foreground_requested:
+                            has_positive_object_plan = bool(
+                                plan_trusted
+                                and isinstance(plan, dict)
+                                and plan.get("object_boxes")
+                            )
+
+                            cache_file = (
+                                MASK_CACHE_DIR
+                                / (
+                                    f"{category}_{row['source_asset_sha256']}_"
+                                    "v3_auto_ai_mask.png"
+                                )
+                            )
+                            has_cached_mask = False
+                            if cache_file.is_file():
+                                try:
+                                    cached = cv2.imdecode(
+                                        np.fromfile(str(cache_file), dtype=np.uint8),
+                                        cv2.IMREAD_GRAYSCALE,
+                                    )
+                                    has_cached_mask = cached_foreground_mask_usable(
+                                        cached,
+                                        True,
+                                    )
+                                except Exception:
+                                    has_cached_mask = False
+
+                            item_name = f"{category}/{template_name}"
+                            if has_positive_object_plan or has_cached_mask:
+                                report["occlusion"][
+                                    "manual_or_cached_templates"
+                                ].append(item_name)
+                            else:
+                                report["occlusion"][
+                                    "ai_required_templates"
+                                ].append(item_name)
+
+                    report["templates"][category] = {
+                        "approved": len(rows),
+                        "usable": usable,
+                        "stale": stale,
+                        "invalid": invalid,
+                        "orientation_mismatch": orientation_mismatch,
+                        "physical_orientation_unverified": physical_orientation_unverified,
+                        "duplicate_approved_uids": duplicate_approved_uids,
+                    }
+                    if duplicate_approved_uids:
+                        report["errors"].append(
+                            f"{category}: aynı template_uid için birden fazla "
+                            "aktif APPROVED profil var: "
+                            + ", ".join(duplicate_approved_uids)
+                        )
+                    if usable == 0:
+                        report["errors"].append(
+                            f"{category}: source-valid APPROVED şablon yok."
+                        )
+            finally:
+                conn.close()
+        except Exception as exc:
+            report["errors"].append(f"Şablon profilleri okunamadı: {exc}")
+
+    # Cloud upload is part of a marketplace-ready run. Fail before rendering
+    # hundreds of files when no provider credential is configured.
+    cloud_cfg = AYARLAR.get("bulut_ayarlari", {})
+    configured_imgbb = cloud_cfg.get("imgbb_keys") or []
+    if not isinstance(configured_imgbb, list):
+        configured_imgbb = []
+    env_imgbb = [
+        key.strip()
+        for key in os.environ.get("IMGBB_KEYS", "").split(",")
+        if key.strip()
+    ]
+    freeimage_key = str(
+        cloud_cfg.get("freeimage_key")
+        or os.environ.get("FREEIMAGE_KEY", "")
+        or ""
+    ).strip()
+    report["cloud"] = {
+        "imgbb_key_count": len(
+            [key for key in configured_imgbb if str(key).strip()]
+            or env_imgbb
+        ),
+        "freeimage_configured": bool(freeimage_key),
+    }
+    if (
+        report["cloud"]["imgbb_key_count"] == 0
+        and not report["cloud"]["freeimage_configured"]
+    ):
+        report["errors"].append(
+            "Bulut yükleme sağlayıcısı yapılandırılmamış "
+            "(ImgBB veya FreeImage anahtarı gerekli)."
+        )
+
+    # Occlusion AI is optional only when every occlusion-sensitive
+    # approved template already has a reviewed manual plan or a source-hash-
+    # bound cached mask. Otherwise starting production without the models could
+    # silently paint artwork over real foreground objects.
+    ai_dependency = foreground_ai_dependency_status()
+    report["optional_ai"].update(ai_dependency)
+    missing_ai_modules = list(ai_dependency.get("missing") or [])
+    missing_ai_modules.extend(ai_dependency.get("errors") or [])
+
+    ai_required_templates = report["occlusion"]["ai_required_templates"]
+    if ai_required_templates and missing_ai_modules:
+        report["errors"].append(
+            "Ön-plan/occlusion AI gerekli fakat bağımlılık/API eksik: "
+            + ", ".join(missing_ai_modules)
+        )
+    elif missing_ai_modules:
+        report["warnings"].append(
+            "Ön-plan AI bağımlılık/API eksikleri var fakat tüm gerekli "
+            "şablonlar manuel/cache maskesiyle kapsanmış: "
+            + ", ".join(missing_ai_modules)
+        )
+
+    for name, directory in {
+        "output": OUTPUT_DIR,
+        "output_multi": OUTPUT_COKLU_DIR,
+        "excel": EXCEL_DIR,
+        "logs": LOG_DIR,
+    }.items():
+        exists = directory.exists()
+        writable = exists and os.access(str(directory), os.W_OK)
+        report["outputs"][name] = {
+            "path": str(directory),
+            "exists": exists,
+            "writable": bool(writable),
+        }
+        if not writable:
+            report["errors"].append(f"Yazılamayan çıktı klasörü: {directory}")
+
+    report["ready"] = len(report["errors"]) == 0
+    return report
+
+
 class PCMasterFactory:
     def __init__(self, mode: str = "dongusel"):
         self.mode = mode   # "dongusel" veya "coklu"
@@ -1389,6 +4422,13 @@ class PCMasterFactory:
         self.seo = SeoEngine()
         self.excel = FastExcelManager(EXCEL_DIR / "Urun_Yukleme_Listesi.xlsx")
         self.thread_pool = ThreadPoolExecutor(max_workers=3)
+        self.metrics_lock = threading.Lock()
+        self.upload_failures = 0
+        self.persistence_failures = 0
+        self.worker_failures = 0
+        self.upload_futures = []
+        self.pending_excel_lock = threading.Lock()
+        self.pending_excel_artifacts = []
 
     def load_manifest(self) -> List[dict]:
         m_path = FACTORY_DIR / "manifest.json"
@@ -1405,56 +4445,244 @@ class PCMasterFactory:
             return []
 
     def get_template_pool(self, prod_key: str) -> List[Tuple[str, Path, dict]]:
+        """Return only source-valid, review-approved template profiles.
+
+        Production rendering must never fall back to arbitrary folder contents
+        or unreviewed legacy geometry. Legacy template JSON is used only for
+        non-geometry extras (for example manual occlusion plans); approved
+        profile geometry always wins.
         """
-        İlgili ürün için ayarlar.json ve Sablonlar klasöründen şablon havuzunu çeker.
-        """
-        pool = []
+        pool: List[Tuple[str, Path, dict]] = []
         prod_def = PRODUCT_CATALOG[prod_key]
-        
-        # 1. ayarlar.json içindeki kayıtlı şablonlar
-        kat_cfg = AYARLAR.get("kategoriler", {}).get(prod_key, {})
-        sablonlar_cfg = kat_cfg.get("sablonlar", {})
+        db_path = USER_WORKSPACE_DIR / "SABLON_V2_MIMARI" / "ayarlar.db"
 
-        # Klasör taraması (Sablonlar/01_Wifi_Kutusu veya kök Sablonlar/)
-        target_dir = SABLON_DIR / prod_def.folder_name
-        if not target_dir.exists():
-            target_dir = SABLON_DIR
+        if not db_path.exists():
+            logger.warning(
+                f"⏭️ Onaylı şablon profili kullanılamıyor; DB yok: {db_path}"
+            )
+            return pool
 
-        for s_name, s_conf in sablonlar_cfg.items():
-            base_stem = Path(s_name).stem
-            s_path = target_dir / s_name
-            
-            # Şeffaf Sistem (Passepartout): Dosya PNG olarak kaydedilmiş olabilir
-            if not s_path.exists():
-                s_path_png = target_dir / f"{base_stem}.png"
-                if s_path_png.exists():
-                    s_path = s_path_png
-                else:
-                    s_path = SABLON_DIR / s_name
-                    if not s_path.exists():
-                        s_path_png_root = SABLON_DIR / f"{base_stem}.png"
-                        if s_path_png_root.exists():
-                            s_path = s_path_png_root
-                            
-            if s_path.exists():
-                pool.append((s_name, s_path, s_conf))
+        try:
+            conn = open_sqlite_readonly(db_path)
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                """SELECT template_uid, source_relative_path, source_asset_sha256,
+                          analyzer_version, orientation, nominal_aspect,
+                          surface_quad, outer_quad,
+                          confidence_total, component_confidences, print_policy,
+                          surface_mask_path, has_occlusion
+                   FROM template_profiles
+                   WHERE category=? AND review_status='APPROVED' AND is_active=1
+                   ORDER BY confidence_total DESC, updated_at DESC""",
+                (prod_key,),
+            ).fetchall()
+        except Exception as exc:
+            logger.error(f"Onaylı template_profiles okunamadı ({prod_key}): {exc}")
+            return pool
+        finally:
+            try:
+                conn.close()
+            except Exception:
+                pass
 
-        # Eğer kategoride ayarlar.json boşsa klasördeki dosyaları al (default fallback rect)
-        if not pool and target_dir.exists():
-            for f in target_dir.iterdir():
-                if f.is_file() and f.suffix.lower() in [".jpg", ".jpeg", ".png", ".webp"]:
-                    pool.append((
-                        f.name, f,
-                        {"tip": "duz", "x": int(800*0.2), "y": int(800*0.2), "w": int(800*0.6), "h": int(800*0.6)}
-                    ))
+        legacy_templates = (
+            AYARLAR.get("kategoriler", {})
+            .get(prod_key, {})
+            .get("sablonlar", {})
+        )
+        pool_root = SABLON_DIR.resolve()
+
+        duplicate_approved_uids = set(duplicate_profile_uids(rows))
+        if duplicate_approved_uids:
+            logger.error(
+                f"⏭️ {prod_key}: duplicate active APPROVED profile UID'leri "
+                "güvenlik nedeniyle render dışı bırakıldı: "
+                + ", ".join(sorted(duplicate_approved_uids))
+            )
+
+        for row in rows:
+            if str(row["template_uid"] or "") in duplicate_approved_uids:
+                continue
+            relative_path = row["source_relative_path"]
+            if not relative_path or not row["surface_quad"]:
+                logger.warning(f"⏭️ Eksik onaylı geometri atlandı: {row['template_uid']}")
+                continue
+
+            try:
+                template_path = (SABLON_DIR / relative_path).resolve()
+                if pool_root not in template_path.parents:
+                    logger.warning(f"⏭️ Güvensiz şablon yolu atlandı: {relative_path}")
+                    continue
+            except Exception:
+                continue
+
+            if not template_path.exists():
+                logger.warning(f"⏭️ Onaylı profilin kaynak dosyası yok: {template_path}")
+                continue
+
+            # Approval is bound to exact source bytes. A changed image is stale
+            # even if filename/template_uid stayed the same.
+            try:
+                digest = hashlib.sha256()
+                with open(template_path, "rb") as handle:
+                    for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                        digest.update(chunk)
+                current_sha = digest.hexdigest()
+            except Exception as exc:
+                logger.warning(f"⏭️ Şablon hash okunamadı {template_path.name}: {exc}")
+                continue
+
+            if not row["source_asset_sha256"] or current_sha != row["source_asset_sha256"]:
+                logger.warning(
+                    f"⏭️ STALE_SOURCE_CHANGED: {row['template_uid']} yeniden analiz/onay gerekli"
+                )
+                continue
+
+            try:
+                surface_quad = json.loads(row["surface_quad"])
+                quad_arr = np.asarray(surface_quad, dtype=np.float32)
+                image = cv2.imdecode(
+                    np.fromfile(str(template_path), dtype=np.uint8),
+                    cv2.IMREAD_COLOR,
+                )
+                if image is None:
+                    raise ValueError("source image unreadable")
+                h_img, w_img = image.shape[:2]
+                quad_valid, quad_reason = ApprovedGeometryValidator.is_valid_quad(
+                    quad_arr,
+                    w_img,
+                    h_img,
+                )
+                if not quad_valid:
+                    raise ValueError(quad_reason)
+                surface_quad = (
+                    ApprovedGeometryValidator.canonical_sort(quad_arr)
+                    .astype(float)
+                    .tolist()
+                )
+            except Exception as exc:
+                logger.warning(
+                    f"⏭️ Bozuk onaylı quad atlandı: {row['template_uid']} ({exc})"
+                )
+                continue
+
+            profile_orientation = (row["orientation"] or "UNKNOWN").upper()
+            mixed_orientation_category = (prod_key == "04_Cam_Dograma")
+
+            if mixed_orientation_category:
+                # Cutting-board templates legitimately exist in both H and V.
+                # The renderer will pair each approved template with the
+                # corresponding H/V master instead of rotating artwork.
+                if profile_orientation not in ("H", "V"):
+                    logger.info(
+                        f"⏭️ Karma yön kategorisinde yönü belirsiz şablon atlandı: "
+                        f"{template_path.name} ({profile_orientation})"
+                    )
+                    continue
+                if not physical_orientation_verified(
+                    row["component_confidences"]
+                ):
+                    logger.warning(
+                        f"⏭️ Karma yön şablonunun fiziksel H/V doğrulama kanıtı yok; "
+                        f"yeniden insan onayı gerekli: {template_path.name}"
+                    )
+                    continue
+            else:
+                if profile_orientation != prod_def.orientation:
+                    logger.info(
+                        f"⏭️ Fiziksel orientation uyumsuz/belirsiz onaylı şablon atlandı: "
+                        f"{template_path.name} "
+                        f"({profile_orientation}!={prod_def.orientation})"
+                    )
+                    continue
+
+            # Preserve non-geometric legacy extras by exact name, then stem.
+            template_name = template_path.name
+            legacy_cfg = legacy_templates.get(template_name)
+            if legacy_cfg is None:
+                for legacy_name, candidate_cfg in legacy_templates.items():
+                    if Path(legacy_name).stem == template_path.stem:
+                        legacy_cfg = candidate_cfg
+                        break
+            config = dict(legacy_cfg or {})
+            raw_on_plan = config.get("on_plan")
+            legacy_requires_occlusion = foreground_plan_has_positive_selection(
+                raw_on_plan
+            )
+            plan_source_hash = str(
+                config.get("on_plan_source_sha256")
+                or (
+                    raw_on_plan.get("source_asset_sha256")
+                    if isinstance(raw_on_plan, dict)
+                    else ""
+                )
+                or ""
+            ).strip()
+            plan_trusted = bool(
+                raw_on_plan
+                and plan_source_hash
+                and plan_source_hash == current_sha
+            )
+            if raw_on_plan and not plan_trusted:
+                # Keep the fact that this template needs occlusion handling,
+                # but never reuse stale/unbound coordinates. AI or a current
+                # source-hash-bound cache must regenerate the mask.
+                config.pop("on_plan", None)
+                logger.warning(
+                    f"⏭️ Kaynağa bağlı olmayan/stale on_plan yok sayıldı: "
+                    f"{row['template_uid']}"
+                )
+
+            # Geometry-critical fields are exclusively sourced from the
+            # review-approved immutable-source profile.
+            config.update({
+                "tip": "perspektif",
+                "koseler": surface_quad,
+                "profile_uid": row["template_uid"],
+                "profile_orientation": profile_orientation,
+                "profile_confidence": float(row["confidence_total"] or 0.0),
+                "nominal_aspect": (
+                    row["nominal_aspect"]
+                    if row["nominal_aspect"] not in (None, "", "UNKNOWN")
+                    else (
+                        physical_aspect_for_product(
+                            prod_def,
+                            profile_orientation
+                            if profile_orientation in ("H", "V")
+                            else prod_def.orientation,
+                        )
+                        or "UNKNOWN"
+                    )
+                ),
+                "print_policy": row["print_policy"] or "full_bleed",
+                "surface_mask_path": row["surface_mask_path"],
+                "has_occlusion": (
+                    bool(row["has_occlusion"]) or legacy_requires_occlusion
+                ),
+            })
+
+            pool.append((template_name, template_path, config))
+
+        if not pool:
+            logger.warning(
+                f"⏭️ {prod_key}: render için source-valid APPROVED şablon yok. "
+                "Unreviewed klasör fallback'i güvenlik nedeniyle kapalı."
+            )
 
         return pool
 
-    def process_all(self):
+    def process_all(self) -> bool:
         items = self.load_manifest()
         if not items:
-            logger.warning("İşlenecek manifest öğesi bulunamadı.")
-            return
+            logger.error("İşlenecek manifest öğesi bulunamadı.")
+            return False
+
+        eligible_template_count = 0
+        completed_artifact_count = 0
+        render_attempted = 0
+        render_succeeded = 0
+        render_failed = 0
+        upload_resumed = 0
 
         logger.info(f"🚀 PC MASTER FABRİKASI BAŞLATILDI | Toplam Master: {len(items)} | Mod: {self.mode.upper()}")
 
@@ -1487,67 +4715,233 @@ class PCMasterFactory:
             logger.info(f"🎨 MASTER [{m_idx}/{len(items)}]: {master_id} - {theme_title}")
             logger.info("========================================================")
 
-            # 1 Master -> 5 Ürün Genişletmesi
+            # 1 Master -> ürün kategorileri genişletmesi
             for prod_key, prod_def in PRODUCT_CATALOG.items():
-                # YATAY-DİKEY GARANTİSİ
-                target_raw_path = h_path if prod_def.orientation == "H" else v_path
-                if not target_raw_path.exists():
-                    logger.warning(f"  ⚠️ Ham görsel bulunamadı ({prod_def.orientation}): {target_raw_path.name}")
-                    continue
-
                 template_pool = self.get_template_pool(prod_key)
                 if not template_pool:
-                    logger.warning(f"  ⚠️ Şablon havuzu boş: {prod_key}")
+                    logger.warning(f"  ⚠️ Onaylı şablon havuzu boş: {prod_key}")
                     continue
+                eligible_template_count += len(template_pool)
 
-                # Stable identities
-                import hashlib
-                recipe_version = "v1"
-                with open(target_raw_path, 'rb') as f:
-                    source_sha = hashlib.sha256(f.read()).hexdigest()
-                source_design_identity = f"{target_raw_path.name}_{source_sha}"
-                
-                # Check if there are any incomplete templates to determine if we need to run
-                templates_to_run = []
-                for sablon_name, sablon_path, sablon_conf in template_pool:
-                    with open(sablon_path, 'rb') as f:
-                        template_sha = hashlib.sha256(f.read()).hexdigest()
-                    template_identity = f"{sablon_name}_{template_sha}"
-                    artifact_key = f"{source_design_identity}_{prod_key}_{template_identity}_{recipe_version}"
-                    
-                    if not self.state.is_artifact_completed(artifact_key):
-                        templates_to_run.append((sablon_name, sablon_path, sablon_conf, artifact_key, template_identity, source_design_identity, recipe_version, template_sha))
+                recipe_version = RECIPE_VERSION
+
+                # Hash/source identity cache. Mixed-orientation categories can
+                # use both master variants in the same product without rotating
+                # either source artwork.
+                source_cache = {}
+
+                def _source_for_orientation(orientation: str):
+                    orient = (orientation or "").upper()
+                    if orient == "H":
+                        path = h_path
+                    elif orient == "V":
+                        path = v_path
                     else:
-                        logger.info(f"  ⏭️ Atlandı (Artifact Zaten Tamam): {artifact_key}")
-                
-                if not templates_to_run:
+                        return None
+
+                    if not path.exists():
+                        return None
+
+                    cache_key = str(path.resolve())
+                    if cache_key not in source_cache:
+                        digest = hashlib.sha256()
+                        with open(path, "rb") as handle:
+                            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                                digest.update(chunk)
+                        sha = digest.hexdigest()
+                        source_cache[cache_key] = {
+                            "path": path,
+                            "sha": sha,
+                            "identity": f"{path.name}_{sha}",
+                        }
+                    return source_cache[cache_key]
+
+                # Resolve every approved template to its compatible source
+                # orientation, then construct immutable artifact identities.
+                template_records = []
+                for sablon_name, sablon_path, sablon_conf in template_pool:
+                    profile_orientation = (
+                        str(sablon_conf.get("profile_orientation") or "").upper()
+                    )
+                    source_orientation = (
+                        profile_orientation
+                        if profile_orientation in ("H", "V")
+                        else prod_def.orientation
+                    )
+                    source_info = _source_for_orientation(source_orientation)
+                    if source_info is None:
+                        logger.warning(
+                            f"  ⚠️ Ham görsel bulunamadı ({source_orientation}) "
+                            f"{master_id}/{prod_key}/{sablon_name}"
+                        )
+                        continue
+
+                    digest = hashlib.sha256()
+                    with open(sablon_path, "rb") as handle:
+                        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                            digest.update(chunk)
+                    template_sha = digest.hexdigest()
+                    template_identity = f"{sablon_name}_{template_sha}"
+                    artifact_key = (
+                        f"{source_info['identity']}_{prod_key}_"
+                        f"{template_identity}_{recipe_version}"
+                    )
+
+                    artifact_state = self.state.get_artifact(
+                        artifact_key
+                    )
+                    template_records.append({
+                        "name": sablon_name,
+                        "path": sablon_path,
+                        "config": sablon_conf,
+                        "artifact_key": artifact_key,
+                        "template_identity": template_identity,
+                        "template_sha": template_sha,
+                        "source_path": source_info["path"],
+                        "source_identity": source_info["identity"],
+                        "source_orientation": source_orientation,
+                        "artifact_state": artifact_state,
+                        "completed": artifact_record_is_complete_on_disk(
+                            artifact_state
+                        ),
+                    })
+
+                if not template_records:
+                    logger.warning(
+                        f"  ⚠️ Uyumlu kaynak/şablon eşleşmesi yok: {prod_key}"
+                    )
                     continue
 
-                # Get SKU consistently for this source_identity if needed
-                sku_key = f"sku_{source_design_identity}_{prod_key}"
+                completed_artifact_count += sum(
+                    1 for record in template_records if record["completed"]
+                )
+
+                if all(record["completed"] for record in template_records):
+                    for record in template_records:
+                        logger.info(
+                            f"  ⏭️ Atlandı (Artifact Zaten Tamam): "
+                            f"{record['artifact_key']}"
+                        )
+                    continue
+
+                # Product/SKU identity belongs to master+category, not to H/V
+                # source files. This keeps one logical product while individual
+                # image artifacts may use different orientation masters.
+                sku_key = f"sku_v2_{master_id}_{prod_key}"
                 with db_lock, self.state.conn:
-                    row = self.state.conn.execute("SELECT value FROM system_meta WHERE key = ?", (sku_key,)).fetchone()
+                    row = self.state.conn.execute(
+                        "SELECT value FROM system_meta WHERE key = ?",
+                        (sku_key,),
+                    ).fetchone()
+
                     if row:
                         seq = int(row["value"])
                     else:
-                        seq = self.state.get_next_sequence(prod_def.barkod_prefix)
-                        self.state.conn.execute("INSERT INTO system_meta (key, value) VALUES (?, ?)", (sku_key, str(seq)))
-                
+                        # Backward-compatible adoption of the old source-bound
+                        # SKU key if this master/category was already processed.
+                        seq = None
+                        for source_info in source_cache.values():
+                            legacy_key = (
+                                f"sku_{source_info['identity']}_{prod_key}"
+                            )
+                            legacy_row = self.state.conn.execute(
+                                "SELECT value FROM system_meta WHERE key = ?",
+                                (legacy_key,),
+                            ).fetchone()
+                            if legacy_row:
+                                seq = int(legacy_row["value"])
+                                break
+
+                        if seq is None:
+                            seq = self.state.get_next_sequence(
+                                prod_def.barkod_prefix
+                            )
+
+                        self.state.conn.execute(
+                            """INSERT INTO system_meta (key, value, updated_at)
+                               VALUES (?, ?, CURRENT_TIMESTAMP)
+                               ON CONFLICT(key) DO UPDATE SET
+                                   value=excluded.value,
+                                   updated_at=CURRENT_TIMESTAMP""",
+                            (sku_key, str(seq)),
+                        )
+
                 barkod = f"{prod_def.barkod_prefix}{seq:05d}"
                 sku = barkod
                 model_kodu = f"{prod_def.model_prefix}{seq:05d}"
 
                 if self.mode == "coklu":
-                    secilen_sablonlar = templates_to_run
+                    selected_records = [
+                        record
+                        for record in template_records
+                        if not record["completed"]
+                    ]
                 else:
-                    t_idx = (seq - 1) % len(template_pool)
-                    target_tmpl = template_pool[t_idx]
-                    secilen_sablonlar = [t for t in templates_to_run if t[0] == target_tmpl[0]]
+                    # Persist the scene assignment per logical product. Without
+                    # this, adding/re-approving a template could reorder the
+                    # pool and silently change an existing SKU's visual.
+                    template_selection_key = (
+                        f"template_v1_{master_id}_{prod_key}"
+                    )
+                    with db_lock, self.state.conn:
+                        selection_row = self.state.conn.execute(
+                            "SELECT value FROM system_meta WHERE key = ?",
+                            (template_selection_key,),
+                        ).fetchone()
+                        persisted_template_name = (
+                            str(selection_row["value"])
+                            if selection_row
+                            else ""
+                        )
 
-                for sablon_name, sablon_path, sablon_conf, artifact_key, template_identity, source_design_identity, recipe_version, template_sha in secilen_sablonlar:
+                    target_record = choose_stable_template_record(
+                        template_records,
+                        seq,
+                        persisted_template_name,
+                    )
+                    if target_record is None:
+                        selected_records = []
+                    else:
+                        selected_name = str(target_record["name"])
+                        if selected_name != persisted_template_name:
+                            with db_lock, self.state.conn:
+                                self.state.conn.execute(
+                                    """INSERT INTO system_meta
+                                           (key, value, updated_at)
+                                       VALUES (?, ?, CURRENT_TIMESTAMP)
+                                       ON CONFLICT(key) DO UPDATE SET
+                                           value=excluded.value,
+                                           updated_at=CURRENT_TIMESTAMP""",
+                                    (
+                                        template_selection_key,
+                                        selected_name,
+                                    ),
+                                )
+                        selected_records = (
+                            []
+                            if target_record["completed"]
+                            else [target_record]
+                        )
+
+                for record in selected_records:
+                    sablon_name = record["name"]
+                    sablon_path = record["path"]
+                    sablon_conf = record["config"]
+                    artifact_key = record["artifact_key"]
+                    template_identity = record["template_identity"]
+                    template_sha = record["template_sha"]
+                    target_raw_path = record["source_path"]
+                    source_design_identity = record["source_identity"]
+
                     magaza_grubu = sablon_path.stem
-                    out_filename = f"{sku}_{sablon_path.stem}.jpg"
-                    
+                    # Artifact identity includes the render recipe, so the
+                    # physical output path must also be recipe-versioned.
+                    # Otherwise a new renderer recipe could overwrite a file
+                    # still referenced by an older immutable artifact record.
+                    out_filename = (
+                        f"{sku}_{hashlib.sha256(artifact_key.encode('utf-8')).hexdigest()}.jpg"
+                    )
+
                     if self.mode == "coklu":
                         out_dir = OUTPUT_COKLU_DIR / prod_key / magaza_grubu
                     else:
@@ -1555,36 +4949,161 @@ class PCMasterFactory:
 
                     out_path = out_dir / out_filename
 
-                    logger.info(f"  🖌️ Render: {artifact_key} -> {sku}")
-
-                    success = MockupRenderer.process_mockup(
-                        raw_path=target_raw_path,
-                        template_path=sablon_path,
-                        config=sablon_conf,
-                        is_glass=prod_def.is_glass,
-                        output_path=out_path,
-                        source_design_identity=source_design_identity,
-                        template_identity=template_identity,
-                        recipe_version=recipe_version,
-                        template_sha=template_sha
+                    prior_artifact = record.get("artifact_state") or {}
+                    prior_local = Path(
+                        prior_artifact.get("local_output_path") or ""
+                    )
+                    prior_status = prior_artifact.get("status")
+                    pending_excel_only = (
+                        prior_status in ("UPLOADED_PENDING_EXCEL", "UPLOADED")
+                        and prior_local.is_file()
+                        and bool(prior_artifact.get("upload_url"))
+                    )
+                    can_resume_local = (
+                        prior_status
+                        in (
+                            "RENDERED",
+                            "UPLOAD_FAILED",
+                            "UPLOADED_PENDING_EXCEL",
+                            "UPLOADED",
+                        )
+                        and prior_local.is_file()
                     )
 
-                    if not success:
-                        continue
-                        
-                    # P0 Fix: Call RealESRGAN Quality Engine
-                    # We check if 4K engine is active/available
-                    if AYARLAR.get("bulut_ayarlari", {}).get("use_realesrgan", False) and RealESRGANQualityEngine.get_exe_path():
-                        logger.info(f"  🔍 Kalite Artırılıyor (4K RealESRGAN): {out_path.name}")
-                        upscaled_path = out_path.with_name("4k_" + out_path.name)
-                        if RealESRGANQualityEngine.upscale_4k(out_path, upscaled_path):
-                            # Replace original with upscaled
-                            import shutil
-                            shutil.move(str(upscaled_path), str(out_path))
+                    if can_resume_local:
+                        out_path = prior_local
+                        upload_resumed += 1
+                        if pending_excel_only:
+                            logger.info(
+                                f"  ♻️ Render/yükleme tekrar edilmiyor; "
+                                f"Excel kaydı tamamlanacak: {out_path.name}"
+                            )
+                        else:
+                            logger.info(
+                                f"  ♻️ Render tekrar edilmiyor; mevcut artifact "
+                                f"buluta yeniden gönderilecek: {out_path.name}"
+                            )
+                    else:
+                        logger.info(
+                            f"  🖌️ Render ({record['source_orientation']}): "
+                            f"{artifact_key} -> {sku}"
+                        )
+                        render_attempted += 1
 
-                    # SEO Başlık ve Açıklama
-                    seo_title = self.seo.generate_title(prod_key, theme_title)
-                    seo_desc = self.seo.get_description(prod_key, theme_title, style_key)
+                        success = MockupRenderer.process_mockup(
+                            raw_path=target_raw_path,
+                            template_path=sablon_path,
+                            config=sablon_conf,
+                            is_glass=prod_def.is_glass,
+                            output_path=out_path,
+                            source_design_identity=source_design_identity,
+                            template_identity=template_identity,
+                            recipe_version=recipe_version,
+                            template_sha=template_sha
+                        )
+
+                        if not success:
+                            render_failed += 1
+                            continue
+                        render_succeeded += 1
+
+                        # P0 Fix: Call RealESRGAN Quality Engine
+                        if (
+                            AYARLAR.get("bulut_ayarlari", {}).get(
+                                "use_realesrgan", False
+                            )
+                            and RealESRGANQualityEngine.get_exe_path()
+                        ):
+                            logger.info(
+                                f"  🔍 Kalite Artırılıyor (4K RealESRGAN): "
+                                f"{out_path.name}"
+                            )
+                            upscaled_path = out_path.with_name(
+                                "4k_" + out_path.name
+                            )
+                            if RealESRGANQualityEngine.upscale_4k(
+                                out_path, upscaled_path
+                            ):
+                                original_saved = cv2.imdecode(
+                                    np.fromfile(
+                                        str(out_path),
+                                        dtype=np.uint8,
+                                    ),
+                                    cv2.IMREAD_COLOR,
+                                )
+                                candidate_saved = cv2.imdecode(
+                                    np.fromfile(
+                                        str(upscaled_path),
+                                        dtype=np.uint8,
+                                    ),
+                                    cv2.IMREAD_COLOR,
+                                )
+                                if original_saved is None:
+                                    candidate_ok = False
+                                    candidate_msg = (
+                                        "referans final çıktı okunamadı"
+                                    )
+                                else:
+                                    oh, ow = original_saved.shape[:2]
+                                    candidate_ok, candidate_msg = (
+                                        QualityInspector.inspect_final_output(
+                                            candidate_saved,
+                                            minimum_width=ow,
+                                            minimum_height=oh,
+                                            expected_aspect=(
+                                                ow / float(max(oh, 1))
+                                            ),
+                                        )
+                                    )
+
+                                if candidate_ok:
+                                    os.replace(upscaled_path, out_path)
+                                    logger.info(
+                                        "  ✅ RealESRGAN final QA geçti: "
+                                        f"{candidate_msg}"
+                                    )
+                                else:
+                                    logger.warning(
+                                        "  ⚠️ RealESRGAN adayı reddedildi; "
+                                        "güvenli r6/r7 render korunuyor: "
+                                        f"{candidate_msg}"
+                                    )
+                                    try:
+                                        upscaled_path.unlink(missing_ok=True)
+                                    except OSError:
+                                        pass
+
+                        # Persist the local artifact before any network work.
+                        # A crash or provider outage can then resume upload
+                        # without re-rendering the image.
+                        saved_local_state = self.state.save_render_artifact({
+                            "artifact_key": artifact_key,
+                            "sku": sku,
+                            "source_identity": source_design_identity,
+                            "category": prod_key,
+                            "template_identity": template_identity,
+                            "local_output_path": str(out_path),
+                            "upload_url": "",
+                            "status": "RENDERED",
+                        })
+                        if not saved_local_state:
+                            with self.metrics_lock:
+                                self.persistence_failures += 1
+                            render_failed += 1
+                            logger.error(
+                                f"  ❌ Render state DB'ye yazılamadı; upload atlandı: "
+                                f"{artifact_key}"
+                            )
+                            continue
+
+                    seo_title = self.seo.generate_title(
+                        prod_key,
+                        theme_title,
+                        identity_seed=sku,
+                    )
+                    seo_desc = self.seo.get_description(
+                        prod_key, theme_title, style_key
+                    )
 
                     prod_record = {
                         "artifact_key": artifact_key,
@@ -1599,43 +5118,188 @@ class PCMasterFactory:
                         "urun_adi": seo_title,
                         "aciklama": seo_desc,
                         "ham_baski_dosyasi": target_raw_path.name,
-                        "mockup_dosyasi": out_filename,
+                        "mockup_dosyasi": out_path.name,
                         "magaza_grubu": magaza_grubu,
-                        "resim_linki": "",
-                        "status": "RENDERED"
+                        "resim_linki": (
+                            str(prior_artifact.get("upload_url") or "")
+                            if pending_excel_only
+                            else ""
+                        ),
+                        "status": (
+                            "UPLOADED_PENDING_EXCEL"
+                            if pending_excel_only
+                            else "RENDERED"
+                        )
                     }
 
-                    # Arka Planda Yükle ve Excel'e Yaz (Non-blocking)
-                    self.thread_pool.submit(self._async_upload_and_excel, out_path, prod_record)
+                    future = self.thread_pool.submit(
+                        self._async_upload_and_excel,
+                        out_path,
+                        prod_record,
+                    )
+                    self.upload_futures.append(future)
 
-        logger.info("\n⏳ Tüm mockuplar çizildi, arkaplandaki bulut yüklemeleri tamamlanıyor...")
+        logger.info("\n⏳ Render aşaması bitti, arkaplandaki bulut yüklemeleri tamamlanıyor...")
         self.thread_pool.shutdown(wait=True)
-        self.excel.flush()
 
-        logger.info("\n🎉 TÜM İŞLEMLER BAŞARIYLA TAMAMLANDI!")
-        logger.info(f"📊 Durum Özeti: {self.state.get_summary()}")
+        # ThreadPoolExecutor does not raise worker exceptions from shutdown().
+        # Resolve every future explicitly so an unexpected background exception
+        # can never be mistaken for a successful production run.
+        for future in self.upload_futures:
+            try:
+                future.result()
+            except Exception as exc:
+                self.worker_failures += 1
+                logger.error(
+                    f"❌ Arkaplan upload/Excel worker beklenmeyen hatayla durdu: {exc}",
+                    exc_info=True,
+                )
+
+        excel_flush_ok = self.excel.flush()
+        if excel_flush_ok:
+            with self.pending_excel_lock:
+                completed_keys = list(dict.fromkeys(self.pending_excel_artifacts))
+            self.state.mark_artifacts_completed(
+                completed_keys,
+                recipe_version=RECIPE_VERSION,
+            )
+        else:
+            logger.error(
+                "❌ Excel flush başarısız; yüklenen artifact'lar COMPLETED "
+                "olarak işaretlenmedi ve sonraki çalışmada Excel adımı "
+                "yeniden denenecek."
+            )
+
+        logger.info(
+            "📊 Çalışma özeti | "
+            f"approved_templates={eligible_template_count} "
+            f"already_completed={completed_artifact_count} "
+            f"render_attempted={render_attempted} "
+            f"render_succeeded={render_succeeded} "
+            f"render_failed={render_failed} "
+            f"upload_resumed={upload_resumed} "
+            f"upload_failed={self.upload_failures} "
+            f"persistence_failed={self.persistence_failures} "
+            f"worker_failed={self.worker_failures}"
+        )
+        logger.info(
+            "📊 Kalıcı DB geçmiş özeti (bu koşunun sonucu değildir): "
+            f"{self.state.get_summary()}"
+        )
         logger.info(f"📁 Çıktı Excel: {self.excel.file_path}")
 
-    def _async_upload_and_excel(self, mockup_path: Path, prod_record: dict):
-        url = None
-        for attempt in range(3):
-            url = self.uploader.upload_sync(mockup_path)
-            if url: break
-            # Her deneme arasi ufak bekleme
-            time.sleep(2)
-            
-        if url:
-            prod_record["resim_linki"] = url
-            prod_record["upload_url"] = url
-            prod_record["status"] = "UPLOADED"
-            logger.info(f"    ☁️ Bulut Yüklendi: {prod_record['sku']} -> {url}")
-        else:
-            prod_record["status"] = "UPLOAD_FAILED"
-            logger.error(f"    ❌ BULUT YÜKLEME BAŞARISIZ (3 deneme): {prod_record['sku']}")
+        if eligible_template_count == 0:
+            logger.error(
+                "❌ Üretim yapılamadı: source-valid APPROVED şablon bulunamadı. "
+                "Önce Şablon İnceleme Merkezi'nde geometriyi doğrulayın."
+            )
+            return False
 
-        self.state.save_render_artifact(prod_record)
-        # Sadece backward-compatibility icin products'a update
-        self.state.save_product(prod_record)
+        if render_attempted > 0 and render_succeeded == 0:
+            logger.error("❌ Tüm render denemeleri başarısız oldu.")
+            return False
+
+        if render_failed > 0:
+            logger.error(
+                f"⚠️ Üretim kısmi tamamlandı: {render_succeeded} başarılı, "
+                f"{render_failed} başarısız."
+            )
+            return False
+
+        if self.upload_failures > 0:
+            logger.error(
+                f"⚠️ Render tamamlandı ancak {self.upload_failures} artifact "
+                "buluta yüklenemedi. Yeniden çalıştırmada mevcut yerel "
+                "artifact yeniden render edilmeden yüklenecek."
+            )
+            return False
+
+        if self.persistence_failures > 0:
+            logger.error(
+                f"❌ {self.persistence_failures} durum kaydı DB'ye güvenli "
+                "şekilde yazılamadı. Koşu tamamlanmış sayılmayacak."
+            )
+            return False
+
+        if self.worker_failures > 0:
+            logger.error(
+                f"❌ {self.worker_failures} arkaplan worker hatası oluştu. "
+                "Koşu tamamlanmış sayılmayacak."
+            )
+            return False
+
+        if not excel_flush_ok:
+            return False
+
+        if (
+            render_attempted == 0
+            and upload_resumed == 0
+            and completed_artifact_count > 0
+        ):
+            logger.info(
+                "✅ Yeni render/yükleme gerekmiyor; uygun artifact'ların "
+                "tamamı zaten mevcut."
+            )
+            return True
+
+        logger.info("\n🎉 TÜM UYGUN RENDER İŞLEMLERİ BAŞARIYLA TAMAMLANDI!")
+        return True
+
+    def _async_upload_and_excel(self, mockup_path: Path, prod_record: dict):
+        # If upload already succeeded in an earlier interrupted run, resume at
+        # Excel only. This avoids duplicate cloud copies.
+        url = str(prod_record.get("resim_linki") or "").strip() or None
+
+        if not url:
+            for attempt in range(3):
+                url = self.uploader.upload_sync(mockup_path)
+                if url:
+                    break
+                # Her deneme arasi ufak bekleme
+                time.sleep(2)
+
+        if not url:
+            prod_record["resim_linki"] = ""
+            prod_record["upload_url"] = ""
+            prod_record["status"] = "UPLOAD_FAILED"
+            with self.metrics_lock:
+                self.upload_failures += 1
+            logger.error(
+                f"    ❌ BULUT YÜKLEME BAŞARISIZ (3 deneme): "
+                f"{prod_record['sku']}"
+            )
+            artifact_saved = self.state.save_render_artifact(prod_record)
+            product_saved = self.state.save_product(prod_record)
+            if not (artifact_saved and product_saved):
+                with self.metrics_lock:
+                    self.persistence_failures += 1
+                logger.error(
+                    f"    ❌ UPLOAD_FAILED durumu DB'ye tam yazılamadı: "
+                    f"{prod_record['artifact_key']}"
+                )
+            # Marketplace Excel must never contain a row with a missing image
+            # link. The row is emitted only after upload succeeds.
+            return
+
+        prod_record["resim_linki"] = url
+        prod_record["upload_url"] = url
+        prod_record["status"] = "UPLOADED_PENDING_EXCEL"
+        logger.info(
+            f"    ☁️ Bulut hazır: {prod_record['sku']} -> {url}"
+        )
+
+        # Persist upload success before Excel. If the process stops here, the
+        # next run resumes at Excel and does not upload or render again.
+        artifact_saved = self.state.save_render_artifact(prod_record)
+        product_saved = self.state.save_product(prod_record)
+        if not (artifact_saved and product_saved):
+            with self.metrics_lock:
+                self.persistence_failures += 1
+            logger.error(
+                f"    ❌ Upload başarılı fakat DB durumu kalıcılaştırılamadı; "
+                f"Excel kuyruğuna alınmadı: {prod_record['artifact_key']}"
+            )
+            return
 
         excel_row = {
             "Stok Kodu": prod_record["sku"],
@@ -1647,10 +5311,20 @@ class PCMasterFactory:
             "Ürün Adı": prod_record["urun_adi"],
             "Açıklama": prod_record["aciklama"],
             "Mockup Dosya Adı": prod_record["mockup_dosyasi"],
-            "Resim Linki": prod_record.get("resim_linki", ""),
+            "Resim Linki": prod_record["resim_linki"],
             "Eklenme Zamanı": time.strftime("%d.%m.%Y %H:%M:%S")
         }
-        self.excel.append_row(excel_row)
+        queued = self.excel.append_row(excel_row)
+        if queued:
+            with self.pending_excel_lock:
+                self.pending_excel_artifacts.append(
+                    prod_record["artifact_key"]
+                )
+        else:
+            logger.error(
+                f"    ❌ Excel kuyruğu yazılamadı: "
+                f"{prod_record['artifact_key']}"
+            )
 
 # ==============================================================================
 # 10. CLI VE İNTERAKTİF GİRİŞ NOKTASI
@@ -1659,9 +5333,36 @@ def parse_args():
     p = argparse.ArgumentParser(description="PC Master Mockup & Commerce Factory V5")
     p.add_argument("--mod", choices=["dongusel", "coklu"], default="dongusel",
                    help="Dağıtım modu: 'dongusel' (tek klasör/tek excel) veya 'coklu' (K1..K11 klasörleri)")
+    p.add_argument(
+        "--preflight",
+        action="store_true",
+        help="Üretim yapmadan manifest/profil/çıktı/opsiyonel AI hazırlığını kontrol et.",
+    )
     return p.parse_args()
 
 if __name__ == "__main__":
     args = parse_args()
+    if args.preflight:
+        preflight = build_factory_preflight()
+        print(json.dumps(preflight, ensure_ascii=False, indent=2))
+        # Stable final-line protocol for the local control center.
+        print(
+            "PREFLIGHT_JSON="
+            + json.dumps(preflight, ensure_ascii=False, separators=(",", ":"))
+        )
+        raise SystemExit(0 if preflight["ready"] else 2)
+
+    # Defense in depth: production CLI execution must not depend on the caller
+    # remembering to run --preflight first. The control center and launcher
+    # already preflight, but direct script execution now enforces the same
+    # read-only readiness gate before any production mutation can begin.
+    preflight = build_factory_preflight()
+    if not preflight["ready"]:
+        logger.error("❌ Üretim preflight başarısız; fabrika başlatılmadı.")
+        for error in preflight.get("errors", []):
+            logger.error(f"  - {error}")
+        raise SystemExit(2)
+
     bot = PCMasterFactory(mode=args.mod)
-    bot.process_all()
+    ok = bot.process_all()
+    raise SystemExit(0 if ok else 1)

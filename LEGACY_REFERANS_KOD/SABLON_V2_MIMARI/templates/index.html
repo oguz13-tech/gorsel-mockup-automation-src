@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='4' fill='%23007acc'/><text x='16' y='23' text-anchor='middle' font-size='20' fill='white'>S</text></svg>">
+    <title>Şablon İnceleme Merkezi</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+
+<div id="sidebar">
+    <h2 style="margin-top:0;">Şablon İnceleme</h2>
+    <div class="panel-hint">Şablonu seçin, dört köşeyi kontrol edin ve doğruysa onaylayın.</div>
+
+    <a href="/tools" target="_blank" class="tools-center-link">
+        <button type="button" class="tools-center-button">🧰 Profesyonel Araçlar</button>
+    </a>
+    <div class="tool-note tools-center-note">İsimlendirme, recursive PNG/format, filigran, 4K, link ve SEO araçlarını açar.</div>
+
+    <div id="bulk-select-panel">
+        <button type="button" id="bulkModeButton" onclick="toggleBulkSelectionMode()">☑️ Toplu Seçim</button>
+        <div class="tool-note">Birden fazla şablonu birlikte seçip güvenli şekilde çöpe atmak için açın.</div>
+
+        <div id="bulkSelectionActions" style="display:none;">
+            <div class="bulk-action-row">
+                <div class="bulk-choice">
+                    <button type="button" onclick="selectAllInCurrentCategory()">Bu Kategorinin Tümünü Seç</button>
+                    <div class="tool-note">Açık kategorideki tüm şablonları işaretler.</div>
+                </div>
+                <div class="bulk-choice">
+                    <button type="button" onclick="clearBulkSelection()">Seçimi Temizle</button>
+                    <div class="tool-note">İşaretlenen tüm şablon seçimlerini kaldırır.</div>
+                </div>
+            </div>
+            <div id="bulkSelectedCount">0 şablon seçildi</div>
+            <button type="button" id="bulkDeleteButton" onclick="bulkDeleteSelected()">🗑️ Seçilenleri Çöpe At</button>
+            <div class="tool-note">Seçilenleri aktif kullanımdan çıkarır. İşlem geri alınabilir.</div>
+        </div>
+    </div>
+
+    <div id="categories" style="flex:1; overflow-y:auto;">Yükleniyor...</div>
+
+    <div class="status-legend">
+        <b>Durumlar:</b> ✅ Onaylı · 📝 Kontrol bekliyor · ⚠️ Şüpheli · ⛔ Eski/uyumsuz
+    </div>
+
+    <div id="help-sidebar" style="display:none; position:absolute; left:360px; top:60px; background:rgba(0,0,0,0.94); padding:15px; border-radius:8px; z-index:9999; border:1px solid #555; box-shadow:0 4px 15px rgba(0,0,0,0.5);">
+        <b style="color:#fff;">Kısayollar:</b><br/>
+        - <b>C / V:</b> Köşeleri kopyala / yapıştır.<br/>
+        - <b>Enter:</b> Seçili şablonda köşeleri yeniden algıla.<br/>
+        - <b>Boşluk:</b> Ekranı kaydır.<br/>
+        - <b>Tekerlek:</b> Yakınlaş / uzaklaş.<br/>
+        - <b>Sağ tık sürükle:</b> Ekranda gezin.<br/>
+        - <b>N / P veya Sağ / Sol Ok:</b> Sonraki / önceki şablon.
+    </div>
+
+    <div style="padding-top:10px; border-top:1px solid #555;">
+        <button type="button" onclick="const h=document.getElementById('help-sidebar'); h.style.display=h.style.display==='none'?'block':'none';" style="width:100%; background:#444; margin-top:8px;">❓ Kısayollar ve Yardım</button>
+        <div class="tool-note">Fare ve klavye kısayollarını gösterir.</div>
+    </div>
+</div>
+
+<div class="resizer" id="resizer-left"></div>
+
+<div id="main">
+    <div id="toolbar" style="flex-direction:row; justify-content:space-between; align-items:center;">
+        <div style="display:flex; align-items:flex-start; gap:8px;">
+            <div class="toolbar-action">
+                <button type="button" onclick="prevTemplate()" style="background:#444; padding:6px 14px;" title="Önceki şablon">⏮ Önceki</button>
+                <div class="tool-note">Bir önceki şablona geçer.</div>
+            </div>
+            <div class="toolbar-action">
+                <button type="button" onclick="nextTemplate()" style="background:#444; padding:6px 14px;" title="Sonraki şablon">Sonraki ⏭</button>
+                <div class="tool-note">Bir sonraki şablona geçer.</div>
+            </div>
+            <span id="tmpl-counter" style="font-size:13px; font-weight:bold; color:#00e5ff; margin:8px 0 0 5px;"></span>
+            <span id="current-file" style="font-size:17px; font-weight:bold; margin:8px 0 0 10px;">Görsel Seçin</span>
+            <span id="perf-metric" style="margin:6px 0 0 15px; font-size:15px; font-weight:bold; padding:4px 8px; border-radius:4px; display:none;"></span>
+        </div>
+
+        <div class="toolbar-action">
+            <button type="button" onclick="saveAll()" class="success" style="padding:10px 24px; font-size:15px;">💾 Değişiklikleri Kaydet</button>
+            <div class="tool-note">Seçili şablondaki dört köşe ve yön değişikliklerini kaydeder.</div>
+        </div>
+    </div>
+
+    <div style="flex:1; display:flex; overflow:hidden; position:relative;">
+        <div id="canvas-container" tabindex="0">
+            <canvas id="c"></canvas>
+            <div id="info">Kırmızı köşe noktalarını sürükleyerek baskı alanını ayarlayın.</div>
+        </div>
+
+        <div class="resizer" id="resizer-right"></div>
+
+        <div id="right-toolbar" style="width:230px; flex-shrink:0; box-sizing:border-box; background:#252526; display:flex; flex-direction:column; gap:10px; padding:15px; border-left:1px solid #444; overflow-y:auto; z-index:10;">
+            <h3 class="tool-section-title">Köşe Ayarı</h3>
+
+            <button type="button" id="btnCorner" onclick="focusCornerEditing()" style="outline:3px solid #00aaff; width:100%; text-align:left; padding:12px 10px;">✋ Köşeleri Elle Ayarla</button>
+            <div class="tool-note">Kırmızı noktaları gerçek baskı alanının dört köşesine sürükleyin. Sistem daima perspektif kullanır.</div>
+
+            <button type="button" id="btnAutoCorner" onclick="autoDetectCorners()" style="background:linear-gradient(135deg,#00c853,#00bfa5); box-shadow:0 2px 6px rgba(0,200,83,0.4); width:100%; text-align:left; padding:12px 10px; font-weight:bold;">🧭 Köşeleri Yeniden Algıla</button>
+            <div class="tool-note tool-note-accent">Yeni şablonda ilk tespit zaten otomatik yapılır. Yalnız sonuç yanlışsa tekrar kullanın.</div>
+
+            <div class="tool-divider"></div>
+            <h3 class="tool-section-title">Otomatik Nesne Koruma</h3>
+
+            <button type="button" id="btnAutoForeground" onclick="autoDetectForeground()" style="background:linear-gradient(135deg,#6f42c1,#0d6efd); width:100%; text-align:left; padding:10px; font-weight:bold;">🤖 Öndeki Nesneleri Otomatik Bul</button>
+            <div class="tool-note">Baskının önünde kalması gereken gerçek bir nesne varsa otomatik olarak bulur. Elle maske/fırça düzenlemesi yoktur.</div>
+
+            <div class="tool-divider"></div>
+            <h3 class="tool-section-title">Ham Görsel Kontrolü</h3>
+
+            <div id="source-view-status" style="padding:8px; border:1px solid #555; border-radius:5px; background:#1f1f1f; color:#ddd; font-size:12px; line-height:1.4;">
+                🟢 Çalışma görseli gösteriliyor.
+            </div>
+
+            <button type="button" onclick="showOriginalPreview()" style="background:#6f42c1; width:100%; padding:11px 10px; margin-top:5px; text-align:left; font-weight:bold;">👁️ Ham Orijinali Göster</button>
+            <div class="tool-note"><b>Sadece görüntüler.</b> Korunmuş ilk ham/yedek dosyayı ekranda açar. Çalışma dosyasını, köşeleri ve onay durumunu değiştirmez.</div>
+
+            <button type="button" onclick="showIsolatedWhitePreview()" style="background:#0f766e; width:100%; padding:11px 10px; margin-top:5px; text-align:left; font-weight:bold;">🖼️ Beyazlatma Önizlemesi (Kaydetmez)</button>
+            <div class="tool-note"><b>Önizleme yalnız ayrılmış klasöre kaydedilir.</b> Mevcut 4 köşe ayarlarını kaydettikten sonra kullanın. Çalışma şablonu, orijinal yedek ve insan onayı değişmez.</div>
+
+            <button type="button" onclick="showWorkingPreview()" style="background:#0d6efd; width:100%; padding:11px 10px; margin-top:5px; text-align:left; font-weight:bold;">↩️ Çalışma Görseline Dön</button>
+            <div class="tool-note"><b>Sadece görüntüler.</b> Sistemin aktif kullandığı çalışma kopyasını tekrar ekranda gösterir. Hiçbir dosyayı değiştirmez.</div>
+
+            <button type="button" onclick="restoreOriginal()" style="background:#d97706; width:100%; padding:11px 10px; margin-top:5px; text-align:left; font-weight:bold;">🔄 Ham Orijinali Geri Yükle</button>
+            <div class="tool-note"><b>Dosyayı değiştirir.</b> Ham yedek sağlamsa onu çalışma kopyasının yerine güvenli şekilde yazar. Bundan sonra köşeleri yeniden kontrol edip şablonu tekrar onaylamanız gerekebilir.</div>
+
+            <input type="file" id="replaceOriginalFileInput" accept=".png,.jpg,.jpeg,.webp,.avif,image/png,image/jpeg,image/webp,image/avif" onchange="replaceOriginalSelectedFile(this)" style="display:none;">
+            <button type="button" onclick="chooseReplacementOriginal()" style="background:#9a3412; width:100%; padding:11px 10px; margin-top:5px; text-align:left; font-weight:bold;">🆕 Ham Dosyayı Yenisiyle Değiştir</button>
+            <div class="tool-note"><b>Güvenli kaynak değişimi.</b> Yeni bir ham görsel seçersiniz. Eski ham ve eski çalışma dosyaları silinmez; recovery operasyonunda korunur. Yeni kaynak geldikten sonra eski onay otomatik olarak geçersizleşir ve şablon yeniden kontrol ister.</div>
+
+            <button type="button" id="templateHealthScanButton" onclick="runTemplateHealthScan()" style="background:#0f766e; width:100%; padding:11px 10px; margin-top:5px; text-align:left; font-weight:bold;">🩺 Ham Dosya Sağlık Taraması</button>
+            <div class="tool-note"><b>Sadece kontrol eder; hiçbir dosyayı silmez.</b> Çalışma dosyası eksik, ham yedek eksik/okunamıyor, DB kaydı olmayan dosya ve benzeri sorunları tarar. Çok siyah/beyaz-düz görselleri otomatik bozuk saymaz; yalnız insan kontrolüne işaretler. Tamamlanan bu manuel tarama ayrıca <b>son rapor</b> ve <b>geçmiş kaydı</b> olarak saklanır.</div>
+
+            <button type="button" id="lastTemplateHealthReportButton" onclick="openLastTemplateHealthReport()" style="background:#374151; width:100%; padding:11px 10px; margin-top:5px; text-align:left; font-weight:bold;">📄 Son Sağlık Raporunu Aç</button>
+            <div class="tool-note">En son başarıyla tamamlanan manuel Ham Dosya Sağlık Taraması kaydını açar. Yeni taramada önceki rapora göre yeni/düzelen sorun farkı da hesaplanır.</div>
+
+            <button type="button" onclick="openTemplateHealthHistory()" style="background:#4b5563; width:100%; padding:11px 10px; margin-top:5px; text-align:left; font-weight:bold;">📚 Sağlık Rapor Geçmişi</button>
+            <div class="tool-note">Önceki Ham Dosya Sağlık Taramalarını tarih, sağlam/uyarı/kritik sayıları ve taramalar arası farklarla listeler.</div>
+
+            <button type="button" id="workspaceConsistencyScanButton" onclick="runWorkspaceConsistencyScan()" style="background:#1d4ed8; width:100%; padding:11px 10px; margin-top:9px; text-align:left; font-weight:bold;">🧭 Klasör Tutarlılık Taraması</button>
+            <div class="tool-note"><b>Tamamen READ-ONLY.</b> DB ↔ çalışma ↔ ham yedek eşitliğini; staging, çöp, recovery, Kaggle ve Mockup klasörlerini denetler. Kullanıcı dosyalarını silmez, taşımaz, yeniden adlandırmaz veya değiştirmez. Yalnız rapor kaydı oluşturur.</div>
+
+            <button type="button" onclick="openLastWorkspaceConsistencyReport()" style="background:#334155; width:100%; padding:11px 10px; margin-top:5px; text-align:left; font-weight:bold;">📄 Son Tutarlılık Raporunu Aç</button>
+            <div class="tool-note">Son audit raporunu açar. Kategori bazında DB / Çalışma / Ham / Staging sayıları, Kaggle-Mockup klasörleri, kod referansları ve tutarsızlıklar görünür.</div>
+
+            <button type="button" onclick="openWorkspaceConsistencyHistory()" style="background:#475569; width:100%; padding:11px 10px; margin-top:5px; text-align:left; font-weight:bold;">📚 Tutarlılık Rapor Geçmişi</button>
+            <div class="tool-note">Önceki klasör auditlerini listeler. Her yeni tarama, önceki rapora göre yeni sorunları ve düzelmiş sorunları hesaplar.</div>
+
+            <div class="tool-divider"></div>
+            <h3 class="tool-section-title">Kontrol ve Onay</h3>
+
+            <div id="physical-orientation-wrap" style="display:none; padding:8px; border:1px solid #555; border-radius:5px; background:#1f1f1f;">
+                <label for="physicalOrientationSelect" style="display:block; font-size:12px; color:#ddd; margin-bottom:5px;">Fiziksel ürün yönü</label>
+                <select id="physicalOrientationSelect" onchange="savePhysicalOrientationSelection()" style="width:100%; padding:7px; background:#2d2d2d; color:#fff; border:1px solid #666; border-radius:4px;">
+                    <option value="">Seçin…</option>
+                    <option value="H">Yatay (H)</option>
+                    <option value="V">Dikey (V)</option>
+                </select>
+                <div class="tool-note" style="margin-top:5px;">Cam Doğrama için gerçek ürünün yatay/dikey yönünü seçin.</div>
+            </div>
+
+            <button type="button" onclick="toggleReviewOverlay()" style="background:#17a2b8; width:100%; padding:12px 10px; margin-top:5px; font-weight:bold;">👁️ Yerleşimi Kontrol Et</button>
+            <div class="tool-note">Baskı alanını yeşil kaplama ile daha net görmenizi sağlar.</div>
+
+            <button type="button" onclick="approveTemplate()" style="background:#28a745; width:100%; padding:12px 10px; margin-top:5px; font-weight:bold;">✅ Bu Şablonu Onayla</button>
+            <div class="tool-note">Dört köşe doğruysa şablonu üretimde kullanılabilir hale getirir.</div>
+
+            <div class="tool-divider"></div>
+            <button type="button" onclick="deleteTemplate()" style="background:#dc3545; width:100%; padding:12px 10px; margin-top:5px;">🗑️ Şablonu Çöpe At</button>
+            <div class="tool-note">Şablonu aktif havuzdan çıkarır ve geri alınabilir çöp alanına taşır.</div>
+
+            <button type="button" onclick="undoDelete()" style="background:#17a2b8; width:100%; padding:12px 10px; margin-top:5px;">♻️ Son Silineni Geri Al</button>
+            <div class="tool-note">En son çöpe atılan şablonu güvenli şekilde geri getirir.</div>
+
+            <details class="advanced-tools">
+                <summary>⚙️ Gelişmiş / Kurtarma Araçları</summary>
+                <div class="tool-note advanced-summary-note">Normal kullanımda bu bölümü açmanız gerekmez.</div>
+
+                <button type="button" onclick="openActionableReconciliationCenter()" class="advanced-action" style="background:#1d4ed8;">🧭 Güvenli Eşitleme Merkezi</button>
+                <div class="tool-note">DB, çalışma, ham, duplicate, yetim dosya ve eksik aktif kayıtları tek yerde gösterir. Sorunlar <b>tek tek</b> çözülür; “hepsini düzelt” yoktur. Dosya taşıyan işlemler kalıcı silme yerine recovery kaydı oluşturur.</div>
+
+                <button type="button" onclick="resolveCurrentTemplateDuplicates()" class="advanced-action" style="background:#7c3aed;">🧹 Bu Şablondaki Duplicate'ları Güvenli Ayır</button>
+                <div class="tool-note">Yalnız aktif DB dosyası kesin olarak belirlenebiliyorsa çalışır. Korunan dosyaya dokunmaz; diğer uzantıları kalıcı silmek yerine recovery alanına taşır.</div>
+
+                <button type="button" onclick="openLifecycleCenter('recovery')" class="advanced-action" style="background:#475569;">🗂️ Trash / Recovery Merkezi</button>
+                <div class="tool-note">Geri alınabilir çöp kayıtlarını, duplicate/yetim recovery operasyonlarını ve .processing kurtarma alanını gösterir.</div>
+
+                <button type="button" onclick="undoLastLifecycleOperation()" class="advanced-action" style="background:#0f766e;">↩️ Son Lifecycle İşlemini Geri Al</button>
+                <div class="tool-note">Son geri alınabilir duplicate/yetim taşımasını eski yerine döndürür. Hedefte çakışma varsa güvenlik nedeniyle işlemi durdurur.</div>
+
+                <button type="button" id="batchAnalyzeButton" onclick="batchAnalyze()" class="advanced-action">⚡ Bir Kategoride Tüm Köşeleri Hızlı Tara</button>
+                <div class="tool-note"><b>Kalite algoritmasını değiştirmez.</b> Kaynağı değişmemiş insan onaylı <b>APPROVED</b> şablonları ağır analizden atlayıp aynen korur. Onaysız/değişmiş şablonlarda mevcut tam kalite 4 köşe motorunu çalıştırır. Hesaplamada en fazla 2 görsel paralel işlenir; veritabanı kayıtları tek sıra yapılır. Tarama başladıktan sonra <b>Arka Planda Sürdür</b> ile diğer şablonlarda çalışabilirsiniz. O anda işlenen küçük paketteki şablonlarda çakışan kayıt işlemleri kısa süreli engellenir. <b>Taramayı Durdur</b> derseniz mevcut küçük paket tamamlanır ve sonra durur; o ana kadar biten analizler korunur. Ham/orijinal görselleri silmez veya değiştirmez.</div>
+
+                <button type="button" onclick="toggleCanvasBg()" class="advanced-action">🎨 Önizleme Arka Planı</button>
+                <div class="tool-note">Sadece ekrandaki kontrol arka planını siyah, beyaz veya yeşil yapar.</div>
+
+            </details>
+        </div>
+    </div>
+</div>
+
+<script src="/static/js/main.js"></script>
+
+</body>
+</html>

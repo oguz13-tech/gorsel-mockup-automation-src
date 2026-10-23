@@ -21,3 +21,273 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background:
         
         #info { background: rgba(0,0,0,0.7); position: absolute; bottom: 20px; left: 20px; padding: 10px; border-radius: 4px; pointer-events: none; z-index: 10;}
         #help-sidebar { margin-top: 20px; padding-top: 15px; border-top: 1px solid #555; font-size: 13px; color: #ccc; line-height: 1.5; }
+
+        .panel-hint {
+            margin: -4px 0 10px 0;
+            padding: 8px 10px;
+            border-radius: 6px;
+            background: #242426;
+            color: #cfcfcf;
+            font-size: 12px;
+            line-height: 1.4;
+            border: 1px solid #3f3f42;
+        }
+        .status-legend {
+            margin: 8px 0 10px 0;
+            padding: 7px 8px;
+            border-radius: 6px;
+            background: #232325;
+            color: #bdbdbd;
+            font-size: 11px;
+            line-height: 1.45;
+            border: 1px solid #3a3a3d;
+        }
+        .tool-section-title {
+            margin: 0 0 5px 0;
+            font-size: 15px;
+            color: #fff;
+            text-align: center;
+            border-bottom: 1px solid #444;
+            padding-bottom: 8px;
+        }
+        .tool-divider {
+            height: 1px;
+            background: #444;
+            margin: 12px 0;
+            flex-shrink: 0;
+        }
+        .tool-note {
+            margin: -4px 2px 2px 2px;
+            color: #aeb4bb;
+            font-size: 10.5px;
+            line-height: 1.35;
+        }
+        .tool-note-accent {
+            color: #9edfc9;
+        }
+        .advanced-action {
+            background: #806515;
+            width: 100%;
+            padding: 10px;
+            margin-top: 8px;
+            font-weight: bold;
+            opacity: 0.90;
+        }
+        .advanced-action:hover {
+            background: #9a7919;
+            opacity: 1;
+        }
+
+        #bulk-select-panel {
+            margin: 0 0 9px 0;
+            padding: 7px;
+            border: 1px solid #434347;
+            border-radius: 7px;
+            background: #252527;
+        }
+        #bulkModeButton {
+            width: 100%;
+            padding: 8px 10px;
+            background: #495057;
+            font-size: 12px;
+        }
+        #bulkModeButton.active {
+            background: #0d6efd;
+        }
+        .bulk-action-row {
+            display: flex;
+            gap: 5px;
+        }
+        .bulk-action-row button {
+            flex: 1;
+            padding: 7px 5px;
+            font-size: 10.5px;
+            background: #3d3d41;
+        }
+        #bulkSelectedCount {
+            margin: 7px 2px 5px;
+            font-size: 11px;
+            color: #ddd;
+            font-weight: 600;
+        }
+        #bulkDeleteButton {
+            width: 100%;
+            padding: 8px;
+            font-size: 12px;
+            background: #c82333;
+        }
+        .template-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .template-select-checkbox {
+            flex: 0 0 auto;
+            width: 15px;
+            height: 15px;
+            margin: 0;
+            cursor: pointer;
+            accent-color: #0d6efd;
+        }
+        .template-item-label {
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .bulk-choice {
+            flex: 1;
+            min-width: 0;
+        }
+        .bulk-choice button {
+            width: 100%;
+        }
+        .template-item.bulk-selected {
+            background: rgba(13, 110, 253, 0.24) !important;
+            outline: 1px solid rgba(80, 160, 255, 0.75);
+        }
+        .toolbar-action {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            min-width: 0;
+        }
+        .toolbar-action .tool-note {
+            margin: 0 2px;
+            max-width: 210px;
+        }
+        .advanced-tools {
+            margin-top: 8px;
+            padding: 8px;
+            border: 1px solid #444;
+            border-radius: 7px;
+            background: #202022;
+        }
+        .advanced-tools summary {
+            cursor: pointer;
+            color: #ddd;
+            font-size: 12px;
+            font-weight: 700;
+            user-select: none;
+        }
+        .advanced-tools[open] summary {
+            margin-bottom: 8px;
+        }
+        .advanced-summary-note {
+            margin-bottom: 8px;
+        }
+        .advanced-tools .advanced-action {
+            margin-top: 8px;
+        }
+
+        .tools-center-link {
+            display: block;
+            text-decoration: none;
+            margin: 0 0 4px 0;
+        }
+        .tools-center-button {
+            width: 100%;
+            padding: 10px 12px;
+            background: #6f42c1;
+            font-weight: 700;
+        }
+        .tools-center-button:hover {
+            background: #8056cc;
+        }
+        .tools-center-note {
+            margin: 0 2px 10px 2px;
+        }
+
+
+/* Copyable Factory Doctor report */
+.copyable-report-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 20000;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgba(0, 0, 0, 0.68);
+}
+
+.copyable-report-dialog {
+    width: min(760px, 94vw);
+    max-height: 86vh;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 18px;
+    border: 1px solid #555;
+    border-radius: 12px;
+    background: #202124;
+    color: #f4f4f4;
+    box-shadow: 0 18px 60px rgba(0, 0, 0, 0.45);
+}
+
+.copyable-report-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.copyable-report-title {
+    font-size: 18px;
+    font-weight: 700;
+}
+
+.copyable-report-close {
+    min-width: 38px;
+    min-height: 34px;
+    font-size: 24px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.copyable-report-text {
+    width: 100%;
+    min-height: 280px;
+    max-height: 58vh;
+    resize: vertical;
+    box-sizing: border-box;
+    padding: 14px;
+    border: 1px solid #5f6368;
+    border-radius: 8px;
+    background: #111315;
+    color: #f1f3f4;
+    font: 14px/1.55 Consolas, "Courier New", monospace;
+    white-space: pre-wrap;
+    user-select: text;
+}
+
+.copyable-report-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.copyable-report-status {
+    margin-right: auto;
+    font-size: 12px;
+    font-weight: 400;
+    color: #bdc1c6;
+}
+
+.copyable-report-copy,
+.copyable-report-ok {
+    padding: 9px 14px;
+    cursor: pointer;
+}
+
+/* V4.2 unified non-destructive dark mode: consistent focus and hover */
+:root { color-scheme: dark; --bg: #181c24; --panel: #242a35; --text: #edf2f9; --muted: #b8c4d4; --focus: #93c5fd; }
+body { background: var(--bg); color: var(--text); }
+#sidebar, #right-toolbar { background: var(--panel) !important; }
+.tool-note, .panel-hint, .status-legend { color: var(--muted); }
+button:focus-visible, select:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid var(--focus) !important; outline-offset: 2px; }
+button:not(:disabled):hover { filter: brightness(1.14); }
+button:disabled { opacity: .58; cursor: not-allowed; }

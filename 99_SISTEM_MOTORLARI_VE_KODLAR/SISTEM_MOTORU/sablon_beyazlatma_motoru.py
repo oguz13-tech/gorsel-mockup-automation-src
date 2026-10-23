@@ -69,17 +69,16 @@ def imwrite_unicode(path, img: np.ndarray) -> bool:
             else:
                 params = []
                 
+        # P0: prevent overwrite of either the original name or changed extension.
+        if path.exists() or (original_path != path and original_path.exists()):
+            logger.error("P0: existing image never overwritten: %s", path)
+            return False
         is_success, buf = cv2.imencode(ext, img, params)
         if is_success:
-            with open(path, "wb") as f:
+            with open(path, "xb") as f:
                 f.write(buf.tobytes())
             
-            # Eğer uzantı değiştiyse ve eski dosya varsa onu sil (karışıklığı önlemek için)
-            if original_path != path and original_path.exists():
-                try:
-                    original_path.unlink()
-                except Exception as e:
-                    logger.error(f"Eski dosya silinemedi: {original_path.name} ({e})")
+            # P0: Never unlink input files after a format conversion.
             return True
         else:
             if img.shape[2] == 4:
@@ -87,7 +86,12 @@ def imwrite_unicode(path, img: np.ndarray) -> bool:
             else:
                 rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
             pil_img = Image.fromarray(rgb)
-            pil_img.save(path)
+            with open(path, "xb") as handle:
+                pil_img.save(handle, format=(
+                    "PNG" if ext == ".png" else
+                    "JPEG" if ext in (".jpg", ".jpeg") else
+                    "WEBP" if ext == ".webp" else "PNG"
+                ))
             return True
     except Exception as e:
         logger.error(f"Görsel kaydedilemedi: {path.name} ({e})")

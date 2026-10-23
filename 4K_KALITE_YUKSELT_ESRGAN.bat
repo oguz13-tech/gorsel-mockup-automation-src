@@ -1,13 +1,15 @@
 @echo off
 chcp 65001 > nul
-title AI Real-ESRGAN 4K Kalite Motoru
+title Real-ESRGAN 4K / AI Kalite Araci
 cls
 echo ===============================================================================
-echo      YAPAY ZEKA (REAL-ESRGAN) 4K/5K KRISTAL KALITE MOTORU (RTX 3060)
+echo                  REAL-ESRGAN 4K / AI KALITE ARACI
 echo ===============================================================================
 echo.
-echo Uretilen tum urun mockuplari 4K cozunurluge yukseltiliyor...
+echo Bu arac factory'den BAGIMSIZ calisir.
+echo Orijinal gorsellerin uzerine yazmaz.
+echo Acilacak pencereden islenecek klasoru secin.
 echo.
-python "99_SISTEM_MOTORLARI_VE_KODLAR\SISTEM_MOTORU\kalite_artirici_otomasyon.py"
-echo.
+cd /d "%~dp0"
+python ".\SABLON_V2_MIMARI\tools_runner.py" 4k
 pause

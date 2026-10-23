@@ -1,0 +1,302 @@
+# -*- coding: utf-8 -*-
+"""P0: transactional revisions of existing WORKING PNGs, never originals.
+
+Raw intake and original archive creation remain immutable create-only.
+This module provides a *different*, human-triggered working-copy operation.
+Every modification has a SHA-verified, immutable before-snapshot and a
+recoverable manifest; failed operations never claim an implicit approval.
+"""
+from __future__ import annotations
+
+import contextlib
+import hashlib
+import json
+import os
+import time
+import uuid
+from pathlib import Path
+
+import cv2
+import numpy as np
+
+from .template_identity import CATEGORY_PREFIXES
+
+
+class WorkingRevisionBlocked(RuntimeError):
+    pass
+
+
+def _sha(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def _write_new(path: Path, data: bytes) -> None:
+    with open(path, "xb") as handle:
+        handle.write(data)
+        handle.flush()
+        os.fsync(handle.fileno())
+
+
+def _manifest(directory: Path, data: dict) -> None:
+    temp = directory / ("manifest." + uuid.uuid4().hex + ".tmp")
+    _write_new(temp, json.dumps(data, indent=2, ensure_ascii=False).encode("utf-8"))
+    os.replace(temp, directory / "manifest.json")
+
+
+def _working_path(root: Path, category: str, template: str) -> Path:
+    root = Path(root).resolve()
+    if category not in CATEGORY_PREFIXES or Path(template).name != template or not template:
+        raise WorkingRevisionBlocked("INVALID_WORKING_TEMPLATE")
+    working_root = root / "2_SABLON_HAVUZU"
+    category_dir = working_root / category
+    path = category_dir / (Path(template).stem + ".png")
+    # In particular, a symlink must never redirect a working update into RAW
+    # archive, immutable original backups or some external user directory.
+    if any(p.is_symlink() for p in (working_root, category_dir, path)):
+        raise WorkingRevisionBlocked("WORKING_SYMLINK_BLOCKED")
+    if not path.is_file() or path.resolve().parent != category_dir.resolve():
+        raise WorkingRevisionBlocked("WORKING_PNG_NOT_FOUND_OR_UNSAFE")
+    return path
+
+
+@contextlib.contextmanager
+def working_png_revision(runtime_root, category: str, template: str, image: np.ndarray):
+    """Publish a revision while holding an exclusive lock until caller commits.
+
+    If the caller's settings/DB operation raises, the PNG is restored from its
+    SHA-verified snapshot. If an unrelated actor changes the PNG, rollback
+    cannot overwrite it and RECOVERY_REQUIRED is recorded instead.
+    """
+    root = Path(runtime_root).resolve()
+    path = _working_path(root, category, template)
+    if isinstance(image, (bytes, bytearray)):
+        # Exact PNG bytes preserve alpha, metadata and byte-for-byte restores.
+        after = bytes(image)
+        if not after.startswith(bytes.fromhex("89504e470d0a1a0a")) or cv2.imdecode(
+            np.frombuffer(after, dtype=np.uint8), cv2.IMREAD_UNCHANGED
+        ) is None:
+            raise WorkingRevisionBlocked("INVALID_PNG_BYTES")
+    else:
+        if image is None or image.size == 0:
+            raise WorkingRevisionBlocked("INVALID_WORKING_IMAGE")
+        ok, encoded = cv2.imencode(".png", image)
+        if not ok:
+            raise WorkingRevisionBlocked("PNG_ENCODING_FAILED")
+        after = encoded.tobytes()
+    revisions = root / "_P0_WORKING_REVISIONS"
+    if revisions.is_symlink():
+        raise WorkingRevisionBlocked("REVISION_ARCHIVE_SYMLINK_BLOCKED")
+    revisions.mkdir(parents=True, exist_ok=True)
+    locks = revisions / "locks"
+    locks.mkdir(parents=True, exist_ok=True)
+    lock = locks / (category + "__" + path.stem + ".lock")
+    fd = None
+    try:
+        fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    except FileExistsError as exc:
+        raise WorkingRevisionBlocked("WORKING_REVISION_LOCK_BUSY") from exc
+
+    opdir = revisions / (time.strftime("%Y%m%d_%H%M%S") + "__" + uuid.uuid4().hex)
+    published = False
+    caller_committed = False
+    before = None
+    entry = None
+    tmp = path.with_name("." + path.name + "." + uuid.uuid4().hex + ".p0tmp")
+    try:
+        # A concurrent writer operating outside this lock will be detected
+        # by the last pre-publication hash comparison.
+        before = path.read_bytes()
+        before_hash = _sha(before)
+        after_hash = _sha(after)
+        opdir.mkdir(mode=0o700)
+        _write_new(opdir / "working_before.png", before)
+        if _sha((opdir / "working_before.png").read_bytes()) != before_hash:
+            raise WorkingRevisionBlocked("SNAPSHOT_HASH_MISMATCH")
+        entry = dict(
+            state="PREPARED", category=category, template=template,
+            before_sha256=before_hash, after_sha256=after_hash,
+            target=str(path), snapshot=str(opdir / "working_before.png"),
+            source="human_working_revision",
+        )
+        _manifest(opdir, entry)
+        _write_new(tmp, after)
+        if _sha(path.read_bytes()) != before_hash:
+            raise WorkingRevisionBlocked("WORKING_CHANGED_CONCURRENTLY")
+        os.replace(tmp, path)
+        published = True
+        if _sha(path.read_bytes()) != after_hash:
+            raise WorkingRevisionBlocked("WORKING_PUBLISH_HASH_MISMATCH")
+        entry["state"] = "PUBLISHED_PENDING_CALLER"
+        _manifest(opdir, entry)
+        try:
+            yield dict(entry, revision_id=opdir.name)
+        except BaseException:
+            raise
+        else:
+            # The caller's settings/DB may now be committed. A failure to
+            # persist the final audit state must NOT roll back only the PNG.
+            # Mark for review instead of silently diverging DB and pixels.
+            caller_committed = True
+            entry["state"] = "COMMITTED"
+            _manifest(opdir, entry)
+    except BaseException as error:
+        if published and entry is not None and caller_committed:
+            entry["state"] = "RECOVERY_REQUIRED"
+            entry["error"] = "POST_COMMIT_MANIFEST_WRITE_FAILED:" + type(error).__name__
+            try:
+                _manifest(opdir, entry)
+            except OSError:
+                pass
+        elif published and entry is not None:
+            # Never undo someone else's concurrent edits.
+            if path.is_file() and _sha(path.read_bytes()) == entry["after_sha256"]:
+                restore = path.with_name("." + path.name + "." + uuid.uuid4().hex + ".rollback")
+                try:
+                    _write_new(restore, before)
+                    os.replace(restore, path)
+                    state = "ROLLED_BACK" if _sha(path.read_bytes()) == entry["before_sha256"] else "RECOVERY_REQUIRED"
+                except BaseException:
+                    state = "RECOVERY_REQUIRED"
+                finally:
+                    restore.unlink(missing_ok=True)
+            else:
+                state = "RECOVERY_REQUIRED"
+            entry["state"] = state
+            entry["error"] = type(error).__name__
+            _manifest(opdir, entry)
+        raise
+    finally:
+        tmp.unlink(missing_ok=True)
+        if fd is not None:
+            os.close(fd)
+            lock.unlink(missing_ok=True)
+
+
+
+@contextlib.contextmanager
+def recreate_missing_working_png(runtime_root, category: str, template: str, source_bytes: bytes):
+    """Create ONLY a missing working copy from a verified immutable backup.
+
+    A normal working revision is deliberately forbidden to create new files.
+    This explicit human-triggered recovery is a separate, audited transaction:
+    same-stem files, links, concurrent creations and unreadable PNGs all block.
+    DB commit failures remove only the newly created file, never a prior photo.
+    """
+    from .template_identity import same_stem_files
+
+    root = Path(runtime_root).resolve()
+    if category not in CATEGORY_PREFIXES or not template or Path(template).name != template:
+        raise WorkingRevisionBlocked("INVALID_MISSING_WORKING_TEMPLATE")
+    if not isinstance(source_bytes, bytes) or not source_bytes.startswith(bytes.fromhex("89504e470d0a1a0a")):
+        raise WorkingRevisionBlocked("INVALID_PNG_BYTES")
+    if cv2.imdecode(np.frombuffer(source_bytes, dtype=np.uint8), cv2.IMREAD_UNCHANGED) is None:
+        raise WorkingRevisionBlocked("INVALID_PNG_BYTES")
+
+    pool = root / "2_SABLON_HAVUZU"
+    directory = pool / category
+    target = directory / (Path(template).stem + ".png")
+    revisions = root / "_P0_WORKING_REVISIONS"
+    locks = revisions / "locks"
+    for path in (pool, directory, target, revisions, locks):
+        if path.is_symlink():
+            raise WorkingRevisionBlocked("MISSING_WORKING_SYMLINK_BLOCKED")
+    if not pool.is_dir():
+        raise WorkingRevisionBlocked("WORKING_POOL_NOT_FOUND")
+    directory.mkdir(exist_ok=True)
+    if directory.resolve().parent != pool.resolve():
+        raise WorkingRevisionBlocked("WORKING_PATH_OUTSIDE_POOL")
+    revisions.mkdir(exist_ok=True)
+    locks.mkdir(exist_ok=True)
+    lock = locks / (category + "__" + target.stem + ".lock")
+    try:
+        fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+    except FileExistsError as exc:
+        raise WorkingRevisionBlocked("WORKING_REVISION_LOCK_BUSY") from exc
+
+    tmp = directory / ("." + target.name + "." + uuid.uuid4().hex + ".p0tmp")
+    opdir = revisions / (time.strftime("%Y%m%d_%H%M%S") + "__" + uuid.uuid4().hex)
+    published = False
+    caller_committed = False
+    entry = None
+    expected_hash = _sha(source_bytes)
+    try:
+        if same_stem_files(directory, template) or target.exists() or target.is_symlink():
+            raise WorkingRevisionBlocked("WORKING_NAME_ALREADY_EXISTS_REVIEW_REQUIRED")
+        opdir.mkdir(mode=0o700)
+        entry = {
+            "state": "PREPARED", "operation": "CREATE_MISSING_FROM_IMMUTABLE_ORIGINAL",
+            "category": category, "template": template,
+            "before_sha256": None, "after_sha256": expected_hash,
+            "target": str(target), "source": "human_original_recovery",
+        }
+        _manifest(opdir, entry)
+        _write_new(tmp, source_bytes)
+        if _sha(tmp.read_bytes()) != expected_hash:
+            raise WorkingRevisionBlocked("RESTORE_TEMP_HASH_MISMATCH")
+        # Same-filesystem hard link publishes atomically and fails if a file
+        # (or symlink) appeared after our previous check. os.replace must NOT
+        # be used: it can overwrite an unrelated file during a race.
+        if same_stem_files(directory, template) or target.exists() or target.is_symlink():
+            raise WorkingRevisionBlocked("WORKING_NAME_ALREADY_EXISTS_REVIEW_REQUIRED")
+        try:
+            os.link(tmp, target)
+        except FileExistsError as exc:
+            raise WorkingRevisionBlocked("WORKING_CREATED_CONCURRENTLY") from exc
+        published = True
+        if _sha(target.read_bytes()) != expected_hash:
+            raise WorkingRevisionBlocked("WORKING_CREATE_HASH_MISMATCH")
+        entry["state"] = "PUBLISHED_PENDING_CALLER"
+        _manifest(opdir, entry)
+        yield dict(entry, revision_id=opdir.name)
+        caller_committed = True
+        entry["state"] = "COMMITTED"
+        _manifest(opdir, entry)
+    except BaseException as error:
+        if published and entry is not None:
+            if caller_committed:
+                entry["state"] = "RECOVERY_REQUIRED"
+            elif target.is_file() and not target.is_symlink() and _sha(target.read_bytes()) == expected_hash:
+                try:
+                    target.unlink()
+                    entry["state"] = "ROLLED_BACK"
+                except OSError:
+                    entry["state"] = "RECOVERY_REQUIRED"
+            else:
+                entry["state"] = "RECOVERY_REQUIRED"
+            entry["error"] = type(error).__name__
+            try:
+                _manifest(opdir, entry)
+            except OSError:
+                pass
+        raise
+    finally:
+        tmp.unlink(missing_ok=True)
+        os.close(fd)
+        lock.unlink(missing_ok=True)
+
+def save_preview_only(runtime_root, category: str, template: str, image: np.ndarray) -> Path:
+    """Update only a clearly marked derived preview; NEVER a normal template."""
+    root = Path(runtime_root).resolve()
+    if category not in CATEGORY_PREFIXES or Path(template).name != template or not template:
+        raise WorkingRevisionBlocked("INVALID_PREVIEW_TEMPLATE")
+    # Never write previews into watcher intake. The separate preview root
+    # must not be under working, backup, or a staging inbox.
+    directory = root / "_ONIZLEME_SABLONLAR" / category
+    if (root / "_ONIZLEME_SABLONLAR").is_symlink() or directory.is_symlink():
+        raise WorkingRevisionBlocked("PREVIEW_SYMLINK_BLOCKED")
+    directory.mkdir(parents=True, exist_ok=True)
+    if directory.resolve().parent != (root / "_ONIZLEME_SABLONLAR").resolve():
+        raise WorkingRevisionBlocked("PREVIEW_PATH_OUTSIDE_ISOLATED_DIR")
+    target = directory / (Path(template).stem + "-beyazlatilmis-onizleme.png")
+    if target.is_symlink():
+        raise WorkingRevisionBlocked("PREVIEW_SYMLINK_BLOCKED")
+    ok, encoded = cv2.imencode(".png", image)
+    if not ok:
+        raise WorkingRevisionBlocked("PREVIEW_ENCODING_FAILED")
+    tmp = directory / ("." + uuid.uuid4().hex + ".p0tmp")
+    try:
+        _write_new(tmp, encoded.tobytes())
+        os.replace(tmp, target)
+    finally:
+        tmp.unlink(missing_ok=True)
+    return target
