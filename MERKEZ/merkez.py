@@ -18,7 +18,7 @@ import webbrowser
 
 HERE=Path(__file__).resolve().parent
 ROOT=HERE.parent
-VERSION='V4.3 — Grup 1 + Grup 2 (Son Denetim)'
+VERSION='V4.4 — Grup 1 (Üretim Ekranı ve 4K)'
 
 class Center:
     def __init__(self):
@@ -55,7 +55,7 @@ class Center:
             if getattr(e,'delta',0):canvas.yview_scroll(int(-e.delta/120),'units')
         canvas.bind_all('<MouseWheel>',wheel)
         ttk.Label(p,text='Görsel Üretim Merkezi '+VERSION,font=('Segoe UI',21,'bold')).pack(anchor='w')
-        ttk.Label(p,text='Tek giriş noktası • Eski 6 kategori ve bütün inceleme araçları • PETEK V3 • Kaynakları koru',
+        ttk.Label(p,text='Onaylı şablonlar • 7 kategori ortak üretim • PETEK maskeleri • Arşivler korunur',
                   font=('Segoe UI',10)).pack(anchor='w',pady=(4,10))
         ttk.Separator(p).pack(fill='x',pady=(4,12))
         ttk.Label(p,text='ANA ÇALIŞMA KLASÖRÜ',font=('Segoe UI',11,'bold')).pack(anchor='w')
@@ -65,7 +65,7 @@ class Center:
         ttk.Button(line,text='Klasör seç',command=self.select_runtime).pack(side='left',padx=(8,0))
         ttk.Button(line,text='Klasörü aç',command=self.open_runtime).pack(side='left',padx=(6,0))
         ttk.Separator(p).pack(fill='x',pady=(6,10))
-        ttk.Label(p,text='1 — ESKİ 6 KATEGORİ: ŞABLON VE 4 KÖŞE İNCELEME',
+        ttk.Label(p,text='1 — ŞABLON VE DÖRT KÖŞE DÜZENLEME',
                   font=('Segoe UI',12,'bold')).pack(anchor='w',pady=(0,4))
         ttk.Label(p,text='Wi-Fi Kutusu • Cam Tablo Yatay/Dikey • Ahşap Tablo • Cam Doğrama • Ocak Arkası.\n'
                     'İnsan onayları, dört köşe, maske, kategoriler, yedekler, raporlar ve tarama işlemleri burada.',
@@ -75,29 +75,39 @@ class Center:
         self.review_button.pack(side='left',fill='x',expand=True,padx=(0,6))
         self.tools_button=ttk.Button(row,text='6 KATEGORİ — PROFESYONEL ARAÇLAR',command=self.open_legacy_tools)
         self.tools_button.pack(side='left',fill='x',expand=True,padx=(6,0))
-        row2=ttk.Frame(p);row2.pack(fill='x',pady=(2,7))
-        self.daily=ttk.Button(row2,text='6 KATEGORİ — GÜNLÜK SERİ ÜRETİM (ONAYLI 10 ŞABLON)',command=self.open_daily)
-        self.daily.pack(side='left',fill='x',expand=True,padx=(0,6))
-        ttk.Button(row2,text='Eski inceleme sunucusunu durdur',command=self.stop_legacy_editor).pack(side='left',padx=(6,0))
-        row_v4=ttk.Frame(p);row_v4.pack(fill='x',pady=(2,7))
-        ttk.Button(row_v4,text='7 KATEGORİ — TÜM ONAYLI ŞABLONLARLA SERİ ÜRETİM (V4.3)',command=self.open_unified_v4).pack(side='left',fill='x',expand=True,padx=(0,6))
-        ttk.Button(row_v4,text='Kesinti / Kilit Kurtarma (V4.3)',command=self.open_crash_recovery).pack(side='left',padx=(6,0))
+        row_v4=ttk.Frame(p);row_v4.pack(fill='x',pady=(8,10))
+        ttk.Button(row_v4,text='▶ 7 KATEGORİ — SERİ GÖRSEL ÜRET',
+                   command=self.open_unified_v4).pack(side='left',fill='x',expand=True)
+        ttk.Label(p,text='Eski 10 şablon sınırı kaldırıldı. Aynı üretim ekranında isteğe bağlı bulut Excel ve AI 4K vardır.',
+                  wraplength=920).pack(anchor='w')
         ttk.Separator(p).pack(fill='x',pady=(7,10))
-        ttk.Label(p,text='2 — PETEK DOLABI: ŞABLON, MASKE VE SERİ ÜRETİM',
+        ttk.Label(p,text='2 — PETEK DOLABI: ŞABLON VE MASKE',
                   font=('Segoe UI',12,'bold')).pack(anchor='w',pady=(0,3))
         ttk.Label(p,text='Sabit yarık sayısı yok; her gerçek ahşap panelin kavisleri ve delikleri korunur.\n'
                     'Üst-alt kavis, görünür fırça, otomatik benek onarımı ve doğal ışık motoru dahildir.',
                   wraplength=930).pack(anchor='w')
         r3=ttk.Frame(p);r3.pack(fill='x',pady=(8,10))
-        ttk.Button(r3,text='PETEK — ŞABLON / MASKE DÜZENLE',command=self.open_review).pack(side='left',fill='x',expand=True,padx=(0,6))
-        ttk.Button(r3,text='PETEK — SERİ GÖRSEL ÜRET',command=self.open_petek).pack(side='left',fill='x',expand=True,padx=(6,0))
+        ttk.Button(r3,text='PETEK — ŞABLON / MASKE DÜZENLE',command=self.open_review).pack(side='left',fill='x',expand=True)
         ttk.Separator(p).pack(fill='x',pady=(7,10))
-        ttk.Label(p,text='3 — KAYIT, GÜVENLİK VE KURULUM',font=('Segoe UI',12,'bold')).pack(anchor='w')
-        tools=ttk.Frame(p);tools.pack(fill='x',pady=(8,9))
-        ttk.Button(tools,text='Üretim kayıtlarını denetle',command=self.audit_petek).pack(side='left',fill='x',expand=True)
-        ttk.Button(tools,text='PETEK çıktı klasörü',command=self.open_petek_results).pack(side='left',fill='x',expand=True,padx=6)
-        ttk.Button(tools,text='7 kategori / kurulum kontrolü',command=self.show_health).pack(side='left',fill='x',expand=True)
-        self.status=tk.StringVar(value='Hazır. Eski altı kategori için ŞABLON / 4 KÖŞE İNCELE düğmesini kullan.')
+        self.advanced_toggle=ttk.Button(p,text='▶ GELİŞMİŞ ARAÇLAR / DENETİM / KURTARMA',command=self.toggle_advanced)
+        self.advanced_toggle.pack(fill='x',pady=(2,5))
+        self.advanced_panel=ttk.Frame(p)
+        r4=ttk.Frame(self.advanced_panel);r4.pack(fill='x',pady=3)
+        ttk.Button(r4,text='7 Kategori Kayıtlarını / SHA Denetle',command=self.open_unified_audit).pack(side='left',fill='x',expand=True,padx=3)
+        ttk.Button(r4,text='PETEK Eski Üretim Denetimi',command=self.audit_petek).pack(side='left',fill='x',expand=True,padx=3)
+        r5=ttk.Frame(self.advanced_panel);r5.pack(fill='x',pady=3)
+        ttk.Button(r5,text='Kurulum / Klasör / DB Durumu',command=self.show_health).pack(side='left',fill='x',expand=True,padx=3)
+        ttk.Button(r5,text='Kesinti / Kilit Kurtarma',command=self.open_crash_recovery).pack(side='left',fill='x',expand=True,padx=3)
+        r6=ttk.Frame(self.advanced_panel);r6.pack(fill='x',pady=3)
+        ttk.Button(r6,text='PETEK Çıktı Klasörü',command=self.open_petek_results).pack(side='left',fill='x',expand=True,padx=3)
+        ttk.Button(r6,text='PETEK Eski Ayrı Seri Üretimi',command=self.open_petek).pack(side='left',fill='x',expand=True,padx=3)
+        ttk.Button(r6,text='4 Köşe Servisini Durdur',command=self.stop_legacy_editor).pack(side='left',fill='x',expand=True,padx=3)
+        ttk.Label(self.advanced_panel,text=(
+            'Kesinti/Kilit Kurtarma: yarım işleri inceler, yalnız onayla güvenli kurtarır. '
+            'SHA kayıt denetimi yalnız okur; mevcut görsellere dokunmaz. '
+            'PETEK eski seri üretim arayüzü yalnız geriye dönük uyumluluk içindir.'),
+            wraplength=900).pack(anchor='w',pady=(5,3))
+        self.status=tk.StringVar(value='Hazır. Onaylı dört köşe / PETEK maskesi / 7 kategori seri üretim kullanılabilir.')
         ttk.Label(p,textvariable=self.status,wraplength=920).pack(anchor='w',pady=(3,5))
         self.log=scrolledtext.ScrolledText(p,height=7,state='disabled',font=('Consolas',9), bg=PANEL, fg=FG, insertbackground=FG)
         self.log.pack(fill='both',expand=True)
@@ -107,6 +117,15 @@ class Center:
         ttk.Label(p,text='Koruma: kaynak görüntüler, orijinal yedek ve onaylı profiller kendiliğinden değiştirilmez.\n'
                     'Günlük V2 hâlen 10 onaylı şablona bağlıdır; bütün şablonlar için üretim geçerlilik kontrolüne tabidir.',
                   foreground=MUTED,wraplength=920).pack(anchor='w',pady=(7,0))
+
+    def toggle_advanced(self):
+        """Keep rarely used maintenance actions available without crowding the UI."""
+        if self.advanced_panel.winfo_manager():
+            self.advanced_panel.pack_forget()
+            self.advanced_toggle.configure(text='▶ GELİŞMİŞ ARAÇLAR / DENETİM / KURTARMA')
+        else:
+            self.advanced_panel.pack(fill='x',pady=(2,8),after=self.advanced_toggle)
+            self.advanced_toggle.configure(text='▼ GELİŞMİŞ ARAÇLAR / DENETİM / KURTARMA')
 
     def start_auto_inbox(self):
         """New-image intake runs automatically while the unified center is open."""
@@ -151,9 +170,6 @@ class Center:
                'Kaynak: '+legacy['source'],'DB kayıtları: '+str(legacy['counts']),
                'Hazır: '+('EVET' if legacy['ready'] else 'HAYIR'),
                *legacy['problems'],*legacy['warnings'],'',
-               '6 KATEGORİ GÜNLÜK V2 (10 ONAYLI ŞABLON):',
-               'Hazır: '+('EVET' if other['legacy_ready'] else 'HAYIR'),
-               *other['legacy_missing'],'',
                'PETEK:', 'Hazır: '+('EVET' if other['petek_ready'] else 'HAYIR')]
         text='\n'.join(lines)
         self._log('\n'+text)
@@ -163,7 +179,7 @@ class Center:
         from legacy_manager import inspect,backup_database,launch_spec,port_occupied,local_state_dir,LegacyLaunchError
         if self.editor_proc is not None and self.editor_proc.poll() is None:
             webbrowser.open('http://127.0.0.1:8080'+route)
-            self.status.set('Eski altı kategori inceleme merkezi açık.')
+            self.status.set('Dört köşe inceleme merkezi açık.')
             return
         if port_occupied():
             messagebox.showwarning('8080 portu dolu',
@@ -222,7 +238,7 @@ class Center:
         try:
             self.editor_proc.terminate();self.editor_proc.wait(timeout=5)
             self._log('İnceleme sunucusu kullanıcı isteğiyle kapatıldı.')
-            self.status.set('Eski inceleme kapatıldı. Onaylı veriler korunuyor.')
+            self.status.set('Dört köşe servisi kapatıldı. Onaylı veriler korunuyor.')
         except Exception as exc:self._log('İnceleme kapatma uyarısı: '+str(exc))
         finally:self.review_button.configure(state='normal');self.tools_button.configure(state='normal')
 
@@ -255,6 +271,20 @@ class Center:
             self.batch_windows.append(open_unified_v4_window(self.root, runtime_root=self.runtime))
         except Exception as exc:messagebox.showerror('V4 7 Kategori seri üretim açılmadı',str(exc),parent=self.root)
 
+    def open_unified_audit(self):
+        """Perform a read-only SHA receipt scan from the advanced menu."""
+        try:
+            from URETIM_V4.unified_batch import UnifiedV4Batch
+            summary = UnifiedV4Batch(runtime_root=self.runtime).audit()["summary"]
+            text = (f"SHA denetimi: {summary['verified']}/{summary['total']} doğrulandı; "
+                    f"{summary['review_required']} inceleme bekliyor.")
+            self.status.set(text)
+            self._log(text)
+            messagebox.showinfo('7 Kategori SHA Kayıt Denetimi',
+                                text + '\nBu denetim hiçbir dosyayı değiştirmez.', parent=self.root)
+        except Exception as exc:
+            messagebox.showerror('SHA denetimi hatası', str(exc), parent=self.root)
+
     def open_crash_recovery(self):
         try:
             from URETIM_V4.gui_v4 import open_unified_v4_window
@@ -265,7 +295,7 @@ class Center:
 
     def start(self,command,route):
         if self.running:return
-        self.running=True;self.daily.configure(state='disabled')
+        self.running=True
         self.status.set(route+' başlatıldı; ayrıca açılan pencereden üretimi izle.')
         def job():
             try:
@@ -284,7 +314,6 @@ class Center:
                 if kind=='log':self._log(value)
                 elif kind=='done':
                     route,code=value;self.running=False;self.proc=None
-                    self.daily.configure(state='normal')
                     self.status.set(route+' işlemi sonlandı: '+str(code))
                 elif kind=='legacy_started':
                     self.review_button.configure(state='normal');self.tools_button.configure(state='normal')

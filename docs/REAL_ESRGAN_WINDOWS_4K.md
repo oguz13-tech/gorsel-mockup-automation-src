@@ -1,0 +1,10 @@
+# Grup 1 — İsteğe bağlı Real-ESRGAN 4K kurulumu ve emniyet kuralları
+
+- **Varsayılan KAPALI.** 4K (2880×3840 / 3:4) yalnız kullanıcı kutucukla açarsa uygulanır.
+- Normal 1200×1600 mockup, onaylı geometriler, SQLite ve kaynak tasarım değişmez. Yeni 4K dosyası `LOCALAPPDATA/GorselMockup/UnifiedV4/uretilen_gorseller_4k/` altında oluşturulur. Excel eşlemesi `raporlar/4k/4K_DOSYA_LINKLERI_*.xlsx` içine SHA ve yerel file:/// bağlantısıyla kaydedilir.
+- AI upscaler executable/model pakete **dahil değildir**. V4.3 eski AI araç kodu vardı ama resmi `.exe` ve `.bin/.param` ağırlıkları yoktu. Bu yüzden yeni kutucuğu açınca ön kontrol yapar; yoksa kullanıcıya açık hata verir. Sıradan yeniden boyutlandırmayı AI artırımı gibi göstermeyiz.
+- Resmî Windows NCNN-Vulkan releases: https://github.com/xinntao/Real-ESRGAN-ncnn-vulkan/releases ve model belgeleri: https://github.com/xinntao/Real-ESRGAN/blob/master/docs/model_zoo.md. Güvenilen kaynaktan alınan `realesrgan-ncnn-vulkan.exe` yanında `models/realesrgan-x4plus.bin`, `.param` bulunmalı. `fast` için `models/realesr-general-x4v3.bin` ve `.param` gerekir. GPU'nun Vulkan desteği kullanıcı Windows'ta doğrulanmalı.
+- Örn. `C:\AI_MODELS\RealESRGAN\realesrgan-ncnn-vulkan.exe`, `C:\AI_MODELS\RealESRGAN\models\realesrgan-x4plus.bin`. İsteğe bağlı Windows ortam değişkeni `REAL_ESRGAN_EXE` dosyanın tam yoluna ayarlanabilir; yeni terminal/uygulama oturumu gerekir.
+- İş akışı: 7 kategori üretim→orijinal PNG SHA kontrolü→resmî NCNN x4 inference tile=200→3:4 hedef 2880×3840 Lanczos→ayrı create-only dosya→SHA makbuz→4K bağlantılı ayrı Excel. Kod başarısızsa 1200×1600 kayıt korunur, 4K başarısız görünür.
+- GPU gerçek testi yapılmadı. Modelin görüntüdeki yazı/kenarları değiştirme riski vardır; gerçek kaynaklarla A/B onayı yapılmadan ticari kalite kanıtı değildir. Ticari markaların telif/ürün doğruluğu ve model lisansı ayrıca doğrulanmalı.
+- İkinci kalite motoru olarak SwinIR/HAT yalnız Golden Dataset benchmarkı iyileşme gösterirse eklenir. SUPIR ticari lisans kısıtından dolayı üretime eklenmez.
