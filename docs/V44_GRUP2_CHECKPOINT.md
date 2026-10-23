@@ -3,7 +3,7 @@
 **Tarih:** 24 Ekim 2026. Önceki temel: V4.4 Grup 1 ZIP, GitHub PR #45. Bu belge tamamlanmış final Windows sürümü veya gerçek fotoğraf QA onayı değildir.
 
 ## Yeni eklenenler
-1. **KONTROL_GEREKENLER seçilebilir klasör envanteri** `SABLON_V2_MIMARI/core/group2_quality.py::inventory_review_folder`: runtime içinde açık seçilmiş klasördeki görselleri SHA256 ve isim çakışmalarıyla listeler. Sadece rapor; analiz/aktarım/APPROVED yok. Kullanıcı İnceleme Merkezi içinden `/tools` üzerinden çalıştırabilir. **Seçilen klasördeki görselleri otomatik 4-köşe motoruna göndermek bu checkpoint'te yok; manuel rescan ayrıca G2 kabulüne açık.**
+1. **KONTROL_GEREKENLER seçilebilir klasör envanteri** `SABLON_V2_MIMARI/core/group2_quality.py::inventory_review_folder`: runtime içinde açık seçilmiş klasördeki görselleri SHA256 ve isim çakışmalarıyla listeler. Varsayılan yalnız rapor; açık kullanıcı seçimiyle ilk 24 görselde mevcut dört köşe motoru ayrı TASLAK öneri raporu üretir, kaynak SHA tekrar kontrol edilir, 24MP üstü kaynakta güvenli inceleme uyarısı verir. Aktarım/APPROVED yok. Kullanıcı İnceleme Merkezi içinden `/tools` üzerinden çalıştırabilir. **Seçilen klasördeki gerçek analiz önerisi eklendi; ancak sonuçları canlı çalışma havuzuna/aktif 4 köşe profiline yazma bilinçli olarak kapalıdır.**
 2. **3:4 dikey uzatma:** bağımsız `SABLON_V2_MIMARI/tools_runner.py::extend_to_portrait_3x4` ile blur/mosaic/frosted arka plan, kırpılmayan ön görsel, 1200×1600 PNG, create-only çıktı, aktif çalışma/orijinal/yedek klasörlerinde değişiklik engeli. Baskı master büyütme değildir.
 3. **Özel Golden Dataset okuma QA:** `evaluate_private_golden_manifest`: kullanıcıya ait özel klasörde kaynak/render/isteğe bağlı maskelerin SHA, 3:4 boyut, eşit ebat + maske için baskı dışı RGB değişimi, düz görsel uyarısı. Resimler GitHub'a veya buluta gitmez, otomatik onay 0'dır. Ebatlar farklıysa piksel eşitliği hakkında PASS vermez. 100MP üstü QA decoding kilidi bulunur. 34 gerçek PETEK örneği bu ortamda bulunmadığından gerçek Golden Dataset henüz tamamlanmadı.
 4. **Profesyonel Araçlar** ekranında yukarıdaki üç araca ayrı Türkçe açıklama ve başlatıcı, backend whitelist; mevcut tüm araçlar korunur.
@@ -20,7 +20,7 @@
 ## Kapanışta hâlâ BEKLEYEN Grup 2 işler
 - **Gerçek Windows 4-köşe editörü:** APPROVED tekrar aç, küçük yüzey, Cam Doğrama H/V, onay revizyonu, iki şablon arasında gezinme, F5/önizleme yarışı, Excel/SKU'ya yeni geometri; güvenli DB yedeği ile. (41–46, 52–53)
 - **Gerçek kullanıcı şablon envanteri:** eski Wi-Fi 26–35/44/57–66, Ocak Arkası siyah, çalışma/orijinal havuz farkları. Kodda kontrol araçları var; gerçek fotoğraf/SHA olmadan bu QA PASS sayılamaz. (47–57)
-- **KONTROL_GEREKENLER'de seçilen klasörden gerçekten 4-köşe yeniden analiz akışı:** bu checkpoint *yalnız güvenli envanteri* ekler, otomatik import/onay yapmaz. (49)
+- **KONTROL_GEREKENLER yeniden analizi:** gerçek dosyalar için otomatik TASLAK 4-köşe önerisi vardır; insanın sonuçları inceleme ekranında aktif şablona güvenle aktarması ve onaylaması hâlâ bekler. (49)
 - **PETEK gerçek 34+ fotoğraf Golden Dataset**, değişken yarık, kavis, gölge, sağ-alt artefakt, 5/10mm çerçeve A/B insan onayı; 7 kategori fiziksel ürün görüntüsü gerçek kullanıcı kontrolü. (63–75)
 - **SwinIR/HAT vs Real-ESRGAN** özel örnek benchmarkı, SAM/OpenCV5/Grounded-SAM, Canva benzeri maske ve lifestyle otomasyon araştırması kod entegrasyonu değil; gerçek golden/izin/lisans/donanım kararı bekler. (95–100)
 

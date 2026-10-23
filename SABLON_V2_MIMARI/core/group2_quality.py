@@ -82,6 +82,54 @@ def inventory_review_folder(runtime_root: Path, selected_folder: Path, category:
             "next_action": "Dört köşe inceleme ekranında kaynağı ve SHA değerini doğrulayın. Dosyalar otomatik aktarılmadı."}
 
 
+def propose_review_folder_corners(runtime_root: Path, selected_folder: Path, category: str, *, max_files: int = 24) -> dict:
+    """Read-only actual 4-corner reanalysis on explicit review folder.
+
+    This DOES NOT import files to the working pool and DOES NOT update the
+    active APPROVED template profile. Only a human in the editor may approve.
+    No modifications are made to the corner detection algorithm.
+    """
+    listing = inventory_review_folder(runtime_root, selected_folder, category)
+    if not 1 <= max_files <= 24:
+        raise ValueError("REVIEW_SCAN_MAX_24")
+    if category == "06_Petek_Kapama":
+        listing["rescan_status"] = "PETEK_REQUIRES_MASK_EDITOR"
+        return listing
+    try:
+        from .template_intelligence import TemplateAnalyzer
+    except ImportError:
+        from template_intelligence import TemplateAnalyzer
+    analyzer = TemplateAnalyzer()
+    proposals = []
+    for item in listing["files"][:max_files]:
+        path = _safe_image(Path(listing["folder"]) / item["filename"])
+        try:
+            with Image.open(path) as image:
+                w,h=image.size
+            if w*h > 24_000_000:
+                raise ValueError("IMAGE_ABOVE_24MP_REVIEW_ANALYSIS_SKIPPED")
+            result=analyzer.analyze(str(path),category,manual_geometry_prior=None)
+            if _hash(path) != item["sha256"]:
+                raise ValueError("SOURCE_CHANGED_DURING_ANALYSIS")
+            proposals.append({
+                "filename":item["filename"],"source_sha256":item["sha256"],
+                "analyzer_version":result.get("analyzer_version"),
+                "surface_quad_proposal":result.get("surface_quad"),
+                "confidence_total":float(result.get("confidence_total") or 0),
+                "surface_mode":result.get("surface_mode"),
+                "approval_status":"DRAFT_REQUIRES_HUMAN_APPROVAL",
+            })
+        except (OSError,ValueError,RuntimeError) as exc:
+            proposals.append({"filename":item["filename"],"source_sha256":item["sha256"],
+                              "approval_status":"REVIEW_REQUIRED", "error":str(exc)})
+    listing["rescan_status"]="PROPOSALS_ONLY_NO_DB_WRITE"
+    listing["scanned"] = len(proposals)
+    listing["remaining"] = max(0, listing["count"]-len(proposals))
+    listing["proposals"] = proposals
+    listing["next_action"] = "Öneriler yalnız rapora yazıldı. Görseli İnceleme Merkezi'ne insan onayıyla aktarın ve dört köşeyi kontrol edin."
+    return listing
+
+
 def evaluate_golden_case(case: Mapping, private_root: Path) -> dict:
     """Make objective observations only. Never call a case APPROVED.
 

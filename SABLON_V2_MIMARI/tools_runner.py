@@ -1472,6 +1472,10 @@ def interactive_review_folder() -> int:
         try:from .core.group2_quality import inventory_review_folder
         except ImportError:from core.group2_quality import inventory_review_folder
         report=inventory_review_folder(RUNTIME_ROOT,Path(folder),category.strip())
+        if messagebox.askyesno("4 Köşe Tekrar Analizi", "Seçilen klasördeki ilk 24 dosya için\nmevcut otomatik 4 köşe algoritmasını\nSADECE TASLAK öneri olarak çalıştırmak ister misiniz?\n\nAktif onaylı profiller ve çalışma havuzu DEĞİŞMEZ.",parent=root):
+            try:from .core.group2_quality import propose_review_folder_corners
+            except ImportError:from core.group2_quality import propose_review_folder_corners
+            report=propose_review_folder_corners(RUNTIME_ROOT,Path(folder),category.strip())
         target=filedialog.asksaveasfilename(parent=root,title="Raporu ayrı klasöre kaydet (isteğe bağlı)",defaultextension=".json",filetypes=[("JSON","*.json")])
         if target:_write_g2_report_create_only(target,report)
         messagebox.showinfo("KONTROL_GEREKENLER Raporu",f"{report['count']} dosya.\nTaşınan: 0, onaylanan: 0.\n"+(target or "Rapor saklanmadı."),parent=root)

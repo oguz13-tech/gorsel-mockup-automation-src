@@ -53,7 +53,7 @@ Durum: BAŞLADI. V4.3 cam/Excel/quad özellikleri korunur; V4.4 aday arayüz sad
 - [ ] **103** — Üretim başarı hızı/başarısızlık/disk operasyon paneli
 
 ## Grup 2 — Dört köşe, şablon yaşam döngüsü, PETEK, kalite ve bütün eski araçlar
-Durum: KOD CHECKPOINT BAŞLADI. Yeni salt-okunur KONTROL_GEREKENLER envanteri + 3:4 uzatma + özel Golden QA kodlandı; canlı Windows/gerçek görsel kabulü bekliyor. Koruma hedefi: onaylı 4 köşe, kullanıcı maskeleri ve 6+PETEK orijinallerine sessiz müdahale yok. Deneysel SAM/AI yalnız özel test dalı.
+Durum: KOD CHECKPOINT BAŞLADI. Yeni salt-okunur KONTROL_GEREKENLER envanteri + ayrı, kullanıcı onaylı 4-köşe TASLAK tekrar analizi + 3:4 uzatma + özel Golden QA kodlandı; canlı Windows/gerçek görsel kabulü bekliyor. Koruma hedefi: onaylı 4 köşe, kullanıcı maskeleri ve 6+PETEK orijinallerine sessiz müdahale yok. Deneysel SAM/AI yalnız özel test dalı.
 
 - [ ] **041** — Çoklu onayda her şablonun kendi köşesini koru
 - [ ] **042** — Geçerli küçük dörtgeni kabul, bozuk self-intersect'i ret

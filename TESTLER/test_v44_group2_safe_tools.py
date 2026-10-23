@@ -115,3 +115,33 @@ def test_private_golden_blocks_outside_and_symlink(tmp_path):
     with pytest.raises(ValueError):evaluate_golden_case({'category':'01_Wifi_Kutusu','source':'../a.png','render':'a.png'},root)
     (root/'fake.png').symlink_to(root/'a.png')
     with pytest.raises(ValueError):evaluate_golden_case({'category':'01_Wifi_Kutusu','source':'fake.png','render':'a.png'},root)
+
+
+def test_review_rescan_proposal_never_approves_or_changes_db(tmp_path,monkeypatch):
+    from SABLON_V2_MIMARI.core import group2_quality as g2
+    root=tmp_path/'runtime'; folder=root/'KONTROL_GEREKENLER';folder.mkdir(parents=True)
+    image=folder/'OcakArkasi_065.png'
+    Image.new('RGB',(90,60),'white').save(image)
+    class FakeAnalyzer:
+        def analyze(self,path,category,manual_geometry_prior=None):
+            assert manual_geometry_prior is None
+            assert Path(path)==image
+            return {'surface_quad':[[10,10],[70,10],[70,40],[10,40]],'confidence_total':.75,
+                    'analyzer_version':'g2-test','surface_mode':'WHITE','review_status':'AUTO_PROPOSED'}
+    monkeypatch.setattr('SABLON_V2_MIMARI.core.template_intelligence.TemplateAnalyzer', FakeAnalyzer)
+    before=sha256_file(image)
+    report=g2.propose_review_folder_corners(root,folder,'05_Ocak_Arkasi')
+    assert report['scanned']==1
+    assert report['proposals'][0]['approval_status']=='DRAFT_REQUIRES_HUMAN_APPROVAL'
+    assert report['auto_approved']==0 and report['auto_moved']==0
+    assert not (root/'SABLON_V2_MIMARI').exists()
+    assert sha256_file(image)==before
+
+
+def test_review_scan_petek_does_not_hallucinate_mask(tmp_path):
+    from SABLON_V2_MIMARI.core.group2_quality import propose_review_folder_corners
+    root=tmp_path/'runtime';folder=root/'KONTROL_GEREKENLER';folder.mkdir(parents=True)
+    Image.new('RGB',(40,80)).save(folder/'petek.png')
+    report=propose_review_folder_corners(root,folder,'06_Petek_Kapama')
+    assert report['rescan_status']=='PETEK_REQUIRES_MASK_EDITOR'
+    assert report['auto_approved']==0
