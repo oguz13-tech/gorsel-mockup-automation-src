@@ -1953,6 +1953,13 @@ window.onerror = function(msg, url, line, col, error) {
         document.getElementById('current-file').textContent = cat + ' / ' + tmpl;
         updateCounter();
         syncPhysicalOrientationControl(data);
+        const roundWrap = document.getElementById('glassCornerWrap');
+        if (roundWrap) roundWrap.style.display = ['02_Cam_Tablo_Dikey','02_Cam_Tablo_Yatay','04_Cam_Dograma','05_Ocak_Arkasi'].includes(cat) ? 'block' : 'none';
+        const roundCtrl = document.getElementById('glassCornerRadiusApproval');
+        if (roundCtrl) {
+            const saved = Number(data.glass_corner_radius ?? 0.008);
+            roundCtrl.value = saved === 0 ? '0' : saved === 0.015 ? '0.015' : '0.008';
+        }
         resetView();
 
         const savedPlan = (
@@ -4403,6 +4410,7 @@ async function approveTemplate() {
                 template: currentTmpl,
                 corners: canonicalCorners,
                 physical_orientation: physicalOrientation,
+                glass_corner_radius: Number(document.getElementById("glassCornerRadiusApproval")?.value || 0),
                 on_plan: cloneForegroundMask(),
                 occlusion_reviewed: true
             })

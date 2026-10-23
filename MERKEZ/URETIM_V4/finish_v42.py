@@ -37,36 +37,41 @@ def projected_rounded_alpha(shape, quad, radius_fraction: float = .008):
     return np.clip(projected, 0, 1)
 
 
-def subdued_reflection(scene, printed, mask, quad, category, lighting='natural'):
-    """Cam/ocak shimmer: weak scene-balanced specular reflection, clipped to mask.
+def subdued_reflection(scene, printed, mask, quad, category, lighting="strong"):
+    """Controlled broad softbox/ambient reflection in PRINTABLE glass only.
 
-    Reflection contributes <6% to any channel; keeps lettering legible and
-    doesn't fabricate rigid bars/windows not present in the original room.
+    Inspired by edge- and reflected-light product photography: a large diffuse
+    softbox and a softer secondary bounce, not white hard lines or fake windows.
+    Human quad, frame/occlusion and all outside-mask pixels remain untouched.
     """
-    if category not in GLASS or lighting == 'off':
+    if category not in GLASS or lighting == "off":
         return printed
     h, w = mask.shape
-    # Construct a broad diffuse local highlight in panel coordinates, then project.
-    sw, sh = 220, 280
+    sw, sh = 256, 320
     y, x = np.mgrid[0:sh, 0:sw].astype(np.float32)
-    u, v = x / max(sw-1, 1), y / max(sh-1, 1)
-    if category == '04_Cam_Dograma':
-        envelope = np.exp(-(((u-.56)/.55)**2 + ((v-.28)/.29)**2)*2.1)
-    elif category == '05_Ocak_Arkasi':
-        envelope = np.exp(-(((u-.72)/.51)**2 + ((v-.23)/.43)**2)*1.7)
-    else:
-        envelope = np.exp(-(((u-.73)/.52)**2 + ((v-.29)/.53)**2)*1.6)
-    envelope = np.float32(envelope)
+    u, v = x / (sw - 1), y / (sh - 1)
+    # Two offset, broad *soft* reflections with visible tonal gradients.
+    main = np.exp(-(((u - .76) / .23) ** 2 + ((v - .26) / .66) ** 2) * .75)
+    bounce = np.exp(-(((u - .16) / .34) ** 2 + ((v - .83) / .30) ** 2) * 1.4)
+    edge = np.exp(-(((u - .975) / .085) ** 2)) * .60
+    envelope = np.clip(main * .80 + bounce * .32 + edge * .55, 0, 1).astype(np.float32)
     H = cv2.getPerspectiveTransform(
-        np.float32([[0,0],[sw-1,0],[sw-1,sh-1],[0,sh-1]]), np.asarray(quad,dtype=np.float32))
-    reflection = cv2.warpPerspective(envelope, H, (w,h), flags=cv2.INTER_LINEAR,
+        np.float32([[0, 0], [sw-1, 0], [sw-1, sh-1], [0, sh-1]]),
+        np.asarray(quad, dtype=np.float32),
+    )
+    reflection = cv2.warpPerspective(envelope, H, (w, h), flags=cv2.INTER_LINEAR,
                                      borderMode=cv2.BORDER_CONSTANT, borderValue=0)
-    # Scene-aware: dark ambient scenes should not gain an artificial white bulb.
-    scene_luma = cv2.cvtColor(scene, cv2.COLOR_BGR2GRAY).astype(np.float32)/255
-    ambient = float(np.median(scene_luma[mask > 220])) if (mask>220).any() else .5
-    strength = (.043 if lighting == 'natural' else .058) * np.clip(ambient/.65, .42, 1.0)
-    blend = np.float32(reflection * strength)[:, :, None]
-    result = np.uint8(np.clip(printed.astype(np.float32)*(1.-blend)+245.*blend+.5,0,255))
+    # Restrict to approved pixels; adapt to the already-printed brightness so
+    # light letters aren't washed out while dark artwork still has a glass sheen.
+    luma = cv2.cvtColor(printed, cv2.COLOR_BGR2GRAY).astype(np.float32) / 255.0
+    # Glass shows both pale reflected softboxes on dark artwork and softly
+    # darker surrounding-room reflections on white print; a fixed-white
+    # overlay is invisible on an already-white panel.
+    reflectivity = np.float32(.15 + .12 * (1.0 - luma))
+    blend = np.clip(reflection * reflectivity, 0, .27)[:, :, None]
+    target = np.where(luma[:, :, None] > .76, 175.0, 248.0)
+    result = np.uint8(np.clip(printed.astype(np.float32) * (1.0 - blend)
+                              + target * blend + .5, 0, 255))
     out = printed.copy()
-    out[mask>0] = result[mask>0]
+    out[mask > 0] = result[mask > 0]
     return out

@@ -2,6 +2,7 @@ import os
 import sys
 import json
 import sqlite3
+import math
 import base64
 import time
 import shutil
@@ -2828,6 +2829,42 @@ def api_templates_update_corners():
                 ),
             }
 
+            # Non-destructive re-approval: keep previous approved coordinates
+            # in an append-only, transactional revision trail. Same profile row
+            # becomes active immediately after the human clicks Approve.
+            conn.execute("""CREATE TABLE IF NOT EXISTS approved_geometry_revisions (
+                seq INTEGER PRIMARY KEY AUTOINCREMENT,
+                template_uid TEXT NOT NULL,
+                profile_rowid INTEGER,
+                source_sha256 TEXT NOT NULL,
+                previous_quad TEXT,
+                approved_quad TEXT NOT NULL,
+                approved_at TEXT DEFAULT CURRENT_TIMESTAMP
+            )""")
+            old_quad = None
+            if profile_id is not None:
+                prior = conn.execute(
+                    "SELECT surface_quad FROM template_profiles WHERE rowid=?", (profile_id,)
+                ).fetchone()
+                old_quad = prior[0] if prior else None
+            conn.execute("""INSERT INTO approved_geometry_revisions
+                (template_uid, profile_rowid, source_sha256, previous_quad, approved_quad)
+                VALUES (?, ?, ?, ?, ?)""", (
+                uid, profile_id, source_hash, old_quad,
+                json.dumps(canonical.tolist()),
+            ))
+            # Printing-only rounded glass corners belong to the approved
+            # template setting, not a global batch dropdown.
+            radius_raw = req.get("glass_corner_radius", None)
+            glass_radius = None
+            if radius_raw is not None:
+                try:
+                    glass_radius = float(radius_raw)
+                except (ValueError, TypeError):
+                    return jsonify({"success": False, "error": "Cam köşe ayarı sayısal olmalı."}), 422
+                if not math.isfinite(glass_radius) or not (0 <= glass_radius <= .04):
+                    return jsonify({"success": False, "error": "Cam köşe ayarı %0–4 arasında olmalı."}), 422
+
             if profile_id is None:
                 cur = conn.execute(
                     """INSERT INTO template_profiles (
@@ -2900,6 +2937,8 @@ def api_templates_update_corners():
                 legacy_data["tip"] = "perspektif"
                 legacy_data["koseler"] = canonical.tolist()
                 legacy_data["physical_orientation"] = physical_orientation
+                if glass_radius is not None:
+                    legacy_data["glass_corner_radius"] = glass_radius
                 if isinstance(req_on_plan, dict):
                     # Bind reviewed occlusion/mask instructions to the exact
                     # template bytes they were edited against. Production can

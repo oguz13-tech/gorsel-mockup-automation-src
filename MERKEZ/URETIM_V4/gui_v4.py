@@ -12,17 +12,20 @@ from dark_theme_v42 import BG, PANEL, FG
 from help_v42 import bind_help
 
 from PETEK_V3.registry import Registry as PetekRegistry
-from .unified_batch import UnifiedV4Batch
+from .unified_batch import UnifiedV4Batch, iter_designs
+from .cloud_excel_v43 import CloudExcel
+from .design_proxy_v43 import prepare_render_artwork
+from .unified_batch import _render_legacy_six_cover, _build_legacy_category_mask
+from PETEK_V3 import engine as petek_engine
+from .finish_v42 import GLASS
+import cv2
 
-LIGHT_LABELS = ("Doğal (Önerilen)", "Belirgin Işık", "Işıksız / Tasarım Orijinal")
+LIGHT_LABELS = ("Cam Yansıması AÇIK / Doğal Işık", "Efektler KAPALI / Orijinal Baskı")
 
 
 def _lighting_code(value: str) -> str:
-    return {
-        "Doğal (Önerilen)": "natural",
-        "Belirgin Işık": "strong",
-        "Işıksız / Tasarım Orijinal": "off",
-    }.get(value, value)
+    return "off" if value == LIGHT_LABELS[1] else "natural"
+
 
 
 class UnifiedV4BatchWindow:
@@ -37,8 +40,8 @@ class UnifiedV4BatchWindow:
             petek_registry=self.petek_registry,
         )
         self.window = tk.Toplevel(parent)
-        self.window.title("V4.2.1 — Birleşik 7 Kategori Seri Üretim")
-        self.window.geometry("1060x790")
+        self.window.title("V4.3 — Birleşik 7 Kategori Seri Üretim / Excel Bulut Linkleme")
+        self.window.geometry("1190x920")
         self.window.transient(parent)
 
         area = ttk.Frame(self.window, padding=18)
@@ -46,13 +49,13 @@ class UnifiedV4BatchWindow:
 
         ttk.Label(
             area,
-            text="7 Kategori Ortak Seri Üretim Merkezi (V4.2 — Sınırsız Onaylı Şablon)",
+            text="7 Kategori Ortak Seri Üretim Merkezi (V4.3 — Sınırsız İş / 7 Kategori)",
             font=("Segoe UI", 15, "bold"),
         ).pack(anchor="w", pady=(0, 6))
         ttk.Label(
             area,
-            text="Eski 6 kategori (SQLite APPROVED) + 7. kategori PETEK (APPROVED) tek kalıcı kuyrukta birleşir.\n"
-            "10 şablon sınırı kaldırılmıştır. Tüm çıktılar sıfır-blur (Tam Doldur) ve SHA-256 doğrulamalıdır.",
+            text="Altı kategori SQLite insan onaylı şablonları + PETEK onaylı maskeleri kullanır.\n"
+            "Sınırsız iş / 10 şablon sınırı yoktur. Önce yerel üretim; sonra istersen bulut HTTPS linkli Excel.",
             wraplength=800,
         ).pack(anchor="w", pady=(0, 8))
 
@@ -70,19 +73,21 @@ class UnifiedV4BatchWindow:
         photo_column = ttk.Frame(preview_frame, width=228)
         photo_column.pack(side="right", padx=(12,0), fill="y")
         photo_column.pack_propagate(False)
-        self.photo_label = ttk.Label(photo_column, text='Mockup önizlemesi', anchor='center')
+        self.photo_label = ttk.Label(photo_column, text='Kaynak fotoğraf önizlemesi', anchor='center')
         self.photo_label.pack(fill='both', expand=True)
         self.photo_text = tk.StringVar(value='Onaylı şablon seçin.')
         ttk.Label(photo_column, textvariable=self.photo_text, wraplength=222).pack(fill='x')
         self.photo_ref = None
         self.template_sources = {}
+        self.template_items = {}
         self.mapping: list[str] = []
 
         btn_row = ttk.Frame(area)
         btn_row.pack(fill="x", pady=3)
         ttk.Button(btn_row, text="Tüm Onaylı Şablonları Yenile", command=self.reload).pack(side="left")
-        ttk.Button(btn_row, text="Tümünü Seç (Sınırsız)", command=self.select_all).pack(side="left", padx=6)
-        ttk.Button(btn_row, text="Kesinti / Kilit Kurtarma Kontrolü", command=self.open_recovery).pack(side="left", padx=6)
+        ttk.Button(btn_row, text="Tüm Şablonları Seç", command=self.select_all).pack(side="left", padx=6)
+        ttk.Button(btn_row, text="Cam A/B Önizleme (Gerçek Baskı)", command=self.start_ab_preview).pack(side="left", padx=6)
+        ttk.Button(btn_row, text="Yarım İş / Kilit Kurtarma (Onaylı)", command=self.open_recovery).pack(side="left", padx=6)
 
         row = ttk.Frame(area)
         row.pack(fill="x", pady=8)
@@ -95,9 +100,7 @@ class UnifiedV4BatchWindow:
         ttk.Label(opts, text="Mağaza Grubu:").pack(side="left")
         self.group = tk.StringVar(value="LOCAL")
         ttk.Entry(opts, textvariable=self.group, width=14).pack(side="left", padx=5)
-        ttk.Label(opts, text="İş Sınırı (Max 100.000):").pack(side="left", padx=(16, 4))
-        self.limit = tk.StringVar(value="25000")
-        ttk.Entry(opts, textvariable=self.limit, width=10).pack(side="left")
+        ttk.Label(opts, text="İş sınırı yok — tüm seçili şablon × tasarımlar işlenir. Başlamadan önce toplamı onaylarsın.").pack(side="left", padx=(16, 4))
 
         fit_row = ttk.Frame(area)
         fit_row.pack(fill="x", pady=4)
@@ -110,17 +113,15 @@ class UnifiedV4BatchWindow:
             width=32,
             values=("Tam Doldur (Sıfır Blur / Kırpılabilir)", "Tam Göster (Bant Olabilir)"),
         ).pack(side="left", padx=8)
-        ttk.Label(fit_row, text="Fotoğraf Işığı:").pack(side="left", padx=(12, 4))
+        ttk.Label(fit_row, text="Cam / Fotoğraf Efekti:").pack(side="left", padx=(12, 4))
         self.lighting = tk.StringVar(value=LIGHT_LABELS[0])
-        ttk.Combobox(fit_row, textvariable=self.lighting, state="readonly", values=LIGHT_LABELS, width=24).pack(side="left")
+        ttk.Combobox(fit_row, textvariable=self.lighting, state="readonly", values=LIGHT_LABELS, width=36).pack(side="left")
 
-        round_row = ttk.Frame(area)
-        round_row.pack(fill='x', pady=4)
-        ttk.Label(round_row, text='Cam baskı köşeleri (onaylı 4 nokta sabit):').pack(side='left')
-        self.corner_option = tk.StringVar(value='Hafif (%0,8)')
-        ttk.Combobox(round_row, textvariable=self.corner_option, state='readonly', width=22,
-                     values=('Kapalı (%0)', 'Hafif (%0,8)', 'Belirgin (%1,5)')).pack(side='left', padx=8)
-        ttk.Label(round_row, text='Cam kategorilerinde uygulanır; ahşap/PETEK değişmez.').pack(side='left')
+        ttk.Label(area, text=(
+            "Cam efektleri: Açık = yalnız cam panellere yumuşak ve görünür yansıma; "
+            "Kapalı = yansıma yok. Ahşap/Wi-Fi/PETEK'te cam yansıması uygulanmaz.\n"
+            "Köşe yuvarlatması burada değil, 4 Köşe İnceleme > Bu Şablonu Onayla bölümünde ayrı kaydedilir."
+        ), wraplength=1100).pack(anchor="w", pady=(2, 6))
 
         actions = ttk.Frame(area)
         actions.pack(fill="x", pady=8)
@@ -128,8 +129,22 @@ class UnifiedV4BatchWindow:
         self.start_button.pack(side="left", padx=3)
         ttk.Button(actions, text="■ Güvenli Durdur", command=self.stop).pack(side="left", padx=3)
         ttk.Button(actions, text="Ortak Çıktı Klasörü", command=self.open_results).pack(side="left", padx=3)
-        ttk.Button(actions, text="Ortak Kayıtları Denetle", command=self.run_audit).pack(side="left", padx=3)
+        ttk.Button(actions, text="SHA Kayıtlarını Doğrula (Salt Okunur)", command=self.run_audit).pack(side="left", padx=3)
 
+        remote = ttk.Frame(area)
+        remote.pack(fill="x", pady=5)
+        self.cloud_button = ttk.Button(remote, text="☁ Mevcut Çıktıları HTTPS Linke Çevir + Excel'e Yaz",
+                                       command=self.start_cloud_links)
+        self.cloud_button.pack(side="left", padx=3)
+        ttk.Label(remote, text="Ayrı onay ister; ImgBB/FreeImage'a internetten erişilebilen görseller yükler. Pazaryerine ilan yüklemez.",
+                  wraplength=570).pack(side="left", padx=7)
+        ttk.Label(area, text=(
+            "YENİLE: onaylı şablon listesini yeniden okur | TÜMÜNÜ SEÇ: listedeki hepsini seçer (başlatmaz). "
+            "MAĞAZA GRUBU: SKU ayırır; otomatik mağazaya yüklemez.\n"
+            "GÜVENLİ DURDUR: biten görselleri koruyarak sonraki işleri durdurur. "
+            "YARIM İŞ/KİLİT KURTARMA: bozuk ara kayıtları gösterir; açık onayla karantinaya alır. "
+            "SHA DENETLE: çıktı dosyası ile kayıt hash'lerini sadece okur."
+        ), wraplength=1120).pack(anchor="w", pady=(3, 5))
         self.progress = tk.StringVar(value="Hazır. Onaylı şablonlar yüklendi.")
         ttk.Label(area, textvariable=self.progress, wraplength=800).pack(anchor="w", pady=4)
         self.log = scrolledtext.ScrolledText(area, height=13, state="disabled", font=("Consolas", 9), bg=PANEL, fg=FG, insertbackground=FG)
@@ -148,7 +163,7 @@ class UnifiedV4BatchWindow:
     def _preview_selected(self, _event=None) -> None:
         selection = self.listbox.curselection()
         if not selection:
-            self.photo_label.configure(image='', text='Mockup önizlemesi')
+            self.photo_label.configure(image='', text='Kaynak fotoğraf önizlemesi')
             self.photo_ref = None
             self.photo_text.set('Şablon seçin.')
             return
@@ -163,7 +178,7 @@ class UnifiedV4BatchWindow:
                 photo.thumbnail((210, 240), Image.Resampling.LANCZOS)
                 self.photo_ref = ImageTk.PhotoImage(photo, master=self.window)
             self.photo_label.configure(image=self.photo_ref, text='')
-            self.photo_text.set(f'{uid} — gerçek mockup fotoğrafı')
+            self.photo_text.set(f"{uid} — HAM ŞABLON. Baskı/efekt burada gösterilmez; üretilen PNG dosyasında görünür.")
         except (OSError, ValueError) as exc:
             self.photo_ref = None
             self.photo_label.configure(image='', text='Fotoğraf açılamadı')
@@ -173,12 +188,14 @@ class UnifiedV4BatchWindow:
         self.listbox.delete(0, "end")
         self.mapping = []
         self.template_sources = {}
+        self.template_items = {}
         try:
             templates, audit = self.batch_engine.discover_templates(per_category_limit=None)
             for item in templates:
                 label = f"[{item['category']}] {item['uid']} ({item['orientation']})"
                 self.mapping.append(item["uid"])
                 self.template_sources[item["uid"]] = Path(item["source"])
+                self.template_items[item["uid"]] = item
                 self.listbox.insert("end", label)
             if self.mapping:
                 self.listbox.selection_set(0, len(self.mapping) - 1)
@@ -219,17 +236,29 @@ class UnifiedV4BatchWindow:
             import re
             if not re.fullmatch(r"[A-Za-z0-9_-]{2,36}", group):
                 raise ValueError("Mağaza grubu 2–36 karakter; yalnız harf, sayı, _ veya - olmalı.")
-            max_jobs = int(self.limit.get())
-            if not (1 <= max_jobs <= 100000):
-                raise ValueError("İş sınırı 1 ile 100.000 arasında olmalı.")
+            max_jobs = None
             placement = "cover" if self.placement.get().startswith("Tam Doldur") else "contain"
             lighting = _lighting_code(self.lighting.get())
-            corner_radius = {"Kapalı (%0)": 0.0, "Hafif (%0,8)": .008,
-                             "Belirgin (%1,5)": .015}[self.corner_option.get()]
+            glass_effect = "off" if lighting == "off" else "on"
+            # Cam köşesi onaylı şablonda saklanır; arayüzde global override yok.
+            corner_radius = None
         except (ValueError, KeyError) as exc:
             messagebox.showwarning("Üretim Ayarları", str(exc), parent=self.window)
             return
 
+        try:
+            design_count = sum(1 for _ in iter_designs(Path(design_folder)))
+            if design_count == 0:
+                raise ValueError("Seçili klasörde desteklenen baskı tasarımı yok.")
+        except OSError as exc:
+            messagebox.showwarning("Tasarım Klasörü", str(exc), parent=self.window)
+            return
+        job_count = len(selected) * design_count
+        if not messagebox.askyesno("Sınırsız Seri Üretimi Onayla",
+            f"{len(selected)} onaylı şablon × {design_count} tasarım = {job_count:,} işlem denenecek.\n"
+            "Her çıktı ayrı kayıtla korunur; işlemi istediğin zaman güvenli durdurabilirsin.\n"
+            "BU İŞLEMİ BAŞLATMAK İSTİYOR MUSUN?", parent=self.window):
+            return
         self.batch_engine.cancel.clear()
         self.start_button.configure(state="disabled")
 
@@ -244,6 +273,7 @@ class UnifiedV4BatchWindow:
                     placement=placement,
                     lighting=lighting,
                     corner_radius=corner_radius,
+                    glass_effect=glass_effect,
                 )
                 self.messages.put(("done", res))
             except Exception as exc:
@@ -252,6 +282,99 @@ class UnifiedV4BatchWindow:
         self.worker = threading.Thread(target=work, daemon=False)
         self.worker.start()
         self.progress.set("7 kategori ortak seri üretim çalışıyor...")
+
+    def start_ab_preview(self):
+        if self.worker and self.worker.is_alive():
+            messagebox.showinfo("Önizleme", "İşlem devam ederken yeni önizleme çalışmaz.", parent=self.window)
+            return
+        selected = [self.mapping[int(i)] for i in self.listbox.curselection()]
+        item = next((self.template_items.get(uid) for uid in selected
+                     if self.template_items.get(uid, {}).get('category') in GLASS), None)
+        if not item:
+            messagebox.showinfo("Cam Şablonu", "Önce bir Cam Tablo / Cam Doğrama / Ocak Arkası şablonu seçin.", parent=self.window)
+            return
+        folder = Path(self.design_folder.get().strip())
+        if not folder.is_dir():
+            messagebox.showwarning("Baskı Tasarımı", "Önce tasarım klasörünü seçin.", parent=self.window)
+            return
+        art = next(iter(iter_designs(folder)), None)
+        if not art:
+            messagebox.showwarning("Baskı Tasarımı", "Klasörde tasarım bulunamadı.", parent=self.window)
+            return
+        placement = 'cover' if self.placement.get().startswith('Tam Doldur') else 'contain'
+        self.progress.set('Gerçek baskılı cam A/B önizlemesi hazırlanıyor...')
+        def work():
+            try:
+                src = Path(item['source'])
+                scene = petek_engine.read_bgr(src)
+                mask = _build_legacy_category_mask(scene,item['quad'],item.get('legacy_data'))
+                proxy, _ = prepare_render_artwork(art,self.batch_engine.root/'working_art_proxies')
+                radius = float(item.get('legacy_data',{}).get('glass_corner_radius',.008))
+                args=(src,proxy,item['quad'],mask,item['physical_aspect'])
+                common=dict(category=item['category'],corner_radius=radius,
+                            lighting='natural',placement=placement,marketplace=True)
+                disabled,_=_render_legacy_six_cover(*args,glass_effect='off',**common)
+                enabled,_=_render_legacy_six_cover(*args,glass_effect='on',**common)
+                self.messages.put(('ab_done',(disabled,enabled,item['uid'],art.name)))
+            except Exception as exc:
+                self.messages.put(('ab_fail',str(exc)))
+        self.worker=threading.Thread(target=work,daemon=False)
+        self.worker.start()
+
+    def show_ab(self, before, after, uid, artname):
+        # Tk widgets must be constructed on the UI thread.
+        popup=tk.Toplevel(self.window)
+        popup.title('Cam A/B — Gerçek Baskı Önizlemesi')
+        popup.geometry('870x680')
+        images=[]
+        for title,frame in [('Cam efekti KAPALI',before),('Cam efekti AÇIK',after)]:
+            pil=Image.fromarray(cv2.cvtColor(frame,cv2.COLOR_BGR2RGB))
+            pil.thumbnail((395,555),Image.Resampling.LANCZOS)
+            images.append(ImageTk.PhotoImage(pil,master=popup))
+        slots=ttk.Frame(popup,padding=10); slots.pack(fill='both',expand=True)
+        for j,title in enumerate(('Cam efekti KAPALI','Cam efekti AÇIK')):
+            frame=ttk.Frame(slots);frame.pack(side='left',fill='both',expand=True)
+            ttk.Label(frame,text=title,font=('Segoe UI',11,'bold')).pack()
+            ttk.Label(frame,image=images[j]).pack(pady=8)
+        popup._keep_image_refs=images
+        ttk.Label(popup,text=f'{uid} / {artname} — yalnız geçici önizleme; kaynakları ve onaylı dört köşeleri değiştirmez.',
+                  wraplength=820).pack(pady=8)
+
+    def start_cloud_links(self) -> None:
+        if self.worker and self.worker.is_alive():
+            messagebox.showwarning("İşlem Devam Ediyor", "Önce çalışan üretim/linkleme işlemini durdurun.", parent=self.window)
+            return
+        cloud = CloudExcel(self.batch_engine.root, self.batch_engine.reports, self.runtime_root)
+        if not cloud.available():
+            messagebox.showerror("Bulut Anahtarı Yok",
+                "Eski ayarlar.json > bulut_ayarlari > imgbb_keys veya freeimage_key bulunamadı.\n"
+                "HTTPS linki yerine yerel file:/// adresini bulut bağlantısı olarak YAZMAYACAĞIZ.",
+                parent=self.window)
+            return
+        rows = self.batch_engine.ledger.successful()
+        if not rows:
+            messagebox.showinfo("Çıktı Yok", "Önce en az bir görsel üretin.", parent=self.window)
+            return
+        if not messagebox.askyesno("GERÇEK BULUT YÜKLEME ONAYI",
+            f"{len(rows)} üretilmiş görsel kontrol edilecek.\n"
+            "Henüz linki olmayan, SHA'sı doğru görseller ImgBB / FreeImage bulutuna yüklenecek; "
+            "görselleri bağlantıyı bilenler internette açabilir.\n"
+            "Ardından SKU eşleşmeli Resim Linki sütunu bulunan YENİ Excel oluşturulacak.\n"
+            "Bu işlem pazaryerine ilan yüklemez. BULUTA YÜKLEMEYİ ONAYLIYOR MUSUN?",
+            parent=self.window):
+            return
+        self.batch_engine.cancel.clear()
+        self.cloud_button.configure(state="disabled")
+        self.start_button.configure(state="disabled")
+        def run_cloud():
+            try:
+                res = cloud.publish_existing(rows, notify=self._log, stop=self.batch_engine.cancel)
+                self.messages.put(("cloud_done", res))
+            except Exception as exc:
+                self.messages.put(("fail", "BULUT EXCEL: " + str(exc)))
+        self.worker = threading.Thread(target=run_cloud, daemon=False)
+        self.worker.start()
+        self.progress.set("Bulut HTTPS görselleri linkleniyor; mevcut mockuplar yeniden üretilmiyor...")
 
     def stop(self) -> None:
         self.batch_engine.cancel.set()
@@ -339,9 +462,23 @@ class UnifiedV4BatchWindow:
                         f"Excel: {value['xlsx']}"
                     )
                     self.start_button.configure(state="normal")
+                    self.cloud_button.configure(state="normal")
+                elif kind == "ab_done":
+                    self.show_ab(*value)
+                    self.progress.set('Cam A/B gerçek baskı önizlemesi hazır. Kaynak veya DB değiştirilmedi.')
+                elif kind == "ab_fail":
+                    self.progress.set('Cam A/B önizleme başarısız: ' + str(value))
+                    self._log('ÖNİZLEME HATA: ' + str(value))
+                elif kind == "cloud_done":
+                    self.progress.set(f"BULUT {value['status']} — Linkli: {value['linked']}, "
+                                      f"Yeni: {value['uploaded']}, Mevcut: {value['reused']}, Hata: {value['failed']}. "
+                                      f"HTTPS Excel: {value['xlsx']}")
+                    self.start_button.configure(state="normal")
+                    self.cloud_button.configure(state="normal")
                 elif kind == "fail":
                     self.progress.set("DURDU — " + str(value))
                     self.start_button.configure(state="normal")
+                    self.cloud_button.configure(state="normal")
         except queue.Empty:
             pass
         if self.window.winfo_exists():
