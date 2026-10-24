@@ -1,6 +1,6 @@
 {
   "branch": "feature/v46-safe-consolidation-20261024",
-  "commit": "pending-next-commit",
+  "commit": "f0d0c5b",
   "tests": [
     {
       "name": "TESTLER/test_port_transition_force_fallback.py",

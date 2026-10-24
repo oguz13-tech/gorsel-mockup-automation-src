@@ -2,7 +2,7 @@
 
 Generated from the preserved V4.5 canonical matrix; no live database, approved geometry, template, or customer image was read.
 
-PR #52 HEAD evidence commit: `working-tree`
+PR #52 HEAD evidence commit: `f0d0c5b`
 
 | ID | Canonical request | Code/test evidence | Unit | Integration | Windows isolated | Real visual/cloud | Final status | Blocker / next evidence |
 |---:|---|---|---|---|---|---|---|---|
