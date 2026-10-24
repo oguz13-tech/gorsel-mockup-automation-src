@@ -951,6 +951,75 @@ def api_replace_original():
         return jsonify({"success": False, "error": str(exc)}), 500
 
 
+# V4.6 proposals live OUTSIDE production DB and working/backup template pools.
+# A bulk analyze request NEVER writes to template_profiles or APPROVED geometry.
+def _v46_draft_folder():
+    user_root = Path(os.environ.get("LOCALAPPDATA") or
+                     (Path.home() / ".local" / "share"))
+    folder = user_root / "GorselMockup" / "v46_review_proposals"
+    if folder.exists() and folder.is_symlink():
+        raise ValueError("Taslak klasörü bağlantı (symlink) olamaz")
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder
+
+
+def _v46_draft_path(category, template):
+    # Collision-safe unique identity without using the filename as a path.
+    key = hashlib.sha256(json.dumps([str(Path(BASE_DIR).resolve()), category, template],
+                                   ensure_ascii=False).encode("utf-8")).hexdigest()
+    return _v46_draft_folder() / f"{key}.json"
+
+
+def _v46_store_draft(category, template, corners, source_hash, surface_mode):
+    path = _v46_draft_path(category, template)
+    if path.is_symlink():
+        raise ValueError("Taslak dosyası symlink")
+    payload = {"category": category, "template": template, "corners": corners,
+               "source_sha256": source_hash, "surface_mode": surface_mode,
+               "approved": False, "version": "v46-draft-1"}
+    temp = path.with_name(path.name + "." + uuid.uuid4().hex + ".tmp")
+    try:
+        with temp.open("x", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temp, path)
+    finally:
+        temp.unlink(missing_ok=True)
+
+
+@app.route('/api/v46/corner_draft', methods=['GET'])
+def api_v46_corner_draft():
+    category = str(request.args.get("category", ""))
+    template = str(request.args.get("template", ""))
+    if not category or not template:
+        return jsonify({"success": False, "error": "Kategori / şablon eksik"}), 400
+    try:
+        img_path = _safe_template_path(category, template)
+        if not os.path.isfile(img_path):
+            return jsonify({"success": False, "error": "Kaynak yok"}), 404
+        path = _v46_draft_path(category, template)
+        if path.is_symlink():
+            return jsonify({"success": False, "error": "Güvensiz taslak dosyası"}), 409
+        if not path.is_file():
+            return jsonify({"success": True, "available": False})
+        draft = json.loads(path.read_text(encoding="utf-8"))
+        if draft.get("source_sha256") != _sha256_file(img_path):
+            return jsonify({"success": True, "available": False,
+                            "stale": True, "reason": "Kaynak resmi değişmiş; eski öneri kullanılamaz."})
+        if draft.get("category") != category or draft.get("template") != template:
+            return jsonify({"success": False, "error": "Taslak kimlik uyuşmazlığı"}), 409
+        corners = draft.get("corners")
+        if not isinstance(corners, list) or len(corners) != 4:
+            return jsonify({"success": False, "error": "Taslak geometri bozuk"}), 409
+        return jsonify({"success": True, "available": True, "corners": corners,
+                        "surface_mode": draft.get("surface_mode"),
+                        "source_sha256": draft.get("source_sha256"),
+                        "approved": False})
+    except (ValueError, OSError, json.JSONDecodeError) as exc:
+        return jsonify({"success": False, "error": str(exc)}), 400
+
+
 @app.route('/api/auto_detect_corners', methods=['POST'])
 @template_guard('auto-detect-corners', source='headers')
 def api_auto_detect_corners():
@@ -1034,14 +1103,31 @@ def api_auto_detect_corners():
         except Exception:
             occlusion_data = []
 
+        source_hash = _sha256_file(img_path)
+        if (request.get_json(silent=True) or {}).get("save_as_draft") is True:
+            try:
+                _v46_store_draft(active_cat, active_tmpl, corners, source_hash,
+                                 analysis.get("surface_mode", "UNKNOWN"))
+            except (OSError, ValueError) as exc:
+                return jsonify({"success": False, "error": f"Taslak kaydı başarısız: {exc}"}), 500
+
         return jsonify({
             "success": True,
             "corners": corners,
+            "source_sha256": source_hash,
             "occlusions": occlusion_data,
             "engine": engine,
             "confidence": float(analysis.get("confidence_total", 0.0) or 0.0),
             "component_confidences": analysis.get("component_confidences", {}),
             "surface_mode": analysis.get("surface_mode", "UNKNOWN"),
+            "surface_priority_hint": (
+                "SEFFAF_CAM_ONCELIKLI" if analysis.get("surface_mode") == "TRANSPARENT_GLASS"
+                else "BEYAZ_CAM_ADAYI_KATEGORI_TAHMINI" if analysis.get("surface_mode") == "WHITE" and (
+                    "Cam" in active_cat or "Ocak_Arkasi" in active_cat)
+                else "CAM_OLMAYAN_BEYAZ" if analysis.get("surface_mode") == "WHITE"
+                else "CAM_OLMAYAN_SIYAH" if analysis.get("surface_mode") == "BLACK"
+                else "DIGER_VEYA_KARARSIZ"
+            ),
             "surface_mode_confidence": float(
                 analysis.get("surface_mode_confidence", 0.0) or 0.0
             ),

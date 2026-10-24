@@ -1,0 +1,446 @@
+{
+  "dataset": "synthetic_only",
+  "category": "05_Ocak_Arkasi",
+  "sample_count": 12,
+  "no_panel_count": 3,
+  "recommendation_thresholds": {
+    "median_iou": 0.98,
+    "critical_iou": 0.95,
+    "mean_corner_error_fraction": 0.005,
+    "false_positive_no_panel": 0
+  },
+  "summary": {
+    "canny_contour": {
+      "true_panel_count": 12,
+      "median_iou": 0.9763589102395367,
+      "min_iou": 0.0,
+      "mean_corner_error": 0.335359756834805,
+      "false_positive_no_panel": 0,
+      "mean_elapsed_ms": 3.517000000000001
+    },
+    "hough_hull": {
+      "true_panel_count": 12,
+      "median_iou": 0.43655585000712915,
+      "min_iou": 0.4300257956060518,
+      "mean_corner_error": 0.12803657228748003,
+      "false_positive_no_panel": 3,
+      "mean_elapsed_ms": 6.360499999999999
+    },
+    "bright_region": {
+      "true_panel_count": 12,
+      "median_iou": 0.982912353347136,
+      "min_iou": 0.0,
+      "mean_corner_error": 0.3350902129895985,
+      "false_positive_no_panel": 0,
+      "mean_elapsed_ms": 1.6630833333333335
+    }
+  },
+  "records": [
+    {
+      "sample": 0,
+      "category": "05_Ocak_Arkasi",
+      "algorithm": "canny_contour",
+      "detected": true,
+      "iou": 0.9763589102395367,
+      "mean_corner_error": 0.003028951585292816,
+      "elapsed_ms": 8.123
+    },
+    {
+      "sample": 0,
+      "category": "05_Ocak_Arkasi",
+      "algorithm": "hough_hull",
+      "detected": true,
+      "iou": 0.43715394833440957,
+      "mean_corner_error": 0.12800587713718414,
+      "elapsed_ms": 5.856
+    },
+    {
+      "sample": 0,
+      "category": "05_Ocak_Arkasi",
+      "algorithm": "bright_region",
+      "detected": true,
+      "iou": 0.982912353347136,
+      "mean_corner_error": 0.002635319484397769,
+      "elapsed_ms": 1.633
+    },
+    {
+      "sample": 1,
+      "category": "05_Ocak_Arkasi",
+      "algorithm": "canny_contour",
+      "detected": false,
+      "iou": 0.0,
+      "mean_corner_error": 1.0,
+      "elapsed_ms": 3.169
+    },
+    {
+      "sample": 1,
+      "category": "05_Ocak_Arkasi",
+      "algorithm": "hough_hull",
+      "detected": true,
+      "iou": 0.4304114801536554,
+      "mean_corner_error": 0.13390666246414185,
+      "elapsed_ms": 5.658
+    },
+    {
+      "sample": 1,
+      "category": "05_Ocak_Arkasi",
+      "algorithm": "bright_region",
+      "detected": false,
+      "iou": 0.0,
+      "mean_corner_error": 1.0,
+      "elapsed_ms": 1.438
+    },
+    {
+      "sample": 2,
+      "category": "05_Ocak_Arkasi",
+      "algorithm": "canny_contour",
+      "detected": true,
+      "iou": 0.9763589102395367,
+      "mean_corner_error": 0.003028951585292816,
+      "elapsed_ms": 3.976
+    },
+    {
+      "sample": 2,
+      "category": "05_Ocak_Arkasi",
+      "algorithm": "hough_hull",
+      "detected": true,
+      "iou": 0.44574325593039993,
+      "mean_corner_error": 0.12250173091888428,
+      "elapsed_ms": 6.187
+    },
+    {
+      "sample": 2,
+      "category": "05_Ocak_Arkasi",
+      "algorithm": "bright_region",
+      "detected": true,
+      "iou": 0.982912353347136,
+      "mean_corner_error": 0.002635319484397769,
+      "elapsed_ms": 1.657
+    },
+    {
+      "sample": 3,
+      "category": "05_Ocak_Arkasi",
+      "algorithm": "canny_contour",
+      "detected": false,
+      "iou": 0.0,
+      "mean_corner_error": 1.0,
+      "elapsed_ms": 3.168
+    },
+    {
+      "sample": 3,
+      "category": "05_Ocak_Arkasi",
+      "algorithm": "hough_hull",
+      "detected": true,
+      "iou": 0.43358644404613467,
+      "mean_corner_error": 0.13076870143413544,
+      "elapsed_ms": 6.803
+    },
+    {
+      "sample": 3,
+      "category": "05_Ocak_Arkasi",
+      "algorithm": "bright_region",
+      "detected": false,
+      "iou": 0.0,
+      "mean_corner_error": 1.0,
+      "elapsed_ms": 1.99
+    },
+    {
+      "sample": 4,
+      "category": "05_Ocak_Arkasi",
+      "algorithm": "canny_contour",
+      "detected": true,
+      "iou": 0.9763589102395367,
+      "mean_corner_error": 0.003028951585292816,
+      "elapsed_ms": 3.501
+    },
+    {
+      "sample": 4,
+      "category": "05_Ocak_Arkasi",
+      "algorithm": "hough_hull",
+      "detected": true,
+      "iou": 0.4362092832379856,
+      "mean_corner_error": 0.12968194484710693,
+      "elapsed_ms": 6.771
+    },
+    {
+      "sample": 4,
+      "category": "05_Ocak_Arkasi",
+      "algorithm": "bright_region",
+      "detected": true,
+      "iou": 0.982912353347136,
+      "mean_corner_error": 0.002635319484397769,
+      "elapsed_ms": 2.353
+    },
+    {
+      "sample": 5,
+      "category": "05_Ocak_Arkasi",
+      "algorithm": "canny_contour",
+      "detected": true,
+      "iou": 0.9763589102395367,
+      "mean_corner_error": 0.003028951585292816,
+      "elapsed_ms": 3.71
+    },
+    {
+      "sample": 5,
+      "category": "05_Ocak_Arkasi",
+      "algorithm": "hough_hull",
+      "detected": true,
+      "iou": 0.4439315267324066,
+      "mean_corner_error": 0.1240091398358345,
+      "elapsed_ms": 7.474
+    },
+    {
+      "sample": 5,
+      "category": "05_Ocak_Arkasi",
+      "algorithm": "bright_region",
+      "detected": true,
+      "iou": 0.982912353347136,
+      "mean_corner_error": 0.002635319484397769,
+      "elapsed_ms": 1.657
+    },
+    {
+      "sample": 6,
+      "category": "05_Ocak_Arkasi",
+      "algorithm": "canny_contour",
+      "detected": true,
+      "iou": 0.9763589102395367,
+      "mean_corner_error": 0.003028951585292816,
+      "elapsed_ms": 2.78
+    },
+    {
+      "sample": 6,
+      "category": "05_Ocak_Arkasi",
+      "algorithm": "hough_hull",
+      "detected": true,
+      "iou": 0.4366532594300289,
+      "mean_corner_error": 0.12821869552135468,
+      "elapsed_ms": 6.562
+    },
+    {
+      "sample": 6,
+      "category": "05_Ocak_Arkasi",
+      "algorithm": "bright_region",
+      "detected": true,
+      "iou": 0.982912353347136,
+      "mean_corner_error": 0.002635319484397769,
+      "elapsed_ms": 1.405
+    },
+    {
+      "sample": 7,
+      "category": "05_Ocak_Arkasi",
+      "algorithm": "canny_contour",
+      "detected": false,
+      "iou": 0.0,
+      "mean_corner_error": 1.0,
+      "elapsed_ms": 3.048
+    },
+    {
+      "sample": 7,
+      "category": "05_Ocak_Arkasi",
+      "algorithm": "hough_hull",
+      "detected": true,
+      "iou": 0.4300257956060518,
+      "mean_corner_error": 0.13378027081489563,
+      "elapsed_ms": 6.515
+    },
+    {
+      "sample": 7,
+      "category": "05_Ocak_Arkasi",
+      "algorithm": "bright_region",
+      "detected": false,
+      "iou": 0.0,
+      "mean_corner_error": 1.0,
+      "elapsed_ms": 1.62
+    },
+    {
+      "sample": 8,
+      "category": "05_Ocak_Arkasi",
+      "algorithm": "canny_contour",
+      "detected": true,
+      "iou": 0.9763589102395367,
+      "mean_corner_error": 0.003028951585292816,
+      "elapsed_ms": 2.899
+    },
+    {
+      "sample": 8,
+      "category": "05_Ocak_Arkasi",
+      "algorithm": "hough_hull",
+      "detected": true,
+      "iou": 0.44511807913276963,
+      "mean_corner_error": 0.12235959619283676,
+      "elapsed_ms": 5.236
+    },
+    {
+      "sample": 8,
+      "category": "05_Ocak_Arkasi",
+      "algorithm": "bright_region",
+      "detected": true,
+      "iou": 0.982912353347136,
+      "mean_corner_error": 0.002635319484397769,
+      "elapsed_ms": 1.835
+    },
+    {
+      "sample": 9,
+      "category": "05_Ocak_Arkasi",
+      "algorithm": "canny_contour",
+      "detected": false,
+      "iou": 0.0,
+      "mean_corner_error": 1.0,
+      "elapsed_ms": 2.801
+    },
+    {
+      "sample": 9,
+      "category": "05_Ocak_Arkasi",
+      "algorithm": "hough_hull",
+      "detected": true,
+      "iou": 0.43466616536947883,
+      "mean_corner_error": 0.1301036924123764,
+      "elapsed_ms": 7.776
+    },
+    {
+      "sample": 9,
+      "category": "05_Ocak_Arkasi",
+      "algorithm": "bright_region",
+      "detected": false,
+      "iou": 0.0,
+      "mean_corner_error": 1.0,
+      "elapsed_ms": 1.716
+    },
+    {
+      "sample": 10,
+      "category": "05_Ocak_Arkasi",
+      "algorithm": "canny_contour",
+      "detected": true,
+      "iou": 0.9791726246782674,
+      "mean_corner_error": 0.003114420920610428,
+      "elapsed_ms": 2.567
+    },
+    {
+      "sample": 10,
+      "category": "05_Ocak_Arkasi",
+      "algorithm": "hough_hull",
+      "detected": true,
+      "iou": 0.43645844058422933,
+      "mean_corner_error": 0.12949161231517792,
+      "elapsed_ms": 5.32
+    },
+    {
+      "sample": 10,
+      "category": "05_Ocak_Arkasi",
+      "algorithm": "bright_region",
+      "detected": true,
+      "iou": 0.982912353347136,
+      "mean_corner_error": 0.002635319484397769,
+      "elapsed_ms": 1.317
+    },
+    {
+      "sample": 11,
+      "category": "05_Ocak_Arkasi",
+      "algorithm": "canny_contour",
+      "detected": true,
+      "iou": 0.9763589102395367,
+      "mean_corner_error": 0.003028951585292816,
+      "elapsed_ms": 2.462
+    },
+    {
+      "sample": 11,
+      "category": "05_Ocak_Arkasi",
+      "algorithm": "hough_hull",
+      "detected": true,
+      "iou": 0.4433137291030691,
+      "mean_corner_error": 0.12361094355583191,
+      "elapsed_ms": 6.168
+    },
+    {
+      "sample": 11,
+      "category": "05_Ocak_Arkasi",
+      "algorithm": "bright_region",
+      "detected": true,
+      "iou": 0.982912353347136,
+      "mean_corner_error": 0.002635319484397769,
+      "elapsed_ms": 1.336
+    },
+    {
+      "sample": "no_panel_0",
+      "category": "05_Ocak_Arkasi",
+      "algorithm": "canny_contour",
+      "detected": false,
+      "iou": 0.0,
+      "mean_corner_error": 1.0,
+      "elapsed_ms": null
+    },
+    {
+      "sample": "no_panel_0",
+      "category": "05_Ocak_Arkasi",
+      "algorithm": "hough_hull",
+      "detected": true,
+      "iou": 0.0,
+      "mean_corner_error": 1.0,
+      "elapsed_ms": null
+    },
+    {
+      "sample": "no_panel_0",
+      "category": "05_Ocak_Arkasi",
+      "algorithm": "bright_region",
+      "detected": false,
+      "iou": 0.0,
+      "mean_corner_error": 1.0,
+      "elapsed_ms": null
+    },
+    {
+      "sample": "no_panel_1",
+      "category": "05_Ocak_Arkasi",
+      "algorithm": "canny_contour",
+      "detected": false,
+      "iou": 0.0,
+      "mean_corner_error": 1.0,
+      "elapsed_ms": null
+    },
+    {
+      "sample": "no_panel_1",
+      "category": "05_Ocak_Arkasi",
+      "algorithm": "hough_hull",
+      "detected": true,
+      "iou": 0.0,
+      "mean_corner_error": 1.0,
+      "elapsed_ms": null
+    },
+    {
+      "sample": "no_panel_1",
+      "category": "05_Ocak_Arkasi",
+      "algorithm": "bright_region",
+      "detected": false,
+      "iou": 0.0,
+      "mean_corner_error": 1.0,
+      "elapsed_ms": null
+    },
+    {
+      "sample": "no_panel_2",
+      "category": "05_Ocak_Arkasi",
+      "algorithm": "canny_contour",
+      "detected": false,
+      "iou": 0.0,
+      "mean_corner_error": 1.0,
+      "elapsed_ms": null
+    },
+    {
+      "sample": "no_panel_2",
+      "category": "05_Ocak_Arkasi",
+      "algorithm": "hough_hull",
+      "detected": true,
+      "iou": 0.0,
+      "mean_corner_error": 1.0,
+      "elapsed_ms": null
+    },
+    {
+      "sample": "no_panel_2",
+      "category": "05_Ocak_Arkasi",
+      "algorithm": "bright_region",
+      "detected": false,
+      "iou": 0.0,
+      "mean_corner_error": 1.0,
+      "elapsed_ms": null
+    }
+  ],
+  "acceptance": "INSUFFICIENT_GOLDEN_HUMAN_REVIEW_REQUIRED"
+}

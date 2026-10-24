@@ -291,3 +291,31 @@ body { background: var(--bg); color: var(--text); }
 button:focus-visible, select:focus-visible, a:focus-visible, input:focus-visible { outline: 3px solid var(--focus) !important; outline-offset: 2px; }
 button:not(:disabled):hover { filter: brightness(1.14); }
 button:disabled { opacity: .58; cursor: not-allowed; }
+
+/* V4.6: approval never sinks below the long utility menu. */
+#right-toolbar { gap: 7px !important; padding: 10px !important; }
+.v46-quick-approval { position: sticky; top: -10px; z-index: 50; background:#18352a;
+  border: 1px solid #42b983; border-radius: 8px; padding: 9px; box-shadow:0 4px 14px #0009; }
+.v46-quick-title { font-size: 13px; font-weight: 800; padding-bottom: 7px; }
+.v46-quick-badge { background: #344c3f; padding: 2px 5px; border-radius: 4px; font-size:10px; }
+.v46-quick-buttons { display: grid; grid-template-columns: 0.8fr 1.7fr; gap: 5px; }
+.v46-quick-buttons button { padding: 11px 5px; font-size: 12px; white-space:normal; min-width:0; }
+.v46-approve-btn { background: #16803f; }
+.v46-overlay-btn { background: #16657d; }
+#v46QuickOptions > * { margin: 3px 0 !important; }
+#v46QuickOptions select { max-width: 100%; }
+.v46-alignment { border: 1px solid #53708b; border-radius: 7px; background:#1a2b37; padding: 8px; font-size: 12px; line-height:1.6; }
+.v46-alignment b { font-size:12px; color:#c5e8ff; }
+.v46-alignment small { display:block; opacity:.73; margin-top:4px; font-size:10px; }
+.v46-alignment .v46-warning { color:#ffd166; }
+.v46-secondary-tools { border:1px solid #4b5563; border-radius:6px; padding:7px; }
+.v46-secondary-tools summary { cursor:pointer; color:#dbecff; font-weight:700; line-height:1.5; }
+.v46-secondary-tools > .tool-note, .v46-secondary-tools > button { margin-top:5px; }
+#bulkDetectButton { width:100%; background:#047857; margin-bottom:5px; padding:10px 6px; }
+.bulk-run-status { font-size:12px; color:#a7f3d0; margin:5px 0 8px; white-space:pre-wrap; }
+.v46-draft-alert { background:#473c1b; border:1px solid #eab308; border-radius:5px; padding:8px; margin-top:6px; font-size:12px; line-height:1.4; }
+.v46-draft-alert button { background:#a16207; margin-top:6px; width:100%; font-size:12px; padding:6px; }
+
+.v46-bulk-extra {display:grid;grid-template-columns:1fr 1fr;gap:4px;margin:8px 0;}
+.v46-bulk-extra button {font-size:11px;padding:7px 3px;background:#475569;}
+#v46BulkAlign {width:100%;background:#334155;font-size:12px;padding:9px 5px;margin-bottom:6px;}

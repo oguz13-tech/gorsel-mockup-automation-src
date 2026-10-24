@@ -216,10 +216,43 @@ class Center:
             self.status.set('Dört köşe inceleme merkezi açık.')
             return
         if port_occupied():
-            messagebox.showwarning('8080 portu dolu',
-                '8080 portunu başka bir program kullanıyor. Yanlış arayüze bağlanmamak için otomatik açmıyorum.\n'
-                'Önce diğer inceleme uygulamasını kapatın.',parent=self.root)
-            return
+            if os.name != 'nt':
+                messagebox.showwarning('8080 portu dolu',
+                    '8080 portunu başka bir program kullanıyor. Otomatik kapatma yapılmadı.',
+                    parent=self.root)
+                return
+            from port_transition_v46 import (
+                PortSafetyError, classify_owner, owner_of_8080, stop_old_server_if_same,
+            )
+            try:
+                owner = owner_of_8080()
+                code_path = Path(__file__).resolve().parent / '..' / 'SABLON_V2_MIMARI' / 'app.py'
+                if not owner or classify_owner(owner, code_path) != 'old_review':
+                    raise PortSafetyError(
+                        '8080 port sahibi doğrulanmış eski V4.x inceleme sunucusu değil.'
+                    )
+                pid = int(owner['ProcessId'])
+                command_line = str(owner['CommandLine'])
+                if not messagebox.askyesno(
+                    'Eski 8080 inceleme sunucusu bulundu',
+                    'Doğrulanmış eski V4.x inceleme sunucusu normal kapatılsın mı?',
+                    parent=self.root,
+                ):
+                    return
+                stopped = stop_old_server_if_same(pid, command_line)
+                if not stopped:
+                    if not messagebox.askyesno(
+                        'Normal kapatma başarısız',
+                        'Eski sunucu normal kapanmadı. Aynı doğrulanmış süreç için zorla kapatma denensin mi?',
+                        parent=self.root,
+                    ):
+                        return
+                    if not stop_old_server_if_same(pid, command_line, force=True):
+                        raise PortSafetyError('Eski inceleme sunucusu zorla kapatma sonrası da çalışıyor.')
+            except (KeyError, TypeError, ValueError, PortSafetyError) as exc:
+                messagebox.showerror('8080 geçişi engellendi', str(exc), parent=self.root)
+                self._log('8080 güvenli geçiş reddedildi: '+str(exc))
+                return
         s=inspect(self.runtime)
         if not s['ready']:
             messagebox.showerror('6 kategori inceleme başlatılamadı',
