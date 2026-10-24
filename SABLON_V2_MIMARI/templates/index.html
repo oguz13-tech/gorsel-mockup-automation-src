@@ -19,7 +19,7 @@
 
     <div id="bulk-select-panel">
         <button type="button" id="bulkModeButton" onclick="toggleBulkSelectionMode()">☑️ Toplu Seçim</button>
-        <div class="tool-note">Birden fazla şablonu birlikte seçip güvenli şekilde çöpe atmak için açın.</div>
+        <div class="tool-note">Çoklu şablon seçerek otomatik köşe önerisi çıkarın, inceleyin, güvenli onaylayın veya çöpe taşıyın.</div>
 
         <div id="bulkSelectionActions" style="display:none;">
             <div class="bulk-action-row">
@@ -33,6 +33,14 @@
                 </div>
             </div>
             <div id="bulkSelectedCount">0 şablon seçildi</div>
+            <div class="v46-bulk-extra">
+              <button type="button" onclick="v46SelectByReviewStatus(false)">📝 Kontrol Bekleyenleri Seç</button>
+              <button type="button" onclick="v46SelectByReviewStatus(true)">✅ Onaylıları Seç</button>
+            </div>
+            <button type="button" id="v46BulkAlign" onclick="v46BulkAlignmentReport()">📐 Seçililerin Hizalama Raporu (Salt-Okunur)</button>
+            <button type="button" id="bulkDetectButton" onclick="bulkDetectSelectedCorners()" class="bulk-detect" title="Yalnız seçtiklerinize otomatik 4 köşe TASLAĞI oluşturur. Hiçbir onaylı 4 köşeyi veya şablon dosyasını değiştirmez.">🧭 Seçilenlerin 4 Köşesini Algıla (Taslak)</button>
+            <div class="bulk-run-status" id="bulkDetectStatus" aria-live="polite">Seçili şablonlara taslak öneri üretir; kayıtlı onaylı koordinatları değiştirmez.</div>
+            <button type="button" id="bulkDetectStopButton" onclick="stopBulkCornerDetect()" style="display:none;background:#b45309;">⏹ Tarama Sonrası Durdur</button>
             <button type="button" id="bulkApproveButton" onclick="bulkApproveSelected()" class="success" style="width:100%;padding:9px;margin:0 0 8px 0" title="Kaydedilmiş 4 köşesi geçerli olan seçili şablonları toplu onaylar; her biri ayrı güvenli kaynak kontrolünden geçer.">✅ Seçilenleri Toplu Onayla</button>
             <div class="tool-note">Onaydan önce kayıtlı dört köşeleri kontrol eder. Onaysız, köşesiz veya değişmiş kaynakları otomatik geçirmez; sonuçları tek tek bildirir.</div>
             <button type="button" id="bulkDeleteButton" onclick="bulkDeleteSelected()">🗑️ Seçilenleri Çöpe At</button>
@@ -95,6 +103,20 @@
         <div class="resizer" id="resizer-right"></div>
 
         <div id="right-toolbar" style="width:230px; flex-shrink:0; box-sizing:border-box; background:#252526; display:flex; flex-direction:column; gap:10px; padding:15px; border-left:1px solid #444; overflow-y:auto; z-index:10;">
+            <section id="v46QuickApproval" class="v46-quick-approval" aria-label="Hızlı kontrol ve onay">
+                <div class="v46-quick-title">✅ Hızlı Kontrol / Onay <span class="v46-quick-badge">V4.6</span></div>
+                <div id="v46QuickOptions"></div>
+                <div class="v46-quick-buttons">
+                  <button type="button" id="v46OverlayQuick" onclick="toggleReviewOverlay()" class="v46-overlay-btn">👁️ Yerleşim</button>
+                  <button type="button" id="v46ApproveQuick" onclick="approveTemplate()" class="v46-approve-btn">✅ Bu Şablonu Onayla</button>
+                </div>
+                <div id="v46-draft-alert" class="v46-draft-alert" style="display:none;" aria-live="polite"></div>
+            </section>
+            <section class="v46-alignment" id="v46-alignment-panel" aria-label="Köşe doğrultu ölçümü">
+                <b>📐 Köşe Doğrultu Rehberi</b>
+                <div id="v46-alignment-text">Ölçüm için şablon açın.</div>
+                <small>Görsel pikselleridir, santimetre değildir. Perspektifli fotoğraflarda fark normal olabilir.</small>
+            </section>
             <h3 class="tool-section-title">Köşe Ayarı</h3>
 
             <button type="button" id="btnCorner" onclick="focusCornerEditing()" style="outline:3px solid #00aaff; width:100%; text-align:left; padding:12px 10px;">✋ Köşeleri Elle Ayarla</button>
@@ -103,6 +125,7 @@
             <button type="button" id="btnAutoCorner" onclick="autoDetectCorners()" style="background:linear-gradient(135deg,#00c853,#00bfa5); box-shadow:0 2px 6px rgba(0,200,83,0.4); width:100%; text-align:left; padding:12px 10px; font-weight:bold;">🧭 Köşeleri Yeniden Algıla</button>
             <div class="tool-note tool-note-accent">Yeni şablonda ilk tespit zaten otomatik yapılır. Yalnız sonuç yanlışsa tekrar kullanın.</div>
 
+            <details class="v46-secondary-tools"><summary>⚙️ Diğer İşlemler — Nesne / Ham Görsel / Denetim</summary>
             <div class="tool-divider"></div>
             <h3 class="tool-section-title">Otomatik Nesne Koruma</h3>
 
@@ -150,6 +173,7 @@
             <button type="button" onclick="openWorkspaceConsistencyHistory()" style="background:#475569; width:100%; padding:11px 10px; margin-top:5px; text-align:left; font-weight:bold;">📚 Tutarlılık Rapor Geçmişi</button>
             <div class="tool-note">Önceki klasör auditlerini listeler. Her yeni tarama, önceki rapora göre yeni sorunları ve düzelmiş sorunları hesaplar.</div>
 
+            </details>
             <div class="tool-divider"></div>
             <h3 class="tool-section-title">Kontrol ve Onay</h3>
 
@@ -163,7 +187,7 @@
                 <div class="tool-note" style="margin-top:5px;">Cam Doğrama için gerçek ürünün yatay/dikey yönünü seçin.</div>
             </div>
 
-            <button type="button" onclick="toggleReviewOverlay()" style="background:#17a2b8; width:100%; padding:12px 10px; margin-top:5px; font-weight:bold;">👁️ Yerleşimi Kontrol Et</button>
+            <div class="tool-note">Yerleşimi kontrol düğmesi üstteki hızlı kontrol alanına taşındı.</div>
             <div class="tool-note">Baskı alanını yeşil kaplama ile daha net görmenizi sağlar.</div>
 
             <div id="glassCornerWrap" class="tool-note" style="padding:7px; margin:6px 0; border:1px solid #64748b;">
@@ -175,7 +199,7 @@
                 </select>
                 <div>4 köşe noktalarını değiştirmez; onaylanınca sonraki üretimlere uygulanır. Eski çıktı dosyaları korunur.</div>
             </div>
-            <button type="button" onclick="approveTemplate()" style="background:#28a745; width:100%; padding:12px 10px; margin-top:5px; font-weight:bold;">✅ Bu Şablonu Onayla</button>
+            <div class="tool-note">✅ Onay düğmesi artık sağ panelin daima görünen en üst bölümündedir.</div>
             <div class="tool-note">Dört köşe doğruysa şablonu üretimde kullanılabilir hale getirir.</div>
 
             <div class="tool-divider"></div>
@@ -213,6 +237,7 @@
 </div>
 
 <script src="/static/js/main.js"></script>
+<script src="/static/js/review_v46.js"></script>
 
 </body>
 </html>
