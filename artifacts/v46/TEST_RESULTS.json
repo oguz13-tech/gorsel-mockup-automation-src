@@ -1,0 +1,63 @@
+{
+  "branch": "feature/v46-safe-consolidation-20261024",
+  "commit": "pending-next-commit",
+  "tests": [
+    {
+      "name": "TESTLER/test_port_transition_force_fallback.py",
+      "result": "6 PASS"
+    },
+    {
+      "name": "TESTLER/test_v46_review_bulk_esrgan.py",
+      "result": "4 PASS, 2 SKIP"
+    },
+    {
+      "name": "TESTLER/test_v44_group1_upscale_ui.py",
+      "result": "8 PASS"
+    },
+    {
+      "name": "PETEK/Excel/regression targeted selection",
+      "result": "63 PASS"
+    },
+    {
+      "name": "tests/test_v46_synthetic_corner_benchmark.py",
+      "result": "1 PASS"
+    },
+    {
+      "name": "tests/test_v46_all_category_geometry_benchmark.py",
+      "result": "1 PASS"
+    }
+  ],
+  "all_category_geometry": {
+    "dataset": "synthetic_only",
+    "real_golden_samples": 0,
+    "status": "HUMAN_REVIEW_REQUIRED",
+    "ocak_arkasi": "0/3 detected; no coordinates assigned",
+    "cam_dograma": "1.0 detection; median IoU 0.3579",
+    "petek_mask_outside_preserved": true
+  },
+  "corner_benchmark": {
+    "dataset": "synthetic_only",
+    "canny_contour": {
+      "median_iou": 0.9763589102395367,
+      "false_positive_no_panel": 0
+    },
+    "bright_region": {
+      "median_iou": 0.982912353347136,
+      "false_positive_no_panel": 0
+    },
+    "hough_hull": {
+      "median_iou": 0.43655585000712915,
+      "false_positive_no_panel": 3
+    },
+    "acceptance": "INSUFFICIENT_GOLDEN_HUMAN_REVIEW_REQUIRED"
+  },
+  "not_run_as_pass": [
+    "Win11 real GUI acceptance",
+    "GPU smoke / Real-ESRGAN reinstall",
+    "real four-category reflection QA",
+    "real HTTPS upload and marketplace workbook acceptance"
+  ],
+  "blocked": [
+    "Final local ZIP/manifest generation could not be rerun after Windows sandbox local-network policy failure."
+  ]
+}
