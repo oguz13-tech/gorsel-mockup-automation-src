@@ -1,6 +1,6 @@
 {
   "branch": "feature/v46-safe-consolidation-20261024",
-  "commit": "27449cd",
+  "commit": "abb2152",
   "release": "NO-GO",
   "root_cause_report": "docs/V46_ROOT_CAUSE_ACCEPTANCE_20261024.md",
   "tests": [
