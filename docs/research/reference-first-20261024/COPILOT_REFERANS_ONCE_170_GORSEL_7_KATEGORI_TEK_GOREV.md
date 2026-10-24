@@ -1,0 +1,68 @@
+# COPILOT — ACİL YENİ ANA GÖREV: REFERANS ÜRÜNÜ BUL → GEOMETRİYİ GÜVENLE AKTAR → GEREKİRSE AI
+**İş türü:** Tam uygulama + gerçek Windows yerel deney + karşılaştırmalı görsel teslimat  
+**Öncelik:** Issue #53'ün 94 algoritmayı art arda koşturma yaklaşımını güvenli checkpoint ile **DURDUR ve bu göreve geç**.  
+**Kullanıcı müdahalesi:** Test süresince sıfır. Yalnız tamamlanmış yerel görsel galerinin sonunda insan görsel değerlendirmesi gerekecek; gerçek insan onayı yerine otomatik APPROVED yazma.
+**Repo:** oguz13-tech/gorsel-mockup-automation-src  
+**Yeni araştırma dalı:** research/reference-first-object-geometry-20261024  
+**Korunacaklar:** V4.6 PR #52 / Issue #35 ve bütün kullanıcı canlı verileri. Araştırma arşivi, 94 yöntemlik envanter ve Issue #53 baseline sonuçları.
+
+## 0) ÖNCE DURDURMA/CHECKPOINT VE ORTAM İZOLASYONU
+- Yerel Copilot mevcut Issue #53 işini okuyorsa eski 94 yöntem sıralı toplu deneylerini yeni koşu başlatmadan güvenli şekilde durdursun. **Önce** rapor/overlay/galeri/ledger ve hesaplanmış tüm SHA değerleri kalıcı diske yazılsın, sonra ilgili yalnız laboratuvar job/worker'larına graceful stop uygulasın. Başka programları/PR #52'yi durdurmasın.
+- Mevcut test kopyası: `C:\AI_WORK\GORSEL_GEOMETRY_LAB_20261024`; bulunan bütün verileri dokunmadan koru. 170 görsel, 10 yöntem ailesi, 1.700 test satırı, 3.400 overlay/warp raporları bildirildi; dosya sayımı ve hash ile DOĞRULA, kanıtsız PASS verme. Yerel `outputs/glass_benchmark/INDEX.html`, `reports/METHOD_LEDGER_94.json`, `reports/EXPANDED_BENCHMARK_SUMMARY.md`, `outputs/glass_benchmark/RESULTS.json` kaybolmayacak.
+- Yalnız yeni **ayrı lab**: `C:\AI_WORK\GORSEL_REFERENCE_LAB_20261024` (çakışırsa yeni, boş, numaralı klasör). Ayrı venv + model cache + dataset manifest + reports + gallery. Canlı OneDrive, `template_profiles`, render orijinaller, SQLite, Approved geometri, backup ve son V4.6 Windows ZIP'ine **asla yazma**; read-only kopyadan SHA kontrollü analiz. PUBLIC GitHub'a özel fotoğraf, DB, kullanıcı yolu, parola, ticari çıktı/Excel yükleme.
+- 94 ID'nin tümünü ve eski raporları aynı kimlikle koru: bu aşamada sadece yeni hipotezleri önceliklendir; eski valid testleri sıfırdan tekrar etme. İhtiyaç duyulan asgari READMEs, env hashes, test kodu, anonim özetleri yeni dala gönder. Yanlışlıkla V4.6 source/pr değiştirme.
+
+## 1) KULLANICININ YENİ TEMEL HİPOTEZİNİ TEST ET — KANITSIZ KABUL ETME
+Kullanıcıya göre 7 kategoride kullanılan ürün **kategori başına en fazla yaklaşık 10 fiziksel açı/boyut/geometri varyantına** sahip; geri kalan fotoğraflar arka plan değiştirildiği halde aynı ürünün tekrarı. Bu bir **doğrulanacak hipotezdir**, peşinen 10 grup yapma veya 'AI mecburen bulur' demek yok. Hedef ürün sınıfını kategori klasöründen zaten biliyoruz; 7 kategorinin genel sınıflandırıcısını eğitmeye gerek yok.
+- 7 kategori / toplam 170 GERÇEK kullanıcı laboratuvar fotoğrafını SHA256 ile doğrula; aşağıdaki sayıları beklenen referans diye raporla, gerçek disk sayısı farklıysa farklılığı dök:
+  - Cam Tablo Dikey 23; Cam Tablo Yatay 23; Cam Doğrama 23; Ocak Arkası 27 (**ilk cam toplam 96**)
+  - Wi-Fi Kutusu 21; Ahşap Tablo 23; PETEK 30 (**sonra diğer 74**)
+- Üç ayrı türeme tipini her eşleşmede kaydet:
+  **T1 pixel-identical/resize/crop/benzer 2D transform**, **T2 aynı fiziksel tasarım fakat render/repaint ile yeniden çizilmiş kenarlar**, **T3 gerçek yeni ürün geometrisi/yetersiz kanıt**. Yalnız T1'de de bağımsız geometrik registration yeterliyse köşe aktarımı; T2'de yalnız referans sınıfından ROI/angle prior kullan, doğrudan quad transfer yapma.
+- Yeni görüntülerde ürünün değişmeden kalması iddiasını `scene_group_id`, `product_variant_id`, `lineage_type`, `confidence_calibration_evidence` ile sınırlandır. Arka plan benzerliğini ürün benzerliği sanma. Tekrarlı fayans/duvar motiflerinden sahte keypoint eşleşmelerini reddet. Ürün maskesi olmadan tüm sahne CLIP benzerliği doğru ürün referansı değildir.
+- Kategori klasörü etiketi ürünün fotoğrafta tam olarak bulunduğuna dair tek başına kanıt değildir: ürün yok, çok küçük, örtülü, bozulan, yanlış kategori sahneleri açık `NO_TARGET / UNVERIFIABLE` sonuç olmalı.
+
+## 2) REFERANS ÜRÜN KÜTÜPHANESİNİ OTOMATİK KUR
+- Onaylı veri kurtarma: mevcut SQLite/JSON/PSD/smart-object/homography/render receipt'lerini **salt okunur** tara; yalnız `review_status=APPROVED`, `manually_verified=1`, `is_active=1`, `template_uid`+category+source SHA+orientation/dimensions/sürüm koşulları birebir eşleşince gerçek onaylı referans say. `LEGACY_MANUAL_REFERENCE_UNVERIFIED` ayrı kalmalı, Golden PASS üretmesin.
+- Önceden bilinen geometri varsa `reference_id`, `source_sha`, `product_bbox_or_mask`, `outer_quad`, `printable_quad`, `visible_mask`, `occluder_mask`, `variant/angle`, `provenance`, `approval_state` sakla. Eksik alanı tahmin edip 'onaylı' diye doldurma.
+- Mevcut 170 görüntüden ürün bazlı (arka plan temsillerini bastıran) **öneri kümelemesi** yap: aynı ürünün tekrarlı referans adayları, varyant sayısı kategori başına tahmin, hata/şüphe/birbirine benzeyen geometriler listesi. Doğru ürün ROI yoksa önce ucuz semantic+CV aşamadan geç; ROI sınırlaması başarısızsa `NOT_CLUSTERABLE` raporla. Clustering algoritmasının verdiği grup insan onayının yerine geçmez.
+- Her kategoride yalnız gerçekten farklı bulunan ana örnekleri `REFERANS_GALERISI.html` içine ayır, aday aynı/açı farkı/yeniden çizilmiş ayrımını komşu görüntü çiftiyle göster. Onaylı geometri mevcutsa onu kullan, değilse `DRAFT_REFERENCE` olarak sakla.
+
+## 3) İLK DENENECEK YÖNTEMLER — EĞİTİM YOK
+**E0 — bilgi/metadata önceliği:** direkt onaylı geometrinin aynı SHA ile tekrar kullanımı, exact pixel hash, aynı piksellerin orientation+crop/resize dönüşümü, kanıtlı JSON/homography metadata. Başarılı kaynaklar için model çağrısı bile yapma.
+**E1 — klasik / geometri doğrulamalı referans registration:** ORB/AKAZE/SIFT→RANSAC homografi; ECC registration; uygun veri ve bağımlılık varsa LightGlue/SuperPoint; dense mask/template correlation. Inlier sayısı, destek alanının ürün üzerinde yayılımı, reprojection, simetri ve sahte fayans eşleşmesi, panelin kenar tutarlılığı ve mask-fit üzerinden otomatik kabulu sınırlandır. Düz beyaz/şeffaf üründe yeterli feature yoksa 'eşleşti' uydurma.
+**E2 — eğitim gerektirmeyen görsel referansla nesne bulma:** OWLv2 image-guided query; YOLOE pretrained visual prompt (yalnız doğrulanmış ticari kullanım koşuluyla aday), PerSAM one-shot prompting (kendi referans maskeleri varsa), imkan/VRAM uyumlu SAM 3 image prompt / concept grounding. Model+weights resmî kaynak, lisans, hash, VRAM, Windows uygunluğu doğrulanmalı.
+**E3 — hazır metin tabanlı konumlandırma:** Florence-2 (uygun checkpoint), Grounding DINO, OWLv2 text prompt; kategoriye ve ürünün fiziksel tanımına uygun **3 çeşit prompt** (isim, biçim+konum, görsel referans) ile kıyasla. Örn. 'glass table' yanlış yemek masası çağrışımı yapabilir; Ocak Arkası için 'rectangular stove backsplash glass panel behind cooktop'; Wi-Fi için 'wall mounted router concealment box with sliding MDF front'; PETEK için 'radiator cover cabinet'; Cam Doğrama için 'horizontal glass cutting board on countertop'. Kullanıcı Türkçe de kullanabilir ama model promptları test edildiği dile göre kaydedilmeli.
+**E4 — ROI→gerçek baskı yüzeyi:** Önce doğru ürünü sınırlandır, sonra SAM2.1 Tiny/Small / SAM3 / MobileSAM / cam özel GEM, GlassWizard, L+GNet gibi yalnız hazır ağırlığı kanıtlı modellerle ROI maskesi çıkar; dış cam sınırı, iç baskı sınırı, öndeki nesne maskesi ayrı. ROI içinde Canny/LSD/RANSAC/contour/SciPy quad refiner test et. PETEK 4 köşeye zorlanmaz: dış maskesi, kavis, hava delikleri/slot ve görünür sınırlar.
+**E5 — adaptif karar:** 'özdeş bilinen'→'geometri aktarımı doğrulandı'→'ürünü AI buldu + maske'→'CV refiner'→'REVIEW_REQUIRED/NO_TARGET'. Uyuşmayan yöntemlerin quads'ını körlemesine ortalama. PPI-OET, depth/ghosting ve ağır uzman modeller yalnız başarısız uç örneklerde kanıtlı bilgi getiriyorsa ayrıca denenir. 94 araştırma ID korunur ve `UNCHANGED_PRIOR`, `TESTED`, `NOT_NEEDED`, `BLOCKED` gibi ayrı metadata alır.
+- **YASAK:** YOLO Pose/RTMPose/custom segmenter özel fine-tuning veya sıfırdan eğitim; bunlar ancak elde kalan somut zor örnekler belgelendikten ve sonraki bir kullanıcı kararıyla açılır. Model indirimi ve uygun ücretsiz hazır model denemesi için ek kullanıcı görevi bekleme; kapalı lisans/ödeme/kişisel veri aktarımı için bağımsız onay gerekir. RTX3060 gerçek VRAM, disk ve venv izolasyonuna göre sırayla yükle/boşalt, V4.6 dep'lerini değiştirme.
+
+## 4) FARKLI STRES TESTLERİ, REFERANS KARŞILAŞTIRMA & ADİL ÖLÇÜM
+- **ÖNCE CAM 96, SONRA DİĞER 74**, tek görev içinde araya kullanıcı girdisi koyma. Her kategori her yöntem/türden geçen görüntü sayısı, doğru ürün tespit oranı, yanlış ürün/dolap/fayans, mask IoU, geometrik köşe hata P50/P95/MAX yalnız APPROVED veya ayrıca bağımsız insan refere edilmiş alanlarda; hata referansı yoksa `UNKNOWN_GT`.
+- **A/B ana deney:** aynı 170 görüntüde (a) tüm resimde otomatik nesne bulma (b) oracle/önceden doğru ROI verilince maske+quad. Bu fark, sorunun yanlış ürün mü yoksa yanlış köşe mi olduğunu gösterir. Oracle ROI kullanan çıktı 'otomatik başarı' değildir.
+- **Çekirdek hipotez testi:** referansın ön/arka planındaki yerel pikselin crop/scale/warp altında aynı olup olmadığını dene; aynı geometrik panel dış konturun korunması; AI yeniden çiziminin boyut/kenar farklılığı, örtülme, dönüşüm drift'i. T1/T2/T3 oranlarını kategori bazlı raporla.
+- Farklı sahne aileleri, açı, boyut, iç yüzey beyaz/siyah/şeffaf/desenli, yansıma, güçlü/zayıf kenar, occlusion, fayans/duvar yanıltıcı çizgileri, NO_PANEL negatif, padding, çözünürlük, tekrarlar ve 3:4 ürün mockup finali. Grup bazında leakage önle; sentetik arka plan varyasyonunu bağımsız örnek sayma.
+- Tespit yüzdesi yalnız uygun Golden varsa sayısal iddia olur. Ayrı `coverage`, `false_accept`, `review_rate`, ürün eşleme doğruluğu, registration inlier&reprojection, corner error, printable mask IoU, final baskı taşma piksel oranı, öndeki nesne bozulması, zaman/VRAM ölç. Sıfır hatayı garanti etme.
+- Mevcut Canny/Contour ve 10 aile ile adil aynı 170 görsel karşılaştırması; eski 1.700 satırı yeniden hesaplama gerekmiyorsa doğrudan provenance ile baseline tut; yeni zor test alt kümelerine gerekirse hedefli re-run. Bir deneyin başarısızlığı diğer bağımsız deneyleri durdurmasın.
+- **Çıkış etiketleri:** EXACT_KNOWN / VERIFIED_TRANSFER / AI_LOCALIZED / AI_MASK_DRAFT / REVIEW_REQUIRED / NO_TARGET / BLOCKED_ENV / BLOCKED_LICENSE / UNKNOWN_GT. Bunların hiçbiri canlı APPROVED'e otomatik terfi etmez.
+
+## 5) ZORUNLU KULLANICIYA GÖSTERİLECEK YEREL GÖRSEL DELİLLER
+- Yeni laboratuvarda offline, tarayıcıdan açılabilir **`INDEX.html`** ve tek Windows `GALERI_AC.bat`. Model internete bağlı değilken de çalışsın, eksik thumbnail 0, JS/asset bağlantıları doğrulansın.
+- Kategori / scene / ref-angle / 'aynı pixel-türev' vs 'AI redraw' / başarı-vaka türü filtreleri; en kötü örnekler ve null nesne; bütün 170 gerçek görüntü ve geçerli bütün tahminler.
+- Her örnekte **orijinal, referans örnek ve onay durumu, doğru ürün ROI (varsa), E0/E1/E2/E3/E4 aday ürün kutuları, mask, TL-TR-BR-BL köşe overlay, onaylı gerçek alan varsa GT, seçilen kaynağın ref_id+transform kanıtları, mask/köşe yakın plan, final 3:4 baskılı mockup**. Her yöntemin ayrı görseli ve yanlışları; dosya adına bakıp başarılı sanma. PETEK için quad değil kontur/slot maskesi.
+- Kullanıcı görsel QA kayıtlarını (DOĞRU/YANLIŞ/ŞÜPHELİ, not) yalnız izole yerel JSON'a yaz; gerçek DB değişmez. Her görsel üzerinde seçilen yöntem ve başarısız alternatifleri insan anlayacak şekilde yan yana sun. Referans küme galerisi ayrıca üretilsin.
+
+## 6) TESLİM / DURUM KAPANIŞ
+Kendi başına yapılabilen işleri TAMAMLA; *kullanıcının ayrıca VS Code komutu yazması, resim yüklemesi, dört köşe işaretlemesi veya paket kurması* talep edilmesin. Ancak Windows ajanın erişemediği kullanıcı kaynakları için yapılmış gibi yalan söyleme; somut `BLOCKED_LOCAL_ACCESS` raporu çıkar; kalan bağımsız işleri devam ettir. GitHub Issue'ya ve laboratuvar raporlarına en az şu kanıtları koy:
+- `OLD_RUN_CHECKPOINT.json`: önceki 170/10/1700/3400 ve dosya hash gerçek kontrol.
+- `REFERENCE_INVENTORY.json`: yedi kategoriye göre referans açı/ürün varyant sayısı ve T1/T2/T3 ayrımı.
+- `MATCH_RESULTS.json`: tüm fotoğraf bazında referans ID, eşleşme türü, transform ve kabul/red gerekçesi.
+- `MODEL_CATALOG_AND_LICENSES.json`: hazır modellerin erişim, ağırlık, kurulum, inference log, lisans ve GPU durumu.
+- `EVALUATION_SUMMARY.md`: E0-E5 ablation, 170 görüntü kapsama, cam96, diğer74, kategori karşılaştırma, gerçek GT/unknown ayrımı, yanlış nesne, false accept, render mask kalitesi.
+- `INDEX.html` + `GALERI_AC.bat` local path, gerçekten açılmış kanıt (0 broken image) ve kullanıcı görsel onayı için 7 kategori filtreleri.
+- `PRIVACY_AND_APPROVED_INTEGRITY.json`: çalışma baş/son SHA ve gerçek DB değişmezlik, public git scan, kod/test diffs.
+- En iyi **şimdilik laboratuvar** motoru/alternatifleri; başarısız alt kategoriler. Tam otomatik Production veya Release=PASS ancak bağımsız test+insan QA sonra.
+
+**BİTİŞ SINIRI:** Yalnız rapor yazma değil: gerçek 170 görüntü üzerinde yeni referans-aile/nesne bulma yöntemi koşularını, karşılaştırmalı galeri ve kodu kanıtla. Bu lokal laboratuvarın üreteceği özel görselleri public GitHub'a koyma. Issue #53 eski koşularına dönme; PR #52 paralel V4.6 çalışmasına karışma; main merge/deploy/APPROVED mutation yok.
+
+**AUTOMATION LIMITATION:** GitHub'a yazılan bu görev, VS Code'un yerel Copilot oturumunu kendiliğinden başlatıp durdurmaz. Yerel agent erişiminde kendisi uygular. GitHub bulut Copilot ortamı kullanıcı PC'sindeki özel 170 görüntüye otomatik erişmez; bunları erişebiliyor gibi raporlama.
