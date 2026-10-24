@@ -1,0 +1,31 @@
+{
+  "date": "2026-10-24",
+  "research_source_count": {
+    "ideas": 94,
+    "original_user_uploaded_texts": 3,
+    "other_user_pasted_reports_summarized": 5
+  },
+  "local_archive": {
+    "filename": "DORT_KOSE_ARASTIRMA_KONSOLIDE_20261024.zip",
+    "sha256": "8c28482f46b662111533387cbf521f00a335ccce802a70942b6682d20cd0a800",
+    "size_bytes": 59021,
+    "note": "This local archive is available in the originating ChatGPT conversation. Its original source-file SHA hashes below refer to archive bytes; GitHub API text copies may be normalized."
+  },
+  "original_source_sha256_from_local_zip": {
+    "P1_PERPLEXITY_ILK_RAPOR.txt": "e63ca1f5cff2f25a152d4c2ba42578d02c98bb15d4423ad50734b3ba917041ef",
+    "P2_PERPLEXITY_YENI_RAPOR.txt": "79f91fd596e9ac94b3a2339c2a0f5fa920043c031bb376382ffa6235831a9507",
+    "Q1_QWEN_ILK_RAPOR.md": "0fe18cabf0c62012b70be7d3cea73cae9039de403db274275f45d3eb5271a778"
+  },
+  "inventory": {
+    "filename": "TEKNOLOJI_ENVANTERI_94_ADAY.json",
+    "method_ids": "ID01-ID94",
+    "confirmed_all_unique": true
+  },
+  "source_handling": "No original customer image, production SQLite, API secret, marketplace workbook or user runtime asset uploaded",
+  "github": {
+    "research_branch": "research/geometry-lab-all-methods-20261024",
+    "copilot_issue": 53,
+    "parallel_v46_pr": 52,
+    "parallel_v46_acceptance_issue": 35
+  }
+}
