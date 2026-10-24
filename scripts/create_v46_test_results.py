@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 
@@ -44,4 +45,7 @@ def create(path: Path, commit: str) -> None:
 
 if __name__ == "__main__":
     root = Path(__file__).resolve().parents[1]
-    create(root / "artifacts" / "v46" / "TEST_RESULTS.json", "27449cd")
+    commit = subprocess.check_output(
+        ["git", "rev-parse", "--short", "HEAD"], cwd=root, text=True
+    ).strip()
+    create(root / "artifacts" / "v46" / "TEST_RESULTS.json", commit)
