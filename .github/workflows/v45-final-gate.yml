@@ -1,0 +1,40 @@
+name: V4.5 Combined Source Safety and 103-Task Closure Gate
+on:
+  push:
+    branches:
+      - feature/v45-final-closure-20261024
+  pull_request:
+    paths:
+      - 'MERKEZ/**'
+      - 'TESTLER/test_v45_final_closure.py'
+      - '.github/workflows/v45-final-gate.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  group123:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install dependencies into runner only
+        run: python -m pip install --disable-pip-version-check -r MERKEZ/requirements.txt
+      - name: Check syntax of combined source
+        run: python -m compileall -q MERKEZ TESTLER
+      - name: Test V4.5 pause, operations, Excel templates, large image fail-close and G3 safety
+        run: python -m pytest -q TESTLER/test_v45_final_closure.py TESTLER/test_v44_group3_release_safety.py TESTLER/test_v44_group1_upscale_ui.py
+      - name: Windows Group 2 geometry protection regression
+        if: runner.os == 'Windows'
+        run: python -m pytest -q TESTLER/test_v44_group2_safe_tools.py TESTLER/test_v42_hotfix_number_and_restore.py
+      - name: Install virtual display (Linux only)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq xvfb
+      - name: Linux combined group 2 GUI regression
+        if: runner.os == 'Linux'
+        run: xvfb-run -a python -m pytest -q TESTLER/test_v44_group2_safe_tools.py TESTLER/test_v314_tk_menu.py

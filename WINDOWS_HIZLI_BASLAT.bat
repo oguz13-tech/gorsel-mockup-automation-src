@@ -2,9 +2,9 @@
 setlocal
 chcp 65001 >nul
 cd /d "%~dp0"
-title GORSEL URETIM MERKEZI - V4.4 GRUP 1+2+3 KABUL ADAYI
+title GORSEL URETIM MERKEZI - V4.5 GRUP 1+2+3 + FINAL
 echo =======================================================
-echo  GORSEL URETIM MERKEZI V4.4 - GRUP 1 + GRUP 2 + GRUP 3
+echo  GORSEL URETIM MERKEZI V4.5 - GRUP 1 + GRUP 2 + GRUP 3 + FINAL
 echo =======================================================
 echo Eski onayli sablonlar ve kullanici verileri degistirilmez.
 echo.

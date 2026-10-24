@@ -18,7 +18,7 @@ import webbrowser
 
 HERE=Path(__file__).resolve().parent
 ROOT=HERE.parent
-VERSION='V4.4 — Grup 1+2+3 (Windows Kabul Adayı)'
+from version_v45 import TITLE as VERSION
 
 class Center:
     def __init__(self):
