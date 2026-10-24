@@ -9,8 +9,15 @@ import zipfile
 from pathlib import Path
 
 
-EXCLUDED_PARTS = {".git", "__pycache__", "artifacts", "V46_FINAL_CANDIDATE"}
-EXCLUDED_NAMES = {"ayarlar.db", "v4_ortak_uretim.sqlite3", "cloud_urls_v43.sqlite3"}
+EXCLUDED_PARTS = {
+    ".git", "__pycache__", "V46_FINAL_CANDIDATE",
+    "2_SABLON_HAVUZU", "2_SABLON_HAVUZU_ORIJINAL_YEDEK",
+    "3_URETILEN_MOCKUPLAR",
+}
+EXCLUDED_NAMES = {
+    "ayarlar.json", "ayarlar.db", "v4_ortak_uretim.sqlite3",
+    "cloud_urls_v43.sqlite3",
+}
 
 
 def digest(path: Path) -> str:
@@ -67,5 +74,8 @@ def create(root: Path, commit: str) -> tuple[Path, Path]:
 
 if __name__ == "__main__":
     root = Path(__file__).resolve().parents[1]
-    candidate, archive = create(root, "working-tree")
+    commit = subprocess.check_output(
+        ["git", "rev-parse", "--short", "HEAD"], cwd=root, text=True
+    ).strip()
+    candidate, archive = create(root, commit)
     print(json.dumps({"candidate": str(candidate), "archive": str(archive)}))
