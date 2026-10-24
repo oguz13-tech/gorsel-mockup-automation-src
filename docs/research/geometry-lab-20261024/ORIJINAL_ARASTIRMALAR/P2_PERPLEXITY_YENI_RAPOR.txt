@@ -1,0 +1,614 @@
+Haklısınız. Önceki yanıtım ağırlıklı olarak “hangi modeli kullanmalıyız?” sorusuna odaklandı. Sizin asıl sorunuz daha derin:
+
+“Görüntüdeki gerçek baskı yüzeyini güvenilir biçimde bulamıyorsak, ticari otomasyonu yine de nasıl sağlam kurarız?”
+
+Ben bu projeyi yalnızca bir nesne tespit problemi olarak değil, geometri bilgisini elde etme, doğrulama, saklama ve tekrar kullanma problemi olarak ele alırdım.
+
+YOLO, SAM veya özel eğitim başarısız olduğunda yapılacak şey, mutlaka daha büyük bir model denemek değildir. Bazen doğru çözüm mevcut onaylı şablonu tanımak; bazen kaynak dosyadaki dönüşümü okumak; bazen yalnız bir kenarı insana sordurmak; bazen de fotoğrafı bu iş için uygun bulmamaktır.
+
+Aşağıdaki plan, önceki önerimin yerine geçmez; onun üstüne kurulması gereken daha kapsamlı sistem tasarımıdır.
+
+1. Önce problemi dört farklı işe ayırmalıyız
+Şu anda tek bir algoritmadan aslında dört ayrı iş bekliyorsunuz:
+
+İş	Soru	Yanlış olursa ne olur?
+Ürün kimliği	Hedef cam panel hangisi?	Dolap veya fayans seçilir
+Sınır ölçümü	Panelin fiziksel sınırı nerede?	Doğru nesnede yanlış köşeler çıkar
+Baskı alanı tanımı	Tasarım tam olarak nereye girmeli?	Cam doğru bulunsa bile baskı taşar
+Görsel birleştirme	Yansıma, gölge ve örtücüler nasıl korunmalı?	Köşeler doğru olsa bile mockup sahte görünür
+Bunları tek model skoruna indirgerseniz hatanın sebebini anlayamazsınız.
+
+Örneğin model doğru paneli bulmuş olabilir; fakat camın dış gölgesini baskı alanına dahil etmiş olabilir. Bu bir nesne tespit hatası değil, sınır tanımı hatasıdır.
+
+Ya da dört köşe doğrudur ama tasarım öndeki tencerenin üzerine basılır. Bu da köşe hatası değil, katmanlama hatasıdır.
+
+Dolayısıyla her aşamanın ayrı çıktısı, testi ve başarısızlık durumu olmalı.
+
+2. En önemli alternatif: Her görüntüde yeniden tespit yapmak zorunda mıyız?
+Benim ilk araştıracağım konu bu olurdu.
+
+Sisteminizde onaylanmış köşeler zaten varsa, elinizde yalnız eğitim verisi değil, doğrudan kullanılabilecek bir şablon bilgi tabanı var.
+
+Üç farklı görüntü türünü ayırın
+A. Aynı dosya
+Aynı görsel tekrar geldiyse:
+
+Dosya veya çözülmüş piksel hash’iyle tanıyın.
+
+Daha önce onaylanmış geometrisini kullanın.
+
+Model çalıştırmayın.
+
+Burada tespit yapmak gereksiz risk ve maliyettir.
+
+B. Aynı şablonun değiştirilmiş türevi
+Örneğin:
+
+Yeniden boyutlandırılmış.
+
+JPEG olarak tekrar kaydedilmiş.
+
+Kırpılmış.
+
+Üzerine başka tasarım yerleştirilmiş.
+
+Logo eklenmiş.
+
+Hafif renk değişimi yapılmış.
+
+Burada soru “cam nerede?” değil:
+
+“Bu görüntü, onayladığımız hangi şablonun hangi dönüşümünden oluşmuş?”
+
+Bu, nesne tespitinden farklı bir problemdir: görüntü eşleştirme ve kayıt.
+
+C. Gerçekten yeni sahne
+Daha önce görmediğiniz mutfak veya ürün fotoğrafı.
+
+Asıl AI tespiti bu gruba uygulanmalı.
+
+Neden bu ayrım kritik?
+Varsayımsal olarak 20.000 çıktı görseliniz yalnız 300 ana mutfak şablonundan üretiliyorsa, 20.000 bağımsız tespit problemi çözmek yerine 300 ana geometrinin yönetimini çözebilirsiniz.
+
+Bu sayılar sizin sisteminiz hakkında iddia değil; önce ölçülmesi gereken fırsatı gösteren örnektir.
+
+İlk veri analizi şu oranları çıkarmalı:
+
+text
+Tam aynı dosya oranı
+Aynı ana şablondan türeme oranı
+Gerçekten yeni sahne oranı
+Bu oranlar bilinmeden büyük model yatırımı yapmak erken olur.
+
+3. Plan B: Onaylı şablondan doğrulanmış geometri aktarımı
+Önceki mesajınızdaki “başka görselin köşeleri rastgele uygulanmamalı” kuralına tamamen katılıyorum.
+
+Ama şu iki işlem farklıdır:
+
+Benzer mutfağın köşelerini kopyalamak: güvenli değil.
+
+Aynı şablonun türevi olduğunu geometrik olarak doğrulayıp koordinatları dönüştürmek: kontrollü bir yöntem.
+
+Nasıl çalışır?
+text
+Yeni görüntü
+    ↓
+Onaylı şablon bankasında aday arama
+    ↓
+Aynı sahne olduğuna ilişkin yerel eşleşmeler
+    ↓
+Dönüşüm modeli tahmini
+    ↓
+Bağımsız geometrik doğrulama
+    ↓
+Onaylı köşeleri yeni koordinat sistemine taşıma
+Yerel özellik eşleştirme için LightGlue değerlendirilebilir. Resmî proje, iki görüntüdeki yerel özellikler arasında eşleşmeler üretir; kodu ve kendi ağırlıkları Apache-2.0 lisanslıdır. Ancak kullanılan özellik çıkarıcının lisansı ayrıca kontrol edilmelidir.
+
+İlk eşleşmenin ardından OpenCV findTransformECC ile uygun durumlarda hizalama hassaslaştırılabilir. OpenCV belgeleri ECC’nin yaklaşık başlangıç hizalamasına ihtiyaç duyabileceğini ve yoğunluk benzerliği üzerinden çalıştığını belirtiyor; dolayısıyla bunu sınırsız bir “her şeyi düzelt” yöntemi saymamak gerekir.
+
+Güvenlik koşulları
+Yalnız “eşleşme sayısı yüksek” diye köşe aktarımı yapmam:
+
+Eşleşmeler görüntünün tek küçük bölgesine yığılmamalı.
+
+Tekrarlanan fayans deseninden kaynaklanan yanlış eşleşmeler kontrol edilmeli.
+
+Dönüşüm sonrası bağımsız kontrol noktaları uyumlu olmalı.
+
+Panel çevresinde yerel uyum bulunmalı.
+
+Dönüşüm, görüntünün nasıl değiştiğiyle tutarlı olmalı.
+
+Panelin kendisinin yeniden boyutlandırıldığı bir düzenleme varsa aktarım reddedilmeli.
+
+Önemli ayrım:
+
+Aynı fotoğrafın kırpılmış türevinde bir dönüşüm yeterli olabilir. Farklı kamera açısından çekilmiş, derinlik içeren mutfakta bütün görüntüye tek homografi uygulamak güvenli bir varsayım değildir.
+
+Tasarım değiştiyse ne yapılır?
+Panel içindeki baskı eşleştirmeyi bozabilir. Bu nedenle:
+
+Panel içini eşleştirmeden çıkarabilirsiniz.
+
+Sabit çevreyi kullanabilirsiniz.
+
+Ardından panel çevresindeki uyumu ayrıca doğrulayabilirsiniz.
+
+Fakat yalnız çevrenin eşleşmesi, panel boyutunun değiştirilmediğini kanıtlamaz. Özellikle üretken düzenleme yapılan türevlerde ek kontrol gerekir.
+
+Bu yöntem başarılı olursa, bazı görüntülerde camın kenarını tekrar bulmanıza hiç gerek kalmaz.
+
+4. Plan C: Pikselden önce kaynak dosyayı araştırın
+Benim ikinci büyük araştırmam şu olurdu:
+
+“Bu görselin üretildiği yerde dört köşe bilgisi zaten mevcut muydu?”
+
+Bazı durumlarda son JPEG üzerinde zor bir problem çözmeye çalışırken, doğru geometri daha önce oluşturulmuş ve kaybedilmiş olabilir.
+
+Araştırılacak kaynaklar
+PSD veya benzeri katmanlı şablonlar.
+
+Smart object dönüşüm bilgileri.
+
+Vektörel kırpma yolları.
+
+Katman maskeleri.
+
+Daha önce üretilmiş homografi matrisleri.
+
+Uygulamanızın eski JSON/SQLite kayıtları.
+
+Editör geçmişi veya şablon yan dosyaları.
+
+Görseli üreten render/kompozisyon sistemi.
+
+Her dosya biçiminin bu bilgiyi erişilebilir biçimde sakladığını varsaymıyorum; bu, kaynak envanterinde doğrulanacak bir fırsattır.
+
+Bundan sonra geometriyi kaybetmeyin
+Kendi sisteminiz bir mockup üretiyorsa çıktı ile birlikte şu kayıt da üretilmeli:
+
+json
+{
+  "template_id": "kitchen_014",
+  "template_version": 3,
+  "source_image_hash": "...",
+  "coordinate_space": "original_pixels",
+  "surface_geometry_id": "surface_001",
+  "homography_id": "transform_021",
+  "print_mask_id": "mask_001",
+  "occluder_mask_id": "mask_002",
+  "approval_status": "human_approved"
+}
+Sonraki aşama bu bilgiyi JPEG’den tekrar tahmin etmemeli.
+
+Bu, AI doğruluğunu artırmak değil; gereksiz AI ihtiyacını ortadan kaldırmaktır.
+
+5. Plan D: Köşe yerine kenar parçalarını öğrenmek
+Doğrudan dört köşe tahmini başarısız olursa ilk mimari alternatifim daha büyük bir genel model değil, çıktı temsilini değiştirmek olur.
+
+Çünkü köşe görüntüde yok olabilir; ama o köşeye uzanan iki kenarın parçaları görünür olabilir.
+
+Alternatif çıktı
+Model şunları üretsin:
+
+text
+Panel bölgesi
+Üst kenar olasılık haritası
+Sağ kenar olasılık haritası
+Alt kenar olasılık haritası
+Sol kenar olasılık haritası
+Örtülmüş / gözlenemeyen bölge
+Sonrasında:
+
+Her kenarın güvenilir parçalarını toplayın.
+
+Robust doğru uydurun.
+
+Komşu doğruları kesiştirin.
+
+Sonucun köşe belirsizliğini hesaplayın.
+
+Bu yaklaşım özellikle köşe çevresi yansımayla bozulurken kenarın başka kısmı görünüyorsa anlamlı bir deneydir.
+
+Ama fayans çizgisi yine seçilebilir
+Evet. O nedenle kenar haritası:
+
+Genel mutfak kenarı değil, panelin belirli dış kenarı olarak eğitilmeli.
+
+Panel adayıyla koşullandırılmalı.
+
+Yanlış fayans ve dolap sınırları zor negatif olmalı.
+
+Dört kenarın ortak bir fiziksel yüzey oluşturduğu doğrulanmalı.
+
+Ne zaman tercih edilir?
+Gözlenen hata	Denenecek değişiklik
+Ürün doğru, köşeler kayıyor	Yüksek çözünürlüklü yerel köşe düzeltici
+Köşeler kapalı, kenar parçaları açık	Kenar/parça tabanlı model
+Maske iç desenleri takip ediyor	Dış sınıra özel eğitim
+Düz panelde köşeler kararsız	Köşe + kenar ortak tahmini
+Model sürekli başka nesne seçiyor	Semantik tespit ve negatif veri sorunu; geometriyle çözülmez
+Bu ayrım, yanlış probleme yanlış model eklemenizi önler.
+
+6. Plan E: Birkaç olası dörtgeni sınamak
+Tek modelin ilk tahminine mahkûm olmak zorunda değilsiniz.
+
+Ancak “beş model çalıştırıp ortalamasını almak” da doğru yaklaşım değildir. Aynı yanlışa birlikte düşebilirler.
+
+Bunun yerine farklı kanıtlardan sınırlı sayıda aday üretin:
+
+Köşe modelinin adayı.
+
+Maske sınırından gelen aday.
+
+Yerel kenarlardan gelen aday.
+
+Doğrulanmış şablon eşleşmesinden gelen aday.
+
+Sonra adayları şu sorularla değerlendirin:
+
+Doğru ürün mü?
+
+Dört kenarın her biri için gözlemsel destek var mı?
+
+Aday, fayans veya dolap gibi alternatif açıklamalardan daha iyi mi?
+
+Küçük görüntü değişikliklerinde aynı yerde kalıyor mu?
+
+Baskı alanı tanımıyla uyumlu mu?
+
+“Hiçbiri” seçeneği zorunlu
+Adaylar arasında en iyi olan, doğru olmak zorunda değildir.
+
+Şu karar geçerli olmalı:
+
+text
+En iyi aday mevcut
+Ama kabul edilebilir aday yok
+→ İnsan incelemesi
+Ayrıca iki adayın koordinatlarını ortalamayın. Biri gerçek panel, diğeri fayans grubuysa ortalaması fiziksel bir yüzey oluşturmayabilir.
+
+7. Plan F: Tam otomatik yerine az etkileşimli çözüm
+Tam otomasyon bazı sahnelerde ekonomik olarak mantıklı olmayabilir.
+
+Bu durumda hedefi şöyle değiştiririm:
+
+“İnsan dört köşeyi baştan çizmesin; sistem yalnız eksik bilgiyi sorsun.”
+
+Hata türüne göre farklı insan müdahalesi
+Belirsizlik	İnsandan istenecek bilgi
+Hangi nesne olduğu belirsiz	Panelin içine bir tıklama
+İki panel adayı var	Doğru adayı seçme
+Tek kenar yanlış	O kenarı sürükleme
+Köşe örtülü	Görünür kenarları işaretleme veya tahmini reddetme
+Sınır tamamen belirsiz	Dört köşeyi elle belirleme / görseli kullanmama
+Etkileşimli segmentasyon araştırmaları, seyrek kullanıcı tıklamalarıyla maskeyi düzeltme yaklaşımını destekliyor. Örneğin f-BRS, tahmini maskeyi kullanıcı tıklamalarıyla tutarlı hale getirmeyi hedefliyor. Bu, sizin cam sınırlarında belirli tıklama sayısının yeterli olacağını kanıtlamaz; fakat yarı otomatik arayüzün teknik olarak ayrı bir çözüm sınıfı olduğunu gösterir.
+
+Arayüzü neden önemli görüyorum?
+Model geliştirmeye bir ay daha harcamak yerine iyi bir düzeltme ekranıyla operatör süresini ciddi ölçüde azaltmak mümkün olabilir. Bunun sizin işinizdeki karşılığı pilotta ölçülmeli.
+
+Ölçüt yalnız otomasyon oranı olmamalı:
+
+Toplam maliyet
+=
+hesaplama
++
+insan d
+u
+¨
+zeltmesi
++
+ka
+c
+¸
+an hata maliyeti
++
+bakım
+Toplam maliyet=hesaplama+insan d 
+u
+¨
+ zeltmesi+ka 
+c
+¸
+​
+ an hata maliyeti+bakım
+Daha yüksek otomasyon, daha fazla yanlış kabul üretiyorsa ticari açıdan daha kötü olabilir.
+
+8. Plan G: Fotoğraf gerçekten bilgi taşımıyorsa veri edinimini değiştirin
+En kritik sınır burada.
+
+Bir cam panelin kenarı:
+
+Duvarla aynı renkteyse,
+
+Yansıma vermiyorsa,
+
+Fiziksel sınırı görünmüyorsa,
+
+Alt kısmı tamamen örtülüyorsa,
+
+Başka bir referans da yoksa,
+
+modelin verdiği nokta gözlemden çok öğrenilmiş varsayıma dayanabilir.
+
+Bunu daha büyük modelle kesin ölçüme çeviremezsiniz.
+
+Çekimi kontrol edebiliyorsanız
+Kontrollü deneyle şu seçenekleri araştırın:
+
+Daha yüksek çözünürlüklü orijinal çekim.
+
+Aynı kameradan ikinci, sınırı daha belirgin çekim.
+
+Camın kenarını görünür kılan farklı aydınlatma.
+
+Geçici referans işaretleri.
+
+Ürün yerleştirilmeden önce/sonra sabit kamerayla çekim.
+
+Panelin fiziksel ölçü ve yerleşim kaydı.
+
+İkinci çekim referans işaretleriyle yapılacaksa, işaretleri kaldırıp yeniden çekim sırasında kamera veya panel oynarsa hizalama hatası oluşabileceğini hesaba katın.
+
+Cam söz konusu olduğunda derinlik kamerasını da otomatik kurtarıcı saymam. Önce küçük bir fiziksel deney gerekir.
+
+Çekimi kontrol edemiyorsanız
+Üç dürüst seçenek kalır:
+
+Manuel onay.
+
+Kaynaktan daha iyi görsel isteme.
+
+Görseli otomatik mockup için uygun bulmama.
+
+Sistemin bu üçüncü kararı verebilmesi bir eksiklik değil, kalite kontrol özelliğidir.
+
+9. Plan H: Kontrol edilebilir şablon üretimi
+İş hedefiniz herhangi bir internet fotoğrafındaki fiziksel paneli ölçmek değil, ölçeklenebilir ürün mockup üretmekse başka bir yol daha var:
+
+Geometrisi belirsiz fotoğrafları çözmek yerine, geometrisi bilinen şablonlar üretmek.
+
+Seçenek 1 — Onaylı fotoğraf bankası
+Her ana şablon bir kez hassas etiketlenir.
+
+Baskı maskesi hazırlanır.
+
+Örtücüler ayrılır.
+
+Yansıma katmanı tanımlanır.
+
+Sonraki bütün tasarımlar aynı onaylı geometriyi kullanır.
+
+Seçenek 2 — Kontrollü 3B sahne
+Kendi 3B mutfak/ürün sahnenizde panelin:
+
+Geometrisi.
+
+Kamera izdüşümü.
+
+Maske kimliği.
+
+Örtülmesi.
+
+Yüzey koordinatları.
+
+üretim anında bilinir.
+
+Burada sorun “köşeyi bulma”dan “gerçekçi ve ticari olarak uygun şablon üretme”ye dönüşür. Bu da ayrı maliyet ve kalite testleri gerektirir; sihirli veya bedelsiz bir yol değildir.
+
+Seçenek 3 — Geometri kontrollü üretken arka plan
+Panel ve baskı alanı sabit tutulup yalnız çevre çeşitlendirilebilir.
+
+Ancak üretken model panel sınırını da değiştirirse eski koordinatlar geçersiz olur. Bu nedenle:
+
+Korunan alanlar.
+
+Sonradan geometrik doğrulama.
+
+Şablon onayı.
+
+zorunludur.
+
+Bu yol mevcut fotoğraftaki gerçeği ölçmenin alternatifi değil, kontrollü yeni şablon üretmenin alternatifidir.
+
+10. Başarısızlık nedenine göre karar tablosu
+Gözlenen sorun	Önce araştırılacak neden	Sonraki hamle
+Dolap/pencere seçiliyor	Ürün kimliği, yetersiz negatif veri	Nesne seçimini düzelt; gerekirse kullanıcı tıklaması
+Doğru panel, birkaç piksel kayma	Çözünürlük veya sınır tanımı	Yerel yüksek çözünürlük düzeltici; etiket standardı
+Fayans çizgisi cam kenarı sanılıyor	Arka plan çizgisinin baskınlığı	Panel sınırına özel eğitim; şablon eşleme
+Köşe kapalı	Gözlenebilirlik sorunu	Kenar parçalarından çıkarım + inceleme
+Panelin tüm sınırı belirsiz	Görüntüde bilgi yetersiz	Ek kaynak/çekim; manuel veya ret
+Aynı şablonda tekrar tekrar hata	Kimlik/önbellek eksikliği	Bir kez onayla, türevleri doğrulanmış dönüşümle kullan
+Bir kategoride iyi, diğerinde kötü	Hedef tanımları farklı	Kategoriye özel geometri sözleşmesi
+Köşeler doğru, mockup kötü	Kompozisyon sorunu	Yansıma, örtücü ve baskı maskelerini ayır
+Sadece testte iyi, üretimde kötü	Veri sızıntısı veya dağılım farkı	Sahne bazlı yeni dış test
+Her şeyi incelemeye gönderiyor	Aşırı muhafazakâr eşik veya yetersiz veri	Risk–kapsam eğrisini ölç; körlemesine eşik düşürme
+11. Daha fazla model denemeden yapılacak teşhis deneyleri
+Ben ekibinize önce aşağıdaki deneyleri verirdim.
+
+Deney 1 — Doğru ROI verildiğinde köşeler bulunabiliyor mu?
+İnsan yalnız panelin yaklaşık kutusunu verir.
+
+Sonuç belirgin düzeliyorsa ana sorun nesne seçimi.
+
+Düzelmiyorsa ana sorun sınır ölçümü veya görüntüde bilgi eksikliği.
+
+Deney 2 — İnsanlar aynı köşelerde anlaşabiliyor mu?
+İki kişi bağımsız etiketler.
+
+İnsanlar da ayrışıyorsa referans belirsiz.
+
+İnsanlar tutarlı, model tutarsızsa öğrenme/temsil sorunu.
+
+Deney 3 — Orijinal çözünürlük fark yaratıyor mu?
+Aynı örnek:
+
+Düşürülmüş görüntü.
+
+Orijinal ROI.
+
+Orijinal ROI üzerinde kenar/köşe düzeltme.
+
+Başarı yalnız orijinal ROI’de artıyorsa çözüm daha büyük genel model değil, çok ölçekli işlem olabilir.
+
+Deney 4 — Köşeler sabitken tasarım değişince tahmin değişiyor mu?
+Aynı ana şablonda farklı tasarımlar kullanın.
+
+Geometri değişmediği halde tahmin değişiyorsa model fiziksel sınır yerine baskı içeriğine bağımlıdır.
+
+Bunu ayrıca eğitimde şu tutarlılık hedefiyle ele alabilirsiniz:
+
+f
+(
+I
+tasarım A
+)
+≈
+f
+(
+I
+tasarım B
+)
+f(I 
+tasarım A
+​
+ )≈f(I 
+tasarım B
+​
+ )
+Bu öneri, mevcut onaylı şablonlardan üretilebilecek özel bir eğitim deneyidir; başarı garantisi değildir.
+
+Deney 5 — Panel olmayan sahnede ne yapıyor?
+Model sürekli dört köşe üretiyorsa, başarısızlığı temsil edemiyor demektir.
+
+Eğitim, doğrulama ve uygulama sözleşmesi birlikte düzeltilmeli.
+
+Deney 6 — Şablon eşleme kaç görüntüyü kurtarıyor?
+AI tespiti başarısız örneklerin kaçının mevcut onaylı şablon türevi olduğunu ölçün.
+
+Bu deney, model geliştirmeden daha yüksek getirili bir yol gösterebilir.
+
+12. Daha sağlam veri stratejisi: Her hataya daha fazla veri değil, doğru veri
+Başarısız her örneği aynı havuza atmayın.
+
+Hata kayıtları şöyle sınıflandırılsın:
+
+text
+WRONG_OBJECT
+WRONG_BOUNDARY
+PRINT_AREA_AMBIGUOUS
+OCCLUDED_CORNER
+INSUFFICIENT_RESOLUTION
+UNKNOWN_TEMPLATE_VARIANT
+OUT_OF_DISTRIBUTION
+COMPOSITING_ERROR
+ANNOTATION_DISAGREEMENT
+Sonra her sınıf için farklı aksiyon uygulanır.
+
+Örneğin:
+
+WRONG_OBJECT: Dolap/fayans zor negatifleri.
+
+WRONG_BOUNDARY: Ayrıntılı sınır etiketleri.
+
+OCCLUDED_CORNER: Görünürlük ve belirsizlik etiketleri.
+
+UNKNOWN_TEMPLATE_VARIANT: Şablon kimliği ve dönüşüm kaydı.
+
+ANNOTATION_DISAGREEMENT: Etiket standardı toplantısı.
+
+Böylece 5.000 rastgele örnek yerine sorunu gerçekten açıklayan daha küçük bir veri kümesiyle ilerleme ihtimaliniz olur.
+
+13. Benim kuracağım nihai sistem: Tek model değil, kanıt yönlendiricisi
+text
+GİRDİ
+  │
+  ├─ 1. Dosya/piksel kimliği biliniyor mu?
+  │       └─ Evet → Kilitli onaylı geometri
+  │
+  ├─ 2. Kaynak dosyada geometri var mı?
+  │       └─ Evet → Koordinat dönüşümü + doğrulama
+  │
+  ├─ 3. Onaylı şablonun türevi mi?
+  │       └─ Evet → Eşleştirme + doğrulanmış geometri aktarımı
+  │
+  ├─ 4. Yeni sahne mi?
+  │       └─ Kategoriye özel tespit + köşe/kenar tahmini
+  │
+  ├─ 5. Kanıt yeterli mi?
+  │       ├─ Evet → Otomatik kabul
+  │       └─ Hayır → En az gerekli insan müdahalesi
+  │
+  └─ 6. Hâlâ belirlenemiyor mu?
+          └─ Yeni kaynak iste / manuel işle / kullanma
+Her kabul edilen sonucun kökeni saklanmalı:
+
+text
+HUMAN_APPROVED
+SOURCE_METADATA
+VERIFIED_TEMPLATE_TRANSFER
+MODEL_WITH_BOUNDARY_SUPPORT
+HUMAN_ASSISTED
+Bunların hepsi aynı tür güvene sahip değildir. Örneğin insan onaylı geometri ile görünmeyen köşeyi çıkaran model sonucu tek “confidence” alanına sıkıştırılmamalı.
+
+14. “Ne zaman bu yaklaşımı bırakmalıyız?” sorusunun cevabı
+Sonsuz model denemesi yapmamak için durdurma kriterleri koyarım.
+
+Modeli değiştirmeyi bırakın, eğer:
+Hata ağırlıklı olarak görünmeyen sınırdan kaynaklanıyorsa.
+
+Etiketleyiciler bile hedef sınırda anlaşamıyorsa.
+
+Görseller aslında mevcut şablonların türeviyse.
+
+Ana sorun köşe değil kompozisyonsa.
+
+Ek modelin kazancı işletme maliyetini karşılamıyorsa.
+
+Yeni model araştırmasına devam edin, eğer:
+İnsanlar sınırı tutarlı biçimde görebiliyor.
+
+Hatalar belirli, öğrenilebilir örüntüler taşıyor.
+
+Eğitim verisi sahne çeşitliliğini gerçekten artırıyor.
+
+Bağımsız testte yanlış kabul azalıyor.
+
+İnsan düzeltme süresinde anlamlı düşüş oluyor.
+
+Üretime alma kararını şu soruyla verin
+“Bu sistem toplam kaç görseli insan müdahalesiz bitiriyor?” değil,
+“Kabul ettiği işlerde ne kadar güvenilir ve kalanları ne kadar ucuz çözüyor?”
+
+Bu nedenle risk–kapsam eğrisi çıkarın: Otomatik kabul oranını artırdıkça yanlış kabul nasıl değişiyor?
+
+En yüksek otomasyon noktası değil, kabul edilebilir ticari riskteki nokta seçilmeli.
+
+15. Sizin projenizde önceliği nasıl değiştirirdim?
+Önceki cevabımdaki “özel pose modelini ana üretim adayı yaparım” kararını şu koşulla daraltıyorum:
+
+Gerçekten yeni sahneler için özel model ana adaydır. Bilinen şablonlar ve türevleri için ilk tercih olmamalıdır.
+
+Benim yeni öncelik sıram:
+
+Onaylı geometrilerin ve ana şablon ailelerinin envanteri.
+
+Aynı dosya / türev / yeni sahne ayrımı.
+
+Kaynak dosyalardan geometri kurtarma.
+
+Doğrulanmış şablon eşleme ve geometri aktarımı.
+
+Yeni sahneler için küçük özel model.
+
+Köşe başarısızsa kenar/parça temsili.
+
+Belirsiz örnekler için az etkileşimli insan arayüzü.
+
+Bilgi taşımayan görseller için ret veya yeni kaynak.
+
+Uzun vadede geometrisi kontrollü şablon üretimi.
+
+Böylece bir model başarısız olduğunda bütün iş akışı durmaz. Sistem, başka bir kanıt kaynağına veya kontrollü insan müdahalesine geçer.
+
+Projenizin başarısı, her fotoğraftan zorla dört köşe çıkarmak değil; hangi geometrinin bilindiğini, hangisinin doğrulandığını, hangisinin yalnız tahmin edildiğini ve hangisinin belirlenemediğini güvenilir biçimde yönetmektir.
