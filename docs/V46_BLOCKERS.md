@@ -1,6 +1,9 @@
 # V4.6 Final Candidate Blockers
 
 - Real Win11 GUI acceptance has not been run in this development session.
+- The earlier Windows sandbox/proxy terminal block was resolved before commit
+  `27449cd`; local packaging and ZIP verification now run successfully. It is
+  not a current blocker for source work.
 - GPU smoke and official Real-ESRGAN installation were not repeated; the earlier
   PASS remains historical evidence only.
 - Four-category glass reflection visual QA is still `HUMAN_REQUIRED`.
@@ -10,3 +13,5 @@
   not a production accuracy claim; real approved golden panels are required.
 - Large 100/200/1000 job acceptance and two-process Windows interruption drills
   remain isolated-test or human acceptance work.
+- The complete root-cause and remaining-acceptance matrix is in
+  `V46_ROOT_CAUSE_ACCEPTANCE_20261024.md`.
