@@ -325,6 +325,28 @@ class UnifiedV4Batch:
         self.ledger = UnifiedV4Ledger(self.root)
         self.lock_path = self.root / "V4_ORTAK_FABRIKA.lock"
         self.cancel = threading.Event()
+        self.pause = threading.Event()
+
+    def request_pause(self) -> None:
+        """Pause *between* jobs; never interrupt an in-progress image write."""
+        self.pause.set()
+
+    def resume(self) -> None:
+        self.pause.clear()
+
+    def request_stop(self) -> None:
+        self.cancel.set()
+        self.pause.clear()  # Stop must never deadlock behind pause.
+
+    def _wait_if_paused(self, notify) -> bool:
+        """Return False for cancellation; wait cooperatively without busy spin."""
+        announced = False
+        while self.pause.is_set() and not self.cancel.is_set():
+            if not announced:
+                notify("DURAKLATILDI: mevcut görsel kaydı korundu; Devam Et veya Güvenli Durdur seçin.")
+                announced = True
+            self.cancel.wait(0.20)
+        return not self.cancel.is_set()
 
     def discover_templates(
         self,
@@ -459,6 +481,8 @@ class UnifiedV4Batch:
         newly_rendered: list[dict[str, str]] = []
         try:
             for art in iter_designs(designs):
+                if not self._wait_if_paused(notify):
+                    break
                 if self.cancel.is_set() or (max_jobs is not None and stats["attempted"] >= int(max_jobs)):
                     break
                 original_art = art
@@ -473,6 +497,8 @@ class UnifiedV4Batch:
                     continue
 
                 for item in templates:
+                    if not self._wait_if_paused(notify):
+                        break
                     if self.cancel.is_set() or (max_jobs is not None and stats["attempted"] >= int(max_jobs)):
                         break
                     stats["attempted"] += 1

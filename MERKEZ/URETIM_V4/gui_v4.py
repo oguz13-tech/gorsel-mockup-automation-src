@@ -10,6 +10,7 @@ from tkinter import ttk, filedialog, messagebox, scrolledtext
 from PIL import Image, ImageTk
 from dark_theme_v42 import BG, PANEL, FG
 from help_v42 import bind_help
+from version_v45 import TITLE as VERSION_TEXT
 
 from PETEK_V3.registry import Registry as PetekRegistry
 from .unified_batch import UnifiedV4Batch, iter_designs
@@ -41,7 +42,7 @@ class UnifiedV4BatchWindow:
             petek_registry=self.petek_registry,
         )
         self.window = tk.Toplevel(parent)
-        self.window.title("V4.4 Grup 1+2+3 — 7 Kategori Üretim / Bulut Excel / İsteğe Bağlı 4K")
+        self.window.title(VERSION_TEXT + " — 7 Kategori Üretim / Bulut Excel / İsteğe Bağlı 4K")
         self.window.geometry("1190x920")
         self.window.transient(parent)
 
@@ -50,7 +51,7 @@ class UnifiedV4BatchWindow:
 
         ttk.Label(
             area,
-            text="7 Kategori Ortak Seri Üretim Merkezi (V4.4 Birleşik Aday — Sınırsız İş / 4K Seçeneği)",
+            text="7 Kategori Ortak Seri Üretim Merkezi (V4.5 — Duraklat/Devam, Sınırsız İş, 4K, Bulut Excel)",
             font=("Segoe UI", 15, "bold"),
         ).pack(anchor="w", pady=(0, 6))
         ttk.Label(
@@ -143,23 +144,30 @@ class UnifiedV4BatchWindow:
         actions.pack(fill="x", pady=8)
         self.start_button = ttk.Button(actions, text="▶ 7 Kategori Seri Üretimi Başlat", command=self.start)
         self.start_button.pack(side="left", padx=3)
+        ttk.Button(actions, text="⏸ Duraklat", command=self.pause_batch).pack(side="left", padx=3)
+        ttk.Button(actions, text="▶ Devam Et", command=self.resume_batch).pack(side="left", padx=3)
         ttk.Button(actions, text="■ Güvenli Durdur", command=self.stop).pack(side="left", padx=3)
         ttk.Button(actions, text="Ortak Çıktı Klasörü", command=self.open_results).pack(side="left", padx=3)
         ttk.Button(actions, text="SHA Kayıtlarını Doğrula (Salt Okunur)", command=self.run_audit).pack(side="left", padx=3)
+        ttk.Button(actions, text="Operasyon Özeti", command=self.show_operations).pack(side="left", padx=3)
 
         remote = ttk.Frame(area)
         remote.pack(fill="x", pady=5)
         self.cloud_button = ttk.Button(remote, text="☁ Mevcut Çıktıları HTTPS Linke Çevir + Excel'e Yaz",
                                        command=self.start_cloud_links)
         self.cloud_button.pack(side="left", padx=3)
+        ttk.Button(remote, text="Pazaryeri Excel Şablonuna Aktar", command=self.export_marketplace_template).pack(side="left", padx=5)
         ttk.Label(remote, text="Ayrı onay ister; ImgBB/FreeImage'a internetten erişilebilen görseller yükler. Pazaryerine ilan yüklemez.",
                   wraplength=570).pack(side="left", padx=7)
         ttk.Label(area, text=(
             "YENİLE: onaylı şablon listesini yeniden okur | TÜMÜNÜ SEÇ: listedeki hepsini seçer (başlatmaz). "
             "MAĞAZA GRUBU: SKU ayırır; otomatik mağazaya yüklemez.\n"
+            "DURAKLAT: aktif dosya tamamlandıktan sonra yeni işe geçmez; DEVAM: aynı kuyruktan sürdürür. "
             "GÜVENLİ DURDUR: biten görselleri koruyarak sonraki işleri durdurur. "
             "YARIM İŞ/KİLİT KURTARMA: bozuk ara kayıtları gösterir; açık onayla karantinaya alır. "
-            "SHA DENETLE: çıktı dosyası ile kayıt hash'lerini sadece okur."
+            "SHA DENETLE: çıktı dosyası ile kayıt hash'lerini sadece okur. "
+            "PAZARYERİ EXCEL ŞABLONU: yalnız HTTPS linki hazır satırları senin boş XLSX başlıklarına eşler; "
+            "asıl şablonu korur, barkod ve SEO uydurmaz."
         ), wraplength=1120).pack(anchor="w", pady=(3, 5))
         self.progress = tk.StringVar(value="Hazır. Onaylı şablonlar yüklendi.")
         ttk.Label(area, textvariable=self.progress, wraplength=800).pack(anchor="w", pady=4)
@@ -280,6 +288,7 @@ class UnifiedV4BatchWindow:
             "BU İŞLEMİ BAŞLATMAK İSTİYOR MUSUN?", parent=self.window):
             return
         self.batch_engine.cancel.clear()
+        self.batch_engine.resume()
         self.start_button.configure(state="disabled")
 
         def work():
@@ -398,8 +407,57 @@ class UnifiedV4BatchWindow:
         self.worker.start()
         self.progress.set("Bulut HTTPS görselleri linkleniyor; mevcut mockuplar yeniden üretilmiyor...")
 
+    def pause_batch(self) -> None:
+        if self.worker and self.worker.is_alive():
+            self.batch_engine.request_pause()
+            self.progress.set("Duraklatma istendi: devam eden iş güvenle tamamlanınca bekleyecek.")
+
+    def resume_batch(self) -> None:
+        self.batch_engine.resume()
+        if self.worker and self.worker.is_alive():
+            self.progress.set("Kaldığı işten devam ediliyor.")
+
+    def show_operations(self) -> None:
+        from .ops_dashboard_v45 import summarize
+        try:
+            info = summarize(self.batch_engine.root)
+            rows = [f"{name}: {value}" for name, value in sorted(info['status_counts'].items())]
+            cats = [f"{name}: {value}" for name, value in sorted(info['categories'].items())]
+            msg = (f"Toplam kayıt: {info['total']}\n"
+                   f"Doğrulanmış görsel: {info['verified']}\n"
+                   f"Kaybolan: {info['missing']} | SHA uyuşmayan: {info['sha_mismatch']}\n"
+                   f"Kullanılabilir disk: {info['disk_free_gb']:.1f} GB\n\n"
+                   "Durumlar:\n" + "\n".join(rows) + "\n\nKategoriler:\n" + "\n".join(cats))
+            messagebox.showinfo("Operasyon Özeti — Salt Okunur", msg, parent=self.window)
+        except (OSError, ValueError, RuntimeError) as exc:
+            messagebox.showerror("Özet Hatası", str(exc), parent=self.window)
+
+    def export_marketplace_template(self) -> None:
+        if self.worker and self.worker.is_alive():
+            messagebox.showwarning("Çalışan İş Var", "Üretim/bağlantı işlemi bitmeden Excel şablonu aktarılmaz.", parent=self.window)
+            return
+        template = filedialog.askopenfilename(parent=self.window, title="Pazaryerinden alınmış BOŞ XLSX ürün şablonunu seçin",
+                                              filetypes=[("Excel XLSX", "*.xlsx")])
+        if not template:
+            return
+        if not messagebox.askyesno("Yeni Excel Oluştur", "Boş şablonun orijinali korunacak. Yalnız SHA doğrulanmış ve "
+                                    "HTTPS bağlantısı hazır ürünlerin SKU/Görsel 1 alanları aktarılacak. "
+                                    "Barkod, SEO ve pazaryeri zorunlu alanları uydurulmayacak. Devam edilsin mi?",
+                                    parent=self.window):
+            return
+        try:
+            from .marketplace_excel_v45 import export_from_template
+            result = export_from_template(Path(template), self.batch_engine.root,
+                                          self.batch_engine.ledger.successful(),
+                                          report_root=self.batch_engine.reports)
+            messagebox.showinfo("Pazaryeri Excel Hazır", f"{result['rows']} ürün: {result['output']}\n"
+                               "Barkod, kategori ve diğer zorunlu alanları yüklemeden önce kontrol edin.", parent=self.window)
+            self._log("Pazaryeri şablon kopyası: " + result['output'])
+        except (ValueError, OSError, RuntimeError) as exc:
+            messagebox.showerror("Pazaryeri Excel Aktarım Hatası", str(exc), parent=self.window)
+
     def stop(self) -> None:
-        self.batch_engine.cancel.set()
+        self.batch_engine.request_stop()
         self.progress.set("Güvenli durdurma istendi...")
 
     def open_results(self) -> None:
