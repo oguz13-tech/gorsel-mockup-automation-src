@@ -3943,14 +3943,21 @@ if __name__ == '__main__':
     job_engine.start()
     print("Kalıcı Job Engine aktif: 2 worker, restart-resume açık.")
 
-    print("SABLON_V2_MIMARI (Flask MVC) Baslatiliyor... http://127.0.0.1:8080")
+    try:
+        bind_port = int(os.environ.get("MOCKUP_PORT", "8080"))
+    except ValueError:
+        bind_port = 8080
+    if not 1024 <= bind_port <= 65535:
+        bind_port = 8080
+    bind_url = f"http://127.0.0.1:{bind_port}"
+    print(f"SABLON_V2_MIMARI (Flask MVC) Baslatiliyor... {bind_url}")
     auto_browser_disabled = str(
         os.environ.get("MOCKUP_NO_AUTO_BROWSER", "")
     ).strip().lower() in {"1", "true", "yes", "on"}
     if not auto_browser_disabled:
         threading.Timer(
             1.25,
-            lambda: webbrowser.open("http://127.0.0.1:8080/"),
+            lambda: webbrowser.open(bind_url + "/"),
         ).start()
     debug_enabled = str(os.environ.get("MOCKUP_FLASK_DEBUG", "")).strip().lower() in {"1", "true", "yes", "on"}
-    app.run(host='127.0.0.1', port=8080, debug=debug_enabled, use_reloader=False)
+    app.run(host='127.0.0.1', port=bind_port, debug=debug_enabled, use_reloader=False)

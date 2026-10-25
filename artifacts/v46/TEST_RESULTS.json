@@ -39,6 +39,17 @@
         "git checkout expectation conflicts with source workspace",
         "port 8080 occupied by protected installed V4.6 candidate process"
       ]
+    },
+    {
+      "name": "Issue #52 follow-up launcher/batch group",
+      "result": "18 PASS",
+      "tests": [
+        "TESTLER/test_v46_launcher_preflight.py",
+        "TESTLER/test_final_parallel_reserve.py",
+        "TESTLER/test_final_integrity.py",
+        "TESTLER/test_emergency_release.py",
+        "TESTLER/test_port_transition_force_fallback.py"
+      ]
     }
   ],
   "skips": [
@@ -52,6 +63,9 @@
     "isolated Win11 GUI and seven-category production smoke",
     "real PETEK Golden Dataset quality comparison",
     "100/200/1000 real render and interruption acceptance"
+  ],
+  "user_reported": [
+    "Historical G3 missing=35 classified as USER_REPORTED_INTENTIONAL_DELETION; receipts and safety guards retained."
   ],
   "candidate": {
     "path": "C:/AI_WORK/GORSEL_V46_PR52_SAFE_20261024/V46_FINAL_CANDIDATE.zip",

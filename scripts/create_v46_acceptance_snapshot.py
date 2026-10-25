@@ -10,8 +10,8 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-ZIP = ROOT / "V46_FINAL_CANDIDATE.zip"
-MANIFEST = ROOT / "V46_FINAL_CANDIDATE" / "MANIFEST_SHA256.json"
+ZIP = ROOT / "V46_FINAL_CANDIDATE_54006B4.zip"
+MANIFEST = ROOT / "V46_FINAL_CANDIDATE_54006B4" / "MANIFEST_SHA256.json"
 OUTPUT = ROOT / "artifacts" / "v46" / "FINAL_ACCEPTANCE_SNAPSHOT.json"
 
 
@@ -37,11 +37,12 @@ def package_snapshot() -> dict:
         "contains_private_runtime_data": manifest["contains_private_runtime_data"],
         "hash_reconciliation": {
             "current": sha256(ZIP),
-            "stale_historical_value": (
+            "previous_candidate_value": (
+                "898f8432448667995af491b1e97950ae9661d3127616caf5a9e6d9349ff40570"
+            ),
+            "historical_stale_value": (
                 "4232ed9397ab5a217ef5c6608ff2478358ba2d7123552b124d7bad940ed89778"
             ),
-            "current_value_is_stale_historical_value": sha256(ZIP)
-            == "4232ed9397ab5a217ef5c6608ff2478358ba2d7123552b124d7bad940ed89778",
         },
     }
 
@@ -74,7 +75,8 @@ def main() -> None:
                 "missing": 35,
                 "sha_mismatch": 0,
                 "unsafe_paths": 0,
-                "classification": "BLOCKED_NO_SAFE_LEDGER_SNAPSHOT",
+                "classification": "USER_REPORTED_INTENTIONAL_DELETION",
+                "source": "user decision recorded in latest PR #52 instruction",
             },
             "template_profiles": {
                 "previous_total": 590,
@@ -86,6 +88,8 @@ def main() -> None:
         "acceptance": {
             "PASS": [
                 "targeted synthetic/regression acceptance tests",
+                "alternate-port launcher smoke on isolated synthetic runtime",
+                "synthetic batch reserve/integrity/emergency safety tests",
                 "data-free candidate packaging and private asset scan",
                 "current ZIP hash and manifest reconciliation",
             ],
@@ -98,7 +102,6 @@ def main() -> None:
                 "100/200/1000 real render and interruption acceptance",
             ],
             "BLOCKED": [
-                "per-file G3 missing=35 USER_DELETED vs UNEXPECTED_MISSING",
                 "template_profiles 590 to 591 active APPROVED/stale/source-SHA classification",
             ],
         },

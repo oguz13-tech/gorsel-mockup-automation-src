@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 import zipfile
@@ -28,9 +29,9 @@ def digest(path: Path) -> str:
     return h.hexdigest()
 
 
-def create(root: Path, commit: str) -> tuple[Path, Path]:
-    candidate = root / "V46_FINAL_CANDIDATE"
-    archive = root / "V46_FINAL_CANDIDATE.zip"
+def create(root: Path, commit: str, name: str = "V46_FINAL_CANDIDATE") -> tuple[Path, Path]:
+    candidate = root / name
+    archive = root / (name + ".zip")
     if candidate.exists():
         raise FileExistsError(f"Refusing to overwrite candidate: {candidate}")
     if archive.exists():
@@ -56,7 +57,7 @@ def create(root: Path, commit: str) -> tuple[Path, Path]:
         shutil.copy2(source, target)
         copied.append(relative.as_posix())
     manifest = {
-        "candidate": "V46_FINAL_CANDIDATE",
+        "candidate": name,
         "source_branch": "feature/v46-safe-consolidation-20261024",
         "source_commit": commit,
         "contains_private_runtime_data": False,
@@ -77,5 +78,6 @@ if __name__ == "__main__":
     commit = subprocess.check_output(
         ["git", "rev-parse", "--short", "HEAD"], cwd=root, text=True
     ).strip()
-    candidate, archive = create(root, commit)
+    name = os.environ.get("V46_CANDIDATE_NAME", "V46_FINAL_CANDIDATE")
+    candidate, archive = create(root, commit, name)
     print(json.dumps({"candidate": str(candidate), "archive": str(archive)}))

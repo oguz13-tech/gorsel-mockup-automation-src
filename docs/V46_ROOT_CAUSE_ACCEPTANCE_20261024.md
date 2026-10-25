@@ -63,6 +63,14 @@ sunulmuyor; güvenli geliştirme klasöründeki izole adaydır.
   Eski `4232ed...` değeri tarihsel/stale olarak sınıflandırıldı.
 - Güncel ZIP, `4193b2a` kaynak commit'ine bağlıdır; 389 manifest kaynağı +
   manifest ile 390 ZIP girdisi doğrulandı.
-- `missing=35` ve `template_profiles=590→591` için güvenli DB/ledger snapshot
-  bulunmadığından per-file sınıflandırma **BLOCKED** kalmıştır. Canlı DB
-  okunmadı veya değiştirilmedi.
+- Kullanıcının son kararıyla tarihsel `missing=35` olayı
+  `USER_REPORTED_INTENTIONAL_DELETION` olarak sınıflandırıldı; receipt/ledger ve
+  güvenlik guard'ları korunuyor, tek tek arama/restore yapılmadı.
+- `template_profiles=590→591` için güvenli DB snapshot bulunmadığından aktif
+  APPROVED/stale/source-SHA ayrımı **BLOCKED** kalmıştır. Canlı DB okunmadı veya
+  değiştirilmedi.
+- 8080 sahibi durdurulmadan `MOCKUP_PORT=8081` alternatif launcher ile izole
+  sentetik runtime smoke PASS oldu. `V46_SAFE_LAUNCHER.bat` ve
+  `scripts/v46_launcher_preflight.py` eklendi.
+- Yeni commit bağlı ZIP: `V46_FINAL_CANDIDATE_54006B4.zip`, SHA256
+  `bdb03b9271ad29b9026fa4b992e3d948693a35a5bd0f0c52730ec3f592713b4c`.
