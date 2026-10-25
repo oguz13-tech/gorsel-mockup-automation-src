@@ -47,3 +47,22 @@ okunmadı ve değiştirilmedi.
 
 ZIP GitHub'a yüklenmedi. Kullanıcıya indirilebilir public release olarak
 sunulmuyor; güvenli geliştirme klasöründeki izole adaydır.
+
+## 25 Ekim 2026 final sprint doğrulaması
+
+- Hedefli Issue #35 kabul grubu: **82 PASS / 2 SKIP**.
+- Tam yerel `TESTLER tests` çalışması: **580 PASS / 10 FAIL / 4 SKIP / 12
+  subtest PASS**. FAIL'ler gerçek üretim PASS'ı olarak gizlenmedi:
+  Tk GUI eksikliği, Windows symlink ayrıcalığı, UTF-8/legacy encoding fixture,
+  Git checkout beklentisi ve korunan kurulu V4.6 sürecinin 8080'i kullanması
+  olarak ayrıştırıldı.
+- 8080 sahibi PID 23936 salt-okunur incelendi; `C:\GorselMockup_V46_ADAY`
+  altındaki kurulu `app.py` olduğu görüldü. Süreç durdurulmadı ve canlı kurulum
+  değiştirilmedi.
+- Güncel aday ZIP SHA256: `898f8432448667995af491b1e97950ae9661d3127616caf5a9e6d9349ff40570`.
+  Eski `4232ed...` değeri tarihsel/stale olarak sınıflandırıldı.
+- Güncel ZIP, `4193b2a` kaynak commit'ine bağlıdır; 389 manifest kaynağı +
+  manifest ile 390 ZIP girdisi doğrulandı.
+- `missing=35` ve `template_profiles=590→591` için güvenli DB/ledger snapshot
+  bulunmadığından per-file sınıflandırma **BLOCKED** kalmıştır. Canlı DB
+  okunmadı veya değiştirilmedi.

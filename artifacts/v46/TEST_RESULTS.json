@@ -1,6 +1,6 @@
 {
   "branch": "feature/v46-safe-consolidation-20261024",
-  "commit": "abb2152",
+  "commit": "4193b2a",
   "release": "NO-GO",
   "root_cause_report": "docs/V46_ROOT_CAUSE_ACCEPTANCE_20261024.md",
   "tests": [
@@ -26,7 +26,19 @@
     },
     {
       "name": "scripts/create_v46_final_candidate.py + ZIP manifest verification",
-      "result": "PASS; 389 extracted files; private asset scan PASS"
+      "result": "PASS; 389 manifest files + manifest; 390 ZIP entries; private asset scan PASS"
+    },
+    {
+      "name": "Issue #35 full local suite: TESTLER tests",
+      "result": "580 passed, 10 failed, 4 skipped, 12 subtests passed",
+      "classification": "NOT_RELEASE_BLOCKING_BY_ITSELF",
+      "failure_classes": [
+        "Tk display unavailable in this non-GUI session",
+        "Windows symlink privilege unavailable",
+        "UTF-8 source read under legacy Windows encoding test fixture",
+        "git checkout expectation conflicts with source workspace",
+        "port 8080 occupied by protected installed V4.6 candidate process"
+      ]
     }
   ],
   "skips": [
@@ -43,7 +55,17 @@
   ],
   "candidate": {
     "path": "C:/AI_WORK/GORSEL_V46_PR52_SAFE_20261024/V46_FINAL_CANDIDATE.zip",
-    "sha256": "4232ed9397ab5a217ef5c6608ff2478358ba2d7123552b124d7bad940ed89778",
+    "sha256": "898f8432448667995af491b1e97950ae9661d3127616caf5a9e6d9349ff40570",
+    "source_commit": "4193b2a",
+    "manifest_files": 389,
+    "zip_entries": 390,
     "manifest_verification": "PASS"
+  },
+  "protected_environment": {
+    "port_8080": {
+      "status": "BLOCKED_NOT_TOUCHED",
+      "pid": 23936,
+      "process": "C:\\GorselMockup_V46_ADAY\\...\\SABLON_V2_MIMARI\\app.py"
+    }
   }
 }
