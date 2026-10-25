@@ -1,3 +1,9 @@
+# V4.5 ÖNCELİKLİ DEVİR / 24.10.2026
+
+**Yeni kaynak:** V4.5 son kod geliştirmeleri, 103 görevün doğru kanıt/kabul matrisi `docs/V45_103_MADDE_DURUM_MATRISI.md`, kurulumu `docs/V45_TEK_WINDOWS_KURULUM_KABUL.md` ve GitHub devri `docs/V45_GITHUB_TAM_DEVIR.md`. Gerçek kullanıcı Windows kabulü tamamlanmadan ticari GO yoktur. `main` ve canlı onaylı SQLite/orijinal görseller korunur.
+
+---
+
 # 🚨 KESİN KURALLAR - DOKUNULMAZ ALAN (STRICT RULES FOR AI AGENTS) 🚨
 
 ## 1. 4 KÖŞE (KÖŞELER) VERİLERİNİN KORUNMASI

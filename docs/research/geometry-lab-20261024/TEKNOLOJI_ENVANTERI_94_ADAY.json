@@ -1,0 +1,947 @@
+{
+  "title": "Dört Köşe 2026 araştırma envanteri",
+  "date": "2026-10-24",
+  "research_ideas": [
+    {
+      "id": "ID01",
+      "group": "A. Mevcut geometri",
+      "technique": "Kaynak SHA256 ile APPROVED profil tekrar kullanımı",
+      "source": "Perplexity-2 / mevcut GitHub",
+      "goal": "Aynı kaynağı sıfır yeni tahminle çöz",
+      "role": "mevcut çalışma",
+      "caution": "Kimlik + kaynak hash + insan onayı birlikte doğrulanmalı",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID02",
+      "group": "A. Mevcut geometri",
+      "technique": "Piksel hash / tam görsel eşleme",
+      "source": "Perplexity-2",
+      "goal": "Farklı encoder ile aynı pikselleri bul",
+      "role": "geliştirilebilir",
+      "caution": "EXIF yönü ve renk profili dikkate alınmalı",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID03",
+      "group": "A. Mevcut geometri",
+      "technique": "Perceptual hash / çoklu şablon türev arama",
+      "source": "Perplexity-2 / asistan ekleme",
+      "goal": "Aynı kaynağın JPEG/renk türevlerini adaylaştır",
+      "role": "aday",
+      "caution": "Yakın hash asla tek başına geometri aktarımı yetkisi vermez",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID04",
+      "group": "A. Mevcut geometri",
+      "technique": "LightGlue yerel özellik eşleştirme",
+      "source": "Perplexity-2",
+      "goal": "Onaylı şablon ile türevi arasında geometrik eşleşme",
+      "role": "aday",
+      "caution": "Tekrarlı fayansların sahte eşleşmeleri reddedilmeli",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID05",
+      "group": "A. Mevcut geometri",
+      "technique": "OpenCV ECC image registration",
+      "source": "Perplexity-2",
+      "goal": "Eşleşen görüntüleri hassas hizalama",
+      "role": "aday",
+      "caution": "Başlangıç dönüşümüne ve fotometrik benzerliğe duyarlı",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID06",
+      "group": "A. Mevcut geometri",
+      "technique": "ORB/AKAZE/SIFT + RANSAC geometri aktarımı",
+      "source": "Asistan ekleme",
+      "goal": "Ağır model olmadan türev eşleme referans tabanı",
+      "role": "yeni karşılaştırma",
+      "caution": "SIFT patent durumu yerel sürümle kontrol, sahne 3B değişmişse homografi geçersiz",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID07",
+      "group": "A. Mevcut geometri",
+      "technique": "PSD/SmartObject/vector path/alpha mask geometri kurtarma",
+      "source": "Perplexity-2",
+      "goal": "Kaynak dosyadaki bilinen dört köşeleri geri al",
+      "role": "araştırma",
+      "caution": "Her PSD/JPEG bu metadata bilgilerini içermez",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID08",
+      "group": "A. Mevcut geometri",
+      "technique": "Render JSON/SQLite/homografi receipt kurtarma",
+      "source": "Perplexity-2 / mevcut sistem",
+      "goal": "Kaybolmuş profil ve dönüşümleri doğrulanmış kaynaktan geri al",
+      "role": "araştırma",
+      "caution": "Canlı DB salt okunur",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID09",
+      "group": "A. Mevcut geometri",
+      "technique": "İşlem sırasında geometri provenance metadata kaydı",
+      "source": "Perplexity-2 / asistan ekleme",
+      "goal": "Gelecekte görselden tekrar geometri aramayı önle",
+      "role": "üretim stratejisi",
+      "caution": "Kaynak/şablon sürüm/hash ile bağlanmalı",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID10",
+      "group": "B. Geleneksel CV",
+      "technique": "Canny edge detection",
+      "source": "Copilot / tümü",
+      "goal": "Kenar adaylarını üret",
+      "role": "baseline",
+      "caution": "Derzleri panel kenarı sanabilir",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID11",
+      "group": "B. Geleneksel CV",
+      "technique": "Contour + approxPolyDP",
+      "source": "Copilot / önceki sistem",
+      "goal": "Dörtgen adayları çıkar",
+      "role": "baseline",
+      "caution": "Perspektif ve örtülmede yanıltabilir",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID12",
+      "group": "B. Geleneksel CV",
+      "technique": "Hough / probabilistic Hough",
+      "source": "Copilot / tümü",
+      "goal": "Uzun ve kısa çizgi adayları",
+      "role": "baseline",
+      "caution": "Mutfak çizgileri güçlü yanlış pozitif",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID13",
+      "group": "B. Geleneksel CV",
+      "technique": "LSD / EDLines / ELSD",
+      "source": "Copilot / Qwen-PPI",
+      "goal": "Yerel doğru parçaları",
+      "role": "aday",
+      "caution": "Fayans çizgileri de çıkar",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID14",
+      "group": "B. Geleneksel CV",
+      "technique": "Adaptive Threshold / CLAHE / gamma",
+      "source": "Copilot / Gemini / Qwen",
+      "goal": "Düşük kontrast sınır iyileştirme",
+      "role": "aday",
+      "caution": "Haleleri ve gürültüyü artırabilir",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID15",
+      "group": "B. Geleneksel CV",
+      "technique": "LAB/HSV/brightness color scoring",
+      "source": "Copilot",
+      "goal": "Beyaz/siyah/desenli panel farklarını puanla",
+      "role": "aday",
+      "caution": "Şeffaf camda renk ipucu yetmeyebilir",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID16",
+      "group": "B. Geleneksel CV",
+      "technique": "Gaussian/Bilateral/texture suppression",
+      "source": "Copilot / Qwen",
+      "goal": "Arka plan dokusunu bastır",
+      "role": "aday",
+      "caution": "Gerçek ince cam kenarı da kaybolabilir",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID17",
+      "group": "B. Geleneksel CV",
+      "technique": "Gabor/frequency periodicity suppression",
+      "source": "Copilot / Ghosting",
+      "goal": "Tekrarlanan fayans desenlerini cezalandır",
+      "role": "aday",
+      "caution": "Benzer periyodik cam iç desenini de bastırabilir",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID18",
+      "group": "B. Geleneksel CV",
+      "technique": "Convex hull / mask smoothing",
+      "source": "Copilot / Qwen",
+      "goal": "Maskeden sınır adayı",
+      "role": "aday",
+      "caution": "Maskeden gerçek gizli dış köşe garanti edilmez",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID19",
+      "group": "B. Geleneksel CV",
+      "technique": "Min-area rectangle / minimum area quad",
+      "source": "Copilot",
+      "goal": "Maske üzerinden başlangıç geometri",
+      "role": "baseline",
+      "caution": "minAreaRect perspektif dörtgen yerine döndürülmüş dikdörtgen döndürür",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID20",
+      "group": "B. Geleneksel CV",
+      "technique": "Active Contours / Snakes",
+      "source": "Qwen-1",
+      "goal": "Kenar yakınında yerel sınır takibi",
+      "role": "aday",
+      "caution": "Fayans konturuna sapabilir",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID21",
+      "group": "B. Geleneksel CV",
+      "technique": "RANSAC doğrular + robust TLS + kesişim",
+      "source": "Perplexity-1 / Copilot",
+      "goal": "Kenar parçalarından gerçek dörtgeni hassaslaştır",
+      "role": "aday",
+      "caution": "Zayıf sınırda doğru uyumu güvenilmez",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID22",
+      "group": "B. Geleneksel CV",
+      "technique": "ROI/black-padding exclusion",
+      "source": "Mevcut GitHub / Copilot",
+      "goal": "Kaynak dışı siyah alanı analiz dışında tut",
+      "role": "mevcut geliştirme",
+      "caution": "Görüntü içindeki siyah cam dışlanmamalı",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID23",
+      "group": "B. Geleneksel CV",
+      "technique": "Edge strength/orientation + local structural change",
+      "source": "Copilot / asistan ekleme",
+      "goal": "Gerçek panel sınırında tutarlı doku değişimi ölç",
+      "role": "aday",
+      "caution": "Sahnedeki gölge ve fayans da değişim yaratır",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID24",
+      "group": "C. Köşe modelleri",
+      "technique": "Ultralytics YOLOv8/v11/YOLO26 Pose",
+      "source": "DeepSeek / Gemini / Qwen / Copilot / Perplexity-1",
+      "goal": "Dört semantik köşeyi doğrudan öğren",
+      "role": "özel eğitim",
+      "caution": "AGPL/Enterprise ticari lisans incelemesi",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID25",
+      "group": "C. Köşe modelleri",
+      "technique": "MMPose RTMPose",
+      "source": "Perplexity-1 / Qwen / Copilot",
+      "goal": "Lisans alternatifi özel dört anahtar nokta modeli",
+      "role": "özel eğitim",
+      "caution": "Kod Apache; veri/weights/bağımlılık ayrı",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID26",
+      "group": "C. Köşe modelleri",
+      "technique": "MMPose HRNet",
+      "source": "Qwen / Copilot",
+      "goal": "Yüksek çözünürlüklü keypoint heatmap",
+      "role": "özel eğitim",
+      "caution": "RTX3060 üzerinde VRAM/süre ölçülmeli",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID27",
+      "group": "C. Köşe modelleri",
+      "technique": "Keypoint R-CNN",
+      "source": "Copilot",
+      "goal": "Alternatif ROI-temelli keypoint",
+      "role": "özel eğitim",
+      "caution": "Dört köşe veri adaptasyonu gerekli",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID28",
+      "group": "C. Köşe modelleri",
+      "technique": "RT-DETR + özel keypoint head",
+      "source": "Qwen",
+      "goal": "Transformer detector sonrası dört nokta",
+      "role": "araştırma",
+      "caution": "Standart RT-DETR hazır 4 köşe modeli değildir",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID29",
+      "group": "C. Köşe modelleri",
+      "technique": "Özel köşe heatmap / doğrudan regresyon",
+      "source": "DeepSeek / Copilot",
+      "goal": "Yüzeyin dört köşe olasılığını öğren",
+      "role": "özel eğitim",
+      "caution": "Görünmeyen köşelerin belirsizliğini ayrıca belirt",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID30",
+      "group": "C. Köşe modelleri",
+      "technique": "Boundary+keypoint multi-task learner",
+      "source": "Perplexity-1 / asistan ekleme",
+      "goal": "Köşe ve dört kenardan ortak geometri öğren",
+      "role": "özel eğitim",
+      "caution": "Veri etiketlemesi daha fazla",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID31",
+      "group": "C. Köşe modelleri",
+      "technique": "Per-edge heatmap + junction graph",
+      "source": "Perplexity-2 / asistan genişletme",
+      "goal": "Görünür kenar parçalarından köşe kesişimleri",
+      "role": "yeni deney adayı",
+      "caution": "Dörtgen topolojisi sağlam kısıtlanmalı",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID32",
+      "group": "D. Segmentasyon",
+      "technique": "YOLO instance segmentation",
+      "source": "Gemini / Copilot",
+      "goal": "Cam/baskı yüzeyi maskesi",
+      "role": "özel eğitim",
+      "caution": "Lisans ve arka plan kaçışı",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID33",
+      "group": "D. Segmentasyon",
+      "technique": "Mask R-CNN",
+      "source": "Copilot",
+      "goal": "Instance mask baseline",
+      "role": "özel eğitim",
+      "caution": "Köşeler ayrıca fit edilmeli",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID34",
+      "group": "D. Segmentasyon",
+      "technique": "Detectron2 / MMDetection / MMSegmentation",
+      "source": "Copilot / Perplexity-1",
+      "goal": "Çeşitli segmentasyon modelleri karşılaştır",
+      "role": "araştırma",
+      "caution": "Framework ile model farklıdır; tüm kombinasyonlar ayrı zorunlu değil",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID35",
+      "group": "D. Segmentasyon",
+      "technique": "SAM 2 / SAM 2.1 Hiera Tiny-Small",
+      "source": "Perplexity-1 / Qwen / Gemini / Copilot",
+      "goal": "ROI/nokta ile panel maskesi",
+      "role": "hazır veya fine-tune",
+      "caution": "Şeffaf cam maskesinde hatalar; Windows/WSL deney",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID36",
+      "group": "D. Segmentasyon",
+      "technique": "SAM 3 / SAM 3.1",
+      "source": "Perplexity-1 / Copilot",
+      "goal": "Prompt destekli maske karşılaştırması",
+      "role": "araştırma",
+      "caution": "Model lisansı/erişimi/VRAM belirsiz",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID37",
+      "group": "D. Segmentasyon",
+      "technique": "MobileSAM",
+      "source": "Qwen / Copilot",
+      "goal": "Hafif prompt segmentasyon",
+      "role": "hazır",
+      "caution": "Köşe değil maskeler",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID38",
+      "group": "D. Segmentasyon",
+      "technique": "FastSAM",
+      "source": "Qwen / Copilot",
+      "goal": "Hızlı segmentasyon adayı",
+      "role": "hazır",
+      "caution": "Lisans + sıfır-shot davranışını doğrula",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID39",
+      "group": "D. Segmentasyon",
+      "technique": "Edge-aware SAM fine-tuning",
+      "source": "Copilot",
+      "goal": "Sınır hassasiyeti iyileştirme",
+      "role": "özel eğitim",
+      "caution": "Köşeler yine ayrı doğrulanmalı",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID40",
+      "group": "D. Segmentasyon",
+      "technique": "GEM Glass-Segmentor",
+      "source": "DeepSeek / önceki asistan",
+      "goal": "Cam yüzeyi için özel maske",
+      "role": "araştırma",
+      "caution": "Windows Detectron2/MaskDINO, checkpoint/lisans doğrula",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID41",
+      "group": "D. Segmentasyon",
+      "technique": "GlassWizard (ICCV2025)",
+      "source": "Perplexity-1 / önceki asistan",
+      "goal": "Diffusion priors ile cam segmentasyonu",
+      "role": "araştırma",
+      "caution": "Çıktı hâlâ maske, runtime maliyeti",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID42",
+      "group": "D. Segmentasyon",
+      "technique": "Trans10K-v2 data/segmentation baseline",
+      "source": "Perplexity-1",
+      "goal": "Şeffaf nesne üzerine ön eğitim veri",
+      "role": "araştırma",
+      "caution": "Sınıf taksonomisi ocak paneli değil",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID43",
+      "group": "D. Segmentasyon",
+      "technique": "VGGT_GLASS (ACMMM2026)",
+      "source": "Önceki asistan / web kontrol",
+      "goal": "3B-geometri-temelli cam yüzeyi maskeleme",
+      "role": "araştırma",
+      "caution": "Yeni araştırma; ağırlık/Windows ticari şartlar",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID44",
+      "group": "E. Açık kelime nesnesi",
+      "technique": "Grounding DINO",
+      "source": "DeepSeek / Qwen / Gemini / Copilot / Perplexity-1",
+      "goal": "Metinle ürün adayı bbox",
+      "role": "hazır",
+      "caution": "Bbox gerçek dörtgen değildir",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID45",
+      "group": "E. Açık kelime nesnesi",
+      "technique": "Grounded-SAM",
+      "source": "Copilot / Perplexity-1",
+      "goal": "Text bbox + mask",
+      "role": "hazır kombinasyon",
+      "caution": "Prompt/negatif/algılama yanlışları zincirlenebilir",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID46",
+      "group": "E. Açık kelime nesnesi",
+      "technique": "OWLv2",
+      "source": "Copilot",
+      "goal": "Açık sözcüklü panel aday kutuları",
+      "role": "hazır",
+      "caution": "İfade hassasiyetini test et",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID47",
+      "group": "E. Açık kelime nesnesi",
+      "technique": "Florence-2",
+      "source": "Copilot",
+      "goal": "İstemle bölge/nesne anlama",
+      "role": "hazır",
+      "caution": "Benchmark ve lisans şartları incelensin",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID48",
+      "group": "E. Açık kelime nesnesi",
+      "technique": "DINOv2 feature similarity",
+      "source": "Copilot",
+      "goal": "Panel ROI aday sıralaması",
+      "role": "aday",
+      "caution": "Özellikler baskı içeriğine aşırı bağlanabilir",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID49",
+      "group": "E. Açık kelime nesnesi",
+      "technique": "CLIP feature similarity",
+      "source": "Copilot",
+      "goal": "Kategori/nesne adayı sıralama",
+      "role": "aday",
+      "caution": "Tek başına kesin sınır sağlamaz",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID50",
+      "group": "E. Açık kelime nesnesi",
+      "technique": "Dedicated panel present/absent classifier",
+      "source": "Copilot / Perplexity-1",
+      "goal": "Panel yoksa yanlış dörtgen üretme",
+      "role": "özel eğitim",
+      "caution": "Zor negatif çeşitliliği gerek",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID51",
+      "group": "F. Fizik ve optik",
+      "technique": "Ghosting shifted double-reflection",
+      "source": "Bağımsız öneri",
+      "goal": "Cam yüzeyindeki çift yansıma ipuçları",
+      "role": "fizibilite",
+      "caution": "Her camda görünmez, cam için eşsiz imza değildir",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID52",
+      "group": "F. Fizik ve optik",
+      "technique": "Phase correlation / NCC micro-windows",
+      "source": "Ghosting / Qwen-PPI",
+      "goal": "Kaymış yansıma ve yerel eşleşme ölç",
+      "role": "fizibilite",
+      "caution": "Fayans tekrarları yanlış korelasyon üretebilir",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID53",
+      "group": "F. Fizik ve optik",
+      "technique": "Reflection prior / Fresnel / glare",
+      "source": "Ghosting / Copilot",
+      "goal": "Optik sınır olasılığı",
+      "role": "fizibilite",
+      "caution": "Yansıma konumu doğrudan fiziksel kenar değildir",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID54",
+      "group": "F. Fizik ve optik",
+      "technique": "PPI-OET plane intersection + edge topology",
+      "source": "Qwen bağımsız öneri",
+      "goal": "3B/geometrik yapıdan dörtgen hipotezi",
+      "role": "fizibilite",
+      "caution": "Qwenin zorunluluk ve %99 iddiaları doğrulanmadı",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID55",
+      "group": "F. Fizik ve optik",
+      "technique": "Depth Anything V2 Small",
+      "source": "Qwen / önceki asistan",
+      "goal": "Görselden göreli derinlik öncülü",
+      "role": "hazır fizibilite",
+      "caution": "Doğrudan surface normal yok; 3–5 mm cam kalınlığı güvenilir değil",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID56",
+      "group": "F. Fizik ve optik",
+      "technique": "Omnidata normals",
+      "source": "Qwen / önceki asistan",
+      "goal": "Tek görüntü normal yönleri",
+      "role": "hazır fizibilite",
+      "caution": "Paralel panel/duvar aynı normal olabilir",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID57",
+      "group": "F. Fizik ve optik",
+      "technique": "TransNormal transparent normal prediction",
+      "source": "Önceki asistan",
+      "goal": "Şeffaf yüzey normal tahmini",
+      "role": "araştırma",
+      "caution": "Alan uyumu ve kaynak doğrulama",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID58",
+      "group": "F. Fizik ve optik",
+      "technique": "Vanishing point / Manhattan world",
+      "source": "Qwen-PPI / Copilot",
+      "goal": "Sahne yönlerini yardımcı kısıtla",
+      "role": "fizibilite",
+      "caution": "Fayans aynı perspektife uyabilir, eleme garantisi yok",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID59",
+      "group": "F. Fizik ve optik",
+      "technique": "Ocak-davlumbaz-tezgâh semantik konumu",
+      "source": "Ghosting / Copilot",
+      "goal": "Panel adayını bağlama göre puanla",
+      "role": "fizibilite",
+      "caution": "Ürün her zaman tam ortalı / davlumbaz altında değil",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID60",
+      "group": "F. Fizik ve optik",
+      "technique": "Controlled multi-photo/polarization/photo setup",
+      "source": "Perplexity-2 / asistan ekleme",
+      "goal": "Çekim kontrollüyse cam kenarını belirginleştir",
+      "role": "saha opsiyonu",
+      "caution": "Hazır internet/mockup fotoğraflarında uygulanamaz",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID61",
+      "group": "F. Fizik ve optik",
+      "technique": "Controlled 3D render normal-depth-objectID passes",
+      "source": "Perplexity-2 / asistan ekleme",
+      "goal": "Geometri belli yeni şablon üret",
+      "role": "uzun vadeli",
+      "caution": "Gerçekçilik/üretim maliyeti ayrı",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID62",
+      "group": "G. Kısmi örtülme",
+      "technique": "Line extrapolation + RANSAC hidden corners",
+      "source": "Copilot / Perplexity-1",
+      "goal": "Görünür segmentlerden saklı köşe çıkar",
+      "role": "aday",
+      "caution": "Üç nokta perspektif dördüncüyü tekil belirlemez",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID63",
+      "group": "G. Kısmi örtülme",
+      "technique": "Foreground occluder segmentation",
+      "source": "Perplexity-1 / asistan ekleme",
+      "goal": "Tencere/kol/mobilya baskı üstüne taşınmasın",
+      "role": "aday",
+      "caution": "Dört köşe ile görünür baskı maskesi farklı",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID64",
+      "group": "G. Kısmi örtülme",
+      "technique": "Visibility-aware keypoint head",
+      "source": "Perplexity-1 / Copilot",
+      "goal": "Görünürlük ile tahmin belirsizliğini ayır",
+      "role": "özel eğitim",
+      "caution": "Inferred ≠ measured",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID65",
+      "group": "G. Kısmi örtülme",
+      "technique": "PETEK curve/slot dense UV mapping",
+      "source": "Copilot / asistan ekleme",
+      "goal": "Kavis/deliklere özel maske veya deformable warp",
+      "role": "yeni deney adayı",
+      "caution": "PETEK tek dörtgen değildir",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID66",
+      "group": "H. Karar/QA",
+      "technique": "Cascade / candidate ranking",
+      "source": "Copilot / Perplexity-2",
+      "goal": "En iyi fiziksel hipotezi seç veya reddet",
+      "role": "mimari",
+      "caution": "Model confidence karşılaştırılabilir değil",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID67",
+      "group": "H. Karar/QA",
+      "technique": "Category/material-aware expert router",
+      "source": "Kullanıcı / Copilot / asistan",
+      "goal": "Görsele göre en uygun motoru kullan",
+      "role": "mimari",
+      "caution": "Kapalı testte eğitilmemeli",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID68",
+      "group": "H. Karar/QA",
+      "technique": "Isotonic/logistic calibration",
+      "source": "Perplexity-1",
+      "goal": "Başarı olasılığını gerçekle kalibre et",
+      "role": "mimari",
+      "caution": "Ayrı calibration split gerekli",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID69",
+      "group": "H. Karar/QA",
+      "technique": "Conformal risk control / abstention",
+      "source": "Asistan ekleme",
+      "goal": "Yanlış otomatik kabul riskini istatistiksel sınırla",
+      "role": "yeni deney adayı",
+      "caution": "Varsayım/kalibrasyon ve örnek sayısı gerektirir",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID70",
+      "group": "H. Karar/QA",
+      "technique": "Test-time augmentation inverse consistency",
+      "source": "Perplexity-2 / asistan genişletme",
+      "goal": "Küçük görüntü dönüşümlerinde köşe kararlılığı",
+      "role": "yeni deney adayı",
+      "caution": "Kararlılık doğru olduğunun tek başına kanıtı değil",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID71",
+      "group": "H. Karar/QA",
+      "technique": "Uncertainty per-edge and per-corner",
+      "source": "Perplexity-1 / asistan genişletme",
+      "goal": "Belirsiz kenar ve örtülmüş köşe raporu",
+      "role": "yeni deney adayı",
+      "caution": "Tek global % confidence yeterli değil",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID72",
+      "group": "H. Karar/QA",
+      "technique": "Hard negatives + active learning",
+      "source": "Copilot / Qwen / Perplexity-1",
+      "goal": "Fayans/dolap/pencere hatalarından eğitim",
+      "role": "mimari",
+      "caution": "Etiket ve test sızıntısı önlenmeli",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID73",
+      "group": "H. Karar/QA",
+      "technique": "Error taxonomy + adaptive human nudge",
+      "source": "Perplexity-2",
+      "goal": "Bir tıklama/tek kenar düzeltme",
+      "role": "mimari",
+      "caution": "İnsan süresi ve güven ayrı ölçülecek",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID74",
+      "group": "H. Karar/QA",
+      "technique": "Risk coverage curve + expected cost",
+      "source": "Perplexity-2",
+      "goal": "Yanlış kabul/müdahale dengesini seç",
+      "role": "mimari",
+      "caution": "%100 otomasyon hedef değil",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID75",
+      "group": "H. Karar/QA",
+      "technique": "Synthetic Blender/domain randomization",
+      "source": "Perplexity-2 / asistan ekleme",
+      "goal": "Bilinen köşelerle farklı cam malzeme/ışık üret",
+      "role": "yeni deney adayı",
+      "caution": "Sentetik başarı gerçek performans demek değil",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID76",
+      "group": "H. Karar/QA",
+      "technique": "Artwork invariance paired training",
+      "source": "Perplexity-2 / asistan genişletme",
+      "goal": "Aynı panelde tasarım değişse geometri değişmesin",
+      "role": "yeni deney adayı",
+      "caution": "Üretken düzenleme fiziksel paneli değiştirmişse eşlenemez",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID77",
+      "group": "H. Karar/QA",
+      "technique": "Counterfactual tile adversarial test suite",
+      "source": "Asistan ekleme",
+      "goal": "Aynı geometrili farklı fayans/dolap baskısı ile hata stress testi",
+      "role": "yeni deney adayı",
+      "caution": "Gerçek test kümelerinin yerini tutmaz",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID78",
+      "group": "H. Karar/QA",
+      "technique": "Photometric edge-vs-print-area observability",
+      "source": "Asistan ekleme",
+      "goal": "Sınır ölçülebilir mi, belirsiz mi raporla",
+      "role": "yeni deney adayı",
+      "caution": "Tekil fotoğrafta bilgi yoksa ölçüm icat edilmez",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID79",
+      "group": "H. Karar/QA",
+      "technique": "Final render overprint pixel loss",
+      "source": "Asistan ekleme",
+      "goal": "Dörtgen IoU yüksek olsa da baskı dışına taşmayı ölç",
+      "role": "yeni deney adayı",
+      "caution": "Referans baskı maskesi/occluder gerekir",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID80",
+      "group": "H. Karar/QA",
+      "technique": "Knowledge distillation ONNX deployment",
+      "source": "Asistan ekleme",
+      "goal": "Araştırma çoklu ağır modelleri küçük Windows workerına indirgeme",
+      "role": "uzun vadeli",
+      "caution": "Lisans/ONNX/CUDA test şart",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID81",
+      "group": "H. Karar/QA",
+      "technique": "Out-of-distribution and panel-absent abstain",
+      "source": "Copilot / Perplexity-1",
+      "goal": "Yeni sahne veya panelsiz görüntüde güvenli ret",
+      "role": "mimari",
+      "caution": "Güven skoru yalnız model softmax değil",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID82",
+      "group": "H. Karar/QA",
+      "technique": "Multi-view video optical flow glass mask",
+      "source": "Copilot / yeni akademik doğrulama",
+      "goal": "Video varsa cam tespiti ek ipucu",
+      "role": "opsiyonel",
+      "caution": "Tek fotoğrafta çalışmaz",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID83",
+      "group": "H. Karar/QA",
+      "technique": "Blind human label disagreement audit",
+      "source": "Perplexity-1 / Perplexity-2",
+      "goal": "İnsanlar aynı köşelerde anlaşabiliyor mu",
+      "role": "test yöntemi",
+      "caution": "Referans gold ölçümün hata tabanı",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID84",
+      "group": "H. Karar/QA",
+      "technique": "Box-to-region & controlled ROI human test",
+      "source": "Perplexity-2",
+      "goal": "Model nesneyi mi kenarı mı yanlış buluyor ayır",
+      "role": "test yöntemi",
+      "caution": "Kullanıcı ROI referansını değerlendirmede sakla",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID85",
+      "group": "H. Karar/QA",
+      "technique": "A/B single-model refiner ablation",
+      "source": "Perplexity-1 / asistan",
+      "goal": "İyileştirme gerçek köşe hatasını düşürüyor mu",
+      "role": "test yöntemi",
+      "caution": "Orijinal ham tahmin de ölç",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID86",
+      "group": "H. Karar/QA",
+      "technique": "Golden group-wise split leakage controls",
+      "source": "Perplexity-1 / Perplexity-2",
+      "goal": "Aynı sahne farklı tasarımla train/teste girmesin",
+      "role": "test yöntemi",
+      "caution": "SHA yanında sahne/template grup id",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID87",
+      "group": "H. Karar/QA",
+      "technique": "Geometry-to-compositing provenance contract",
+      "source": "Perplexity-1 / asistan",
+      "goal": "Outer/printable/visible yüzeyi ayrı sakla",
+      "role": "mimari",
+      "caution": "Yansıma ve maske ayrı",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID88",
+      "group": "H. Karar/QA",
+      "technique": "Manual approved immutable write-protection",
+      "source": "Tüm kaynaklar / GitHub",
+      "goal": "İnsan onaylı onarım/read-only deney",
+      "role": "zorunlu",
+      "caution": "Bağımsız DB düzeyi yetki/transaction ve checksum",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID89",
+      "group": "G. Kısmi örtülme",
+      "technique": "PTN / perspective correction network iddiası",
+      "source": "DeepSeek",
+      "goal": "Perspektif ve kayıp köşeyi tahmin eden özel ağ hipotezi",
+      "role": "KAYNAK_BELIRSIZ",
+      "caution": "Birincil yayın/çalışır açık repo kanıtlanmadan hazır teknoloji sayma",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID90",
+      "group": "C. Köşe modelleri",
+      "technique": "YOLOX-Pose veya YOLOX keypoint adaptasyonu",
+      "source": "Gemini",
+      "goal": "Ultralytics dışı dört nokta öğrenme opsiyonu",
+      "role": "KAYNAK_BELIRSIZ",
+      "caution": "Standart YOLOX keypoint checkpoint varmış gibi varsayma, lisansı ve proje kodunu teyit et",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID91",
+      "group": "H. Karar/QA",
+      "technique": "f-BRS interactive segmentation refinement",
+      "source": "Perplexity-2",
+      "goal": "Belirsiz yüzeyi tek tıklamalarla düzeltme",
+      "role": "araştırma",
+      "caution": "Cam ve dört köşe başarısı garanti değil",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID92",
+      "group": "B. Geleneksel CV",
+      "technique": "SciPy nonlinear constrained quad optimization",
+      "source": "Ghosting / Qwen-PPI / Perplexity-1",
+      "goal": "Köşelerin toplam kenar+maske+prior maliyetini en aza indir",
+      "role": "aday",
+      "caution": "Yanlış kenar sinyalini optimizasyon kesinleştirebilir",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID93",
+      "group": "G. Kısmi örtülme",
+      "technique": "Line-junction / wireframe neural representation",
+      "source": "Asistan ekleme",
+      "goal": "Dört kenarı ve dört birleşim noktasını topolojik grafikte birlikte tahmin",
+      "role": "yeni deney adayı",
+      "caution": "Hazır mimarinin bu kategoriye taşınması için etiket gerekir",
+      "empirically_tested_on_user_real_images": false
+    },
+    {
+      "id": "ID94",
+      "group": "F. Fizik ve optik",
+      "technique": "Photometric stereo multi-light controlled capture",
+      "source": "Qwen-PPI / asistan düzeltme",
+      "goal": "Aynı sabit kamerada farklı ışıkla yüzey yönü ipucu",
+      "role": "çekim opsiyonu",
+      "caution": "Tek normal RGB fotoğraftan klasik photometric stereo yapılamaz",
+      "empirically_tested_on_user_real_images": false
+    }
+  ],
+  "note": "94 kayıt tümü bağımsız model değildir; algoritmalar, model aileleri, kalite/ürün mimarileri ve test teknikleri dahil."
+}

@@ -202,41 +202,41 @@
                     </div>
 
                     <!-- Step 2 -->
-                    <div class="workflow-step" onclick="runScript('SABLON_DUZELTICI')">
+                    <div class="workflow-step" onclick="openTemplateCenter('')">
                         <div class="step-number">2</div>
                         <div class="step-details">
-                            <h3>Şablon Düzelticiyi Aç</h3>
-                            <p>Tarayıcıda şablonları beyazlatın ve köşe noktalarını işaretleyin.</p>
+                            <h3>Şablon İnceleme Merkezini Aç</h3>
+                            <p>Otomatik geometri önerilerini görün, gerekirse köşeleri düzeltin ve yalnızca doğruladıklarınızı APPROVED yapın.</p>
                         </div>
                         <div class="ms-auto"><i class="fas fa-crop-simple text-muted fa-2x"></i></div>
                     </div>
 
                     <!-- Step 3: Kaggle -->
-                    <div class="workflow-step" onclick="window.open('http://127.0.0.1:8080/?kaggle=1', '_blank')" style="background: rgba(0, 122, 204, 0.1); border-radius: 10px; padding: 10px;">
+                    <div class="workflow-step" onclick="openTemplateCenter('?kaggle=1')" style="background: rgba(0, 122, 204, 0.1); border-radius: 10px; padding: 10px;">
                         <div class="step-number" style="background:#007acc; color:white; border-color:#007acc;">3</div>
                         <div class="step-details">
                             <h3 style="color:#00e5ff;">🚀 Kaggle Matbaası Onay Odası</h3>
-                            <p>Kaggle Yapay Zeka baskılarını üretime girmeden önce seçin/eleyin.</p>
+                            <p>Kaggle baskılarını üretime girmeden önce seçin/eleyin. Merkez kapalıysa otomatik başlatılır.</p>
                         </div>
                         <div class="ms-auto"><i class="fas fa-microchip" style="color:#00e5ff; font-size:2em;"></i></div>
                     </div>
 
                     <!-- Step 4 -->
-                    <div class="workflow-step" onclick="openFolder('TASARIM_YUKLE')">
+                    <div class="workflow-step" onclick="openFolder('GELEN_MASTER')">
                         <div class="step-number">4</div>
                         <div class="step-details">
-                            <h3>Müşteri Tasarımlarını (Logoları) Seç</h3>
-                            <p>Şablonlara oturtulacak nihai PNG/JPG tasarımlarınızı yükleyin.</p>
+                            <h3>Onaylı H/V Master Baskıları</h3>
+                            <p>Fabrikanın okuyacağı manifest ve yatay/dikey master dosyalarını kontrol edin.</p>
                         </div>
                         <div class="ms-auto"><i class="fas fa-image text-muted fa-2x"></i></div>
                     </div>
 
                     <!-- Step 5 -->
-                    <div class="workflow-step" style="background: rgba(46, 160, 67, 0.1); border-radius: 10px; padding: 15px;" onclick="runScript('MANUEL_URETIM')">
+                    <div class="workflow-step" style="background: rgba(46, 160, 67, 0.1); border-radius: 10px; padding: 15px;" onclick="runAutomaticFactory()">
                         <div class="step-number" style="background: var(--accent); color: white; border-color: white;">5</div>
                         <div class="step-details">
-                            <h3 class="text-success fw-bold">⚡ Üretimi Başlat (Mockup Motoru)</h3>
-                            <p>Sistemi çalıştırın ve kahvenizi alın. Tüm varyasyonlar otomatik basılsın.</p>
+                            <h3 class="text-success fw-bold">⚡ Otomatik Üretimi Başlat</h3>
+                            <p>Yalnızca source-valid APPROVED şablonlarla mockup, SEO, yükleme ve Excel akışını çalıştırır.</p>
                         </div>
                         <div class="ms-auto"><i class="fas fa-play-circle text-success fa-3x"></i></div>
                     </div>
@@ -337,21 +337,90 @@
             }
         }
 
-        async function runScript(scriptId) {
+        async function runScript(scriptId, extra = {}) {
             try {
                 const response = await fetch('/api/run_script', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ script_id: scriptId })
+                    body: JSON.stringify({ script_id: scriptId, ...extra })
                 });
                 const data = await response.json();
-                
-                // Show a tiny notification (Optional enhancement later)
-                alert(scriptId + " komutu gönderildi: " + data.message);
-                
+                if (!response.ok || data.status === 'error') {
+                    throw new Error(data.message || 'Başlatma hatası');
+                }
+                return data;
             } catch (err) {
                 console.error("Hata:", err);
-                alert("Başlatılamadı!");
+                alert("Başlatılamadı: " + err.message);
+                return null;
+            }
+        }
+
+        async function openTemplateCenter(queryString = '') {
+            const data = await runScript('SABLON_V2');
+            if (!data) return;
+
+            const baseUrl = data.url || 'http://127.0.0.1:8080/';
+            const targetUrl = baseUrl.replace(/\?[^#]*$/, '') + queryString;
+
+            // Flask ilk kez açılıyorsa portun dinlemeye başlaması için kısa
+            // kontrollü bekleme yap; zaten açıksa hemen geçer.
+            const deadline = Date.now() + 12000;
+            while (Date.now() < deadline) {
+                try {
+                    await fetch(baseUrl, {mode: 'no-cors'});
+                    window.open(targetUrl, '_blank');
+                    return;
+                } catch (e) {
+                    await new Promise(resolve => setTimeout(resolve, 350));
+                }
+            }
+            alert('Şablon merkezi başlatıldı ancak 8080 portu henüz yanıt vermiyor. Birkaç saniye sonra tekrar deneyin.');
+        }
+
+        async function runAutomaticFactory() {
+            // Production is never started blindly. The read-only preflight
+            // verifies manifest/master sources, approved source hashes,
+            // orientations and writable outputs first.
+            let preflight;
+            try {
+                const preflightResponse = await fetch('/api/factory_preflight');
+                preflight = await preflightResponse.json();
+                if (!preflightResponse.ok || !preflight.ready) {
+                    const errors = Array.isArray(preflight.errors)
+                        ? preflight.errors.join('\n• ')
+                        : 'Bilinmeyen hazırlık hatası';
+                    const warnings = Array.isArray(preflight.warnings) && preflight.warnings.length
+                        ? '\n\nUyarılar:\n• ' + preflight.warnings.join('\n• ')
+                        : '';
+                    alert(
+                        'Üretim başlatılmadı. Ön kontrol düzeltme istiyor:\n\n• '
+                        + errors + warnings
+                    );
+                    return;
+                }
+            } catch (err) {
+                alert('Ön kontrol çalıştırılamadı: ' + err.message);
+                return;
+            }
+
+            const warnings = Array.isArray(preflight.warnings) && preflight.warnings.length
+                ? '\n\nUyarılar:\n• ' + preflight.warnings.join('\n• ')
+                : '';
+
+            const mode = confirm(
+                'Ön kontrol BAŞARILI.\n\n' +
+                'ÇOKLU modda tüm uygun onaylı şablonlar üretilsin mi?\n\n' +
+                'Tamam = Çoklu\nİptal = Döngüsel (tek şablon)' + warnings
+            ) ? 'coklu' : 'dongusel';
+
+            if (!confirm(
+                'Otomatik üretim başlatılacak. Yalnızca APPROVED ve kaynak hash\'i geçerli şablonlar kullanılacak. Devam?'
+            )) return;
+
+            const data = await runScript('OTOMATIK_URETIM', {mode});
+            if (data) {
+                alert(data.message + '\nMod: ' + mode);
             }
         }
         async function runTool(toolEndpoint) {

@@ -1,0 +1,892 @@
+1. Mühendislik kararı
+Bu proje için önerim, mevcut OpenCV sisteminizi kaldırmak değil; onu hibrit bir mimarinin geometrik doğrulama ve hassaslaştırma katmanına dönüştürmektir:
+
+text
+İnsan onaylı geometri varsa → aynen kullan, otomatik işlem yapma
+                              ↓ yoksa
+Kategoriye özel ürün/yüzey tespiti
+                              ↓
+Özel eğitilmiş dört köşe modeli
+                              ↓
+Yerel kenar analizi + geometrik optimizasyon
+                              ↓
+Nesne doğruluğu + köşe belirsizliği + maske tutarlılığı kontrolü
+                    ↙                 ↘
+           Güvenli otomatik kabul     İnsan incelemesi / tespit yok
+Ocak Arkası kategorisi için üretim hedefim, kategoriye özel eğitilmiş hafif bir dört köşe modeli ve gerektiğinde yardımcı segmentasyon olurdu. Grounding DINO ve SAM ailesini başlangıçta aday bulma, etiketleme ve karşılaştırma için kullanır; her görüntüde zorunlu çalışan ana üretim zinciri yapmazdım.
+
+Lisans bütçesi uygunsa Ultralytics YOLO pose ile hızlı prototip yapılabilir. Kapalı kaynak ticari sistemde ücretsiz ve daha esnek lisans öncelikliyse RTMPose tabanlı özel dört köşe modeli daha uygun bir adaydır. Ultralytics’in güncel lisans açıklaması kapalı kaynak kullanım için Enterprise lisansını işaret ediyor; MMPose kodu Apache-2.0 lisanslıdır. Seçilen ağırlıkların ve bağımlılıkların koşulları ayrıca kontrol edilmelidir.
+
+Üç temel sınırı baştan kabul etmek gerekir:
+
+Görüntüde yeterli sınır bilgisi yoksa hiçbir model gerçek köşeleri garantili biçimde geri getiremez.
+
+Ürünün dış cam sınırı, baskı yapılabilir alanı ve fotoğrafta görünür alanı aynı şey olmayabilir.
+
+“Dört koordinat çıktı” başarı ölçütü değildir. Yanlış nesne seçmeden, belirlenmiş hata toleransında dört köşe üretmek başarıdır.
+
+Aşağıdaki teknoloji değerlendirmeleri kaynaklara; mimari, veri miktarı ve kabul eşikleri ise bu proje için önerdiğim mühendislik planına dayanıyor. İki görsel üzerinde model çalıştırmadım ve kaynak kod dosyalarınızı incelemedim.
+
+2. Yüklediğiniz iki görselin incelemesi
+Mesajınızda şu anda iki görsel bulunuyor. Görsel incelemeyle fiziksel panel adayını ayırt edebiliyorum; ancak bunlar doğrulanmış köşe etiketleri yerine geçmez.
+
+Görsel 1 — Siyah zeminli, mavi çiçekli panel
+Fiziksel ürün yüzeyi
+Ocak üzerinde, davlumbazın altında bulunan; siyah zemin ve mavi çiçek görseli taşıyan bağımsız dörtgen panel, hedef ocak arkası yüzeyidir. Sol üstteki gri pencere benzeri yansıma panelin içindedir; panelin dış sınırı olarak yorumlanmamalıdır. Soldaki GLAZELLA logosu da panelin dışında kalıyor.
+
+Ayırt edici ipuçları:
+
+Siyah yüzeyin çevresindeki beyaz fayansla belirgin renk ayrımı.
+
+Paneli duvardan ayıran ince kenar/gölge.
+
+Çiçek görselinin tek bir sürekli yüzey içinde bulunması.
+
+Alt kenarın tezgâh seviyesinin hemen üzerinde sonlanması.
+
+Panelin, ocak ve davlumbazla işlevsel olarak ilişkili konumu.
+
+Klasik OpenCV neden yanılabilir?
+Bu görselde güçlü kenarlar yalnızca panelde değil; ocak çevresinde, davlumbazda, fayans derzlerinde ve panel içindeki gri yansımada da var. Çiçek yaprakları da çok sayıda iç kontur oluşturuyor. Özellikle global Hough veya “en iyi dikdörtgen” seçimi panel yerine başka bir nesneye kayabilir.
+
+Hangi yaklaşımı beklerim?
+Bu örnek için özel eğitilmiş dört köşe modeli + yerel kenar hassaslaştırması ilk tercihimdir. Panel ROI’si doğru verildiğinde SAM 2.1’i de yardımcı maske adayı olarak denerdim. Bu bir başarı iddiası değil, görselin kontrastına dayalı test önceliğidir.
+
+Dört dış köşe görsel olarak tahmin edilebilir görünüyor. Buna rağmen dış gölge, ince cam kenarı ve basılacak yüzey arasındaki birkaç piksellik farkı, orijinal çözünürlükte etiket politikasıyla çözmek gerekir. Kesin piksel doğruluğu söylemek için referans etiket gerekir.
+
+Görsel 2 — Açık renkli mutfakta beyaz panel
+Fiziksel ürün yüzeyi
+Ocağın arkasında, dikey bej fayansların önünde bulunan parlak beyaz bağımsız panel hedef yüzeydir. Üst kenarı fayans bandının üstüne taşıyor; alt kenarı ise ocak seviyesinin üzerinde sonlanıyor. Panelin iki yanındaki pencere benzeri açık şekiller yüzey içi yansıma olarak görünüyor.
+
+Ayırt edici ipuçları:
+
+Panel sınırında fayans deseninin kesilmesi.
+
+Beyaz yüzeyin duvar ve fayansa göre farklı parlaklığı.
+
+Üst ve sağ çevrede yüzeyi ayıran ince ton/gölge farkı.
+
+Tek parça düz yüzey ve ocakla konumsal ilişkisi.
+
+Klasik OpenCV neden yanılabilir?
+Panel ile çevresi açık tonlarda. Fayans derzleri, dolap sınırları ve tezgâh çizgileri panelin bazı kenarlarından daha belirgin. Global eşikleme paneli duvarla birleştirebilir; Hough ise fayans veya dolap kenarlarını seçebilir.
+
+Hangi yaklaşımı beklerim?
+Beyaz ve düşük kontrastlı örnekler içeren özel eğitim burada daha önemlidir. Önce dört köşe tahmini, ardından tahmin edilen sınırlar çevresindeki dar bantlarda kenar araştırması öneririm. Genel amaçlı segmentasyonun panel yerine beyaz duvar bölgesini veya yüzey içindeki yansımayı ayırması da test edilmesi gereken bir risktir.
+
+Dört köşe görsel olarak yaklaşık bulunabilir görünüyor. Fakat açık renkli dış kenarın hangi pikselde bittiği ilk görsele göre daha belirsiz; bunu inceleme sisteminde daha geniş belirsizlik olarak göstermelisiniz.
+
+Bu iki örnek, şeffaf ve arkasındaki fayans tamamen görünen cam performansını değerlendirmek için yeterli değil. O durum ayrıca örneklenmelidir.
+
+3. En uygun beş teknoloji
+Tablodaki hız ve başarı değerlendirmeleri sizin donanımınızda ölçülmüş sonuçlar değil; deney sıralaması için beklentilerdir.
+
+Teknoloji	Projedeki rolü	Güçlü tarafı	Ana risk	RTX 3060 Laptop için başlangıç
+Ultralytics YOLO pose, yolo26n-pose / yolo26s-pose	Özel eğitimle doğrudan dört köşe	Tek aşamalı, pratik eğitim hattı	Hazır ağırlıklar panel köşesi bilmez; ticari lisans	Nano; batch 1 ile ölçüm
+RTMPose, küçük konfigürasyon	ROI içinde özel dört köşe	Köşe verinizi doğrudan kullanma; esnek kod lisansı	ROI tespiti ve eğitim/dağıtım entegrasyonu	Küçük model + ONNX deneyi
+SAM 2.1 Hiera Tiny / Small	ROI’den maske, etiketleme, yardımcı kontrol	İndirilebilir ağırlıklar; Apache-2.0	Semantik panel seçimi kendiliğinden çözülmez	Tiny; tek görüntü
+Grounding DINO-T + SAM 2.1	Metinle aday bulma ve maskeleme	Eğitim öncesi başlangıç, veri etiketleme	Yanlış nesne kutusu sonraki aşamaya taşınır	Modelleri sırayla çalıştırma
+SAM 3 / SAM 3.1 deposu	Metin/örnek yönlendirmeli segmentasyon karşılaştırması	Metin ve görsel yönlendirmeyi birleştirme	Daha büyük model, özel lisans, daha ağır ortam	Ana üretim tercihi değil; ayrı deney
+YOLO’nun güncel pose belgeleri COCO anahtar noktalarıyla ön eğitilmiş YOLO26 modellerini listeliyor; bunlar cam panel için hazır dört köşe modelleri değildir. RTMPose ise MMPose içinde yer alıyor. SAM 2.1 Tiny/Small ağırlıkları resmî depoda indirilebilir. Grounding DINO-T resmî açık depo kontrol noktalarından biridir.
+
+Güncellik açısından önemli ayrım: Resmî SAM deposunda SAM 3.1 Object Multiplex, 27 Mart 2026 tarihli güncelleme olarak listeleniyor. Açıklanan ana yenilik çoklu nesne video takibi; bunu tek fotoğraftaki cam panel köşeleri için kanıtlanmış üstünlük şeklinde yorumlamamak gerekir. Depo SAM 3 için 848 milyon parametre bildiriyor.
+
+Cam türlerine göre değerlendirme
+Yüzey	Öncelik vereceğim yaklaşım	Neden / sınır
+Tasarımlı, çevresinden ayrışan panel	Özel pose + yerel kenar; yardımcı SAM	İç desen ile dış sınırın ayrılması gerekir
+Beyaz, düşük kontrastlı panel	Özel pose + yüksek çözünürlüklü ROI hassaslaştırma	Semantik bağlam ve zayıf sınır birlikte kullanılmalı
+Siyah panel	Özel pose + yansıma farkındalığı	Yansıma, panel içini sahte bölgelere ayırabilir
+Şeffaf, fayans görünen panel	Alanınıza özel köşe/sınır eğitimi	Genel segmentasyon arka plandaki nesneyi seçebilir
+Kısmen örtülü panel	Görünürlük etiketli pose + belirsizlik	Görünmeyen köşeler ölçüm değil çıkarımdır
+Şeffaf cam konusunda SAM’e özel dikkat gerekir: İlk SAM üzerinde yapılan çalışma, modelin camın arkasındaki nesneleri segmentleyip camın kendisini kaçırabildiğini gösteriyor. Bu bulgu SAM 2 veya SAM 3 için doğrudan performans ölçümü değildir; fakat kendi şeffaf cam test grubunuzu zorunlu kılan güçlü bir uyarıdır.
+
+4. Hazır model yeterli mi, özel eğitim gerekli mi?
+Hazır modellerle yapılabilecekler
+Grounding DINO ile panel aday kutuları üretmek.
+
+Kutular veya insanın verdiği noktalarla SAM üzerinden maske önermek.
+
+Mevcut onaylı dörtgenlerden etiketleme aracına başlangıç şekli vermek.
+
+Kolay görüntülerde otomatik sonuç alıp başarısızlık türlerini toplamak.
+
+Grounding DINO görüntü + metin girdisinden kutular ve metin benzerlik skorları üretir. Bu çıktı perspektifteki dört gerçek köşe değildir. SAM maskesi de fiziksel baskı alanının garanti edilmiş sınırı değildir.
+
+Deney için ayrı ayrı şu istemleri kullanırdım:
+
+text
+glass splashback .
+kitchen splashback panel .
+white glass splashback .
+black glass splashback .
+“Ocak arkasındaki cam panel” gibi ilişkisel bir cümleyi modelin her zaman doğru anlayacağını varsaymam. İstemi değiştirerek doğru sonucu bulup yalnız o sonucu raporlamak da test yanlılığı yaratır; istem seti doğrulama sonunda dondurulmalıdır.
+
+Üretim için kararım
+Sizin düşük yanlış pozitif ve hassas köşe hedefiniz için özel eğitimi ana plan yapardım. Bu, hazır modellerin hiçbir görüntüyü çözemeyeceği anlamına gelmez; ürününüzün sınır tanımını ve benzer nesnelerden farkını kendi verinizle öğretmenin daha kontrollü yol olduğu anlamına gelir.
+
+Önerilen veri miktarı
+Aşağıdaki sayılar garanti veya literatür eşiği değil, bütçe planlama aralıklarıdır:
+
+Aşama	Önerilen veri
+Fizibilite	100–200 farklı, onaylı pozitif + 100–200 zor negatif
+İlk eğitimli prototip	500–1.000 çeşitli pozitif + birkaç yüz negatif
+Üretim adayı	Hatalara göre büyütülmüş 2.000–5.000 farklı sahne; gerektiğinde daha fazla
+Aynı mutfak görseline yerleştirilmiş 500 farklı tasarım, 500 bağımsız geometri örneği değildir.
+
+Etiketleme iş yükünü önce 50 örneklik pilotta ölçün. Planlama için dört görünür köşenin doğrulanmasını görüntü başına 1–3 dakika; zor örtülme veya maske işini 3–10 dakika varsayabilirsiniz. Gerçek bütçeyi pilotun ölçülen medyan ve P90 süresiyle çıkarın.
+
+5. İnsan onaylı koordinatları koruyarak veri setine dönüştürme
+Önce sınırın anlamını tanımlayın
+Her ürün için şu ayrımı yazılı hale getirin:
+
+outer_surface: Fiziksel ürünün dış yüzeyi.
+
+printable_surface: Baskı yapılabilir alan.
+
+visible_surface: Fotoğrafta örtülmeden görülen kısım.
+
+Onaylı dört köşelerinizin hangisini temsil ettiğini bilmeden bunları tek eğitim hedefine birleştirmeyin. Örneğin ahşap tablonun dış çerçevesi ile tasarımın gireceği iç açıklık farklıdır.
+
+Ana kayıt biçimi
+Eğitim formatından bağımsız, sürümlü bir JSON ana kayıt öneririm:
+
+json
+{
+  "image_id": "unique-id",
+  "image_sha256": "...",
+  "width": 1080,
+  "height": 1080,
+  "category": "ocak_arkasi",
+  "scene_group_id": "kitchen-014",
+  "surface_type": "black_printed",
+  "target_definition": "printable_surface",
+  "points_xy": [[0, 0], [0, 0], [0, 0], [0, 0]],
+  "point_order": ["TL", "TR", "BR", "BL"],
+  "corner_state": [
+    "visible",
+    "visible",
+    "occluded_inferable",
+    "unlabelable"
+  ],
+  "human_approved": true,
+  "geometry_locked": true,
+  "annotation_version": 1
+}
+Buradaki sıfırlar yalnızca şema gösterimidir; gerçek görüntü koordinatı değildir.
+
+Kayıtlarda ayrıca şunlar bulunmalı:
+
+Etiketleyen ve onaylayan kişi.
+
+Görüntü dönüşümü/EXIF yönü.
+
+Önceki geometri sürümüne referans.
+
+Görünür maske ve varsa örtücü nesne maskesi.
+
+Köşe belirsizliği.
+
+Kaynak görüntünün kullanım hakkı.
+
+Eğitim dışa aktarımı
+RTMPose için dört anahtar noktalı COCO benzeri veri.
+
+YOLO için kpt_shape: [4, 3] içeren özel pose veri tanımı.
+
+Segmentasyon için görünür maske ve gerekiyorsa ayrı tam yüzey etiketi.
+
+Panel olmayan görüntüler için negatif örnek.
+
+YOLO’nun özel anahtar nokta düzenlerini desteklemesi dört köşeli ürün eğitimine imkân verir; hazır insan pose ağırlığı yalnızca başlangıç ağırlığıdır.
+
+Kritik sınırlama: Dört köşeden rasterleştirilen dörtgen, görünür maske değildir. Önünde tencere varsa onu da doldurur. PETEK kavisleri, delikleri ve havalandırmaları da dört köşeden türetilemez.
+
+Onaylı geometrinin değişmezliği
+Bunu yalnızca bir if kontrolüne bırakmam:
+
+Onaylı kayıtları eklemeli/sürümlü tabloda saklarım.
+
+Otomatik servisin onaylı tabloyu güncelleme yetkisini kaldırırım.
+
+AI çıktısını ayrı geometry_proposals tablosuna yazarım.
+
+İnsan düzeltmesi yeni sürüm oluşturur.
+
+Her sürümde onaylı geometri checksum regresyon testi çalıştırırım.
+
+Görüntü hash’i değiştiğinde eski koordinatları otomatik taşımam.
+
+6. Maske veya köşe tahmininden hassas dörtgene geçiş
+Kullanılmaması gereken ana kısa yol
+minAreaRect, genel perspektifli dörtgeni değil, döndürülmüş dikdörtgeni temsil eder. Bunu son geometri olarak kullanmayın.
+
+approxPolyDP faydalı aday üretir; fakat tek başına son karar olmamalı. Maske yumuşaması, örtülme veya köşe kırpılması dört gerçek köşeyi kaydırabilir.
+
+Önerdiğim yöntem
+Modelden panel ROI’si ve dört köşe ön tahmini alın.
+
+ROI’yi orijinal çözünürlükten tekrar kırpın.
+
+Her tahmini kenar çevresinde dar arama bandı oluşturun.
+
+Bant içinde gradyan, renk geçişi ve varsa öğrenilmiş sınır olasılığını çıkarın.
+
+Her kenar için RANSAC ile başlangıç doğrusu bulun.
+
+Inlier noktalarını robust ağırlıklı total least squares ile yeniden uydurun.
+
+Komşu doğruları kesiştirin.
+
+Dörtgeni maske ve köşe ön tahminiyle birlikte optimize edin.
+
+Kanıt artmıyorsa ön tahmini zorla “hassaslaştırmayın”; incelemeye gönderin.
+
+Örnek amaç fonksiyonu:
+
+𝐸
+(
+𝑄
+)
+=
+𝜆
+𝑏
+𝐸
+sınır
++
+𝜆
+𝑚
+𝐸
+maske
++
+𝜆
+𝑘
+𝐸
+k
+o
+¨
+s
+¸
+e 
+o
+¨
+n tahmini
++
+𝜆
+𝑔
+𝐸
+geometri
+E(Q)=λ 
+b
+​
+ E 
+sınır
+​
+ +λ 
+m
+​
+ E 
+maske
+​
+ +λ 
+k
+​
+ E 
+k 
+o
+¨
+  
+s
+¸
+​
+ e  
+o
+¨
+ n tahmini
+​
+ +λ 
+g
+​
+ E 
+geometri
+​
+ 
+Burada:
+
+Sınır terimi yalnızca en güçlü çizgiyi değil, beklenen dış sınırı izlemeli.
+
+Maske terimi görünür ve tam yüzey maskesine göre ayrı tanımlanmalı.
+
+Geometri terimi öz kesişme ve dejenere homografiyi cezalandırmalı.
+
+Görüntü düzleminde 90° açı şartı konmamalı.
+
+Karşılıklı kenarlar perspektif yüzünden görüntüde paralel olmak zorunda değildir.
+
+Keskin alan yüzdesi eşikleri yerine kategoriye göre yumuşak öncüller kullanılmalı.
+
+Kamera iç parametreleri veya başka metrik bilgi yoksa yalnız görünen dörtgenden fiziksel en-boy oranını güvenilir biçimde çıkardığınızı varsaymayın.
+
+Köşe sırası
+Modelin çıkış semantiği baştan TL, TR, BR, BL olmalı. Sonrasında konvekslik ve çevrim yönü kontrol edilir.
+
+Yalnız x+y / x-y ile sıralama, güçlü perspektif veya döndürülmüş ürünlerde belirsizleşebilir. Sıralama güvenilir değilse sonucu incelemeye yönlendirin.
+
+7. Kısmen görünmeyen panel ve baskının taşmaması
+Gizli köşeler
+Üç farklı durum ayırt edilmeli:
+
+Durum	İşlem
+Köşe görünmüyor, iki komşu kenarın yeterli bölümü görünüyor	Doğruları uzatıp kesişim çıkar; belirsizlik hesapla
+Bir kenar bütünüyle kapalı	Öğrenilmiş çıkarımı ayrı işaretle; genellikle insan incelemesi
+Panel görüntü dışında veya sınır kanıtı yok	Tam dört köşe için güvenilir tespit yok
+Üç görünen köşe, genel perspektifte dördüncüyü tek başına belirlemez. Fiziksel boyut bilgisi de ek kamera/poz kısıtları olmadan her belirsizliği çözmez.
+
+İçerideki fayans çizgileri duvarın yönüne yardımcı olabilir; fakat camın nerede bittiğini tek başına söylemez. Bu nedenle gizli köşe için “ölçüldü” değil “çıkarıldı” etiketi kullanın.
+
+Mockup bileşimi
+Sadece warpPerspective yeterli değildir:
+
+text
+Tasarıma homografi uygula
+    ↓
+Baskı yapılabilir alanla kırp
+    ↓
+Öndeki nesneleri yeniden üst katmana al
+    ↓
+İsteniyorsa orijinal yansıma/ışık katmanını uygula
+Önerilen alfa:
+
+𝛼
+son
+=
+𝛼
+warp
+⋅
+𝑀
+baskı
+⋅
+(
+1
+−
+𝑀
+o
+¨
+rt
+u
+¨
+c
+u
+¨
+)
+α 
+son
+​
+ =α 
+warp
+​
+ ⋅M 
+baskı
+​
+ ⋅(1−M 
+o
+¨
+ rt 
+u
+¨
+ c 
+u
+¨
+ 
+​
+ )
+Kenar belirsizliğinde kontrollü içe çekme düşünülebilir; ancak sabit piksel erozyonu küçük ve büyük panellerde farklı fiziksel etkiler yaratır. İçe çekme miktarı da test edilmelidir.
+
+8. Yanlış dolap veya fayans seçimini azaltma
+Tek bir model skoruna güvenmem. Üç bağımsız kanıt grubunu birlikte kullanırım.
+
+Nesne kimliği
+Ocak arkası paneli.
+
+Dolap kapağı.
+
+Fayans bölgesi.
+
+Duvar.
+
+Pencere.
+
+Davlumbaz.
+
+Yanlış seçilen örnekler zor negatif olarak tekrar eğitime girer. Özellikle panel bulunmayan mutfak görselleri veri setinde mutlaka olmalı.
+
+Sahne ilişkisi
+Ocakla yatay ilişki ve davlumbazla düşey ilişki aday sıralamasında yardımcı özellik olabilir. Ancak “panel her zaman tam ortada ve şu büyüklüktedir” şeklinde sert kurala dönüşmemeli.
+
+Geometrik ve görsel kanıt
+Köşe tahmini ile sınır uyumu.
+
+Maske ile dörtgen uyumu.
+
+Her kenardaki destek miktarı.
+
+Alternatif adaylarla skor farkı.
+
+Küçük ölçek/kırpma değişimlerinde tahmin kararlılığı.
+
+Eğitim dağılımından sapma.
+
+Bu mekanizmalar yanlış pozitifleri azaltmayı hedefler; sıfırladığını iddia etmez. Nihai güvenlik mekanizması sonuç üretmekten kaçınabilmektir.
+
+9. Güven puanı ve insan onayı
+Modelin verdiği 0.95, doğrudan “%95 olasılıkla doğru ürün ve doğru köşeler” anlamına gelmemeli.
+
+Kalibre etmek istediğiniz olay şu olmalı:
+
+Doğru fiziksel ürün seçildi ve dört köşenin tamamı belirlenmiş hata toleransında.
+
+Kalibrasyon girdileri:
+
+Nesne skorları.
+
+Köşe görünürlük/belirsizlikleri.
+
+Kenar destek oranı.
+
+Robust çizgi uyum hatası.
+
+Maske–dörtgen farkı.
+
+En iyi iki aday arasındaki fark.
+
+Dönüşümler altındaki kararlılık.
+
+Örtülme ve dağılım dışılık işaretleri.
+
+Doğrulama verisinde logistic veya isotonic kalibrasyon denenebilir. Kalibrasyonun kendisi de ayrı veri gerektirir.
+
+Çıkış durumları
+text
+LOCKED_APPROVED    İnsan onaylı mevcut geometri
+AUTO_ACCEPTED      Kalibre edilmiş kabul şartları sağlandı
+REVIEW_REQUIRED    Aday var; güven yetersiz
+NO_RELIABLE_DETECTION
+OUT_OF_DISTRIBUTION
+ERROR
+NO_RELIABLE_DETECTION durumunda standart dört köşe döndürmeyin.
+
+İnsan arayüzünde yalnız dört nokta değil; sınır destekleri, maske, örtülü köşe işareti, alternatif aday ve inceleme nedeni gösterilsin. Kullanıcı bir kenarı düzelttiğinde diğerlerini sınırsız kaydırmak yerine kısıtlı yeniden optimizasyon yapın.
+
+10. Windows, RTX 3060 ve lisans değerlendirmesi
+Donanım gerçekçiliği
+Önce nvidia-smi ile gerçek VRAM kapasitesini ve sürücüyü kaydedin. GPU adından kullanılabilir belleği ve hızı varsaymayın; uygulamaların tükettiği bellek ve laptop güç/ısı sınırları da deney koşuludur.
+
+İlk deneme sıram:
+
+Küçük dört köşe modeli, batch 1.
+
+SAM 2.1 Tiny, tek görüntü.
+
+Grounding DINO-T ve SAM’i eşzamanlı değil sıralı çalıştırma.
+
+Yalnız zor örneklerde ikinci aşama model.
+
+SAM 3’ü ayrı ortamda fizibilite deneyi.
+
+Bu modeller için sizin cihazınızda doğrulanmış VRAM veya FPS değeri yok. Özellikle SAM 3’ü 3060 Laptop üzerinde sorunsuz çalışır diye taahhüt etmem.
+
+Ortam planı
+Bileşen	Resmî gereksinim / entegrasyon notu
+SAM 2.1	Python ≥3.10, PyTorch ≥2.5.1, torchvision ≥0.20.1; Windows için WSL Ubuntu kuvvetle öneriliyor. 
+Grounding DINO	Resmî kurulum CUDA ortamı ve uzantı derleme ayrıntıları içeriyor; Windows derleme riski var. 
+SAM 3	Python ≥3.12, PyTorch ≥2.7, CUDA ≥12.6; kontrol noktası erişim başvurusu ve indirme kimlik doğrulaması gerekiyor. 
+RTMPose	Eğitim ortamını MMPose bağımlılıklarıyla sabitleyin; üretim için özel model ONNX dışa aktarımını ayrıca doğrulayın
+Windows üretim	Hafif model için ONNX Runtime GPU adaydır; CUDA sağlayıcısının gerçekten etkin olduğunu test edin
+SAM 3’ün ilk indirmede kimlik doğrulaması istemesi, yerel çıkarımın her görüntüde API kullanması gerektiği anlamına gelmez. Ancak paketleme öncesi çevrimdışı çalışma testi yapılmalıdır.
+
+Eğitim ve araştırmayı WSL2’de, mevcut Windows uygulamasını ise ayrı Python sürecine veya yerel worker’a bağlamayı tercih ederim. Native Windows’ta çalışan küçük model daha sonra ONNX ile uygulamaya taşınabilir. Bütün modelleri mevcut uygulamanızın tek Python ortamına kurmayın.
+
+Lisanslar
+Proje	Kaynak ve sürüm adayı	Ticari değerlendirme
+Ultralytics	YOLO26 n/s pose	Üreticinin açıklaması AGPL-3.0 veya Enterprise seçeneklerini belirtiyor. Kapalı kaynak için lisans değerlendirmesi şart. 
+MMPose / RTMPose
+Küçük RTMPose konfigürasyonu	Kod Apache-2.0; seçilen ağırlık/veri/bağımlılık ayrı incelenmeli. 
+SAM 2	SAM 2.1 Hiera Tiny / Small	Model ağırlıkları ve eğitim kodu Apache-2.0; demo varlıklarında ayrı lisanslar var. 
+Grounding DINO
+GroundingDINO-T, groundingdino_swint_ogc.pth	Depo Apache-2.0; dağıtılan checkpoint ve bağımlılıkların kaydını tutun. 
+SAM 3
+SAM 3; 3.1 güncellemesi ayrıca	Apache değil, özel SAM License. Kullanım ve dağıtım hakları tanıyor; ek koşullar ve kullanım kısıtları içeriyor. 
+Ultralytics açıklamasını bağımsız hukuki görüş olarak değil, üreticinin lisans politikası olarak okuyun. ONNX’e dönüştürmek lisans yükümlülüğünü kendiliğinden ortadan kaldırmaz.
+
+11. Alternatif yaklaşımlar
+Sınır farkındalıklı özel segmentasyon
+Bir ROI ağına şu çıkışlar öğretilebilir:
+
+Yüzey maskesi.
+
+Dış sınır olasılık haritası.
+
+Dört köşe.
+
+Köşe görünürlüğü.
+
+Bu, köşeler ile yüzeyin birbirini denetlemesini sağlar. İlk prototipte özel çok görevli ağ geliştirmeyi değil, sade pose taban çizgisini öneririm. Hata analizi gerekli olduğunu gösterirse bu mimariye geçin.
+
+Şeffaf yüzeye özel araştırma modelleri
+Trans10K-v2, şeffaf nesneleri 11 sınıfta etiketliyor; ancak bu sınıflar sizin ocak arkası ürün tanımınızla birebir örtüşmüyor. Ön eğitim veya karşılaştırma kaynağı olabilir, doğrudan üretim çözümü kabul edilmemeli.
+
+GlassWizard gibi cam yüzeyi odaklı araştırmalar da incelenebilir. Kendi ek materyali bile yansıtıcı yüzeyleri yanlış tanıma ve karmaşık arka plandaki küçük camlarda zorlanma bildiriyor. Bu nedenle “cama özel” olmak da tek başına yeterlilik kanıtı değildir.
+
+Ek çekim veya metaveri
+Fotoğraf üretimini kontrol edebiliyorsanız:
+
+Tasarımsız referans çekim.
+
+Aynı kamerayla temiz arka plan çekimi.
+
+Bilinen panel fiziksel ölçüsü.
+
+Görüntü dışında/sonradan kaldırılabilir referans işaretleri.
+
+Bunları algoritmaya alternatif değil, belirsizliği azaltan ek veri kanalları olarak değerlendiririm. Tamamen görünmez bir sınırı yalnız model büyüterek çözmeye çalışmak yerine veri edinimini iyileştirmek çoğu zaman daha doğru mühendislik kararıdır.
+
+12. Kontrollü deney planı
+Veri ayrımı
+Önerilen ilk oran:
+
+%70 eğitim.
+
+%15 doğrulama.
+
+%15 kilitli test.
+
+Ancak ayrım görüntü bazında değil, sahne/şablon ailesi bazında yapılmalı.
+
+Aynı mutfağın:
+
+Farklı baskı tasarımları.
+
+Kırpılmış veya yeniden boyutlanmış türevleri.
+
+Aynı mockup ailesi.
+
+Renk değiştirilmiş kopyaları.
+
+aynı grupta kalmalı. Dosya hash’i yanında görsel benzerlik ve kaynak şablon kimliği kullanın.
+
+Ayrıca yeni tedarikçi veya yeni çekim tarzından ayrı dış test oluşturun.
+
+Test alt grupları
+Her sonuç şu dilimlerde raporlansın:
+
+Beyaz, siyah, şeffaf, tasarımlı.
+
+Güçlü/zayıf kontrast.
+
+Örtülme yok/var.
+
+Hafif/güçlü perspektif.
+
+Küçük/büyük panel.
+
+Panel bulunmayan negatif görüntüler.
+
+Dolap, fayans veya pencereyle karışan zor negatifler.
+
+Gerçek fotoğraf ve sentetik/mockup kaynakları.
+
+Karşılaştırılacak sistemler
+Mevcut OpenCV.
+
+Grounding DINO-T + SAM 2.1 Tiny + dörtgen uydurma.
+
+Özel YOLO nano pose.
+
+Özel RTMPose.
+
+En iyi pose + yerel OpenCV optimizasyonu.
+
+Kaynak yeterliyse SAM 3 karşılaştırması.
+
+Hibritin gerçekten kazandırdığını görmek için aynı modelin geometrik optimizasyon öncesi ve sonrası sonuçlarını ayrı ölçün. Yanlış ilk tahmini daha kötü hale getiren hassaslaştırmaları da sayın.
+
+Ölçütler
+Geometri
+𝑒
+ortalama
+=
+1
+4
+∑
+𝑖
+=
+1
+4
+∥
+𝑝
+^
+𝑖
+−
+𝑝
+𝑖
+∥
+2
+e 
+ortalama
+​
+ = 
+4
+1
+​
+  
+i=1
+∑
+4
+​
+ ∥ 
+p
+^
+​
+  
+i
+​
+ −p 
+i
+​
+ ∥ 
+2
+​
+ 
+𝑒
+max
+⁡
+=
+max
+⁡
+𝑖
+∥
+𝑝
+^
+𝑖
+−
+𝑝
+𝑖
+∥
+2
+e 
+max
+​
+ = 
+i
+max
+​
+ ∥ 
+p
+^
+​
+  
+i
+​
+ −p 
+i
+​
+ ∥ 
+2
+​
+ 
+Rapor:
+
+Ortalama köşe hatası.
+
+Görüntü başına maksimum köşe hatası.
+
+Medyan, P90, P95.
+
+Piksel ve panel köşegeniyle normalize hata.
+
+Her köşenin ayrı sonucu.
+
+Görünür ve çıkarılmış köşelerin ayrı sonucu.
+
+IoU’yu en az iki ayrı anlamda kullanın:
+
+Referans tam yüzey dörtgeniyle dörtgen IoU.
+
+Referans görünür yüzeyle görünür maske IoU.
+
+Yüksek IoU, birkaç piksellik kritik köşe taşmasını gizleyebilir; tek ana metrik olmasın.
+
+Operasyon ve güvenlik
+Yanlış nesne seçme oranı.
+
+Negatif görüntüde sahte panel üretme oranı.
+
+Otomatik kabul kapsamı.
+
+Otomatik kabul edilenlerde tolerans dışı sonuç oranı.
+
+İnsan düzeltme süresi.
+
+İncelemeye giden ve tespit yapılamayan oran.
+
+Dışarı taşan baskı piksel alanı.
+
+Kilitli geometri değişikliği sayısı: sıfır.
+
+Performans
+Soğuk model yükleme.
+
+Sıcak P50/P95 görüntü süresi.
+
+Uçtan uca toplu iş süresi.
+
+Maksimum VRAM ve RAM.
+
+OOM, hata ve zaman aşımı sayısı.
+
+Uzun çalışmada ısınma etkisi.
+
+Görüntü okuma, ROI çıkarma ve son işlem dahil süre.
+
+Yayınlardaki büyük GPU FPS değerlerini laptop için kullanmayın.
+
+İnsan etiketinin hata tabanı
+Test kümesinin bir bölümünü iki bağımsız kişiye etiketletin. Etiketleyiciler özellikle beyaz cam sınırında 3–4 piksel ayrışıyorsa, 1 piksellik model başarısını bu referansla güvenilir ölçemezsiniz. Anlaşmazlıklar ortak kararla çözülmeli.
+
+13. Mevcut Python sistemine entegrasyon taslağı
+Dosya içeriklerinizi görmediğim için aşağıdaki yapı satır bazlı değişiklik önerisi değil, modül sınırı önerisidir.
+
+text
+core/
+  template_intelligence.py   # Akış ve kategori yönlendirme
+  vision.py                  # Mevcut geometrik yardımcılar
+
+  surface_detection/
+    contracts.py
+    approved_geometry_store.py
+    category_router.py
+    detector_backend.py
+    keypoint_backend.py
+    segmentation_backend.py
+    geometry_refiner.py
+    confidence_calibrator.py
+    review_queue.py
+    audit_log.py
+Önerilen akış:
+
+python
+def detect_surface(image, category, image_hash):
+    approved = store.get_locked(image_hash, category)
+    if approved is not None:
+        return locked_result(approved)
+
+    candidates = router[category].predict(image)
+
+    if not candidates:
+        return no_reliable_detection("NO_CANDIDATE")
+
+    proposals = [
+        refiner.refine(image, candidate)
+        for candidate in candidates
+    ]
+
+    selected = verifier.select_or_abstain(proposals)
+
+    if selected is None:
+        return review_or_no_detection(proposals)
+
+    proposal_store.save(selected)
+    return selected
+Başarısız çıktıda:
+
+json
+{
+  "status": "NO_RELIABLE_DETECTION",
+  "points": null,
+  "reason_codes": ["INSUFFICIENT_BOUNDARY_EVIDENCE"]
+}
+Başarılı veya inceleme gerektiren çıktıda model sürümü, kalibrasyon sürümü, görüntü hash’i, ROI dönüşümü ve tüm belirsizlikler kaydedilsin.
+
+MERKEZ/PETEK_V3/engine.py için ortak sözleşmeyi kullanır, fakat dörtgenle sınırlamam. PETEK çıktısında dış geometri yanında baskı maskesi, kavis ve havalandırma dışlama maskeleri bulunmalı.
+
+14. İlk prototipten üretime geçiş sırası
+Aşama 0 — Veri ve güvenlik
+Onaylı koordinatları yedekle ve kilitle.
+
+Sınır tanımını netleştir.
+
+Sahne gruplarını oluştur.
+
+Mevcut sistemin hata türlerini ölç.
+
+Çıkış şartı: Otomatik süreç onaylı geometriyi değiştiremiyor.
+
+Aşama 1 — Hazır model fizibilitesi
+Grounding DINO-T + SAM 2.1 Tiny.
+
+İki yüklenen görsel dahil çeşitli test seti.
+
+Gerçek VRAM, süre ve hata örnekleri.
+
+Manuel etiketleme arayüzü.
+
+Çıkış şartı: Tekrarlanabilir deney ve gerçek hata sınıflandırması.
+
+Aşama 2 — Özel dört köşe eğitimi
+Lisans kararı.
+
+Küçük RTMPose veya YOLO pose.
+
+Sahne bazlı ayrım.
+
+Köşe görünürlük etiketleri.
+
+Çıkış şartı: Mevcut sisteme karşı kilitli testte ölçülmüş iyileşme.
+
+Aşama 3 — Geometrik hassaslaştırma
+Yerel kenar bantları.
+
+Robust çizgi uydurma.
+
+Belirsizlik tahmini.
+
+Önce/sonra ablation karşılaştırması.
+
+Çıkış şartı: Köşe hatası azalırken yanlış nesne ve taşma riski artmıyor.
+
+Aşama 4 — Gölge çalışma
+AI öneri üretir, mevcut üretim geometrisini değiştirmez. İnsan kararıyla karşılaştırılır; farklı sahne ve toplu iş koşulları izlenir.
+
+Aşama 5 — Sınırlı otomatik kabul
+Örnek başlangıç hedefleri:
+
+Ölçüt	Önerilen kapı
+Kilitli geometri değişimi	0
+Otomatik kabul edilenlerde yanlış nesne	Hedef ≤%0,1; yeterli testle desteklenmeli
+Köşe hatası	Baskı taşması toleransınızdan türetilen P95 sınırı
+Otomasyon kapsamı	Güvenlik eşiği bozulmadan ulaşılabilen oran
+Bellek	Tanımlı toplu testte OOM yok
+Denetlenebilirlik	Her karar yeniden üretilebilir
+%0,1 gibi düşük hata hedefleri birkaç yüz testle doğrulanamaz. Yaklaşık “üç kuralı” ile 3.000 bağımsız otomatik kabulde sıfır hata, hata oranının %95 üst sınırını yaklaşık %0,1 düzeyine getirir. Aynı mutfağın binlerce türevi bağımsız kanıt sayılmaz.
+
+15. Baş mühendis olarak seçeceğim yol
+Sizin koşullarınızda önce şu çözümü kurardım:
+
+Onaylı geometriyi değişmez kaynak yaparım.
+
+Ocak Arkası için veri ve test politikasını kurarım.
+
+Grounding DINO + SAM 2.1 Tiny’yi yardımcı etiketleme ve hazır model taban çizgisi olarak denerim.
+
+Kapalı kaynak ve ücretsiz kullanım önceliği nedeniyle küçük RTMPose tabanlı dört köşe modelini ana üretim adayı yaparım.
+
+Lisans bütçesi uygunsa YOLO nano pose’u aynı veri ve testle karşılaştırırım.
+
+Kazanan modele yerel robust kenar optimizasyonu eklerim.
+
+Maske modelini yalnız ölçülebilir fayda sağladığı zor örneklerde çalıştırırım.
+
+Önce gölge çalışma, sonra yalnız yüksek güvenli sonuçlarda otomatik kabul açarım.
+
+PETEK ve diğer kategorileri aynı altyapıya, farklı geometri ve maske sözleşmeleriyle eklerim.
+
+Bu seçim, bir modelin camı kusursuz tanıdığı varsayımına değil; mevcut onaylı verinizi kullanabilmenize, laptopta hafif bir üretim yolu kurmanıza ve kanıt yetersiz olduğunda güvenle sonuç vermemenize dayanır.
