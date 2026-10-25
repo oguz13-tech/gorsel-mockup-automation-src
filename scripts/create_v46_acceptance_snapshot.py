@@ -10,8 +10,8 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-ZIP = ROOT / "V46_FINAL_CANDIDATE_54006B4.zip"
-MANIFEST = ROOT / "V46_FINAL_CANDIDATE_54006B4" / "MANIFEST_SHA256.json"
+ZIP = ROOT / "V46_FINAL_CANDIDATE_92A910F.zip"
+MANIFEST = ROOT / "V46_FINAL_CANDIDATE_92A910F" / "MANIFEST_SHA256.json"
 OUTPUT = ROOT / "artifacts" / "v46" / "FINAL_ACCEPTANCE_SNAPSHOT.json"
 
 
@@ -38,7 +38,7 @@ def package_snapshot() -> dict:
         "hash_reconciliation": {
             "current": sha256(ZIP),
             "previous_candidate_value": (
-                "898f8432448667995af491b1e97950ae9661d3127616caf5a9e6d9349ff40570"
+                "bdb03b9271ad29b9026fa4b992e3d948693a35a5bd0f0c52730ec3f592713b4c"
             ),
             "historical_stale_value": (
                 "4232ed9397ab5a217ef5c6608ff2478358ba2d7123552b124d7bad940ed89778"

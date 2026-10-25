@@ -72,5 +72,5 @@ sunulmuyor; güvenli geliştirme klasöründeki izole adaydır.
 - 8080 sahibi durdurulmadan `MOCKUP_PORT=8081` alternatif launcher ile izole
   sentetik runtime smoke PASS oldu. `V46_SAFE_LAUNCHER.bat` ve
   `scripts/v46_launcher_preflight.py` eklendi.
-- Yeni commit bağlı ZIP: `V46_FINAL_CANDIDATE_54006B4.zip`, SHA256
-  `bdb03b9271ad29b9026fa4b992e3d948693a35a5bd0f0c52730ec3f592713b4c`.
+- Yeni commit bağlı ZIP: `V46_FINAL_CANDIDATE_92A910F.zip`, SHA256
+  `2a6f3f7d0b60e777700a74bed6c8f8248e35a0d3e281969267163596e471418c`.
