@@ -1,0 +1,28 @@
+{
+  "tested_images": 170,
+  "categories": {
+    "01_Wifi_Kutusu": 21,
+    "02_Cam_Tablo_Dikey": 23,
+    "02_Cam_Tablo_Yatay": 23,
+    "03_Ahsap_Tablo": 23,
+    "04_Cam_Dograma": 23,
+    "05_Ocak_Arkasi": 27,
+    "06_PETEK": 30
+  },
+  "ground_truth_rows": 0,
+  "metrics": {
+    "precision": null,
+    "recall": null,
+    "mask_iou": null,
+    "corner_error_px": null,
+    "wrong_object_rate": null,
+    "review_required_rate": 1.0
+  },
+  "privacy": {
+    "public_full_dataset": false,
+    "public_model_cache": false,
+    "public_sqlite_or_customer_data": false,
+    "selected_cards_local_only_until_explicit_delivery": true
+  },
+  "status": "PARTIAL_BLOCKED"
+}

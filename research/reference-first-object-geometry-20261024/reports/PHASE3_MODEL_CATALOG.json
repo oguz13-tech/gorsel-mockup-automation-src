@@ -1,0 +1,44 @@
+{
+  "models": [
+    {
+      "name": "OWLv2",
+      "architecture": "open-vocabulary detector",
+      "checkpoint": "google/owlv2-base-patch16-ensemble",
+      "tested_images": 170,
+      "status": "LOCAL_INFERENCE_COMPLETED",
+      "role": "candidate_bbox_only"
+    },
+    {
+      "name": "Grounding DINO",
+      "architecture": "open-vocabulary detector",
+      "checkpoint": "IDEA-Research/grounding-dino-base",
+      "tested_images": 170,
+      "status": "LOCAL_INFERENCE_COMPLETED",
+      "role": "candidate_bbox_only"
+    },
+    {
+      "name": "SAM2.1 Hiera Small",
+      "architecture": "prompted segmentation",
+      "checkpoint": "facebook/sam2.1-hiera-small",
+      "tested_images": 170,
+      "status": "LOCAL_INFERENCE_COMPLETED",
+      "role": "center_prompt_mask_draft_only"
+    },
+    {
+      "name": "Florence-2",
+      "architecture": "vision-language grounding",
+      "checkpoint": "microsoft/Florence-2-base",
+      "tested_images": 0,
+      "status": "BLOCKED_TRANSFORMERS_COMPATIBILITY",
+      "role": "not counted as evidence"
+    },
+    {
+      "name": "ResNet18",
+      "architecture": "ImageNet embedding classifier",
+      "checkpoint": "torchvision ResNet18 weights",
+      "tested_images": 170,
+      "status": "LOCAL_INFERENCE_COMPLETED",
+      "role": "reference_similarity_only"
+    }
+  ]
+}

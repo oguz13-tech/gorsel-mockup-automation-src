@@ -1,0 +1,35 @@
+{
+  "ground_truth": "UNKNOWN_GT",
+  "variant_policy": "No category was forced into ten groups.",
+  "categories": {
+    "01_Wifi_Kutusu": {
+      "tested_images": 21,
+      "evidence": "candidate_only"
+    },
+    "02_Cam_Tablo_Dikey": {
+      "tested_images": 23,
+      "evidence": "candidate_only"
+    },
+    "02_Cam_Tablo_Yatay": {
+      "tested_images": 23,
+      "evidence": "candidate_only"
+    },
+    "03_Ahsap_Tablo": {
+      "tested_images": 23,
+      "evidence": "candidate_only"
+    },
+    "04_Cam_Dograma": {
+      "tested_images": 23,
+      "evidence": "candidate_only"
+    },
+    "05_Ocak_Arkasi": {
+      "tested_images": 27,
+      "evidence": "candidate_only"
+    },
+    "06_PETEK": {
+      "tested_images": 30,
+      "evidence": "candidate_only"
+    }
+  },
+  "decision": "Physical variant counts remain UNKNOWN_GT without approved source-SHA identity."
+}
