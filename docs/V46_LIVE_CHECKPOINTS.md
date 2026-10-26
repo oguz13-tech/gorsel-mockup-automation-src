@@ -62,3 +62,15 @@ detection, and reports draft_saved accurately. Never calls profile save.
 Tests: 8 PASS (batch + request-context single draft integration). Full new-ingest
 through human approval and real render remains pending; no live ingest run.
 Next T07 render/quality gate review and T08 exports/4K.
+
+## T07.a — approved planar chroma edge treatment
+Root cause: alpha feather / rounded corner multiplied source magenta back into
+art. For predominantly chroma approved panels, lighting uses neutralized marker
+color and marker pixels inside the approved printable mask have full coverage.
+Protected pixels remain source-exact. Adjacent marker outside mask rejects with
+CHROMA_REVIEW_REQUIRED instead of silently expanding approved geometry. Recipe
+bumped so existing outputs/SKUs are not silently reused. Tests: 7 PASS (six
+categories white print/outside invariance/1200x1600 plus outside-mask rejection).
+This is synthetic evidence only; real source/art A-B and 1→10→100 human quality
+GO remain BLOCKED. Not a new approval or universal chroma segmentation guarantee.
+Next T08 existing Excel/upscale regressions and release packaging.

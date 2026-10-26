@@ -60,7 +60,7 @@ from .finish_v42 import GLASS, projected_rounded_alpha, subdued_reflection
 from PETEK_V3.excel_links_v42 import xlsx_with_photo_links, verify_photo_links
 
 EXT = {".jpg", ".jpeg", ".png", ".webp"}
-V4_RECIPE = "v4-3-unlimited-explicit-glass-20261023"
+V4_RECIPE = "v4-6-chroma-solid-20261026"
 
 UNIFIED_HEADERS = [
     "Stok Kodu",
@@ -183,7 +183,9 @@ def _render_legacy_six_cover(
     if not (0.14 <= fraction <= 1.0):
         raise petek_engine.MaskError(f"Baskı alanı oranı geçersiz ({fraction:.1%}).")
     projected = petek_engine.warp_artwork(design, q, scene.shape, physical_aspect, placement=placement)
-    lit = realism.apply(scene, projected, mask, lighting)
+    from .chroma_render_v46 import prepare_chroma
+    neutral_scene, chroma_pixels = prepare_chroma(scene, mask)
+    lit = realism.apply(neutral_scene, projected, mask, lighting)
     if category in GLASS and glass_effect == "on":
         lit = subdued_reflection(scene, lit, mask, q, category, "strong")
     out = scene.copy()
@@ -194,6 +196,9 @@ def _render_legacy_six_cover(
     if edge_feather_px > 0:
         dist = cv2.distanceTransform(np.uint8(active), cv2.DIST_L2, 3)
         alpha *= np.clip(dist / float(edge_feather_px), 0.0, 1.0)
+    if chroma_pixels is not None:
+        # Never blend the magenta marker back into printed edge pixels.
+        alpha[chroma_pixels] = 1.0
     a = alpha[active][:, None]
     out[active] = np.uint8(
         np.clip(
@@ -205,6 +210,7 @@ def _render_legacy_six_cover(
     if not np.array_equal(out[mask == 0], scene[mask == 0]):
         raise petek_engine.MaskError("Orijinal arka plan / çerçeve koruma ihlali.")
     qa = {
+        "chroma_solid_coverage": chroma_pixels is not None,
         "printable_fraction": round(fraction, 5),
         "preserved_pixels": int(np.count_nonzero(mask == 0)),
         "source_pixels_unchanged": True,
