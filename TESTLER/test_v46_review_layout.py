@@ -15,7 +15,7 @@ class Layout(HTMLParser):
         if tag=='details':self.details.pop()
 
 def test_controls_and_reports_keep_handlers():
-    html=(ROOT/'SABLON_V2_MIMARI/templates/index.html').read_text()
+    html=(ROOT/'SABLON_V2_MIMARI/templates/index.html').read_text(encoding='utf-8')
     p=Layout();p.feed(html)
     assert 'btnAutoForeground' not in html
     handlers=[b.get('onclick') for b in p.buttons]
@@ -26,4 +26,4 @@ def test_controls_and_reports_keep_handlers():
             'runWorkspaceConsistencyScan()','openLastWorkspaceConsistencyReport()',
             'openWorkspaceConsistencyHistory()','v46BulkAlignmentReport()'}<=reports
     assert handlers.count('restoreOriginal()')==1
-    assert '/api/templates/foreground_detect' in (ROOT/'SABLON_V2_MIMARI/app.py').read_text()
+    assert '/api/templates/foreground_detect' in (ROOT/'SABLON_V2_MIMARI/app.py').read_text(encoding='utf-8')
