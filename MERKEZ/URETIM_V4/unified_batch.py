@@ -515,7 +515,7 @@ class UnifiedV4Batch:
         try:
             processed_jobs = set()
             for group, templates in production_plan:
-                    for art in designs_in_run:
+                for art in designs_in_run:
                     if not self._wait_if_paused(notify):
                         break
                     if self.cancel.is_set() or (max_jobs is not None and stats["attempted"] >= int(max_jobs)):
