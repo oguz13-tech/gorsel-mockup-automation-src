@@ -30,3 +30,18 @@ def test_server_requires_pid_token_and_both_roots(tmp_path):
 def test_unavailable_server_is_not_ready(tmp_path):
     def fail(*args,**kwargs):raise OSError('offline')
     assert not manager.server_matches(tmp_path,tmp_path,1,'x',opener=fail)
+
+
+def test_online_backup_restore_preserves_source(tmp_path):
+    import sqlite3,hashlib
+    root=tmp_path/'runtime'; db=root/'SABLON_V2_MIMARI'/'ayarlar.db'
+    db.parent.mkdir(parents=True)
+    with sqlite3.connect(db) as con:
+        con.execute('CREATE TABLE approvals(quad TEXT)')
+        con.execute("INSERT INTO approvals VALUES('immutable')")
+    before=db.read_bytes()
+    result=manager.backup_database(root,env={'LOCALAPPDATA':str(tmp_path/'local')})
+    assert db.read_bytes()==before
+    with sqlite3.connect(result) as con:
+        assert con.execute('SELECT quad FROM approvals').fetchone()==('immutable',)
+    assert result.with_suffix('.sha256').read_text().startswith(hashlib.sha256(result.read_bytes()).hexdigest())

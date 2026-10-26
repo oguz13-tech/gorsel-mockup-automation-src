@@ -12,6 +12,7 @@ from pathlib import Path
 import sqlite3
 import tempfile
 import socket
+import shutil
 import sys
 
 ROOT=Path(__file__).resolve().parent.parent
@@ -138,6 +139,17 @@ def backup_database(runtime:Path,env=None)->Path:
         test=backup.execute('PRAGMA quick_check(1)').fetchone()
         if not test or test[0]!='ok':raise LegacyLaunchError('SQLite yedek bütünlüğü doğrulanamadı.')
         backup.close();backup=None;source.close();source=None
+        # Restore only into a disposable third copy; never restore over live data.
+        with tempfile.TemporaryDirectory(prefix='center-restore-') as directory:
+            restored=Path(directory)/'trial.db'
+            shutil.copyfile(path,restored)
+            trial=sqlite3.connect(restored.as_uri()+'?mode=ro',uri=True)
+            try:
+                if trial.execute('PRAGMA integrity_check').fetchone()[0]!='ok':
+                    raise LegacyLaunchError('İzole geri yükleme provası başarısız.')
+            finally:trial.close()
+            if restored.read_bytes()!=path.read_bytes():
+                raise LegacyLaunchError('Geri yükleme SHA uyuşmazlığı.')
         digest=hashlib.sha256(path.read_bytes()).hexdigest()
         receipt=path.with_suffix('.sha256')
         with receipt.open('x',encoding='ascii') as f:f.write(digest+'  '+path.name+'\n')

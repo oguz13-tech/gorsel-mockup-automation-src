@@ -35,7 +35,7 @@ class Center:
         self.build()
         from help_v42 import bind_help
         bind_help(self.root)
-        self.start_auto_inbox()
+        self.root.after(400,self.start_auto_inbox)
         self.root.protocol('WM_DELETE_WINDOW',self.close)
         self.root.after(180,self.poll)
 
@@ -164,6 +164,15 @@ class Center:
     def start_auto_inbox(self):
         """New-image intake runs automatically while the unified center is open."""
         try:
+            from legacy_manager import inspect,backup_database
+            state=inspect(self.runtime)
+            if not state['ready']:
+                self._log('Yeni görsel izleme kapalı: '+ '; '.join(state['problems']))
+                return
+            if not messagebox.askyesno('Yeni görsel alımını etkinleştir',
+                    'Seçili çalışma klasörünün SQLite yedeği alınacak ve ayrı kopyada geri yükleme provası yapılacak. Ardından yalnız yeni görseller güvenli alıma açılacak. Mevcut onaylar değiştirilmez. Devam?',parent=self.root):
+                return
+            backup_database(self.runtime)
             if self.inbox_watcher is not None:self.inbox_watcher.stop()
             from inbox_auto_v42 import AutoInboxWatcher
             self.inbox_watcher=AutoInboxWatcher(
@@ -271,6 +280,8 @@ class Center:
                 '\n'.join(s['warnings'])+'\n\nBaşlatmadan önce bir yedek oluşturulacak. '
                 'Eksik şema varsa bazı işlemler açılamayabilir; otomatik migration yapılmaz. Devam?',parent=self.root)
             if not result:return
+        if not messagebox.askyesno('İncelemeyi aç', 'Seçili veritabanının yedeği ve izole geri yükleme provası tamamlandıktan sonra editör açılacak. Kaydetme yalnız sizin işlemlerinizle yapılır. Devam?',parent=self.root):
+            return
         try:
             backup=backup_database(self.runtime)
             command,env,cwd=launch_spec(self.runtime)

@@ -17,3 +17,13 @@ workspace switching. No live data accessed. Tests: `pytest -q
 TESTLER/test_v46_workspace_identity.py` = 3 PASS; three changed Python modules
 compile. WINDOWS_NOT_VERIFIED. Remaining T02: restore-before-write/startup ingest
 gate and native Windows acceptance. Next: T02.b then T03–T10.
+
+## T02.b — restore before watcher/editor writes
+Added isolated restore-copy integrity + byte equality check to online SQLite
+backup. Startup watcher now requires explicit operator confirmation and a
+successful preflight/backup/restore trial before ingest. Editor start also asks
+operator consent before backup/open. Test suite: 4 PASS including real disposable
+SQLite source invariance and snapshot contents. Compile PASS.
+WINDOWS_NOT_VERIFIED; live source inventory and Windows acceptance remain blocked.
+T02.a remote checkpoint: da92f0726130271759ab70d4d916312ab0dd2de1.
+Next: T03 UI consolidation.
