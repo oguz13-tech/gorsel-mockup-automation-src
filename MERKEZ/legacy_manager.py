@@ -179,7 +179,8 @@ def port_occupied(host='127.0.0.1',port=8080,timeout=.3)->bool:
         return sock.connect_ex((host,port))==0
 
 
-def server_identity_diagnostic(runtime, code, pid, token, opener=None, *, timeout=1.8):
+def server_identity_diagnostic(runtime, code, pid, token, opener=None, *, timeout=1.8,
+                               windows_redirector=None):
     """Explain an editor handshake without leaking the bearer token.
 
     The operator must never be sent to an unknown/stale 8080 listener.  No
@@ -198,11 +199,24 @@ def server_identity_diagnostic(runtime, code, pid, token, opener=None, *, timeou
         import secrets
         if not secrets.compare_digest(data['token'], str(token)):
             return {'ready': False, 'reason': 'IDENTITY_TOKEN_MISMATCH'}
-        # The PID is not interchangeable: a previous/foreign process may
-        # respond 200 on 8080, even if it serves similar code.
-        if type(data.get('pid')) is not int or data['pid'] != int(pid):
+        # Python 3.11 Windows venv Scripts/python.exe is a redirector:
+        # Popen.pid is the redirector, whereas os.getpid() in Flask identifies
+        # its direct child.  Only accept this ONE parent/child relationship on
+        # Windows, along with the unique bearer token and both matching roots.
+        if windows_redirector is None:
+            windows_redirector = (os.name == 'nt')
+        observed_pid = data.get('pid')
+        direct_pid_match = type(observed_pid) is int and observed_pid == int(pid)
+        parent_pid = data.get('parent_pid')
+        redirector_child_match = (
+            bool(windows_redirector)
+            and type(observed_pid) is int and observed_pid > 0
+            and type(parent_pid) is int and parent_pid == int(pid)
+        )
+        if not (direct_pid_match or redirector_child_match):
             return {'ready': False, 'reason': 'IDENTITY_PID_MISMATCH',
-                    'expected_pid': int(pid), 'actual_pid': data.get('pid')}
+                    'expected_pid': int(pid), 'actual_pid': observed_pid,
+                    'actual_parent_pid': parent_pid}
         for key, expected in [('runtime_root', runtime), ('code_root', code)]:
             actual = data.get(key)
             if not isinstance(actual, str) or not actual:
@@ -217,7 +231,9 @@ def server_identity_diagnostic(runtime, code, pid, token, opener=None, *, timeou
                 return {'ready': False, 'reason': 'IDENTITY_' + key.upper() + '_MISMATCH',
                         'expected_path': str(Path(expected).resolve()),
                         'actual_path': str(Path(actual).resolve())}
-        return {'ready': True, 'reason': 'MATCHED'}
+        return {'ready': True, 'reason': ('MATCHED_WIN_VENV_REDIRECTOR'
+                                           if redirector_child_match and not direct_pid_match
+                                           else 'MATCHED')}
     except Exception as exc:
         # Distinguish transient timeout/connect failures from bad identities.
         import urllib.error
