@@ -156,6 +156,7 @@ class UnifiedV4BatchWindow:
             wraplength=1100,
         ).pack(anchor="w", pady=(0, 4))
         self._auto_cloud_pending = False
+        self._auto_cloud_keys = []
 
         actions = ttk.Frame(area)
         actions.pack(fill="x", pady=8)
@@ -306,6 +307,7 @@ class UnifiedV4BatchWindow:
             "BU İŞLEMİ BAŞLATMAK İSTİYOR MUSUN?", parent=self.window):
             return
         self._auto_cloud_pending = auto_cloud_after_render
+        self._auto_cloud_keys = []
         self.batch_engine.cancel.clear()
         self.batch_engine.resume()
         self.start_button.configure(state="disabled")
@@ -398,9 +400,9 @@ class UnifiedV4BatchWindow:
             self.window.after(250, self._maybe_start_auto_cloud)
             return
         self._auto_cloud_pending = False
-        self.start_cloud_links()  # Still requires explicit online-sharing confirmation.
+        self.start_cloud_links(only_keys=self._auto_cloud_keys)  # Still requires explicit public-upload approval.
 
-    def start_cloud_links(self) -> None:
+    def start_cloud_links(self, only_keys=None) -> None:
         if self.worker and self.worker.is_alive():
             messagebox.showwarning("İşlem Devam Ediyor", "Önce çalışan üretim/linkleme işlemini durdurun.", parent=self.window)
             return
@@ -412,6 +414,11 @@ class UnifiedV4BatchWindow:
                 parent=self.window)
             return
         rows = self.batch_engine.ledger.successful()
+        if only_keys is not None:
+            # Automatic checkbox applies ONLY to the chosen completed batch,
+            # not to old customer images in the global production ledger.
+            permitted = set(only_keys)
+            rows = [row for row in rows if row['key'] in permitted]
         if not rows:
             messagebox.showinfo("Çıktı Yok", "Önce en az bir görsel üretin.", parent=self.window)
             return
@@ -575,6 +582,7 @@ class UnifiedV4BatchWindow:
                     # Do not initiate cloud requests while the completed render
                     # worker is still winding down or after a cancelled batch.
                     if self._auto_cloud_pending:
+                        self._auto_cloud_keys = list(dict.fromkeys(value.get("current_batch_keys", [])))
                         if (value.get("status") in ("LOCAL_READY", "PARTIAL")
                                 and int(value.get("rendered", 0)) + int(value.get("reused", 0)) > 0
                                 and not self.batch_engine.cancel.is_set()):
@@ -602,6 +610,7 @@ class UnifiedV4BatchWindow:
                     self.cloud_button.configure(state="normal")
                 elif kind == "fail":
                     self._auto_cloud_pending = False
+                    self._auto_cloud_keys = []
                     self.progress.set("DURDU — " + str(value))
                     self.start_button.configure(state="normal")
                     self.cloud_button.configure(state="normal")
