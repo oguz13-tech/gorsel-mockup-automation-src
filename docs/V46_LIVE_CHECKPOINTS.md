@@ -27,3 +27,11 @@ SQLite source invariance and snapshot contents. Compile PASS.
 WINDOWS_NOT_VERIFIED; live source inventory and Windows acceptance remain blocked.
 T02.a remote checkpoint: da92f0726130271759ab70d4d916312ab0dd2de1.
 Next: T03 UI consolidation.
+
+## T03 — review panel simplification
+Removed only automatic foreground discovery button/explanation; backend occlusion
+safety unchanged. Original/working view buttons are consecutive. Seven report
+controls retain handlers in one initially collapsed reports section; destructive
+restore stays separate. HTML parser regression: 1 PASS. First invocation without
+test dependency path failed (pytest missing); rerun with isolated deps passed.
+WINDOWS_NOT_VERIFIED. Next T04 batch chroma dispatch.

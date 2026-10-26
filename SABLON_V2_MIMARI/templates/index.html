@@ -37,7 +37,6 @@
               <button type="button" onclick="v46SelectByReviewStatus(false)">📝 Kontrol Bekleyenleri Seç</button>
               <button type="button" onclick="v46SelectByReviewStatus(true)">✅ Onaylıları Seç</button>
             </div>
-            <button type="button" id="v46BulkAlign" onclick="v46BulkAlignmentReport()">📐 Seçililerin Hizalama Raporu (Salt-Okunur)</button>
             <button type="button" id="bulkDetectButton" onclick="bulkDetectSelectedCorners()" class="bulk-detect" title="Yalnız seçtiklerinize otomatik 4 köşe TASLAĞI oluşturur. Hiçbir onaylı 4 köşeyi veya şablon dosyasını değiştirmez.">🧭 Seçilenlerin 4 Köşesini Algıla (Taslak)</button>
             <div class="bulk-run-status" id="bulkDetectStatus" aria-live="polite">Seçili şablonlara taslak öneri üretir; kayıtlı onaylı koordinatları değiştirmez.</div>
             <button type="button" id="bulkDetectStopButton" onclick="stopBulkCornerDetect()" style="display:none;background:#b45309;">⏹ Tarama Sonrası Durdur</button>
@@ -125,13 +124,7 @@
             <button type="button" id="btnAutoCorner" onclick="autoDetectCorners()" style="background:linear-gradient(135deg,#00c853,#00bfa5); box-shadow:0 2px 6px rgba(0,200,83,0.4); width:100%; text-align:left; padding:12px 10px; font-weight:bold;">🧭 Köşeleri Yeniden Algıla</button>
             <div class="tool-note tool-note-accent">Yeni şablonda ilk tespit zaten otomatik yapılır. Yalnız sonuç yanlışsa tekrar kullanın.</div>
 
-            <details class="v46-secondary-tools"><summary>⚙️ Diğer İşlemler — Nesne / Ham Görsel / Denetim</summary>
-            <div class="tool-divider"></div>
-            <h3 class="tool-section-title">Otomatik Nesne Koruma</h3>
-
-            <button type="button" id="btnAutoForeground" onclick="autoDetectForeground()" style="background:linear-gradient(135deg,#6f42c1,#0d6efd); width:100%; text-align:left; padding:10px; font-weight:bold;">🤖 Öndeki Nesneleri Otomatik Bul</button>
-            <div class="tool-note">Baskının önünde kalması gereken gerçek bir nesne varsa otomatik olarak bulur. Elle maske/fırça düzenlemesi yoktur.</div>
-
+            <details class="v46-secondary-tools"><summary>⚙️ Kaynak Görsel / Güvenli Geri Yükleme</summary>
             <div class="tool-divider"></div>
             <h3 class="tool-section-title">Ham Görsel Kontrolü</h3>
 
@@ -140,12 +133,13 @@
             </div>
 
             <button type="button" onclick="showOriginalPreview()" style="background:#6f42c1; width:100%; padding:11px 10px; margin-top:5px; text-align:left; font-weight:bold;">👁️ Ham Orijinali Göster</button>
+            <button type="button" onclick="showWorkingPreview()" style="background:#0d6efd; width:100%; padding:11px 10px; margin-top:5px; text-align:left; font-weight:bold;">↩️ Çalışma Görseline Dön</button>
             <div class="tool-note"><b>Sadece görüntüler.</b> Korunmuş ilk ham/yedek dosyayı ekranda açar. Çalışma dosyasını, köşeleri ve onay durumunu değiştirmez.</div>
 
             <button type="button" onclick="showIsolatedWhitePreview()" style="background:#0f766e; width:100%; padding:11px 10px; margin-top:5px; text-align:left; font-weight:bold;">🖼️ Beyazlatma Önizlemesi (Kaydetmez)</button>
             <div class="tool-note"><b>Önizleme yalnız ayrılmış klasöre kaydedilir.</b> Mevcut 4 köşe ayarlarını kaydettikten sonra kullanın. Çalışma şablonu, orijinal yedek ve insan onayı değişmez.</div>
 
-            <button type="button" onclick="showWorkingPreview()" style="background:#0d6efd; width:100%; padding:11px 10px; margin-top:5px; text-align:left; font-weight:bold;">↩️ Çalışma Görseline Dön</button>
+
             <div class="tool-note"><b>Sadece görüntüler.</b> Sistemin aktif kullandığı çalışma kopyasını tekrar ekranda gösterir. Hiçbir dosyayı değiştirmez.</div>
 
             <button type="button" onclick="restoreOriginal()" style="background:#d97706; width:100%; padding:11px 10px; margin-top:5px; text-align:left; font-weight:bold;">🔄 Ham Orijinali Geri Yükle</button>
@@ -155,6 +149,8 @@
             <button type="button" onclick="chooseReplacementOriginal()" style="background:#9a3412; width:100%; padding:11px 10px; margin-top:5px; text-align:left; font-weight:bold;">🆕 Ham Dosyayı Yenisiyle Değiştir</button>
             <div class="tool-note"><b>Güvenli kaynak değişimi.</b> Yeni bir ham görsel seçersiniz. Eski ham ve eski çalışma dosyaları silinmez; recovery operasyonunda korunur. Yeni kaynak geldikten sonra eski onay otomatik olarak geçersizleşir ve şablon yeniden kontrol ister.</div>
 
+            </details>
+            <details id="v46-reports"><summary>📊 Taramalar ve Raporlar</summary>
             <button type="button" id="templateHealthScanButton" onclick="runTemplateHealthScan()" style="background:#0f766e; width:100%; padding:11px 10px; margin-top:5px; text-align:left; font-weight:bold;">🩺 Ham Dosya Sağlık Taraması</button>
             <div class="tool-note"><b>Sadece kontrol eder; hiçbir dosyayı silmez.</b> Çalışma dosyası eksik, ham yedek eksik/okunamıyor, DB kaydı olmayan dosya ve benzeri sorunları tarar. Çok siyah/beyaz-düz görselleri otomatik bozuk saymaz; yalnız insan kontrolüne işaretler. Tamamlanan bu manuel tarama ayrıca <b>son rapor</b> ve <b>geçmiş kaydı</b> olarak saklanır.</div>
 
@@ -173,6 +169,7 @@
             <button type="button" onclick="openWorkspaceConsistencyHistory()" style="background:#475569; width:100%; padding:11px 10px; margin-top:5px; text-align:left; font-weight:bold;">📚 Tutarlılık Rapor Geçmişi</button>
             <div class="tool-note">Önceki klasör auditlerini listeler. Her yeni tarama, önceki rapora göre yeni sorunları ve düzelmiş sorunları hesaplar.</div>
 
+            <button type="button" id="v46BulkAlign" onclick="v46BulkAlignmentReport()">📐 Seçililerin Hizalama Raporu (Salt-Okunur)</button>
             </details>
             <div class="tool-divider"></div>
             <h3 class="tool-section-title">Kontrol ve Onay</h3>
