@@ -18,7 +18,7 @@ import webbrowser
 
 HERE=Path(__file__).resolve().parent
 ROOT=HERE.parent
-from version_v45 import TITLE as VERSION
+from version_v46 import TITLE as VERSION
 
 class Center:
     def __init__(self):

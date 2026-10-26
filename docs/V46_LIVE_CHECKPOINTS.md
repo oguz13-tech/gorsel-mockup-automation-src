@@ -86,3 +86,16 @@ PETEK remains PARTIAL/BLOCKED for real front/slot/curve human acceptance; no fix
 13-slot generation introduced. Existing source-pixel cutout and separate PETEK
 Excel code retained. No upload or marketplace call performed.
 Next T10 reproducible source-only candidate ZIP and CI artifact.
+
+## T10.a — reproducible Windows candidate
+New single BASLAT_V46_WINDOWS.bat with isolated Python 3.11 venv and exact primary
+dependency pins; source-only tracked-file allowlist builder excludes photos,
+SQLite/JSON private settings and artifacts. SHA manifest + runbook + acceptance
+matrix included. Actual locked Linux dependency run: 42 PASS / 1 SKIP, 12.34s;
+Node angle tests: 4 PASS. The skipped test requires GUI display. Native Windows
+still WINDOWS_NOT_VERIFIED. CI added to build and test extracted ZIP on Linux and
+Windows and publish downloadable artifacts only after tests succeed.
+Historical daily pilot private config is deliberately not included; unified
+approved-template discovery is the candidate path. Private config is never
+invented. Old V4.0 worktree is unrelated and unpushed; not used for V4.6.
+Next: inspect CI, fix concrete failures, verify ZIP evidence and publish link.
