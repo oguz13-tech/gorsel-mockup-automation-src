@@ -29,3 +29,13 @@ ve onayları taşımadığı için kod geri dönüşü veri kopyalamayı gerekti
 DB geri yüklemesi gerekiyorsa otomatik kopyalama yapmayın: tüm yazıcılar kapalı,
 mevcut DB/WAL/SHM korunmuş ve yedek SHA doğrulanmış olmalı; ayrı açık onayla
 uzman kontrolünde gerçekleştirilir. Orijinal/yedek/çıktı klasörlerini silmeyin.
+
+## 27.10.2026 — PETEK klasörleri, kullanıcı tarafından silinen çıktılar, HTTPS Excel
+
+- Kullanıcı fiziksel PETEK fotoğraf klasörü **Petek_Dolabi** ise mevcut adı **değiştirmeyin**. İç kategori kimliği `06_Petek_Kapama` kalır. Ana merkez > **PETEK Klasörlerini Kontrol / Eksikleri Oluştur** ile
+  `YENI-BOS MOCKUP SABLON HAVUZU`, `2_SABLON_HAVUZU`, `2_SABLON_HAVUZU_ORIJINAL_YEDEK` içinde hangi PETEK dizininin seçildiğini görüntüleyin. Eksikler yalnız açık onayla yaratılır.
+- `Petek_Dolabi` ve `06_Petek_Kapama` klasörlerinin ikisi de aktif dosya içeriyorsa otomatik birleştirme yapılmaz; önce durun ve her iki dizini salt-okunur inceleyin. Elle klasör taşımayın/silmeyin.
+- Yeni PETEK fotoğrafı yalnız güvenli otomatik alımdan geçip çalışma ve ham yedek fotoğrafı doğrulandıktan sonra PETEK maske düzenleyicisinde seçilmelidir. Maske çizimi, kavis/delikleri elle gözle inceleme ve **insan onayı** zorunludur; otomatik köşe önerisi maske onayı değildir. Maskeler ve SHA bağlı onaylar **LocalAppData/GorselMockup/PetekV3** içinde, ortak üretimler **LocalAppData/GorselMockup/UnifiedV4** içinde saklanır. PETEK fotoğraf klasörü bu yerel kayıt klasörlerinin yerine geçmez.
+- Geçmişte **bilerek silinen** üretim dosyaları için, ana merkez > **GELİŞMİŞ ARAÇLAR / Bilerek Silinen Eski Çıktıları Arşivle**. Önce önizlemede eksik dosya sayısını kontrol edin; gerçekten hepsini kendiniz sildiyseniz onaylayın. İki DB için yeni SHA'lı online backup ve restore denemesi yapılır; üretim defteri satırları `USER_REMOVED` olur; mevcut şablon, eski ürün SHA ve kayıtları silinmez. Bu işleme geri dönüş ihtiyaç halinde uzman kontrollü ve ayrıca açık onay gerektirir. Eksik dosyanın gerçek nedeni bilinmiyorsa onaylamayın.
+- Üretim ekranında 4K seçeneğinin hemen altında **Üretimden sonra HTTPS Linke Çevir + Excel'e Yaz** kutusu var. Varsayılan **KAPALI**. İşaretlendiğinde yalnız **bu üretim turundaki SHA doğrulanmış görseller** seçilir ve bulut yüklemesi başlamadan ayrıca açık kullanıcı onayı sorulur. Hayır derse görsel internete gönderilmez. Önceki bağımsız “Mevcut Çıktıları HTTPS Linke Çevir + Excel'e Yaz” düğmesi ise geçmiş kayıtlar için ayrı ve açık onaylıdır.
+- Bilerek silinen 35 dosya `USER_REMOVED` yapıldıktan sonra G3 raporu `user_removed=35`, `missing=0` gösterebilir (sonradan başka eksik oluşmamışsa). Başka `REVIEW_REQUIRED` kaydı ve OneDrive çalışma alanı uyarısı **otomatik çözülmez**; bunları final kabulünün dışında bırakmayın.
