@@ -56,7 +56,8 @@ from .crash_recovery import inspect_interrupted_state, recover_interrupted_state
 from .manual_geometry import validated_legacy_manual_quad
 from .design_proxy_v43 import prepare_render_artwork
 from .upscale4k_v44 import process as upscale_new_outputs
-from .finish_v42 import GLASS, projected_rounded_alpha, subdued_reflection
+from .finish_v42 import GLASS, projected_rounded_alpha
+from .finish_material_v46 import apply_material_finish, DAYLIGHT, RECIPE as MATERIAL_RECIPE
 from PETEK_V3.excel_links_v42 import xlsx_with_photo_links, verify_photo_links
 
 EXT = {".jpg", ".jpeg", ".png", ".webp"}
@@ -186,8 +187,8 @@ def _render_legacy_six_cover(
     from .chroma_render_v46 import prepare_chroma
     neutral_scene, chroma_pixels = prepare_chroma(scene, mask)
     lit = realism.apply(neutral_scene, projected, mask, lighting)
-    if category in GLASS and glass_effect == "on":
-        lit = subdued_reflection(scene, lit, mask, q, category, "strong")
+    if category in GLASS | DAYLIGHT and glass_effect == "on" and lighting != "off":
+        lit = apply_material_finish(scene, lit, mask, q, category, enabled=True)
     out = scene.copy()
     active = mask > 0
     alpha = mask.astype(np.float32) / 255.0
@@ -217,7 +218,8 @@ def _render_legacy_six_cover(
         "zero_blur_padding": placement == "cover",
         "lighting": lighting,
         "corner_radius": corner_radius if category in GLASS else 0.0,
-        "optical_finish": category in GLASS and glass_effect == "on",
+        "optical_finish": category in (GLASS | DAYLIGHT) and glass_effect == "on" and lighting != "off",
+        "optical_recipe": MATERIAL_RECIPE if category in (GLASS | DAYLIGHT) and glass_effect == "on" and lighting != "off" else "legacy",
         "glass_effect": glass_effect if category in GLASS else "not_applicable",
     }
     return (petek_engine.canvas_3x4(out) if marketplace else out), qa
@@ -539,7 +541,10 @@ class UnifiedV4Batch:
                             placement=placement,
                             lighting=lighting,
                             corner_radius=active_corner_radius,
-                            glass_effect=glass_effect if cat in GLASS else "not_applicable",
+                            glass_effect=glass_effect if cat in (GLASS | DAYLIGHT) else "not_applicable",
+                            recipe=(V4_RECIPE + "+" + MATERIAL_RECIPE)
+                                if cat in (GLASS | DAYLIGHT) and glass_effect == "on" and lighting != "off"
+                                else V4_RECIPE,
                         )
                     except (petek_engine.MaskError, cv2.error, OSError, ValueError, KeyError, TypeError) as exc:
                         stats["rejected"] += 1
@@ -600,10 +605,15 @@ class UnifiedV4Batch:
                                 item["quad"],
                                 mask,
                                 item["physical_aspect"],
-                                marketplace=True,
+                                marketplace=False,
                                 placement=placement,
                                 lighting=lighting,
                             )
+                            if lighting != "off" and glass_effect == "on":
+                                raw_scene = petek_engine.read_bgr(source_path)
+                                picture = apply_material_finish(raw_scene, picture, mask,
+                                    item["quad"], cat, enabled=True)
+                            picture = petek_engine.canvas_3x4(picture)
                         else:
                             picture, _ = _render_legacy_six_cover(
                                 source_path,
