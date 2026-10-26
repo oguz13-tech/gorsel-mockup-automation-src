@@ -89,8 +89,12 @@ def center_identity():
     token = os.environ.get('MOCKUP_CENTER_TOKEN', '')
     if not token or not secrets.compare_digest(request.headers.get('X-Center-Token', ''), token):
         return jsonify({'error': 'Not authorized'}), 403
-    return jsonify({'pid': os.getpid(), 'token': token,
-                    'runtime_root': BASE_DIR, 'code_root': SOURCE_ROOT})
+    # On Windows venv python.exe is a launcher/redirector. Popen.pid can
+    # identify that launcher while Flask runs in its direct Python child.
+    # A launcher-to-child identity still requires the secret token + both roots.
+    return jsonify({'pid': os.getpid(), 'parent_pid': os.getppid(),
+                    'token': token, 'runtime_root': BASE_DIR,
+                    'code_root': SOURCE_ROOT})
 
 
 
