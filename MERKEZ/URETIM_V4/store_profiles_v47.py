@@ -43,6 +43,7 @@ class StoreProfiles:
         if not isinstance(raw,dict) or raw.get('schema')!=SCHEMA or not isinstance(raw.get('stores'),dict):
             raise ValueError('STORE_PROFILE_SCHEMA_INVALID')
         owners={}
+        source_owners={}
         for store, row in raw['stores'].items():
             if not STORE_ID.fullmatch(store) or store == 'LOCAL':
                 raise ValueError('STORE_ID_INVALID')
@@ -51,9 +52,15 @@ class StoreProfiles:
             for template in row['templates']:
                 if not isinstance(template,str) or ':' not in template or '@' not in template or len(template)>300:
                     raise ValueError('STORE_TEMPLATE_KEY_INVALID')
+                source_sha=template.rsplit('@',1)[-1]
+                if not re.fullmatch(r'[0-9a-fA-F]{64}',source_sha):
+                    raise ValueError('STORE_TEMPLATE_SHA_INVALID')
                 if template in owners:
                     raise ValueError('STORE_TEMPLATE_ASSIGNED_TO_MULTIPLE_STORES: '+template)
+                if source_sha in source_owners and source_owners[source_sha] != store:
+                    raise ValueError('STORE_SOURCE_IMAGE_REUSED_ACROSS_STORES: '+template)
                 owners[template]=store
+                source_owners[source_sha]=store
 
     def save(self, raw: dict):
         self.validate(raw)
