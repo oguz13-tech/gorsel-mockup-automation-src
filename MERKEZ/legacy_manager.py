@@ -179,16 +179,60 @@ def port_occupied(host='127.0.0.1',port=8080,timeout=.3)->bool:
         return sock.connect_ex((host,port))==0
 
 
-def server_matches(runtime, code, pid, token, opener=None):
-    """Only accept the child we launched, with the selected code/data roots."""
+def server_identity_diagnostic(runtime, code, pid, token, opener=None, *, timeout=1.8):
+    """Explain an editor handshake without leaking the bearer token.
+
+    The operator must never be sent to an unknown/stale 8080 listener.  No
+    path/PID mismatch is ignored, and no process is terminated here.
+    """
     import urllib.request
     try:
-        request = urllib.request.Request('http://127.0.0.1:8080/api/center_identity',
-                                        headers={'X-Center-Token': token})
-        with (opener or urllib.request.urlopen)(request, timeout=.4) as response:
+        req = urllib.request.Request('http://127.0.0.1:8080/api/center_identity',
+                                     headers={'X-Center-Token': str(token)})
+        with (opener or urllib.request.urlopen)(req, timeout=timeout) as response:
             data = json.load(response)
-        return (data.get('pid') == pid and data.get('token') == token
-                and Path(data['runtime_root']).resolve() == Path(runtime).resolve()
-                and Path(data['code_root']).resolve() == Path(code).resolve())
-    except (OSError, ValueError, KeyError, TypeError):
-        return False
+        if not isinstance(data, dict):
+            return {'ready': False, 'reason': 'IDENTITY_INVALID_RESPONSE'}
+        if not token or not isinstance(data.get('token'), str):
+            return {'ready': False, 'reason': 'IDENTITY_TOKEN_MISSING'}
+        import secrets
+        if not secrets.compare_digest(data['token'], str(token)):
+            return {'ready': False, 'reason': 'IDENTITY_TOKEN_MISMATCH'}
+        # The PID is not interchangeable: a previous/foreign process may
+        # respond 200 on 8080, even if it serves similar code.
+        if type(data.get('pid')) is not int or data['pid'] != int(pid):
+            return {'ready': False, 'reason': 'IDENTITY_PID_MISMATCH',
+                    'expected_pid': int(pid), 'actual_pid': data.get('pid')}
+        for key, expected in [('runtime_root', runtime), ('code_root', code)]:
+            actual = data.get(key)
+            if not isinstance(actual, str) or not actual:
+                return {'ready': False, 'reason': 'IDENTITY_' + key.upper() + '_MISSING'}
+            try:
+                matched = Path(actual).resolve() == Path(expected).resolve()
+                if not matched and Path(actual).exists() and Path(expected).exists():
+                    matched = os.path.samefile(actual, expected)
+            except (OSError, ValueError, TypeError):
+                matched = False
+            if not matched:
+                return {'ready': False, 'reason': 'IDENTITY_' + key.upper() + '_MISMATCH',
+                        'expected_path': str(Path(expected).resolve()),
+                        'actual_path': str(Path(actual).resolve())}
+        return {'ready': True, 'reason': 'MATCHED'}
+    except Exception as exc:
+        # Distinguish transient timeout/connect failures from bad identities.
+        import urllib.error
+        if isinstance(exc, urllib.error.HTTPError):
+            return {'ready': False, 'reason': 'IDENTITY_HTTP_' + str(exc.code)}
+        if isinstance(exc, (TimeoutError, socket.timeout)):
+            return {'ready': False, 'reason': 'IDENTITY_TIMEOUT'}
+        if isinstance(exc, (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError)):
+            return {'ready': False, 'reason': 'IDENTITY_NO_VALID_RESPONSE',
+                    'error_type': type(exc).__name__}
+        raise
+
+
+def server_matches(runtime, code, pid, token, opener=None):
+    """Backward compatible strict boolean wrapper around an explainable probe."""
+    return bool(server_identity_diagnostic(
+        runtime, code, pid, token, opener=opener,
+    )['ready'])
