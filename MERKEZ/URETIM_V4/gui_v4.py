@@ -44,6 +44,8 @@ class UnifiedV4BatchWindow:
             runtime_root=self.runtime_root,
             petek_registry=self.petek_registry,
         )
+        self._worker_kind = None
+        self._render_stop_requested = False
         self.window = tk.Toplevel(parent)
         self.window.title(VERSION_TEXT + " — 7 Kategori Üretim / Bulut Excel / İsteğe Bağlı 4K")
         self.window.geometry("1190x920")
@@ -188,7 +190,8 @@ class UnifiedV4BatchWindow:
         self.start_button = ttk.Button(actions, text="▶ 7 Kategori Seri Üretimi Başlat", command=self.start)
         self.start_button.pack(side="left", padx=3)
         ttk.Button(actions, text="⏸ Duraklat", command=self.pause_batch).pack(side="left", padx=3)
-        ttk.Button(actions, text="▶ Devam Et", command=self.resume_batch).pack(side="left", padx=3)
+        ttk.Button(actions, text="▶ Devam Et / Güvenli Durdurmadan Sürdür",
+                   command=self.resume_batch).pack(side="left", padx=3)
         ttk.Button(actions, text="■ Güvenli Durdur", command=self.stop).pack(side="left", padx=3)
         ttk.Button(actions, text="Ortak Çıktı Klasörü", command=self.open_results).pack(side="left", padx=3)
         ttk.Button(actions, text="SHA Kayıtlarını Doğrula (Salt Okunur)", command=self.run_audit).pack(side="left", padx=3)
@@ -402,6 +405,7 @@ class UnifiedV4BatchWindow:
             return
         self._auto_cloud_pending = auto_cloud_after_render
         self._auto_cloud_keys = []
+        self._render_stop_requested = False
         self.batch_engine.cancel.clear()
         self.batch_engine.resume()
         self.start_button.configure(state="disabled")
@@ -426,6 +430,7 @@ class UnifiedV4BatchWindow:
             except Exception as exc:
                 self.messages.put(("fail", str(exc)))
 
+        self._worker_kind = 'render'
         self.worker = threading.Thread(target=work, daemon=False)
         self.worker.start()
         self.progress.set("7 kategori ortak seri üretim çalışıyor...")
@@ -475,6 +480,7 @@ class UnifiedV4BatchWindow:
                 self.messages.put(('ab_done',(disabled,enabled,item['uid'],art.name)))
             except Exception as exc:
                 self.messages.put(('ab_fail',str(exc)))
+        self._worker_kind = 'preview'
         self.worker=threading.Thread(target=work,daemon=False)
         self.worker.start()
 
@@ -544,19 +550,96 @@ class UnifiedV4BatchWindow:
                 self.messages.put(("cloud_done", res))
             except Exception as exc:
                 self.messages.put(("fail", "BULUT EXCEL: " + str(exc)))
+        self._worker_kind = 'cloud'
         self.worker = threading.Thread(target=run_cloud, daemon=False)
         self.worker.start()
         self.progress.set("Bulut HTTPS görselleri linkleniyor; mevcut mockuplar yeniden üretilmiyor...")
 
     def pause_batch(self) -> None:
-        if self.worker and self.worker.is_alive():
+        if self.worker and self.worker.is_alive() and self._worker_kind == 'render':
+            if self._render_stop_requested or self.batch_engine.cancel.is_set():
+                self.progress.set('Güvenli durdurma devam ediyor; önce işlemin bitmesini bekleyin.')
+                return
             self.batch_engine.request_pause()
-            self.progress.set("Duraklatma istendi: devam eden iş güvenle tamamlanınca bekleyecek.")
+            self.progress.set('Duraklatma istendi: çalışan son görsel tamamlanınca bekleyecek.')
+        else:
+            self.progress.set('Duraklatılacak aktif görsel üretimi yok.')
 
     def resume_batch(self) -> None:
-        self.batch_engine.resume()
+        """A living paused worker resumes in-memory; a safely stopped one restarts.
+
+        No GUI widgets are accessed from the worker. For STOPPED tasks, the
+        engine revalidates the frozen snapshot, approved SHA and randomized
+        seed, then skips SHA-verified RENDERED receipts.
+        """
         if self.worker and self.worker.is_alive():
-            self.progress.set("Kaldığı işten devam ediliyor.")
+            if self._worker_kind != 'render':
+                self.progress.set('Önce etkin önizleme/bulut işleminin bitmesini bekleyin.')
+                return
+            if self._render_stop_requested or self.batch_engine.cancel.is_set():
+                self.progress.set('Güvenli durdurma tamamlanınca tekrar Devam Et’e basın.')
+                return
+            self.batch_engine.resume()
+            self.progress.set('Duraklatılan üretim kaldığı yerden devam ediyor.')
+            return
+
+        try:
+            cp = self.batch_engine.last_batch_checkpoint()
+            if not cp:
+                messagebox.showinfo(
+                    'Önceki üretimi sürdür',
+                    'Bu sürümden önceki durdurulan tur için kontrol kaydı bulunamadı. '
+                    'Aynı şablon/tasarım/mağaza seçimleriyle ▶ Üretimi Başlat düğmesini kullanın; '
+                    'daha önce tamamlanan aynı SHA’lı ürünler yeniden üretilmez.',
+                    parent=self.window)
+                return
+            if cp['status'] != 'STOPPED':
+                messagebox.showinfo(
+                    'Üretim devam durumu',
+                    f"Son kayıt: {cp['status']}. Duraklatılmış çalışan bir görev yok. "
+                    'Beklenmedik kesinti varsa Yarım İş / Kilit Kurtarma bölümünü açın.',
+                    parent=self.window)
+                return
+            state = self.batch_engine.inspect_recovery()
+            if (state['lock']['exists'] or state['interrupted_pending_count']):
+                messagebox.showwarning(
+                    'Önce kurtarma denetimi',
+                    'Üretim kilidi veya tamamlanmamış PENDING kayıtları bulundu. '
+                    'Önce Yarım İş / Kilit Kurtarma düğmesiyle güvenli kontrol yapın. '
+                    'Hiçbir eski çıktıyı elle silmeyin.',parent=self.window)
+                return
+            config = cp['config']
+            progress = cp.get('progress', {})
+            if not messagebox.askyesno(
+                    'Güvenli Durdurulan Üretimi Sürdür',
+                    'Önceki üretim turunun aynı mağaza, şablon, tasarım ve efekt ayarları '
+                    'kullanılacak. Rastgele sıra tohumu korunacak.\n\n'
+                    f"Üretim: {', '.join(config.get('selected_stores') or [config['group']])}\n"
+                    f"Tasarım klasörü: {config['design_folder']}\n"
+                    f"Önceden tamamlanan (bu tur): {progress.get('rendered',0)}\n\n"
+                    'Tamamlanmış çıktılar SHA256 ile doğrulanıp atlanacak; '
+                    'yalnız kalan işler üretilecek. Devam?',
+                    parent=self.window):
+                return
+        except (OSError,ValueError,KeyError,TypeError) as exc:
+            messagebox.showerror('Devam Kontrolü Hatası',str(exc),parent=self.window)
+            return
+
+        self._auto_cloud_pending = False  # Do not implicitly upload on replay.
+        self._auto_cloud_keys = []
+        self._render_stop_requested = False
+        self.start_button.configure(state='disabled')
+        self.cloud_button.configure(state='disabled')
+        def continue_previous():
+            try:
+                result = self.batch_engine.resume_last_stopped(notify=self._log)
+                self.messages.put(('done',result))
+            except Exception as exc:
+                self.messages.put(('fail','DEVAM ET: '+str(exc)))
+        self._worker_kind='render'
+        self.worker=threading.Thread(target=continue_previous,daemon=False)
+        self.worker.start()
+        self.progress.set('Kaydedilen tur doğrulanıyor; yalnız kalan görseller üretilecek.')
 
     def show_operations(self) -> None:
         from .ops_dashboard_v45 import summarize
@@ -598,8 +681,17 @@ class UnifiedV4BatchWindow:
             messagebox.showerror("Pazaryeri Excel Aktarım Hatası", str(exc), parent=self.window)
 
     def stop(self) -> None:
-        self.batch_engine.request_stop()
-        self.progress.set("Güvenli durdurma istendi...")
+        if self.worker and self.worker.is_alive() and self._worker_kind == 'render':
+            self._render_stop_requested = True
+            self.batch_engine.request_stop()
+            self.progress.set(
+                'Güvenli durdurma istendi. Mevcut görsel tamamlanınca turun '
+                'kontrol kaydı STOPPED olacak; sonra ▶ Devam Et ile sürdürebilirsiniz.')
+        elif self.worker and self.worker.is_alive() and self._worker_kind == 'cloud':
+            self.batch_engine.request_stop()
+            self.progress.set('Bulut bağlantı işleminin güvenli durdurulması istendi.')
+        else:
+            self.progress.set('Güvenli durdurma gerektiren aktif üretim yok.')
 
     def open_results(self) -> None:
         if self.batch_engine.output.is_dir():
@@ -677,6 +769,8 @@ class UnifiedV4BatchWindow:
                     self.log.see("end")
                     self.log.configure(state="disabled")
                 elif kind == "done":
+                    self._worker_kind = None
+                    self._render_stop_requested = False
                     self.progress.set(
                         f"{value['status']} — Üretilen: {value['rendered']}, "
                         f"Tekrar: {value['reused']}, Atlanan: {value['rejected']}. "
@@ -702,18 +796,23 @@ class UnifiedV4BatchWindow:
                         self._log(info)
                         self.progress.set(self.progress.get() + " | " + info)
                 elif kind == "ab_done":
+                    self._worker_kind = None
                     self.show_ab(*value)
                     self.progress.set('Cam A/B gerçek baskı önizlemesi hazır. Kaynak veya DB değiştirilmedi.')
                 elif kind == "ab_fail":
+                    self._worker_kind = None
                     self.progress.set('Cam A/B önizleme başarısız: ' + str(value))
                     self._log('ÖNİZLEME HATA: ' + str(value))
                 elif kind == "cloud_done":
+                    self._worker_kind = None
                     self.progress.set(f"BULUT {value['status']} — Linkli: {value['linked']}, "
                                       f"Yeni: {value['uploaded']}, Mevcut: {value['reused']}, Hata: {value['failed']}. "
                                       f"HTTPS Excel: {value['xlsx']}")
                     self.start_button.configure(state="normal")
                     self.cloud_button.configure(state="normal")
                 elif kind == "fail":
+                    self._worker_kind = None
+                    self._render_stop_requested = False
                     self._auto_cloud_pending = False
                     self._auto_cloud_keys = []
                     self.progress.set("DURDU — " + str(value))
