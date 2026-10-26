@@ -61,7 +61,7 @@ def _read_database(path: Path, *, role: str | None = None) -> dict[str, Any]:
 
 def _output_audit(db: Path, output_root: Path) -> dict[str, Any]:
     report = {"status_counts": {}, "verified": 0, "missing": 0, "sha_mismatch": 0,
-              "path_unsafe": 0, "unfinished": 0, "problems": []}
+              "path_unsafe": 0, "unfinished": 0, "user_removed": 0, "problems": []}
     if not db.is_file():
         return report
     con = _read_connection(db)
@@ -69,6 +69,11 @@ def _output_audit(db: Path, output_root: Path) -> dict[str, Any]:
         rows = con.execute("SELECT key,status,output,output_sha FROM artifact ORDER BY key")
         for key, status, output, expected in rows:
             report["status_counts"][status] = report["status_counts"].get(status, 0) + 1
+            if status == "USER_REMOVED":
+                # Intentionally deleted by the owner with archived DB evidence.
+                # Not a missing render and never a candidate for auto-recovery.
+                report["user_removed"] += 1
+                continue
             if status != "RENDERED":
                 report["unfinished"] += 1
                 continue
