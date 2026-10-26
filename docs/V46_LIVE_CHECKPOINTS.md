@@ -74,3 +74,15 @@ categories white print/outside invariance/1200x1600 plus outside-mask rejection)
 This is synthetic evidence only; real source/art A-B and 1→10→100 human quality
 GO remain BLOCKED. Not a new approval or universal chroma segmentation guarantee.
 Next T08 existing Excel/upscale regressions and release packaging.
+
+## T08 / T09 audit checkpoint
+Existing source already fixes non-empty Real-ESRGAN install directory by planning
+missing files and rejecting differing collisions; not rewritten. Tightened Python
+preflight to reject empty model files. Optional 4K-off path remains independent.
+2 targeted tests PASS. Broader existing seven-category cutout/batch/recovery,
+Excel HTTPS, naming/restore/upscale regression: 43 PASS / 3 SKIP (15.71s Linux).
+No native GPU execution or PowerShell installer execution: WINDOWS_NOT_VERIFIED.
+PETEK remains PARTIAL/BLOCKED for real front/slot/curve human acceptance; no fixed
+13-slot generation introduced. Existing source-pixel cutout and separate PETEK
+Excel code retained. No upload or marketplace call performed.
+Next T10 reproducible source-only candidate ZIP and CI artifact.

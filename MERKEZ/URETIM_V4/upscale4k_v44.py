@@ -84,6 +84,7 @@ def preflight(*, enabled: bool, model: str = "photo", exe: Path | str | None = N
     # NCNN official models are shipped next to exe in `models`.
     stem = MODELS[model]
     if any(not (directory / f"{stem}.{ext}").is_file() or (directory / f"{stem}.{ext}").is_symlink()
+           or (directory / f"{stem}.{ext}").stat().st_size == 0
            for ext in ("bin", "param")):
         raise UpscaleError(f"Real-ESRGAN modeli eksik: {stem}.bin/.param; beklenen klasör: {directory}")
     return found
