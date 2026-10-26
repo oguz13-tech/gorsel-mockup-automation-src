@@ -293,7 +293,7 @@ class UnifiedV4Ledger:
         with self.connect() as con:
             con.execute(
                 """UPDATE artifact SET status='REVIEW_REQUIRED', message=?, updated=CURRENT_TIMESTAMP
-                WHERE key=? AND status!='RENDERED'""",
+                WHERE key=? AND status IN ('PENDING','REVIEW_REQUIRED')""",
                 (str(error)[:300], key),
             )
 
@@ -565,6 +565,13 @@ class UnifiedV4Batch:
                     }
                     try:
                         record = self.ledger.reserve(fields)
+                        if record["status"] == "USER_REMOVED":
+                            # User intentionally deleted this output. Preserve its
+                            # SKU/receipt and NEVER silently recreate or flag it
+                            # as a corrupted render on subsequent batch runs.
+                            stats["reused"] += 1
+                            notify(f"KULLANICI TARAFINDAN SİLİNDİ / tarihî kayıt korundu: [{cat}] {uid} / {art.name}")
+                            continue
                         if record["status"] == "RENDERED":
                             if (
                                 output.is_symlink()
