@@ -53,3 +53,12 @@ labels say EĞİK (not invalid), are bounded to canvas, and never alter geometry
 Zoom/pan/resize reuse draw transform. Node: 4 PASS (two-point, drag thresholds,
 vertical edges, zoom/pan/resize clamping); main.js syntax PASS.
 WINDOWS_NOT_VERIFIED; native pointer/visual acceptance pending. Next T06.
+
+## T06.a — fix single-image chroma draft persistence
+T01 returned before handling save_as_draft, so bulk selection could display a
+successful suggestion that was not saved. Chroma route now persists the same
+source-bound review sidecar as legacy, verifies source SHA did not change during
+detection, and reports draft_saved accurately. Never calls profile save.
+Tests: 8 PASS (batch + request-context single draft integration). Full new-ingest
+through human approval and real render remains pending; no live ingest run.
+Next T07 render/quality gate review and T08 exports/4K.

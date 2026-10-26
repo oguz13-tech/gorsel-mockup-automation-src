@@ -1049,6 +1049,7 @@ def api_auto_detect_corners():
         if not os.path.exists(img_path):
             return jsonify({"success": False, "error": "Resim dosyasi bulunamadi"}), 404
 
+        detected_source_hash = _sha256_file(img_path)
         img_cv = cv2.imdecode(
             np.fromfile(img_path, dtype=np.uint8),
             cv2.IMREAD_COLOR,
@@ -1080,6 +1081,11 @@ def api_auto_detect_corners():
                     "review_status": "REVIEW_REQUIRED",
                 }), 422
             candidate = GeometryValidator.canonical_sort(candidate).astype(float).tolist()
+            if detected_source_hash != _sha256_file(img_path):
+                return jsonify({"success": False, "code": "SOURCE_CHANGED", "error": "Kaynak tespit sırasında değişti."}), 409
+            draft_saved = (request.get_json(silent=True) or {}).get("save_as_draft") is True
+            if draft_saved:
+                _v46_store_draft(active_cat, active_tmpl, candidate, detected_source_hash, "MAGENTA_MARKED_SOURCE")
             return jsonify({
                 "success": True,
                 "corners": candidate,
@@ -1096,7 +1102,7 @@ def api_auto_detect_corners():
                 "magenta_polygon_purity": chroma_result.get("magenta_polygon_purity"),
                 "chroma_detector_status": chroma_result.get("status"),
                 "chroma_warning": chroma_result.get("reason"),
-                "draft_saved": False,
+                "draft_saved": draft_saved,
                 "warning": "Renk dedektoru sadece DRAFT oneri verir. INSAN ONAYI ZORUNLU.",
             })
         # END ISOLATED_MAGENTA_QUAD_V1
