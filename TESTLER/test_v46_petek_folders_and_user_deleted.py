@@ -168,5 +168,9 @@ def test_cloud_option_is_explicitly_opt_in_and_requires_second_approval():
     text = (ROOT/'MERKEZ'/'URETIM_V4'/'gui_v4.py').read_text(encoding='utf-8')
     assert 'self.auto_cloud_link = tk.BooleanVar(value=False)' in text
     assert text.index('self.upscale_4k =') < text.index('self.auto_cloud_link =')
-    assert 'self.start_cloud_links()  # Still requires explicit online-sharing confirmation.' in text
+    assert 'self.start_cloud_links(only_keys=self._auto_cloud_keys)' in text
+    assert "rows = [row for row in rows if row['key'] in permitted]" in text
+    batch = (ROOT/'MERKEZ'/'URETIM_V4'/'unified_batch.py').read_text(encoding='utf-8')
+    assert '"current_batch_keys": []' in batch
+    assert 'stats["current_batch_keys"].append(key)' in batch
     assert 'GERÇEK BULUT YÜKLEME ONAYI' in text
