@@ -224,10 +224,15 @@ class Center:
     def _open_legacy(self,route):
         from legacy_manager import inspect,backup_database,launch_spec,port_occupied,local_state_dir,LegacyLaunchError
         if self.editor_proc is not None and self.editor_proc.poll() is None:
-            from legacy_manager import server_matches
+            from legacy_manager import server_identity_diagnostic
             runtime,code,token=self.editor_identity
-            if not server_matches(runtime,code,self.editor_proc.pid,token):
-                messagebox.showerror('Sunucu doğrulanamadı', 'Kod veya çalışma klasörü kimliği uyuşmuyor.', parent=self.root)
+            identity = server_identity_diagnostic(runtime, code, self.editor_proc.pid, token)
+            if not identity['ready']:
+                detail = self._safe_identity_error(identity)
+                self._log('İnceleme servisi kimlik kontrolü: '+detail)
+                messagebox.showerror('Sunucu doğrulanamadı',
+                    detail+'\n\nBu merkezin başlattığı servisi Gelişmiş Araçlar > 4 Köşe Servisini Durdur ile durdurup tekrar açın. Bilinmeyen süreci kapatmayın.',
+                    parent=self.root)
                 return
             webbrowser.open('http://127.0.0.1:8080'+route)
             self.status.set('Dört köşe inceleme merkezi açık.')
@@ -302,13 +307,21 @@ class Center:
             self._log('Altı kategori kodu: '+str(cwd))
             self._log('Sunucu logu: '+str(output))
             def wait_server():
-                from legacy_manager import server_matches
-                for _ in range(75):
-                    if child.poll() is not None:break
-                    if server_matches(self.runtime,cwd,child.pid,env['MOCKUP_CENTER_TOKEN']):
+                from legacy_manager import server_identity_diagnostic
+                last={'ready':False,'reason':'NOT_CHECKED'}
+                # A slow Windows/OneDrive machine can need extra startup time.
+                # A 200 response alone is NOT proof this process belongs to us.
+                for _ in range(50):
+                    if child.poll() is not None:
+                        last={'ready':False,'reason':'EDITOR_PROCESS_EXITED',
+                              'exit_code':child.returncode}
+                        break
+                    last=server_identity_diagnostic(
+                        self.runtime,cwd,child.pid,env['MOCKUP_CENTER_TOKEN'])
+                    if last['ready']:
                         self.messages.put(('legacy_started',route));return
-                    time.sleep(.16)
-                self.messages.put(('legacy_error',str(output)))
+                    time.sleep(.25)
+                self.messages.put(('legacy_error',(str(output),last)))
             threading.Thread(target=wait_server,daemon=True).start()
         except Exception as exc:
             messagebox.showerror('İnceleme başlatılamadı',str(exc),parent=self.root)
@@ -395,6 +408,14 @@ class Center:
             except Exception as exc:self.messages.put(('done',(route,str(exc))))
         threading.Thread(target=job,daemon=True).start()
 
+    @staticmethod
+    def _safe_identity_error(diagnostic):
+        """No center token or environment secrets may enter an error dialog."""
+        fields=['reason','expected_pid','actual_pid','expected_path',
+                'actual_path','exit_code','error_type']
+        return '\n'.join(f'{key}: {diagnostic[key]}' for key in fields
+                         if key in diagnostic) or 'Kimlik yanıtı alınamadı.'
+
     def poll(self):
         try:
             while True:
@@ -409,11 +430,15 @@ class Center:
                     webbrowser.open('http://127.0.0.1:8080'+value)
                 elif kind=='legacy_error':
                     self.review_button.configure(state='normal');self.tools_button.configure(state='normal')
-                    try:excerpt=Path(value).read_text(encoding='utf-8',errors='replace')[-1900:]
-                    except OSError:excerpt='Günlük dosyası okunamadı.'
-                    self._log('ESKİ İNCELEME BAŞLATMA HATASI\n'+excerpt)
-                    self.status.set('Eski inceleme başlatılamadı; hata logunu kontrol et.')
-                    messagebox.showerror('İnceleme açılmadı',excerpt or 'Sunucu yanıt vermedi.',parent=self.root)
+                    filename,diagnostic=value
+                    try:excerpt=Path(filename).read_text(encoding='utf-8',errors='replace')[-1600:]
+                    except OSError:excerpt='Sunucu günlük dosyası okunamadı.'
+                    detail=self._safe_identity_error(diagnostic)
+                    self._log('İNCELEME BAŞLATMA HATASI / KİMLİK KONTROLÜ\n'+detail+'\n'+excerpt)
+                    self.status.set('İnceleme açılmadı: '+str(diagnostic.get('reason','UNKNOWN')))
+                    messagebox.showerror('İnceleme açılmadı',
+                        'Kimlik doğrulaması: '+detail+'\n\nSunucu günlüğü:\n'+excerpt,
+                        parent=self.root)
         except queue.Empty:pass
         self.root.after(180,self.poll)
 
