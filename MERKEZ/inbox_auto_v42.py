@@ -159,9 +159,15 @@ def historical_db_identity_reserved(root: Path, category: str, filename: str) ->
 def ingest_one(root:Path,category:str,source:Path)->dict:
     root=Path(root)
     if category not in CATEGORIES:raise ValueError('INVALID_CATEGORY')
-    inbox=root/'YENI-BOS MOCKUP SABLON HAVUZU'/category
-    work=root/'2_SABLON_HAVUZU'/category
-    backup=root/'2_SABLON_HAVUZU_ORIJINAL_YEDEK'/category
+    if category == '06_Petek_Kapama':
+        from petek_folders_v46 import petek_directory
+        inbox = petek_directory(root, 'YENI-BOS MOCKUP SABLON HAVUZU')
+        work = petek_directory(root, '2_SABLON_HAVUZU')
+        backup = petek_directory(root, '2_SABLON_HAVUZU_ORIJINAL_YEDEK')
+    else:
+        inbox=root/'YENI-BOS MOCKUP SABLON HAVUZU'/category
+        work=root/'2_SABLON_HAVUZU'/category
+        backup=root/'2_SABLON_HAVUZU_ORIJINAL_YEDEK'/category
     if not source.is_file() or source.is_symlink() or source.suffix.lower() not in IMG:
         raise ValueError('INVALID_INBOX_SOURCE')
     if source.parent.resolve()!=inbox.resolve():raise ValueError('ONLY_DIRECT_INBOX_FILES')
@@ -211,7 +217,9 @@ def ingest_one(root:Path,category:str,source:Path)->dict:
     # Files may have been moved/deleted while their historical APPROVED,
     # recycled identity, or template row remains in SQLite.  Do NOT turn
     # an untrusted inbox picture into an already-reserved logical template.
-    if historical_db_identity_reserved(root, category, source.name):
+    # PETEK has its own immutable, SHA-bound mask registry, not a seven-category
+    # row in the six-category legacy SQLite table.
+    if category != '06_Petek_Kapama' and historical_db_identity_reserved(root, category, source.name):
         dest = safe_stage_move(source, inbox / CONFLICT, sha)
         return {'status': 'CONFLICT_REVIEW', 'category': category,
                 'name': source.name, 'reason': 'DB_HISTORICAL_IDENTITY_RESERVED',
@@ -248,7 +256,15 @@ class AutoInboxWatcher:
         if not (self.root/'SABLON_V2_MIMARI'/'ayarlar.db').is_file():return []
         outcome=[]
         for category in CATEGORIES:
-            inbox=self.root/'YENI-BOS MOCKUP SABLON HAVUZU'/category
+            if category == '06_Petek_Kapama':
+                from petek_folders_v46 import petek_directory
+                try:
+                    inbox=petek_directory(self.root, 'YENI-BOS MOCKUP SABLON HAVUZU')
+                except (OSError, ValueError) as exc:
+                    self._send('PETEK Yeni Boş klasör uyuşmazlığı: '+str(exc))
+                    continue
+            else:
+                inbox=self.root/'YENI-BOS MOCKUP SABLON HAVUZU'/category
             if inbox.is_symlink() or not inbox.is_dir():continue
             for file in sorted(inbox.iterdir()):
                 if file.is_symlink() or not file.is_file() or file.suffix.lower() not in IMG:continue
