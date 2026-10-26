@@ -87,7 +87,9 @@ class Center:
                     'Üst-alt kavis, görünür fırça, otomatik benek onarımı ve doğal ışık motoru dahildir.',
                   wraplength=930).pack(anchor='w')
         r3=ttk.Frame(p);r3.pack(fill='x',pady=(8,10))
-        ttk.Button(r3,text='PETEK — ŞABLON / MASKE DÜZENLE',command=self.open_review).pack(side='left',fill='x',expand=True)
+        ttk.Button(r3,text='PETEK — ŞABLON / MASKE DÜZENLE',command=self.open_review).pack(side='left',fill='x',expand=True,padx=(0,5))
+        ttk.Button(r3,text='PETEK Klasörlerini Kontrol / Eksikleri Oluştur',
+                   command=self.prepare_petek_folders).pack(side='left',fill='x',expand=True,padx=(5,0))
         ttk.Separator(p).pack(fill='x',pady=(7,10))
         self.advanced_toggle=ttk.Button(p,text='▶ GELİŞMİŞ ARAÇLAR / DENETİM / KURTARMA',command=self.toggle_advanced)
         self.advanced_toggle.pack(fill='x',pady=(2,5))
@@ -102,6 +104,9 @@ class Center:
         ttk.Button(r6,text='PETEK Çıktı Klasörü',command=self.open_petek_results).pack(side='left',fill='x',expand=True,padx=3)
         ttk.Button(r6,text='PETEK Eski Ayrı Seri Üretimi',command=self.open_petek).pack(side='left',fill='x',expand=True,padx=3)
         ttk.Button(r6,text='4 Köşe Servisini Durdur',command=self.stop_legacy_editor).pack(side='left',fill='x',expand=True,padx=3)
+        retired_row=ttk.Frame(self.advanced_panel);retired_row.pack(fill='x',pady=3)
+        ttk.Button(retired_row,text='Bilerek Silinen Eski Çıktıları Arşivle (Kayıt Korunur)',
+                   command=self.archive_user_deleted_outputs).pack(side='left',fill='x',expand=True,padx=3)
         r7=ttk.Frame(self.advanced_panel);r7.pack(fill='x',pady=3)
         ttk.Button(r7,text='G3 Salt-Okunur Veri / SHA Denetimi',command=self.g3_audit).pack(side='left',fill='x',expand=True,padx=3)
         ttk.Button(r7,text='G3 Onaylı İki DB Yedeği + Geri Yükleme Provası',command=self.g3_backup).pack(side='left',fill='x',expand=True,padx=3)
@@ -354,10 +359,56 @@ class Center:
             return
         self.start([sys.executable,'-B',str(HERE/'GUNLUK'/'run.py')],'Altı kategori günlük V2')
 
+    def prepare_petek_folders(self):
+        try:
+            from petek_folders_v46 import prepare_petek_folders
+            from tkinter import messagebox
+            if not messagebox.askyesno('PETEK klasörleri',
+                    'Yeni Boş, çalışma ve orijinal yedekte mevcut PETEK klasörleri taranacak. '
+                    'Eksik olanlar oluşturulacak. Hiçbir görsel taşınmayacak veya silinmeyecek. Devam?',
+                    parent=self.root):
+                return
+            result=prepare_petek_folders(self.runtime)
+            details='\\n'.join(f'{section}: {path}' for section,path in result['paths'].items())
+            self._log('PETEK KLASÖR HARİTASI\\n'+details)
+            messagebox.showinfo('PETEK klasör entegrasyonu',
+                f'Oluşturulan yeni klasör: {len(result["created"])}\\n\\n'+details+
+                '\\n\\nMaske ve onaylar yerel AppData/PetekV3 içinde korunuyor.',parent=self.root)
+        except Exception as exc:
+            messagebox.showerror('PETEK klasör engeli',str(exc),parent=self.root)
+
+    def archive_user_deleted_outputs(self):
+        try:
+            from URETIM_V4.user_removed_v46 import (
+                missing_user_candidates, acknowledge_user_deleted)
+            from URETIM_V4.final_guard_v44 import store_v4_root
+            prod=store_v4_root()
+            missing=missing_user_candidates(prod)
+            if not missing:
+                messagebox.showinfo('Silinen çıktılar','Kayıtlı fakat eksik çıktı bulunmadı.',parent=self.root)
+                return
+            if not messagebox.askyesno('BİLEREK SİLİNDİ — AÇIK ONAY',
+                    f'{len(missing)} üretim kaydının çıktı dosyası eksik.\\n\\n'
+                    'Bu dosyaların tamamını KENDİNİZİN BİLEREK SİLDİĞİNİ ONAYLIYOR MUSUNUZ?\\n\\n'
+                    'Önce her iki SQLite yedeklenip geri yükleme provası yapılacak. '
+                    'Kayıtlar silinmeyecek; USER_REMOVED olarak tarihçede saklanacak. '
+                    'Bu işlem hiçbir görseli silmez, yeniden üretmez.',parent=self.root):
+                return
+            result=acknowledge_user_deleted(prod,self.runtime,
+                expected_keys=[row['key'] for row in missing],
+                confirm='I_CONFIRM_THESE_FILES_WERE_DELETED_BY_ME')
+            self._log('BİLEREK SİLİNEN ÇIKTI KAYITLARI: '+str(result))
+            messagebox.showinfo('Üretim geçmişi korundu',
+                f'{result["count"]} kayıt USER_REMOVED durumuna alındı.\\n'
+                'Dosyalar ve diğer üretimler değiştirilmedi.\\n'
+                'Rapor: '+result['report_path'],parent=self.root)
+        except Exception as exc:
+            messagebox.showerror('Silinen çıktı kayıtları işlenemedi',str(exc),parent=self.root)
+
     def open_review(self):
         try:
             from PETEK_V3.gui import open_mask_editor
-            open_mask_editor(self.root)
+            open_mask_editor(self.root, runtime_root=self.runtime)
         except Exception as exc:messagebox.showerror('PETEK maske açılmadı',str(exc),parent=self.root)
 
     def open_petek(self):
