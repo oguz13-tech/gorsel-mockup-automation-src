@@ -140,6 +140,23 @@ class UnifiedV4BatchWindow:
                               "Bilgisayarda resmi Real-ESRGAN programı ve model dosyaları bulunmalıdır; yoksa üretimden önce uyarılır."),
                   wraplength=1120).pack(anchor="w", pady=(0, 4))
 
+        # Link + Excel is a separate opt-in post-render task, directly below 4K.
+        # Checkbox alone NEVER authorizes a public upload: the existing explicit
+        # online-sharing confirmation is required after the render completes.
+        self.auto_cloud_link = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            area,
+            text="Üretimden sonra isteğe bağlı HTTPS Linke Çevir + Excel'e Yaz",
+            variable=self.auto_cloud_link,
+        ).pack(anchor="w", pady=(4, 2))
+        ttk.Label(
+            area,
+            text="Varsayılan KAPALI. İşaretlenirse üretim bitince ayrıca bulut yükleme onayı sorulur; "
+                 "onay verilmezse hiçbir görsel internete gönderilmez.",
+            wraplength=1100,
+        ).pack(anchor="w", pady=(0, 4))
+        self._auto_cloud_pending = False
+
         actions = ttk.Frame(area)
         actions.pack(fill="x", pady=8)
         self.start_button = ttk.Button(actions, text="▶ 7 Kategori Seri Üretimi Başlat", command=self.start)
@@ -267,6 +284,7 @@ class UnifiedV4BatchWindow:
             # Cam köşesi onaylı şablonda saklanır; arayüzde global override yok.
             corner_radius = None
             upscale_4k = bool(self.upscale_4k.get())
+            auto_cloud_after_render = bool(self.auto_cloud_link.get())
             upscale_model = "fast" if self.upscale_model.get().startswith("Hızlı") else "photo"
             if upscale_4k:
                 upscale_preflight(enabled=True, model=upscale_model)
@@ -287,6 +305,7 @@ class UnifiedV4BatchWindow:
             "Her çıktı ayrı kayıtla korunur; işlemi istediğin zaman güvenli durdurabilirsin.\n"
             "BU İŞLEMİ BAŞLATMAK İSTİYOR MUSUN?", parent=self.window):
             return
+        self._auto_cloud_pending = auto_cloud_after_render
         self.batch_engine.cancel.clear()
         self.batch_engine.resume()
         self.start_button.configure(state="disabled")
@@ -370,6 +389,16 @@ class UnifiedV4BatchWindow:
         popup._keep_image_refs=images
         ttk.Label(popup,text=f'{uid} / {artname} — yalnız geçici önizleme; kaynakları ve onaylı dört köşeleri değiştirmez.',
                   wraplength=820).pack(pady=8)
+
+    def _maybe_start_auto_cloud(self) -> None:
+        """UI-thread follow-up; never run during an active rendering thread."""
+        if not self._auto_cloud_pending or not self.window.winfo_exists():
+            return
+        if self.worker and self.worker.is_alive():
+            self.window.after(250, self._maybe_start_auto_cloud)
+            return
+        self._auto_cloud_pending = False
+        self.start_cloud_links()  # Still requires explicit online-sharing confirmation.
 
     def start_cloud_links(self) -> None:
         if self.worker and self.worker.is_alive():
@@ -543,6 +572,13 @@ class UnifiedV4BatchWindow:
                     )
                     self.start_button.configure(state="normal")
                     self.cloud_button.configure(state="normal")
+                    # Do not initiate cloud requests while the completed render
+                    # worker is still winding down or after a cancelled batch.
+                    if self._auto_cloud_pending:
+                        if value.get("status") == "COMPLETED" and not self.batch_engine.cancel.is_set():
+                            self.window.after(250, self._maybe_start_auto_cloud)
+                        else:
+                            self._auto_cloud_pending = False
                     quality = value.get("upscale_4k", {})
                     if quality.get("status") != "DISABLED":
                         info = (f"4K: başarılı {quality.get('upscaled', 0)}, "
@@ -563,6 +599,7 @@ class UnifiedV4BatchWindow:
                     self.start_button.configure(state="normal")
                     self.cloud_button.configure(state="normal")
                 elif kind == "fail":
+                    self._auto_cloud_pending = False
                     self.progress.set("DURDU — " + str(value))
                     self.start_button.configure(state="normal")
                     self.cloud_button.configure(state="normal")
