@@ -1046,6 +1046,51 @@ def api_auto_detect_corners():
         if img_cv is None:
             return jsonify({"success": False, "error": "Resim okunamadi"}), 500
 
+        # BEGIN ISOLATED_MAGENTA_QUAD_V1: independent color-only review suggestion.
+        from core.chroma_quad_detector import detect as _chroma_detect
+        chroma_result = _chroma_detect(img_cv, active_cat)
+        if chroma_result.get("chroma_present", False):
+            if not chroma_result.get("quad"):
+                return jsonify({
+                    "success": False,
+                    "error": "Magenta belirsiz: insan incelemesi gerekli",
+                    "code": "CHROMA_REVIEW_REQUIRED",
+                    "engine": "magenta_color_quad_v1",
+                    "review_status": "REVIEW_REQUIRED",
+                    "reason": chroma_result.get("reason", "CHROMA_NO_VALID_QUAD"),
+                }), 422
+            candidate = np.asarray(chroma_result["quad"], dtype=np.float32)
+            valid, reason = GeometryValidator.is_valid_quad(
+                candidate, img_cv.shape[1], img_cv.shape[0])
+            if not valid:
+                return jsonify({
+                    "success": False,
+                    "error": "Magenta geometri gecersiz: " + str(reason),
+                    "engine": "magenta_color_quad_v1",
+                    "review_status": "REVIEW_REQUIRED",
+                }), 422
+            candidate = GeometryValidator.canonical_sort(candidate).astype(float).tolist()
+            return jsonify({
+                "success": True,
+                "corners": candidate,
+                "source_sha256": _sha256_file(img_path),
+                "engine": "magenta_color_quad_v1",
+                "review_status": "REVIEW_REQUIRED",
+                "confidence": 0.0,
+                "component_confidences": {},
+                "surface_mode": "MAGENTA_MARKED_SOURCE",
+                "surface_mode_confidence": 0.0,
+                "nominal_aspect": "UNKNOWN",
+                "occlusions": [],
+                "magenta_mask_iou": chroma_result.get("magenta_mask_iou"),
+                "magenta_polygon_purity": chroma_result.get("magenta_polygon_purity"),
+                "chroma_detector_status": chroma_result.get("status"),
+                "chroma_warning": chroma_result.get("reason"),
+                "draft_saved": False,
+                "warning": "Renk dedektoru sadece DRAFT oneri verir. INSAN ONAYI ZORUNLU.",
+            })
+        # END ISOLATED_MAGENTA_QUAD_V1
+
         analysis, cache_hit = _analyze_auto_cached(
             active_cat,
             img_path,
