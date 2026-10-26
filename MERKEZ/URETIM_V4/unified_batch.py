@@ -476,6 +476,7 @@ class UnifiedV4Batch:
             "attempted": 0,
             "rendered": 0,
             "reused": 0,
+            "current_batch_keys": [],  # Only these SHA-verified products may auto-link.
             "rejected": 0,
             "errors": [],
             "local_only": True,
@@ -582,6 +583,7 @@ class UnifiedV4Batch:
                                     "Önceden tamamlanan çıktı bulunamadı veya değiştirilmiş."
                                 )
                             stats["reused"] += 1
+                            stats["current_batch_keys"].append(key)
                             notify(f"ATLANDI / mevcut kayıt: [{cat}] {uid} / {art.name}")
                             continue
                         if record["status"] != "PENDING" or output.exists():
@@ -631,6 +633,7 @@ class UnifiedV4Batch:
                         newly_rendered.append({"key": key, "sku": sku, "output": str(output),
                                                "output_sha": receipt_sha})
                         stats["rendered"] += 1
+                        stats["current_batch_keys"].append(key)
                         notify(f"ÜRETİLDİ {stats['rendered']}: [{cat}] {uid} / {art.name}")
                     except (petek_engine.MaskError, cv2.error, OSError, ValueError) as exc:
                         self.ledger.quarantine(key, str(exc))
