@@ -512,6 +512,9 @@ class UnifiedV4Batch:
         # Save new output list for optional post-processing; reused older outputs
         # are never silently post-processed or uploaded.
         newly_rendered: list[dict[str, str]] = []
+        notify(f"MAĞAZA/SIRA PLANI: {len(production_plan)} mağaza, "
+               f"{len(designs_in_run)} tasarım; rastgele tohum: {seed}. "
+               "Onaylı dört köşe ve mevcut çıktılar değişmez.")
         try:
             processed_jobs = set()
             for group, templates in production_plan:
@@ -531,7 +534,12 @@ class UnifiedV4Batch:
                         notify(f"ATLANDI TASARIM {original_art.name}: {exc}")
                         continue
 
-                    for item in templates:
+                    # Draw a fresh template permutation for EVERY design,
+                    # not only once for the entire store. Large batches no
+                    # longer paint each design in the same template order.
+                    template_order = list(templates)
+                    rng.shuffle(template_order)
+                    for item in template_order:
                         if not self._wait_if_paused(notify):
                             break
                         if self.cancel.is_set() or (max_jobs is not None and stats["attempted"] >= int(max_jobs)):
