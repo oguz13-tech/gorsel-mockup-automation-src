@@ -60,6 +60,9 @@ def test_deliberately_deleted_receipt_audit_not_missing(tmp_path):
     entry=next(e for e in report['entries'] if e['key']=='deleted')
     assert entry['audit']=='USER_REMOVED'
     assert entry['detail']=='INTENTIONALLY_DELETED_BY_OPERATOR'
+    assert report['summary']['user_removed']==1
+    assert report['summary']['review_required']==0
+    assert report['summary']['issues']==[]
 
 
 def test_resume_with_same_source_but_altered_approved_geometry_blocks(tmp_path,monkeypatch):
