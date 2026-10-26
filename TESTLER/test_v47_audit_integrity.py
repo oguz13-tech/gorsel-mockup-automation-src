@@ -86,3 +86,29 @@ def test_resume_with_same_source_but_altered_approved_geometry_blocks(tmp_path,m
         batch.resume_last_stopped()
     assert petek_engine.digest(Path(original['output']))==sha
     assert len(batch.ledger.successful())==1
+
+
+def test_4k_resumed_batch_includes_outputs_finished_before_stop(tmp_path,monkeypatch):
+    batch, registry, wood, designs=fixture_batch(tmp_path,art_count=3)
+    from URETIM_V4 import unified_batch
+    calls=[]
+    def fake_upscale(records,**kwargs):
+        calls.append(list(records))
+        return {'status':'DONE','upscaled':len(records),'failed':0,'reused':0}
+    monkeypatch.setattr(unified_batch,'upscale_new_outputs',fake_upscale)
+    def stop_after_first(msg):
+        if 'ÜRETİLDİ 1:' in msg:
+            batch.request_stop()
+    stopped=batch.run(designs,selected_uids=[wood['uid']],random_seed=61,
+                      upscale_4k=True,notify=stop_after_first)
+    assert stopped['status']=='STOPPED'
+    assert len(batch.ledger.successful())==1
+    assert calls==[]  # Deferral: stop occurred before 4K postprocess.
+    resumed=batch.resume_last_stopped()
+    assert resumed['status']=='LOCAL_READY'
+    assert resumed['rendered']==2
+    assert resumed['reused']==1
+    assert len(calls)==1
+    assert len(calls[0])==3
+    assert len({row['key'] for row in calls[0]})==3
+    assert all(Path(row['output']).is_file() for row in calls[0])
