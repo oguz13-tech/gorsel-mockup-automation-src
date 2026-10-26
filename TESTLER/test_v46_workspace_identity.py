@@ -45,3 +45,38 @@ def test_online_backup_restore_preserves_source(tmp_path):
     with sqlite3.connect(result) as con:
         assert con.execute('SELECT quad FROM approvals').fetchone()==('immutable',)
     assert result.with_suffix('.sha256').read_text().startswith(hashlib.sha256(result.read_bytes()).hexdigest())
+
+
+def test_identity_diagnostic_explains_mismatch_without_leaking_token(tmp_path):
+    expected=dict(pid=51,token='only-in-memory',runtime_root=str(tmp_path/'data'),
+                  code_root=str(tmp_path/'code'))
+    def probe(data):
+        return manager.server_identity_diagnostic(
+            tmp_path/'data',tmp_path/'code',51,'only-in-memory',
+            opener=lambda *a,**k:io.StringIO(json.dumps(data)))
+    assert probe(expected)=={'ready':True,'reason':'MATCHED'}
+    for key,wrong,reason in [
+        ('pid',52,'IDENTITY_PID_MISMATCH'),
+        ('token','other','IDENTITY_TOKEN_MISMATCH'),
+        ('code_root',str(tmp_path/'wrong-code'),'IDENTITY_CODE_ROOT_MISMATCH'),
+        ('runtime_root',str(tmp_path/'wrong-runtime'),'IDENTITY_RUNTIME_ROOT_MISMATCH'),
+    ]:
+        outcome=probe({**expected,key:wrong})
+        assert outcome['ready'] is False
+        assert outcome['reason']==reason
+        assert 'only-in-memory' not in str(outcome)
+        if key in ('code_root','runtime_root'):
+            assert 'actual_path' in outcome and 'expected_path' in outcome
+
+
+def test_identity_diagnostic_unauthorized_and_unreachable(tmp_path):
+    import urllib.error
+    def unauthorized(*a,**k):
+        raise urllib.error.HTTPError('http://127.0.0.1:8080',403,'Forbidden',{},None)
+    result=manager.server_identity_diagnostic(tmp_path,tmp_path,1,'secret',opener=unauthorized)
+    assert result['reason']=='IDENTITY_HTTP_403'
+    assert result['ready'] is False
+    assert manager.server_identity_diagnostic(
+        tmp_path,tmp_path,1,'secret',
+        opener=lambda *a,**k:(_ for _ in ()).throw(TimeoutError())
+    )['reason']=='IDENTITY_TIMEOUT'
