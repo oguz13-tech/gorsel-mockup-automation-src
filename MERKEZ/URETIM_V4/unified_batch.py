@@ -569,7 +569,7 @@ class UnifiedV4Batch:
                             # User intentionally deleted this output. Preserve its
                             # SKU/receipt and NEVER silently recreate or flag it
                             # as a corrupted render on subsequent batch runs.
-                            stats["reused"] += 1
+                            stats["user_removed"] = stats.get("user_removed", 0) + 1
                             notify(f"KULLANICI TARAFINDAN SİLİNDİ / tarihî kayıt korundu: [{cat}] {uid} / {art.name}")
                             continue
                         if record["status"] == "RENDERED":
