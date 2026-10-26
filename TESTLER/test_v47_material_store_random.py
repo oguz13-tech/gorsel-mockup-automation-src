@@ -71,6 +71,9 @@ def test_store_profiles_immutable_membership_and_sha(tmp_path):
     plan=sp.plan(['Magaza_01','Magaza_03'],[a,b])
     assert [s for s,_ in plan]==['Magaza_01','Magaza_03']
     assert [[x['uid'] for x in p] for _,p in plan]==[['wood_1'],['petek_1']]
+    clone={'category':'02_Cam_Tablo_Dikey','uid':'another_uid','source_sha':'a'*64}
+    with pytest.raises(ValueError,match='SOURCE_IMAGE_REUSED_ACROSS_STORES'):
+        sp.assign('Magaza_03',[clone])
     with pytest.raises(ValueError,match='onayı/SHA'):
         sp.plan(['Magaza_01'],[{**a,'source_sha':'c'*64},b])
     sp.unassign('Magaza_01',[a])
@@ -128,4 +131,6 @@ def test_gui_multi_store_and_legacy_fallback_wired():
     assert 'production_plan = [(group, templates)]' in engine
     assert 'rng.shuffle(designs_in_run)' in engine
     assert 'rng.shuffle(store_templates)' in engine
+    assert 'rng.shuffle(template_order)' in engine
+    assert 'processed_jobs.add(unique_pair)' in engine
     assert 'MATERIAL_RECIPE' in engine
