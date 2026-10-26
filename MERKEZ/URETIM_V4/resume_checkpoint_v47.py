@@ -101,9 +101,30 @@ def snapshot_inputs(design_paths: list[Path], production_plan: list[tuple[str,li
             raise ValueError('CHECKPOINT_DESIGN_INVALID')
         arts[str(path.resolve())]=sha(path)
     template_groups={}
+    material_geometry={}
     for store,templates in production_plan:
         template_groups[store]=sorted(key_for(item) for item in templates)
-    return {'designs':arts,'groups':template_groups}
+        for item in templates:
+            # Source SHA alone is NOT approval integrity: the operator may
+            # correct an approved four-corner quadrilateral, physical aspect,
+            # PETEK mask, or six-category foreground handling on the same
+            # source image between STOP and RESUME. Guard all recipe inputs.
+            identity = key_for(item)
+            attrs = {
+                'engine_type': item.get('engine_type'),
+                'source_sha': item.get('source_sha'),
+                'quad': item.get('quad'),
+                'physical_aspect': item.get('physical_aspect'),
+                'orientation': item.get('orientation'),
+                'mask_sha': item.get('mask_sha'),
+                'legacy_data': item.get('legacy_data'),
+            }
+            digest=hashlib.sha256(_canonical(attrs)).hexdigest()
+            if identity in material_geometry and material_geometry[identity] != digest:
+                raise ValueError('CHECKPOINT_GEOMETRY_KEY_COLLISION')
+            material_geometry[identity]=digest
+    return {'designs':arts,'groups':template_groups,
+            'approved_geometry_sha256':material_geometry}
 
 
 def same_inputs(a: dict, b: dict) -> bool:
