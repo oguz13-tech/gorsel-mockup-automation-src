@@ -2113,10 +2113,30 @@ def _analyze_template_for_batch(category, template_name):
             "batch-analyze",
             wait_seconds=0.35,
         ):
-            analysis, cache_hit = _analyze_auto_cached(
-                category,
-                img_path,
-            )
+            # Use the same source-specific engine as single-image review.
+            from core.chroma_quad_detector import detect
+            source_hash = _sha256_file(img_path)
+            image = cv2.imdecode(np.fromfile(img_path, dtype=np.uint8), cv2.IMREAD_COLOR)
+            if image is None:
+                raise ValueError("Görsel okunamadı")
+            chroma = detect(image, category)
+            if chroma.get("chroma_present"):
+                quad = chroma.get("quad")
+                if not quad:
+                    return {"template": template_name, "status": "REVIEW_REQUIRED",
+                            "reason": chroma.get("reason"), "engine": "magenta_color_quad_v1"}
+                valid, reason = GeometryValidator.is_valid_quad(np.asarray(quad), image.shape[1], image.shape[0])
+                if not valid:
+                    return {"template": template_name, "status": "REVIEW_REQUIRED", "reason": str(reason)}
+                if source_hash != _sha256_file(img_path):
+                    return {"template": template_name, "status": "SOURCE_CHANGED"}
+                # Sidecar draft only. Never replace a profile or its approval.
+                _v46_store_draft(category, template_name, quad, source_hash, "MAGENTA_MARKED_SOURCE")
+                return {"template": template_name, "status": "ANALYZED",
+                        "draft_only": True, "review_status": "REVIEW_REQUIRED",
+                        "engine": "magenta_color_quad_v1", "reason": chroma.get("reason"),
+                        "draft_saved": True}
+            analysis, cache_hit = _analyze_auto_cached(category, img_path)
         return {
             "template": template_name,
             "status": "ANALYZED",
@@ -2460,6 +2480,14 @@ def _run_batch_analysis_core(
                 "preserved": True,
             }
             continue
+        conn = sqlite3.connect(Path(db_path).resolve().as_uri()+"?mode=ro", uri=True)
+        try:
+            protected = conn.execute("SELECT 1 FROM template_profiles WHERE template_uid=? AND is_active=1 AND manually_verified=1 AND review_status='APPROVED'", (uid,)).fetchone()
+        finally:
+            conn.close()
+        if protected:
+            results_by_name[template_name] = {"template": template_name, "status": "REVIEW_REQUIRED", "reason": "APPROVED_SOURCE_SHA_MISMATCH"}
+            continue
         to_analyze.append(template_name)
 
     analysis_results = {}
@@ -2505,7 +2533,7 @@ def _run_batch_analysis_core(
             "status": "FAILED",
             "error": "Analiz sonucu alınamadı",
         }
-        if item.get("status") != "ANALYZED":
+        if item.get("status") != "ANALYZED" or item.get("draft_only"):
             results_by_name[template_name] = item
             continue
 

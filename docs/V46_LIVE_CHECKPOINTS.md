@@ -35,3 +35,13 @@ controls retain handlers in one initially collapsed reports section; destructive
 restore stays separate. HTML parser regression: 1 PASS. First invocation without
 test dependency path failed (pytest missing); rerun with isolated deps passed.
 WINDOWS_NOT_VERIFIED. Next T04 batch chroma dispatch.
+
+## T04.a — batch chroma engine
+Batch worker now calls the preserved T01 detector before legacy analysis. Chroma
+success writes only source-SHA-bound sidecar draft, never profile/approval;
+ambiguous/PETEK magenta abstains without legacy fallback. Existing matched
+approvals skip; changed-source approvals block instead of being auto-invalidated.
+Fast category button moved immediately below re-detect. Tests: 10 PASS (six
+planar worker integrations, PETEK negative, three detector tests). Native Windows,
+full job interruption/resume and concurrent edit acceptance remain unverified.
+Next T05 canvas angle labels; then T06 ingest/draft acceptance.

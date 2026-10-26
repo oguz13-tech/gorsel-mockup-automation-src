@@ -122,6 +122,8 @@
             <div class="tool-note">Kırmızı noktaları gerçek baskı alanının dört köşesine sürükleyin. Sistem daima perspektif kullanır.</div>
 
             <button type="button" id="btnAutoCorner" onclick="autoDetectCorners()" style="background:linear-gradient(135deg,#00c853,#00bfa5); box-shadow:0 2px 6px rgba(0,200,83,0.4); width:100%; text-align:left; padding:12px 10px; font-weight:bold;">🧭 Köşeleri Yeniden Algıla</button>
+                <button type="button" id="batchAnalyzeButton" onclick="batchAnalyze()" class="advanced-action">⚡ Bir Kategoride Tüm Köşeleri Hızlı Tara</button>
+                <div class="tool-note"><b>Kalite algoritmasını değiştirmez.</b> Kaynağı değişmemiş insan onaylı <b>APPROVED</b> şablonları ağır analizden atlayıp aynen korur. Onaysız/değişmiş şablonlarda mevcut tam kalite 4 köşe motorunu çalıştırır. Hesaplamada en fazla 2 görsel paralel işlenir; veritabanı kayıtları tek sıra yapılır. Tarama başladıktan sonra <b>Arka Planda Sürdür</b> ile diğer şablonlarda çalışabilirsiniz. O anda işlenen küçük paketteki şablonlarda çakışan kayıt işlemleri kısa süreli engellenir. <b>Taramayı Durdur</b> derseniz mevcut küçük paket tamamlanır ve sonra durur; o ana kadar biten analizler korunur. Ham/orijinal görselleri silmez veya değiştirmez.</div>
             <div class="tool-note tool-note-accent">Yeni şablonda ilk tespit zaten otomatik yapılır. Yalnız sonuç yanlışsa tekrar kullanın.</div>
 
             <details class="v46-secondary-tools"><summary>⚙️ Kaynak Görsel / Güvenli Geri Yükleme</summary>
@@ -222,8 +224,7 @@
                 <button type="button" onclick="undoLastLifecycleOperation()" class="advanced-action" style="background:#0f766e;">↩️ Son Lifecycle İşlemini Geri Al</button>
                 <div class="tool-note">Son geri alınabilir duplicate/yetim taşımasını eski yerine döndürür. Hedefte çakışma varsa güvenlik nedeniyle işlemi durdurur.</div>
 
-                <button type="button" id="batchAnalyzeButton" onclick="batchAnalyze()" class="advanced-action">⚡ Bir Kategoride Tüm Köşeleri Hızlı Tara</button>
-                <div class="tool-note"><b>Kalite algoritmasını değiştirmez.</b> Kaynağı değişmemiş insan onaylı <b>APPROVED</b> şablonları ağır analizden atlayıp aynen korur. Onaysız/değişmiş şablonlarda mevcut tam kalite 4 köşe motorunu çalıştırır. Hesaplamada en fazla 2 görsel paralel işlenir; veritabanı kayıtları tek sıra yapılır. Tarama başladıktan sonra <b>Arka Planda Sürdür</b> ile diğer şablonlarda çalışabilirsiniz. O anda işlenen küçük paketteki şablonlarda çakışan kayıt işlemleri kısa süreli engellenir. <b>Taramayı Durdur</b> derseniz mevcut küçük paket tamamlanır ve sonra durur; o ana kadar biten analizler korunur. Ham/orijinal görselleri silmez veya değiştirmez.</div>
+
 
                 <button type="button" onclick="toggleCanvasBg()" class="advanced-action">🎨 Önizleme Arka Planı</button>
                 <div class="tool-note">Sadece ekrandaki kontrol arka planını siyah, beyaz veya yeşil yapar.</div>
