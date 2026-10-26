@@ -14,6 +14,7 @@ from version_v45 import TITLE as VERSION_TEXT
 
 from PETEK_V3.registry import Registry as PetekRegistry
 from .unified_batch import UnifiedV4Batch, iter_designs
+from .store_profiles_v47 import StoreProfiles
 from .cloud_excel_v43 import CloudExcel
 from .design_proxy_v43 import prepare_render_artwork
 from .upscale4k_v44 import preflight as upscale_preflight, UpscaleError
@@ -103,6 +104,27 @@ class UnifiedV4BatchWindow:
         self.group = tk.StringVar(value="LOCAL")
         ttk.Entry(opts, textvariable=self.group, width=14).pack(side="left", padx=5)
         ttk.Label(opts, text="İş sınırı yok — tüm seçili şablon × tasarımlar işlenir. Başlamadan önce toplamı onaylarsın.").pack(side="left", padx=(16, 4))
+
+        # Store membership lives in private local state, NOT in the historic
+        # approved template directory. Empty store selection = legacy behavior.
+        profile_panel = ttk.Frame(area)
+        profile_panel.pack(fill="x", pady=(2, 5))
+        ttk.Label(profile_panel, text="Mağazalar (Ctrl ile çoklu seç; boş = eski LOCAL):").pack(side="left")
+        self.store_list = tk.Listbox(profile_panel, selectmode="extended",height=3,
+                                    width=35,exportselection=False,
+                                    bg=PANEL,fg=FG,selectbackground='#2563eb')
+        self.store_list.pack(side="left",padx=8)
+        self.store_mapping=[]
+        ttk.Button(profile_panel,text="Mağaza Profilleri / Şablon Atama",
+                   command=self.open_store_manager).pack(side="left",padx=3)
+        ttk.Button(profile_panel,text="Mağazaları Yenile",
+                   command=self.reload_stores).pack(side="left",padx=3)
+        ttk.Label(profile_panel,text="Her mağaza yalnız kendisine atanmış onaylı şablonları kullanır.",
+                  wraplength=315).pack(side="left",padx=8)
+        ttk.Label(area,text="Sıra rastgele: tasarımlar + şablonlar + mağazalar her turda karışır. "
+                       "Aynı turda aynı SHA/tasarım/şablon/mağaza ikilisi yinelenmez.",
+                  wraplength=1120).pack(anchor="w",pady=2)
+        self.reload_stores()
 
         fit_row = ttk.Frame(area)
         fit_row.pack(fill="x", pady=4)
@@ -199,6 +221,64 @@ class UnifiedV4BatchWindow:
         self.window.after(200, self.poll)
         self.window.protocol("WM_DELETE_WINDOW", self.safe_close)
 
+    def reload_stores(self):
+        try:
+            cfg=StoreProfiles(self.batch_engine.root).load()
+            keep={self.store_mapping[i] for i in self.store_list.curselection()
+                  if i<len(self.store_mapping)}
+            self.store_list.delete(0,"end")
+            self.store_mapping=list(sorted(cfg["stores"]))
+            for i,name in enumerate(self.store_mapping):
+                count=len(cfg["stores"][name]["templates"])
+                self.store_list.insert("end",f"{name} ({count} şablon)")
+                if name in keep:self.store_list.selection_set(i)
+        except Exception as exc:
+            messagebox.showerror("Mağaza profilleri okunamadı",str(exc),parent=self.window)
+
+    def open_store_manager(self):
+        pop=tk.Toplevel(self.window);pop.title("Mağaza Profilleri — Onaylı Şablon Atama")
+        pop.geometry("660x400");pop.transient(self.window)
+        root=ttk.Frame(pop,padding=16);root.pack(fill="both",expand=True)
+        ttk.Label(root,text="Yeni mağaza kodu (örn: Magaza_01):").pack(anchor="w")
+        name=tk.StringVar()
+        ttk.Entry(root,textvariable=name,width=30).pack(anchor="w",pady=5)
+        ttk.Label(root,text="Şablon atamak için ana üretim listesinden onaylı şablonları seç. "
+                   "Buradan kaydedilen eşleşmeler başka mağazayla paylaşılmaz.",
+                  wraplength=590).pack(anchor="w",pady=6)
+        listing=tk.Listbox(root,height=10,exportselection=False,bg=PANEL,fg=FG)
+        listing.pack(fill="both",expand=True,pady=5)
+        names=[]
+        def refresh():
+            selected=names[listing.curselection()[0]] if listing.curselection() else None
+            cfg=StoreProfiles(self.batch_engine.root).load()
+            listing.delete(0,"end")
+            names.clear();names.extend(sorted(cfg["stores"]))
+            for i,k in enumerate(names):
+                listing.insert("end",f"{k} — {len(cfg['stores'][k]['templates'])} onaylı şablon")
+                if k==selected:listing.selection_set(i)
+            self.reload_stores()
+        def run(action):
+            try:
+                mgr=StoreProfiles(self.batch_engine.root)
+                if action=="add":mgr.add_store(name.get().strip())
+                else:
+                    sel=listing.curselection()
+                    if len(sel)!=1:raise ValueError("Önce bu pencerede tek mağaza seçin.")
+                    store=names[sel[0]]
+                    templates=[self.template_items[self.mapping[int(i)]]
+                               for i in self.listbox.curselection()]
+                    if action=="assign":mgr.assign(store,templates)
+                    else:mgr.unassign(store,templates)
+                refresh()
+            except (ValueError,KeyError,OSError) as exc:
+                messagebox.showerror("Mağaza eşleştirmesi",str(exc),parent=pop)
+        bar=ttk.Frame(root);bar.pack(fill="x",pady=6)
+        ttk.Button(bar,text="Mağaza Ekle",command=lambda:run("add")).pack(side="left",padx=3)
+        ttk.Button(bar,text="Seçili Şablonları Ata",command=lambda:run("assign")).pack(side="left",padx=3)
+        ttk.Button(bar,text="Atamayı Kaldır",command=lambda:run("unassign")).pack(side="left",padx=3)
+        ttk.Button(bar,text="Kapat",command=pop.destroy).pack(side="right",padx=3)
+        refresh()
+
     def _log(self, text: str) -> None:
         self.messages.put(("log", str(text)))
 
@@ -265,6 +345,7 @@ class UnifiedV4BatchWindow:
         if self.worker and self.worker.is_alive():
             return
         selected = [self.mapping[int(i)] for i in self.listbox.curselection()]
+        selected_stores=[self.store_mapping[int(i)] for i in self.store_list.curselection()]
         if not selected:
             messagebox.showinfo("Şablon Seç", "En az bir onaylı şablon seçin.", parent=self.window)
             return
@@ -300,9 +381,19 @@ class UnifiedV4BatchWindow:
         except OSError as exc:
             messagebox.showwarning("Tasarım Klasörü", str(exc), parent=self.window)
             return
-        job_count = len(selected) * design_count
+        if selected_stores:
+            try:
+                approved=[self.template_items[uid] for uid in self.mapping]
+                plan=StoreProfiles(self.batch_engine.root).plan(selected_stores,approved,selected_uids=selected)
+                pair_count=sum(len(store_templates) for _,store_templates in plan)
+            except (ValueError,KeyError,OSError) as exc:
+                messagebox.showwarning("Mağaza İzolasyonu",str(exc),parent=self.window)
+                return
+        else:
+            pair_count=len(selected)
+        job_count = pair_count * design_count
         if not messagebox.askyesno("Sınırsız Seri Üretimi Onayla",
-            f"{len(selected)} onaylı şablon × {design_count} tasarım = {job_count:,} işlem denenecek.\n"
+            f"{pair_count} mağazaya özel onaylı şablon × {design_count} tasarım = {job_count:,} işlem denenecek.\n"
             "Her çıktı ayrı kayıtla korunur; işlemi istediğin zaman güvenli durdurabilirsin.\n"
             "BU İŞLEMİ BAŞLATMAK İSTİYOR MUSUN?", parent=self.window):
             return
@@ -317,6 +408,7 @@ class UnifiedV4BatchWindow:
                 res = self.batch_engine.run(
                     design_folder,
                     selected_uids=selected,
+                    selected_stores=selected_stores,
                     group=group,
                     notify=self._log,
                     max_jobs=max_jobs,
