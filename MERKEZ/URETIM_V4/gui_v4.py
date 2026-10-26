@@ -19,6 +19,8 @@ from .cloud_excel_v43 import CloudExcel
 from .design_proxy_v43 import prepare_render_artwork
 from .upscale4k_v44 import preflight as upscale_preflight, UpscaleError
 from .unified_batch import _render_legacy_six_cover, _build_legacy_category_mask
+from .finish_material_v46 import DAYLIGHT, apply_material_finish
+from PETEK_V3.cutout_paste import render_with_cutout_paste
 from PETEK_V3 import engine as petek_engine
 from .finish_v42 import GLASS
 import cv2
@@ -89,7 +91,7 @@ class UnifiedV4BatchWindow:
         btn_row.pack(fill="x", pady=3)
         ttk.Button(btn_row, text="Tüm Onaylı Şablonları Yenile", command=self.reload).pack(side="left")
         ttk.Button(btn_row, text="Tüm Şablonları Seç", command=self.select_all).pack(side="left", padx=6)
-        ttk.Button(btn_row, text="Cam A/B Önizleme (Gerçek Baskı)", command=self.start_ab_preview).pack(side="left", padx=6)
+        ttk.Button(btn_row, text="Kategori Efekti A/B (Cam / Ahşap / PETEK)", command=self.start_ab_preview).pack(side="left", padx=6)
         ttk.Button(btn_row, text="Yarım İş / Kilit Kurtarma (Onaylı)", command=self.open_recovery).pack(side="left", padx=6)
 
         row = ttk.Frame(area)
@@ -137,13 +139,14 @@ class UnifiedV4BatchWindow:
             width=32,
             values=("Tam Doldur (Sıfır Blur / Kırpılabilir)", "Tam Göster (Bant Olabilir)"),
         ).pack(side="left", padx=8)
-        ttk.Label(fit_row, text="Cam / Fotoğraf Efekti:").pack(side="left", padx=(12, 4))
+        ttk.Label(fit_row, text="Kategoriye Uygun Efekt:").pack(side="left", padx=(12, 4))
         self.lighting = tk.StringVar(value=LIGHT_LABELS[0])
         ttk.Combobox(fit_row, textvariable=self.lighting, state="readonly", values=LIGHT_LABELS, width=36).pack(side="left")
 
         ttk.Label(area, text=(
-            "Cam efektleri: Açık = yalnız cam panellere yumuşak ve görünür yansıma; "
-            "Kapalı = yansıma yok. Ahşap/Wi-Fi/PETEK'te cam yansıması uygulanmaz.\n"
+            "AÇIK: Cam tablolara pencere/çıta, cam doğramaya spot, ocak arkasına ortam yansıması; "
+            "Ahşap ve PETEK'e mat, yumuşak diyagonal günışığı. Wi-Fi'de değişiklik yok. "
+            "KAPALI: yeni malzeme efekti uygulanmaz.\n"
             "Köşe yuvarlatması burada değil, 4 Köşe İnceleme > Bu Şablonu Onayla bölümünde ayrı kaydedilir."
         ), wraplength=1100).pack(anchor="w", pady=(2, 6))
 
@@ -433,9 +436,9 @@ class UnifiedV4BatchWindow:
             return
         selected = [self.mapping[int(i)] for i in self.listbox.curselection()]
         item = next((self.template_items.get(uid) for uid in selected
-                     if self.template_items.get(uid, {}).get('category') in GLASS), None)
+                     if self.template_items.get(uid, {}).get('category') in (GLASS | DAYLIGHT)), None)
         if not item:
-            messagebox.showinfo("Cam Şablonu", "Önce bir Cam Tablo / Cam Doğrama / Ocak Arkası şablonu seçin.", parent=self.window)
+            messagebox.showinfo("Efekt Şablonu", "Önce cam, ahşap tablo veya PETEK kategorisinden bir şablon seçin.", parent=self.window)
             return
         folder = Path(self.design_folder.get().strip())
         if not folder.is_dir():
@@ -446,19 +449,29 @@ class UnifiedV4BatchWindow:
             messagebox.showwarning("Baskı Tasarımı", "Klasörde tasarım bulunamadı.", parent=self.window)
             return
         placement = 'cover' if self.placement.get().startswith('Tam Doldur') else 'contain'
-        self.progress.set('Gerçek baskılı cam A/B önizlemesi hazırlanıyor...')
+        self.progress.set('Kategoriye uygun malzeme efekti A/B önizlemesi hazırlanıyor...')
         def work():
             try:
                 src = Path(item['source'])
                 scene = petek_engine.read_bgr(src)
-                mask = _build_legacy_category_mask(scene,item['quad'],item.get('legacy_data'))
                 proxy, _ = prepare_render_artwork(art,self.batch_engine.root/'working_art_proxies')
-                radius = float(item.get('legacy_data',{}).get('glass_corner_radius',.008))
-                args=(src,proxy,item['quad'],mask,item['physical_aspect'])
-                common=dict(category=item['category'],corner_radius=radius,
-                            lighting='natural',placement=placement,marketplace=True)
-                disabled,_=_render_legacy_six_cover(*args,glass_effect='off',**common)
-                enabled,_=_render_legacy_six_cover(*args,glass_effect='on',**common)
+                if item['category']=='06_Petek_Kapama':
+                    profile,mask=self.petek_registry.get(item['uid'],require_approved=True)
+                    baseline,_,_=render_with_cutout_paste(
+                        src,proxy,item['quad'],mask,item['physical_aspect'],
+                        placement=placement,lighting='natural',marketplace=False)
+                    reflected=apply_material_finish(scene,baseline,mask,
+                                                     item['quad'],item['category'])
+                    disabled=petek_engine.canvas_3x4(baseline)
+                    enabled=petek_engine.canvas_3x4(reflected)
+                else:
+                    mask = _build_legacy_category_mask(scene,item['quad'],item.get('legacy_data'))
+                    radius = float(item.get('legacy_data',{}).get('glass_corner_radius',.008))
+                    args=(src,proxy,item['quad'],mask,item['physical_aspect'])
+                    common=dict(category=item['category'],corner_radius=radius,
+                                lighting='natural',placement=placement,marketplace=True)
+                    disabled,_=_render_legacy_six_cover(*args,glass_effect='off',**common)
+                    enabled,_=_render_legacy_six_cover(*args,glass_effect='on',**common)
                 self.messages.put(('ab_done',(disabled,enabled,item['uid'],art.name)))
             except Exception as exc:
                 self.messages.put(('ab_fail',str(exc)))
@@ -468,15 +481,15 @@ class UnifiedV4BatchWindow:
     def show_ab(self, before, after, uid, artname):
         # Tk widgets must be constructed on the UI thread.
         popup=tk.Toplevel(self.window)
-        popup.title('Cam A/B — Gerçek Baskı Önizlemesi')
+        popup.title('Malzeme Efekti A/B — Gerçek Baskı Önizlemesi')
         popup.geometry('870x680')
         images=[]
-        for title,frame in [('Cam efekti KAPALI',before),('Cam efekti AÇIK',after)]:
+        for title,frame in [('Efekt KAPALI',before),('Efekt AÇIK',after)]:
             pil=Image.fromarray(cv2.cvtColor(frame,cv2.COLOR_BGR2RGB))
             pil.thumbnail((395,555),Image.Resampling.LANCZOS)
             images.append(ImageTk.PhotoImage(pil,master=popup))
         slots=ttk.Frame(popup,padding=10); slots.pack(fill='both',expand=True)
-        for j,title in enumerate(('Cam efekti KAPALI','Cam efekti AÇIK')):
+        for j,title in enumerate(('Efekt KAPALI','Efekt AÇIK')):
             frame=ttk.Frame(slots);frame.pack(side='left',fill='both',expand=True)
             ttk.Label(frame,text=title,font=('Segoe UI',11,'bold')).pack()
             ttk.Label(frame,image=images[j]).pack(pady=8)
