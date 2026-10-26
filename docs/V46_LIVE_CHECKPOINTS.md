@@ -45,3 +45,11 @@ Fast category button moved immediately below re-detect. Tests: 10 PASS (six
 planar worker integrations, PETEK negative, three detector tests). Native Windows,
 full job interruption/resume and concurrent edit acceptance remain unverified.
 Next T05 canvas angle labels; then T06 ingest/draft acceptance.
+
+## T05 — live canvas edge angles
+Canvas draw now paints source-coordinate signed angle deviation beside each
+available edge, including just two points. Green <=0.5°, yellow <=2°, red above;
+labels say EĞİK (not invalid), are bounded to canvas, and never alter geometry.
+Zoom/pan/resize reuse draw transform. Node: 4 PASS (two-point, drag thresholds,
+vertical edges, zoom/pan/resize clamping); main.js syntax PASS.
+WINDOWS_NOT_VERIFIED; native pointer/visual acceptance pending. Next T06.

@@ -2261,6 +2261,7 @@ window.onerror = function(msg, url, line, col, error) {
         }
 
         drawAutomaticForegroundBoxes(startX, startY, finalScale);
+        if (window.EdgeAnglesV46) window.EdgeAnglesV46.paint(ctx, pts, {x:startX, y:startY, scale:finalScale});
 
         const info = document.getElementById('info');
         if (info) {
