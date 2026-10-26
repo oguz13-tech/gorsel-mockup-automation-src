@@ -575,7 +575,9 @@ class UnifiedV4BatchWindow:
                     # Do not initiate cloud requests while the completed render
                     # worker is still winding down or after a cancelled batch.
                     if self._auto_cloud_pending:
-                        if value.get("status") == "COMPLETED" and not self.batch_engine.cancel.is_set():
+                        if (value.get("status") in ("LOCAL_READY", "PARTIAL")
+                                and int(value.get("rendered", 0)) + int(value.get("reused", 0)) > 0
+                                and not self.batch_engine.cancel.is_set()):
                             self.window.after(250, self._maybe_start_auto_cloud)
                         else:
                             self._auto_cloud_pending = False
