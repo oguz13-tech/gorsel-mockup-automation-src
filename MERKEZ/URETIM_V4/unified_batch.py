@@ -718,6 +718,17 @@ class UnifiedV4Batch:
                                     )
                                 stats["reused"] += 1
                                 stats["current_batch_keys"].append(key)
+                                if _resume_expected is not None and upscale_4k:
+                                    # STOP can occur before the deferred 4K stage.
+                                    # When resuming, completed 1200x1600 prints of
+                                    # the SAME frozen batch also require 4K; the
+                                    # upscaler independently reuses valid 4K
+                                    # receipts and refuses to overwrite them.
+                                    newly_rendered.append({
+                                        "key": key, "sku": sku,
+                                        "output": str(output),
+                                        "output_sha": record["output_sha"],
+                                    })
                                 notify(f"ATLANDI / mevcut kayıt: [{cat}] {uid} / {art.name}")
                                 continue
                             if record["status"] != "PENDING" or output.exists():
