@@ -844,7 +844,12 @@ class UnifiedV4Batch:
                 "audit": "REVIEW_REQUIRED",
                 "detail": "",
             }
-            if path.is_symlink() or not (path.resolve() == base or base in path.resolve().parents):
+            if rec["status"] == "USER_REMOVED":
+                # Owner explicitly deleted this historical output. Never
+                # present the absent file as corruption or a recovery task.
+                item["audit"] = "USER_REMOVED"
+                item["detail"] = "INTENTIONALLY_DELETED_BY_OPERATOR"
+            elif path.is_symlink() or not (path.resolve() == base or base in path.resolve().parents):
                 item["detail"] = "UNSAFE_OUTPUT_PATH"
             elif not path.exists():
                 item["detail"] = "OUTPUT_MISSING"
