@@ -59,6 +59,8 @@ from .upscale4k_v44 import process as upscale_new_outputs
 from .finish_v42 import GLASS, projected_rounded_alpha
 from .finish_material_v46 import apply_material_finish, DAYLIGHT, RECIPE as MATERIAL_RECIPE
 from .store_profiles_v47 import StoreProfiles, key_for
+from .resume_checkpoint_v47 import (read_checkpoint, write_checkpoint,
+                                    snapshot_inputs, same_inputs, SCHEMA as RESUME_SCHEMA)
 import random
 import secrets
 from PETEK_V3.excel_links_v42 import xlsx_with_photo_links, verify_photo_links
@@ -376,6 +378,46 @@ class UnifiedV4Batch:
     def inspect_recovery(self) -> dict[str, Any]:
         return inspect_interrupted_state(self.ledger.file, self.lock_path, self.output)
 
+    def last_batch_checkpoint(self) -> dict | None:
+        """Read only, local APPDATA; historical images/DB are untouched."""
+        return read_checkpoint(self.root)
+
+    def resume_last_stopped(self, *, notify=None) -> dict[str, Any]:
+        """Resume a deliberately stopped job using exactly its original inputs.
+
+        Completed items are SHA-verified from the persistent ledger and skipped.
+        Stale locks, tampering, modified artwork, changed approvals or profile
+        assignments FAIL CLOSED instead of implicitly altering the job.
+        """
+        checkpoint = self.last_batch_checkpoint()
+        if not checkpoint:
+            raise petek_engine.MaskError(
+                'Eski turda kaydedilmiş devam kontrolü bulunamadı. '
+                'Önceki sürümde durdurulan tur için aynı seçimlerle yeni üretim başlatın; '
+                'onaylı mevcut çıktılar SHA ile atlanır.')
+        if checkpoint['status'] != 'STOPPED':
+            raise petek_engine.MaskError(
+                'Devam yalnız Güvenli Durdur ile sonlanan tur içindir; durum: '
+                + str(checkpoint['status']) + '. Çökme varsa Kesinti Kurtarma açın.')
+        if self.lock_path.exists() or self.lock_path.is_symlink():
+            raise petek_engine.MaskError(
+                'Üretim kilidi mevcut. Aktif veya bayat kilit otomatik kaldırılmaz; '
+                'Yarım İş / Kilit Kurtarma ile inceleyin.')
+        if checkpoint.get('state_root') != str(self.root):
+            raise petek_engine.MaskError('Devam kontrolü farklı üretim kayıt klasörüne ait.')
+        runtime = str(self.runtime_root) if self.runtime_root else None
+        if checkpoint.get('runtime_root') != runtime:
+            raise petek_engine.MaskError('Devam kontrolü başka çalışma klasörüne ait.')
+        if checkpoint.get('render_recipe') != (V4_RECIPE, MATERIAL_RECIPE, petek_engine.RECIPE):
+            # JSON arrays round-trip as lists.
+            if checkpoint.get('render_recipe') != [V4_RECIPE, MATERIAL_RECIPE, petek_engine.RECIPE]:
+                raise petek_engine.MaskError(
+                    'Devam kontrolü başka motor sürümüne ait; otomatik yeniden üretim güvenli değil.')
+        config = checkpoint['config']
+        self.cancel.clear()
+        self.pause.clear()
+        return self.run(**config, notify=notify, _resume_expected=checkpoint)
+
     def recover(
         self,
         *,
@@ -412,6 +454,7 @@ class UnifiedV4Batch:
         upscale_4k: bool = False,
         upscale_model: str = "photo",
         upscale_exe: Path | str | None = None,
+        _resume_expected: dict | None = None,
     ) -> dict[str, Any]:
         notify = notify or (lambda msg: None)
         if corner_radius is not None and not 0 <= float(corner_radius) <= .04:
@@ -468,6 +511,47 @@ class UnifiedV4Batch:
         for _, store_templates in production_plan:
             rng.shuffle(store_templates)
 
+        # Immutable checkpoint identity. We reread every chosen input SHA on
+        # restart; a changed design or approved source cannot enter an old run.
+        inventory = snapshot_inputs(designs_in_run, production_plan)
+        config = {
+            'design_folder': str(designs),
+            'selected_uids': sorted(t['uid'] for t in templates),
+            'selected_stores': list(selected_stores or []),
+            'categories': list(categories) if categories is not None else None,
+            'per_category_limit': per_category_limit,
+            'group': group,
+            'max_jobs': max_jobs,
+            'placement': placement,
+            'lighting': lighting,
+            'corner_radius': corner_radius,
+            'glass_effect': glass_effect,
+            'upscale_4k': bool(upscale_4k),
+            'upscale_model': upscale_model,
+            'upscale_exe': str(upscale_exe) if upscale_exe is not None else None,
+            'random_seed': seed,
+        }
+        if _resume_expected is not None:
+            if not same_inputs(_resume_expected['inventory'], inventory):
+                raise petek_engine.MaskError(
+                    'Kaldığı yerden devam engellendi: tasarım dosyaları, onaylı '
+                    'şablon SHA değerleri veya mağaza atamaları değişmiş. '
+                    'Önce kaynak/atama değişikliklerini inceleyin.')
+            if _resume_expected['config'] != config:
+                raise petek_engine.MaskError(
+                    'Kaldığı yerden devam engellendi: eski üretim ayarları uyuşmuyor.')
+
+        checkpoint_record = {
+            'schema': RESUME_SCHEMA,
+            'status': 'RUNNING',
+            'state_root': str(self.root),
+            'runtime_root': str(self.runtime_root) if self.runtime_root else None,
+            'render_recipe': [V4_RECIPE, MATERIAL_RECIPE, petek_engine.RECIPE],
+            'config': config,
+            'inventory': inventory,
+            'progress': {'attempted': 0, 'rendered': 0, 'reused': 0},
+        }
+
         for t in templates:
             # A source may disappear between discovery and production. Its
             # individual attempt must be marked for review, not crash the
@@ -516,6 +600,9 @@ class UnifiedV4Batch:
                f"{len(designs_in_run)} tasarım; rastgele tohum: {seed}. "
                "Onaylı dört köşe ve mevcut çıktılar değişmez.")
         try:
+            # Save the source/selection fingerprint before rendering begins.
+            # STOP only takes effect between jobs, so ledger replay is exact.
+            write_checkpoint(self.root, checkpoint_record)
             processed_jobs = set()
             for group, templates in production_plan:
                 for art in designs_in_run:
@@ -717,7 +804,25 @@ class UnifiedV4Batch:
                 xlsx=str(xlsx_path),
                 total_registry_outputs=count,
             )
+            checkpoint_record['status'] = (
+                'STOPPED' if stats['status'] == 'STOPPED' else 'COMPLETED')
+            checkpoint_record['progress'] = {
+                'attempted': stats['attempted'],
+                'rendered': stats['rendered'],
+                'reused': stats['reused'],
+                'duplicates_skipped': stats['duplicates_skipped_in_run'],
+            }
+            write_checkpoint(self.root, checkpoint_record)
             return stats
+        except Exception:
+            # Interruption/error never marks a torn job as resumable. The
+            # operator must inspect pending rows and recovery first.
+            checkpoint_record['status'] = 'INTERRUPTED'
+            try:
+                write_checkpoint(self.root, checkpoint_record)
+            except (OSError, ValueError):
+                logging.exception('Unable to mark interrupted checkpoint')
+            raise
         finally:
             self.lock_path.unlink(missing_ok=True)
 
