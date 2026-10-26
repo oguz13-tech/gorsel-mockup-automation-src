@@ -109,6 +109,53 @@ def register_pending_legacy(root:Path,category:str,filename:str):
         return 'REGISTERED_REVIEW_REQUIRED'
 
 
+def historical_db_identity_reserved(root: Path, category: str, filename: str) -> bool:
+    """Read-only historical identity guard; no deleted/approved ID resurrection.
+
+    A missing working/backup file does not mean its identifier is free.  Past
+    identities in templates, template_profiles, and number registry remain
+    reserved until an operator resolves them in the recovery UI.
+    """
+    db = root / 'SABLON_V2_MIMARI' / 'ayarlar.db'
+    if not db.is_file() or db.is_symlink():
+        raise RuntimeError('LIVE_DB_MISSING_OR_SYMLINK')
+    identity = unicodedata.normalize('NFC', Path(filename).stem).casefold()
+    con = sqlite3.connect(db.resolve().as_uri() + '?mode=ro', uri=True)
+    try:
+        con.execute('PRAGMA query_only=ON')
+        tables = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        if not {'templates', 'template_profiles'}.issubset(tables):
+            raise RuntimeError('UNRECOGNIZED_SCHEMA_IDENTITY_CHECK_BLOCKED')
+        for (existing,) in con.execute('SELECT filename FROM templates WHERE category_id=?', (category,)):
+            if unicodedata.normalize('NFC', Path(str(existing)).stem).casefold() == identity:
+                return True
+        cols = {r[1] for r in con.execute('PRAGMA table_info(template_profiles)')}
+        if not {'category', 'template_uid'}.issubset(cols):
+            raise RuntimeError('PROFILE_SCHEMA_IDENTITY_CHECK_BLOCKED')
+        extra = 'source_relative_path' if 'source_relative_path' in cols else "''"
+        for uid, source_path in con.execute(
+            f'SELECT template_uid, {extra} FROM template_profiles WHERE category=?', (category,)
+        ):
+            if source_path and unicodedata.normalize('NFC', Path(str(source_path).replace('\\', '/')).stem).casefold() == identity:
+                return True
+            uid_stem = unicodedata.normalize('NFC', Path(str(uid or '')).stem).casefold()
+            if uid_stem in {identity, f'{category}_{identity}'.casefold()}:
+                return True
+        if 'template_number_registry' in tables:
+            # Registry contains IDs for removed files; prefer a false positive
+            # (manual review) over silently reusing a historic number.
+            regcols = {r[1] for r in con.execute('PRAGMA table_info(template_number_registry)')}
+            if {'category', 'canonical_name'}.issubset(regcols):
+                for (name,) in con.execute(
+                    'SELECT canonical_name FROM template_number_registry WHERE category=?', (category,)
+                ):
+                    if name and unicodedata.normalize('NFC', Path(str(name)).stem).casefold() == identity:
+                        return True
+        return False
+    finally:
+        con.close()
+
+
 def ingest_one(root:Path,category:str,source:Path)->dict:
     root=Path(root)
     if category not in CATEGORIES:raise ValueError('INVALID_CATEGORY')
@@ -161,6 +208,15 @@ def ingest_one(root:Path,category:str,source:Path)->dict:
         return {'status':'CONFLICT_REVIEW','category':category,'name':source.name,
                 'reason':'Aynı numaralı şablon yedekte farklı uzantı/ad ile var',
                 'at':str(dest)}
+    # Files may have been moved/deleted while their historical APPROVED,
+    # recycled identity, or template row remains in SQLite.  Do NOT turn
+    # an untrusted inbox picture into an already-reserved logical template.
+    if historical_db_identity_reserved(root, category, source.name):
+        dest = safe_stage_move(source, inbox / CONFLICT, sha)
+        return {'status': 'CONFLICT_REVIEW', 'category': category,
+                'name': source.name, 'reason': 'DB_HISTORICAL_IDENTITY_RESERVED',
+                'at': str(dest)}
+
     # A new name OR a missing working copy of a source present in backup.
     # First provide an immutable backup, then a create-only working photo.
     if not historical:
