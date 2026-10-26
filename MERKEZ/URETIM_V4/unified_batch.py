@@ -58,6 +58,9 @@ from .design_proxy_v43 import prepare_render_artwork
 from .upscale4k_v44 import process as upscale_new_outputs
 from .finish_v42 import GLASS, projected_rounded_alpha
 from .finish_material_v46 import apply_material_finish, DAYLIGHT, RECIPE as MATERIAL_RECIPE
+from .store_profiles_v47 import StoreProfiles, key_for
+import random
+import secrets
 from PETEK_V3.excel_links_v42 import xlsx_with_photo_links, verify_photo_links
 
 EXT = {".jpg", ".jpeg", ".png", ".webp"}
@@ -395,6 +398,8 @@ class UnifiedV4Batch:
         design_folder: Path | str,
         *,
         selected_uids: list[str] | None = None,
+        selected_stores: list[str] | None = None,
+        random_seed: int | None = None,
         categories: tuple[str, ...] | list[str] | None = None,
         per_category_limit: int | None = None,
         group: str = "LOCAL",
@@ -446,6 +451,22 @@ class UnifiedV4Batch:
             )
         if not templates:
             raise petek_engine.MaskError("Seçilen kriterlere uygun insan onaylı (APPROVED) şablon bulunamadı.")
+        # Stable source/approved SHA membership stored outside the OneDrive workspace.
+        # No store selected retains the existing group + entire legacy pool.
+        if selected_stores:
+            production_plan = StoreProfiles(self.root).plan(selected_stores, templates,
+                                                              selected_uids=selected_uids)
+        else:
+            production_plan = [(group, templates)]
+        seed = int(random_seed) if random_seed is not None else secrets.randbits(64)
+        rng = random.Random(seed)
+        rng.shuffle(production_plan)
+        designs_in_run = list(iter_designs(designs))
+        if not designs_in_run:
+            raise petek_engine.MaskError("Tasarım klasöründe kullanılabilir görsel yok.")
+        rng.shuffle(designs_in_run)
+        for _, store_templates in production_plan:
+            rng.shuffle(store_templates)
 
         for t in templates:
             # A source may disappear between discovery and production. Its
@@ -474,6 +495,9 @@ class UnifiedV4Batch:
             "unlimited_jobs_enabled": max_jobs is None,
             "unlimited_templates_enabled": per_category_limit is None,
             "approved_template_count": len(templates),
+            "store_ids": [store for store,_ in production_plan],
+            "random_order_seed": seed,
+            "duplicates_skipped_in_run": 0,
             "per_category_templates": discovery_audit["per_category_counts"],
             "attempted": 0,
             "rendered": 0,
@@ -489,169 +513,179 @@ class UnifiedV4Batch:
         # are never silently post-processed or uploaded.
         newly_rendered: list[dict[str, str]] = []
         try:
-            for art in iter_designs(designs):
-                if not self._wait_if_paused(notify):
-                    break
-                if self.cancel.is_set() or (max_jobs is not None and stats["attempted"] >= int(max_jobs)):
-                    break
-                original_art = art
-                try:
-                    render_art, art_sha = prepare_render_artwork(
-                        original_art, self.root / "working_art_proxies")
-                except (petek_engine.MaskError, cv2.error, OSError, ValueError) as exc:
-                    stats["rejected"] += 1
-                    stats["errors"].append({"design": original_art.name,
-                                            "reason": "TASARIM_BOYUTU_VE_GUVENLIK: " + str(exc)})
-                    notify(f"ATLANDI TASARIM {original_art.name}: {exc}")
-                    continue
-
-                for item in templates:
+            processed_jobs = set()
+            for group, templates in production_plan:
+                    for art in designs_in_run:
                     if not self._wait_if_paused(notify):
                         break
                     if self.cancel.is_set() or (max_jobs is not None and stats["attempted"] >= int(max_jobs)):
                         break
-                    stats["attempted"] += 1
-                    cat = item["category"]
-                    uid = item["uid"]
-                    prefix = CATEGORY_SKU_PREFIXES.get(cat, "MKP")
-                    source_path = Path(item["source"])
-                    source_sha = item["source_sha"]
-
-                    # Each selected template is independently validated. An
-                    # unreadable/missing mask must NOT stop all other jobs.
-                    # No ledger reservation is possible until mask + identity
-                    # are verified; preserve the failure in batch QA instead.
+                    original_art = art
                     try:
-                        if item["engine_type"] == "PETEK_V3_CUTOUT":
-                            profile, mask = self.petek_registry.get(uid, require_approved=True)
-                            mask_sha = profile["mask_sha"]
-                        else:
-                            scene_for_mask = petek_engine.read_bgr(source_path)
-                            mask = _build_legacy_category_mask(scene_for_mask, item["quad"], item.get("legacy_data"))
-                            mask_sha = petek_engine.mask_hash(mask)
-                        item_with_mask = dict(item, mask_sha=mask_sha)
-                        saved_radius = item.get("legacy_data", {}).get("glass_corner_radius", .008)
-                        active_corner_radius = (float(corner_radius) if corner_radius is not None else float(saved_radius)) if cat in GLASS else 0.0
-                        if not 0 <= active_corner_radius <= .04:
-                            raise petek_engine.MaskError("Şablondaki cam köşesi ayarı geçersiz.")
-                        full_key, _ = unified_receipt_identity(
-                            item_with_mask,
-                            art_sha,
-                            group=group,
-                            placement=placement,
-                            lighting=lighting,
-                            corner_radius=active_corner_radius,
-                            glass_effect=glass_effect if cat in (GLASS | DAYLIGHT) else "not_applicable",
-                            recipe=(V4_RECIPE + "+" + MATERIAL_RECIPE)
-                                if cat in (GLASS | DAYLIGHT) and glass_effect == "on" and lighting != "off"
-                                else V4_RECIPE,
-                        )
-                    except (petek_engine.MaskError, cv2.error, OSError, ValueError, KeyError, TypeError) as exc:
+                        render_art, art_sha = prepare_render_artwork(
+                            original_art, self.root / "working_art_proxies")
+                    except (petek_engine.MaskError, cv2.error, OSError, ValueError) as exc:
                         stats["rejected"] += 1
-                        stats["errors"].append(
-                            {"category": cat, "template": uid, "design": art.name,
-                             "reason": "GEOMETRI_VE_MASKE_DENETIMI: " + str(exc)}
-                        )
-                        notify(f"İNCELEME GEREKİYOR [{cat}] {uid} / {art.name}: {exc}")
+                        stats["errors"].append({"design": original_art.name,
+                                                "reason": "TASARIM_BOYUTU_VE_GUVENLIK: " + str(exc)})
+                        notify(f"ATLANDI TASARIM {original_art.name}: {exc}")
                         continue
-                    key = full_key[:24]
-                    sku = f"{prefix}-{group}-{full_key[:18].upper()}"
-                    output = self.output / group / cat / f"{sku}_{key}.png"
 
-                    fields = {
-                        "key": key,
-                        "sku": sku,
-                        "category": cat,
-                        "art_sha": art_sha,
-                        "template_sha": source_sha,
-                        "mask_sha": mask_sha,
-                        "art_name": art.name,
-                        "uid": uid,
-                        "output": str(output),
-                    }
-                    try:
-                        record = self.ledger.reserve(fields)
-                        if record["status"] == "USER_REMOVED":
-                            # User intentionally deleted this output. Preserve its
-                            # SKU/receipt and NEVER silently recreate or flag it
-                            # as a corrupted render on subsequent batch runs.
-                            stats["user_removed"] = stats.get("user_removed", 0) + 1
-                            notify(f"KULLANICI TARAFINDAN SİLİNDİ / tarihî kayıt korundu: [{cat}] {uid} / {art.name}")
+                    for item in templates:
+                        if not self._wait_if_paused(notify):
+                            break
+                        if self.cancel.is_set() or (max_jobs is not None and stats["attempted"] >= int(max_jobs)):
+                            break
+                        # Prevent repeat renders for identical artwork SHA and
+                        # category+approved template within the same store/run.
+                        unique_pair = (group, key_for(item), art_sha)
+                        if unique_pair in processed_jobs:
+                            stats["duplicates_skipped_in_run"] += 1
+                            notify(f"AYNI TURDA TEKRAR ATLANDI: {group}/{item['uid']}/{art.name}")
                             continue
-                        if record["status"] == "RENDERED":
+                        processed_jobs.add(unique_pair)
+                        stats["attempted"] += 1
+                        cat = item["category"]
+                        uid = item["uid"]
+                        prefix = CATEGORY_SKU_PREFIXES.get(cat, "MKP")
+                        source_path = Path(item["source"])
+                        source_sha = item["source_sha"]
+
+                        # Each selected template is independently validated. An
+                        # unreadable/missing mask must NOT stop all other jobs.
+                        # No ledger reservation is possible until mask + identity
+                        # are verified; preserve the failure in batch QA instead.
+                        try:
+                            if item["engine_type"] == "PETEK_V3_CUTOUT":
+                                profile, mask = self.petek_registry.get(uid, require_approved=True)
+                                mask_sha = profile["mask_sha"]
+                            else:
+                                scene_for_mask = petek_engine.read_bgr(source_path)
+                                mask = _build_legacy_category_mask(scene_for_mask, item["quad"], item.get("legacy_data"))
+                                mask_sha = petek_engine.mask_hash(mask)
+                            item_with_mask = dict(item, mask_sha=mask_sha)
+                            saved_radius = item.get("legacy_data", {}).get("glass_corner_radius", .008)
+                            active_corner_radius = (float(corner_radius) if corner_radius is not None else float(saved_radius)) if cat in GLASS else 0.0
+                            if not 0 <= active_corner_radius <= .04:
+                                raise petek_engine.MaskError("Şablondaki cam köşesi ayarı geçersiz.")
+                            full_key, _ = unified_receipt_identity(
+                                item_with_mask,
+                                art_sha,
+                                group=group,
+                                placement=placement,
+                                lighting=lighting,
+                                corner_radius=active_corner_radius,
+                                glass_effect=glass_effect if cat in (GLASS | DAYLIGHT) else "not_applicable",
+                                recipe=(V4_RECIPE + "+" + MATERIAL_RECIPE)
+                                    if cat in (GLASS | DAYLIGHT) and glass_effect == "on" and lighting != "off"
+                                    else V4_RECIPE,
+                            )
+                        except (petek_engine.MaskError, cv2.error, OSError, ValueError, KeyError, TypeError) as exc:
+                            stats["rejected"] += 1
+                            stats["errors"].append(
+                                {"category": cat, "template": uid, "design": art.name,
+                                 "reason": "GEOMETRI_VE_MASKE_DENETIMI: " + str(exc)}
+                            )
+                            notify(f"İNCELEME GEREKİYOR [{cat}] {uid} / {art.name}: {exc}")
+                            continue
+                        key = full_key[:24]
+                        sku = f"{prefix}-{group}-{full_key[:18].upper()}"
+                        output = self.output / group / cat / f"{sku}_{key}.png"
+
+                        fields = {
+                            "key": key,
+                            "sku": sku,
+                            "category": cat,
+                            "art_sha": art_sha,
+                            "template_sha": source_sha,
+                            "mask_sha": mask_sha,
+                            "art_name": art.name,
+                            "uid": uid,
+                            "output": str(output),
+                        }
+                        try:
+                            record = self.ledger.reserve(fields)
+                            if record["status"] == "USER_REMOVED":
+                                # User intentionally deleted this output. Preserve its
+                                # SKU/receipt and NEVER silently recreate or flag it
+                                # as a corrupted render on subsequent batch runs.
+                                stats["user_removed"] = stats.get("user_removed", 0) + 1
+                                notify(f"KULLANICI TARAFINDAN SİLİNDİ / tarihî kayıt korundu: [{cat}] {uid} / {art.name}")
+                                continue
+                            if record["status"] == "RENDERED":
+                                if (
+                                    output.is_symlink()
+                                    or not output.is_file()
+                                    or petek_engine.digest(output) != record["output_sha"]
+                                ):
+                                    raise petek_engine.MaskError(
+                                        "Önceden tamamlanan çıktı bulunamadı veya değiştirilmiş."
+                                    )
+                                stats["reused"] += 1
+                                stats["current_batch_keys"].append(key)
+                                notify(f"ATLANDI / mevcut kayıt: [{cat}] {uid} / {art.name}")
+                                continue
+                            if record["status"] != "PENDING" or output.exists():
+                                raise petek_engine.MaskError(
+                                    "Şüpheli eski/tamamlanmamış çıktı: kesinti kurtarma veya inceleme gerekli."
+                                )
+                            if petek_engine.digest(source_path) != source_sha:
+                                raise petek_engine.MaskError("Orijinal şablon üretim öncesi değiştirildi.")
+
+                            if item["engine_type"] == "PETEK_V3_CUTOUT":
+                                picture, _, _ = render_with_cutout_paste(
+                                    source_path,
+                                    render_art,
+                                    item["quad"],
+                                    mask,
+                                    item["physical_aspect"],
+                                    marketplace=False,
+                                    placement=placement,
+                                    lighting=lighting,
+                                )
+                                if lighting != "off" and glass_effect == "on":
+                                    raw_scene = petek_engine.read_bgr(source_path)
+                                    picture = apply_material_finish(raw_scene, picture, mask,
+                                        item["quad"], cat, enabled=True)
+                                picture = petek_engine.canvas_3x4(picture)
+                            else:
+                                picture, _ = _render_legacy_six_cover(
+                                    source_path,
+                                    render_art,
+                                    item["quad"],
+                                    mask,
+                                    item["physical_aspect"],
+                                    marketplace=True,
+                                    placement=placement,
+                                    lighting=lighting,
+                                    category=cat,
+                                    corner_radius=active_corner_radius,
+                                    glass_effect=glass_effect,
+                                )
+
+                            encoded_png = petek_engine.encode_png(picture)
+                            petek_engine.atomic_new_file(output, encoded_png)
+                            receipt_sha = petek_engine.digest(output)
                             if (
-                                output.is_symlink()
-                                or not output.is_file()
-                                or petek_engine.digest(output) != record["output_sha"]
+                                petek_engine.digest(source_path) != source_sha
+                                or petek_engine.digest(original_art) != art_sha
                             ):
                                 raise petek_engine.MaskError(
-                                    "Önceden tamamlanan çıktı bulunamadı veya değiştirilmiş."
+                                    "Kaynak dosya üretim sırasında değişmiş; çıktı incelemeye alındı."
                                 )
-                            stats["reused"] += 1
+                            self.ledger.complete(key, receipt_sha)
+                            newly_rendered.append({"key": key, "sku": sku, "output": str(output),
+                                                   "output_sha": receipt_sha})
+                            stats["rendered"] += 1
                             stats["current_batch_keys"].append(key)
-                            notify(f"ATLANDI / mevcut kayıt: [{cat}] {uid} / {art.name}")
-                            continue
-                        if record["status"] != "PENDING" or output.exists():
-                            raise petek_engine.MaskError(
-                                "Şüpheli eski/tamamlanmamış çıktı: kesinti kurtarma veya inceleme gerekli."
+                            notify(f"ÜRETİLDİ {stats['rendered']}: [{cat}] {uid} / {art.name}")
+                        except (petek_engine.MaskError, cv2.error, OSError, ValueError) as exc:
+                            self.ledger.quarantine(key, str(exc))
+                            stats["rejected"] += 1
+                            stats["errors"].append(
+                                {"category": cat, "template": uid, "design": art.name, "reason": str(exc)}
                             )
-                        if petek_engine.digest(source_path) != source_sha:
-                            raise petek_engine.MaskError("Orijinal şablon üretim öncesi değiştirildi.")
-
-                        if item["engine_type"] == "PETEK_V3_CUTOUT":
-                            picture, _, _ = render_with_cutout_paste(
-                                source_path,
-                                render_art,
-                                item["quad"],
-                                mask,
-                                item["physical_aspect"],
-                                marketplace=False,
-                                placement=placement,
-                                lighting=lighting,
-                            )
-                            if lighting != "off" and glass_effect == "on":
-                                raw_scene = petek_engine.read_bgr(source_path)
-                                picture = apply_material_finish(raw_scene, picture, mask,
-                                    item["quad"], cat, enabled=True)
-                            picture = petek_engine.canvas_3x4(picture)
-                        else:
-                            picture, _ = _render_legacy_six_cover(
-                                source_path,
-                                render_art,
-                                item["quad"],
-                                mask,
-                                item["physical_aspect"],
-                                marketplace=True,
-                                placement=placement,
-                                lighting=lighting,
-                                category=cat,
-                                corner_radius=active_corner_radius,
-                                glass_effect=glass_effect,
-                            )
-
-                        encoded_png = petek_engine.encode_png(picture)
-                        petek_engine.atomic_new_file(output, encoded_png)
-                        receipt_sha = petek_engine.digest(output)
-                        if (
-                            petek_engine.digest(source_path) != source_sha
-                            or petek_engine.digest(original_art) != art_sha
-                        ):
-                            raise petek_engine.MaskError(
-                                "Kaynak dosya üretim sırasında değişmiş; çıktı incelemeye alındı."
-                            )
-                        self.ledger.complete(key, receipt_sha)
-                        newly_rendered.append({"key": key, "sku": sku, "output": str(output),
-                                               "output_sha": receipt_sha})
-                        stats["rendered"] += 1
-                        stats["current_batch_keys"].append(key)
-                        notify(f"ÜRETİLDİ {stats['rendered']}: [{cat}] {uid} / {art.name}")
-                    except (petek_engine.MaskError, cv2.error, OSError, ValueError) as exc:
-                        self.ledger.quarantine(key, str(exc))
-                        stats["rejected"] += 1
-                        stats["errors"].append(
-                            {"category": cat, "template": uid, "design": art.name, "reason": str(exc)}
-                        )
-                        notify(f"ATLANDI [{cat}] {uid}/{art.name} — {exc}")
+                            notify(f"ATLANDI [{cat}] {uid}/{art.name} — {exc}")
 
             # 4K is an explicitly selected, independent post-render step.
             # Failures do not invalidate normal 1200x1600 mockups.
