@@ -48,8 +48,9 @@ def _display_size(shape, canvas):
 
 class MaskEditor:
     """Human-reviewed editable mask; masks stay in source-pixel coordinates."""
-    def __init__(self,parent, registry=None, on_saved=None):
+    def __init__(self,parent, registry=None, on_saved=None, runtime_root=None):
         self.registry=registry or Registry();self.on_saved=on_saved
+        self.runtime_root=Path(runtime_root).resolve() if runtime_root else None
         self.window=tk.Toplevel(parent)
         self.window.title('PETEK — Mockup Baskı Alanı Düzenleyici')
         # Match the *usable* screen, including small laptops / display scaling.
@@ -289,8 +290,20 @@ class MaskEditor:
         self.refresh()
 
     def pick(self):
-        path=filedialog.askopenfilename(parent=self.window,title='PETEK Mockup Fotoğrafı (baskısız dolap bulunan oda görseli)',
-                                        filetypes=[('Mockup fotoğrafı','*.jpg *.jpeg *.png *.webp')])
+        initial=None
+        if self.runtime_root is not None:
+            try:
+                from petek_folders_v46 import petek_directory
+                approved_work=petek_directory(self.runtime_root,'2_SABLON_HAVUZU')
+                if approved_work.is_dir():initial=str(approved_work)
+            except (ValueError,OSError) as exc:
+                messagebox.showerror('PETEK klasör uyuşmazlığı',str(exc),parent=self.window)
+                return
+        options=dict(parent=self.window,
+                     title='PETEK Mockup Fotoğrafı — Çalışma Havuzu / Petek_Dolabi',
+                     filetypes=[('Mockup fotoğrafı','*.jpg *.jpeg *.png *.webp')])
+        if initial:options['initialdir']=initial
+        path=filedialog.askopenfilename(**options)
         if path:self.load(Path(path))
 
     def load(self,path):
@@ -1089,5 +1102,6 @@ class BatchWindow:
         if self.window.winfo_exists():self.window.after(200,self.poll)
 
 
-def open_mask_editor(parent,registry=None,after_save=None):return MaskEditor(parent,registry,on_saved=after_save)
+def open_mask_editor(parent,registry=None,after_save=None,runtime_root=None):
+    return MaskEditor(parent,registry,on_saved=after_save,runtime_root=runtime_root)
 def open_batch_window(parent,registry=None):return BatchWindow(parent,registry)
