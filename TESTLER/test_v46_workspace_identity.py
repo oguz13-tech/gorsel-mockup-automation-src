@@ -80,3 +80,48 @@ def test_identity_diagnostic_unauthorized_and_unreachable(tmp_path):
         tmp_path,tmp_path,1,'secret',
         opener=lambda *a,**k:(_ for _ in ()).throw(TimeoutError())
     )['reason']=='IDENTITY_TIMEOUT'
+
+
+def test_windows_redirector_accepts_verified_direct_child_only(tmp_path):
+    expected = dict(pid=777, parent_pid=333, token='private-token',
+                    runtime_root=str(tmp_path/'data'), code_root=str(tmp_path/'code'))
+    def check(data, windows_redirector):
+        return manager.server_identity_diagnostic(
+            tmp_path/'data',tmp_path/'code',333,'private-token',
+            opener=lambda *a,**k:io.StringIO(json.dumps(data)),
+            windows_redirector=windows_redirector)
+    result=check(expected,True)
+    assert result['ready'] is True
+    assert result['reason']=='MATCHED_WIN_VENV_REDIRECTOR'
+    assert check(expected,False)['reason']=='IDENTITY_PID_MISMATCH'
+    assert check({**expected,'parent_pid':334},True)['reason']=='IDENTITY_PID_MISMATCH'
+    assert check({**expected,'token':'different'},True)['reason']=='IDENTITY_TOKEN_MISMATCH'
+    assert check({**expected,'code_root':str(tmp_path/'wrong')},True)['reason']=='IDENTITY_CODE_ROOT_MISMATCH'
+    assert check({**expected,'runtime_root':str(tmp_path/'wrong')},True)['reason']=='IDENTITY_RUNTIME_ROOT_MISMATCH'
+
+
+def test_real_windows_venv_redirector_subprocess_pid(tmp_path):
+    import subprocess
+    import pytest
+    if sys.platform != 'win32':
+        pytest.skip('Only CPython Windows venv uses this redirector')
+    root=tmp_path/'py_venv'
+    subprocess.run([sys.executable,'-m','venv','--without-pip',str(root)],
+                   check=True,timeout=40)
+    venv_python=root/'Scripts'/'python.exe'
+    proc=subprocess.Popen([str(venv_python),'-c',
+        'import os,json; print(json.dumps({"pid":os.getpid(),"parent_pid":os.getppid()}))'],
+        stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+    out,err=proc.communicate(timeout=20)
+    assert proc.returncode==0,err
+    data=json.loads(out.strip())
+    # Windows virtual environment process launch is a redirector and the
+    # Python interpreter it starts is the next process in the chain.
+    assert data['pid'] != proc.pid
+    assert data['parent_pid']==proc.pid
+    data.update(token='t',runtime_root=str(tmp_path/'data'),code_root=str(tmp_path/'code'))
+    result=manager.server_identity_diagnostic(
+        tmp_path/'data',tmp_path/'code',proc.pid,'t',
+        opener=lambda *a,**k:io.StringIO(json.dumps(data)))
+    assert result['ready'] is True
+    assert result['reason']=='MATCHED_WIN_VENV_REDIRECTOR'
