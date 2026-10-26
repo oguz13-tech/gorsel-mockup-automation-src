@@ -40,6 +40,9 @@ def _local_layers(category, width=400, height=400):
         bright=np.exp(-1.8*(((u-.50)/.45)**2+((v-.34)/.27)**2))
         bright+=.4*np.exp(-.5*(((u-.73)/.27)**2+((v-.19)/.035)**2))
         bright=np.clip(bright*.75,0,1)
+        # White printed cutting boards need a muted reflected room silhouette:
+        # pure screen-mode light would have only 1-2 levels against white.
+        dark=np.clip(.21*bright,0,1)
     elif category=='05_Ocak_Arkasi':
         # Ambient kitchen window/under-cabinet light.
         bright=.80*np.exp(-1.4*(((u-.62)/.40)**2+((v-.20)/.22)**2))
