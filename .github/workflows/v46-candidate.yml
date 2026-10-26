@@ -32,7 +32,7 @@ jobs:
         run: python -c "import pathlib,zipfile; zipfile.ZipFile(next(pathlib.Path('dist').glob('*.zip'))).extractall('zip-smoke')"
       - name: Run tests from actual extracted ZIP
         working-directory: zip-smoke/GORSEL_V46_CANDIDATE
-        run: python -m pytest -q TESTLER/test_v46_workspace_identity.py TESTLER/test_v46_chroma_detector.py TESTLER/test_v46_chroma_render.py TESTLER/test_v46_optional_4k.py --junitxml=zip-test-results.xml
+        run: python -m pytest -q TESTLER/test_v46_workspace_identity.py TESTLER/test_v46_chroma_detector.py TESTLER/test_v46_chroma_render.py TESTLER/test_v46_optional_4k.py TESTLER/test_v47_material_store_random.py --junitxml=zip-test-results.xml
       - uses: actions/upload-artifact@v4
         with:
           name: V46-CANDIDATE-${{ matrix.os }}-${{ github.sha }}
