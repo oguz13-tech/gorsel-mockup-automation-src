@@ -179,6 +179,9 @@ class Center:
 
     def select_runtime(self):
         from legacy_manager import store_runtime_choice
+        if self.editor_proc is not None and self.editor_proc.poll() is None:
+            messagebox.showwarning('Önce incelemeyi kapatın', 'Çalışma klasörünü değiştirmeden önce bu merkezden inceleme sunucusunu durdurun.', parent=self.root)
+            return
         chosen=filedialog.askdirectory(parent=self.root,title='Orijinal GörselÜretme-ve-Mockup Otomasyonu klasörünü seç',initialdir=str(self.runtime.parent))
         if not chosen:return
         try:
@@ -212,6 +215,11 @@ class Center:
     def _open_legacy(self,route):
         from legacy_manager import inspect,backup_database,launch_spec,port_occupied,local_state_dir,LegacyLaunchError
         if self.editor_proc is not None and self.editor_proc.poll() is None:
+            from legacy_manager import server_matches
+            runtime,code,token=self.editor_identity
+            if not server_matches(runtime,code,self.editor_proc.pid,token):
+                messagebox.showerror('Sunucu doğrulanamadı', 'Kod veya çalışma klasörü kimliği uyuşmuyor.', parent=self.root)
+                return
             webbrowser.open('http://127.0.0.1:8080'+route)
             self.status.set('Dört köşe inceleme merkezi açık.')
             return
@@ -266,6 +274,8 @@ class Center:
         try:
             backup=backup_database(self.runtime)
             command,env,cwd=launch_spec(self.runtime)
+            env['MOCKUP_CENTER_TOKEN']=os.urandom(32).hex()
+            self.editor_identity=(self.runtime,cwd,env['MOCKUP_CENTER_TOKEN'])
             logs=local_state_dir()/'LOG';logs.mkdir(parents=True,exist_ok=True)
             output=logs/('inceleme_'+str(int(time.time()))+'_'+os.urandom(3).hex()+'.log')
             log=output.open('x',encoding='utf-8')
@@ -281,10 +291,10 @@ class Center:
             self._log('Altı kategori kodu: '+str(cwd))
             self._log('Sunucu logu: '+str(output))
             def wait_server():
-                from legacy_manager import port_occupied
+                from legacy_manager import server_matches
                 for _ in range(75):
                     if child.poll() is not None:break
-                    if port_occupied(timeout=.1):
+                    if server_matches(self.runtime,cwd,child.pid,env['MOCKUP_CENTER_TOKEN']):
                         self.messages.put(('legacy_started',route));return
                     time.sleep(.16)
                 self.messages.put(('legacy_error',str(output)))

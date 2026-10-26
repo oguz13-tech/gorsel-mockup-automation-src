@@ -83,6 +83,16 @@ from functools import wraps
 
 app = Flask(__name__)
 
+@app.route('/api/center_identity')
+def center_identity():
+    import secrets
+    token = os.environ.get('MOCKUP_CENTER_TOKEN', '')
+    if not token or not secrets.compare_digest(request.headers.get('X-Center-Token', ''), token):
+        return jsonify({'error': 'Not authorized'}), 403
+    return jsonify({'pid': os.getpid(), 'token': token,
+                    'runtime_root': BASE_DIR, 'code_root': SOURCE_ROOT})
+
+
 
 def _template_guard_values(source):
     if source == "headers":

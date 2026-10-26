@@ -38,7 +38,7 @@ def preferred_runtime(userprofile=None, env=None) -> Path:
     if state.is_file():
         try:
             selected=Path(json.loads(state.read_text('utf-8'))['path']).expanduser().absolute()
-            if (selected/'SABLON_V2_MIMARI'/'ayarlar.db').is_file():return selected
+            return selected  # Missing selection must fail preflight, never switch datasets.
         except (ValueError, KeyError, OSError, TypeError):pass
     user=Path(userprofile or env.get('USERPROFILE') or Path.home())
     places=[user/'OneDrive'/'Masaüstü'/'GörselÜretme-ve-Mockup Otomasyonu',
@@ -165,3 +165,18 @@ def port_occupied(host='127.0.0.1',port=8080,timeout=.3)->bool:
     with socket.socket() as sock:
         sock.settimeout(timeout)
         return sock.connect_ex((host,port))==0
+
+
+def server_matches(runtime, code, pid, token, opener=None):
+    """Only accept the child we launched, with the selected code/data roots."""
+    import urllib.request
+    try:
+        request = urllib.request.Request('http://127.0.0.1:8080/api/center_identity',
+                                        headers={'X-Center-Token': token})
+        with (opener or urllib.request.urlopen)(request, timeout=.4) as response:
+            data = json.load(response)
+        return (data.get('pid') == pid and data.get('token') == token
+                and Path(data['runtime_root']).resolve() == Path(runtime).resolve()
+                and Path(data['code_root']).resolve() == Path(code).resolve())
+    except (OSError, ValueError, KeyError, TypeError):
+        return False
