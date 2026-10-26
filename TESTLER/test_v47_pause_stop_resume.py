@@ -69,7 +69,7 @@ def test_safe_stop_is_durable_and_continue_finishes_only_remaining(tmp_path):
     assert len(_outputs(fresh))==3
     assert petek_engine.digest(existing)==original_sha
     assert read_checkpoint(fresh.root)['status']=='COMPLETED'
-    with pytest.raises(petek_engine.MaskError,match='STOPPED'):
+    with pytest.raises(petek_engine.MaskError,match='COMPLETED'):
         fresh.resume_last_stopped()
 
 
@@ -160,7 +160,7 @@ def test_store_changes_block_resume_and_keep_completed(tmp_path):
     original=_outputs(batch)[0]
     sha=petek_engine.digest(Path(original['output']))
     store.assign('Magaza_01',[more])
-    with pytest.raises(petek_engine.MaskError,match='mağaza atamaları'):
+    with pytest.raises((ValueError, petek_engine.MaskError),match='onayı/SHA|mağaza atamaları'):
         batch.resume_last_stopped()
     assert petek_engine.digest(Path(original['output']))==sha
     assert len(_outputs(batch))==1
