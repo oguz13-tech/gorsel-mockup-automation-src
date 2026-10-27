@@ -22,6 +22,8 @@ import unicodedata
 import uuid
 from pathlib import PurePosixPath
 from PIL import Image
+from URETIM_V4.store_profiles_v47 import StoreProfiles
+from URETIM_V4.final_guard_v44 import store_v4_root
 
 CATEGORIES=('01_Wifi_Kutusu','02_Cam_Tablo_Dikey','02_Cam_Tablo_Yatay',
             '03_Ahsap_Tablo','04_Cam_Dograma','05_Ocak_Arkasi')
@@ -247,7 +249,8 @@ def apply(report,confirmation,*,allow_review=False):
     workspace=Path(planned['workspace']).resolve()
     if app_busy():raise RuntimeError('STOP_4_KOSE_FLASK_8080_FIRST')
     local=Path(os.environ.get('LOCALAPPDATA') or Path.home())/'GorselMockup'
-    if (local/'UnifiedV4'/'V4_ORTAK_FABRIKA.lock').exists():
+    production_root=store_v4_root()
+    if (production_root/'V4_ORTAK_FABRIKA.lock').exists():
         raise RuntimeError('ACTIVE_PRODUCTION_LOCK')
     fresh=analyze(workspace,Path(planned['lab']))
     if fresh['db_sha']!=planned['db_sha']:
@@ -263,14 +266,45 @@ def apply(report,confirmation,*,allow_review=False):
     if allow_review:allowed.add('READY_REQUIRES_REAPPROVAL')
     selected=[j for j in fresh['jobs'] if j['status'] in allowed]
     if not selected:return {'status':'NO_ELIGIBLE_IMAGES','count':0}
+    # Immutable template UID is preserved; source SHA is the only changing
+    # store-membership key. Preflight cross-store conflicts BEFORE any writes.
+    stores=StoreProfiles(production_root)
+    replacements=[{'category':j['category'],'uid':j['uid'],
+                   'old_sha':j['old_sha'],'new_sha':j['source_sha']}
+                  for j in selected]
+    # Re-encoding other formats changes bytes. Store profiles need the ACTUAL
+    # resulting SHA, not the source-file digest. Those files are intentionally
+    # not auto-applied: keep review-only until one canonical format is selected.
+    for j in selected:
+        if Path(j['source']).suffix.lower()!=Path(j['destination']).suffix.lower():
+            if {Path(j['source']).suffix.lower(),Path(j['destination']).suffix.lower()}!={'.jpg','.jpeg'}:
+                raise RuntimeError('CODEC_CHANGED_REENCODING_NEEDS_CANONICAL_FILE_REVIEW: '+j['name'])
+    store_plan=stores.preview_rekey(replacements)
     db=workspace/'SABLON_V2_MIMARI'/'ayarlar.db'
     backup_root=local/'GorselMockup-MagentaRollback'/('BEFORE_'+uuid.uuid4().hex)
     backup_root.mkdir(parents=True,exist_ok=False)
     backup_db=backup_root/'ayarlar.before.sqlite3'
+    backup_store=backup_root/'store_profiles_v47.before.json'
+    original_store_exists=stores.path.is_file()
+    if original_store_exists:
+        if stores.path.is_symlink():raise ValueError('STORE_PROFILE_SYMLINK')
+        shutil.copy2(stores.path,backup_store)
+        if sha(backup_store)!=sha(stores.path):
+            raise RuntimeError('STORE_PROFILE_BACKUP_SHA_MISMATCH')
     with sqlite3.connect(db) as src,sqlite3.connect(backup_db) as dst:
         src.backup(dst)
         if dst.execute('PRAGMA quick_check').fetchone()[0]!='ok':raise RuntimeError('DB_BACKUP_BAD')
     saved=[]
+    # This marker stays on disk in case of electricity loss between SQLite
+    # commit and JSON store membership replacement. Never auto-delete backups.
+    pending=backup_root/'INCOMPLETE_MAGENTA_APPLY.json'
+    pending.write_text(json.dumps({
+        'db':str(db),'db_backup':str(backup_db),
+        'store':str(stores.path),'store_backup':str(backup_store) if original_store_exists else None,
+        'selected':[{'destination':j['destination'],'old_sha':j['old_sha'],
+                     'new_sha':j['source_sha']} for j in selected]},
+        ensure_ascii=False,indent=2),encoding='utf-8')
+    store_saved=False
     # Never touch user's immutable ORIGINAL_ARCHIVE; save old working images
     # separately with original per-file SHA evidence.
     try:
@@ -326,18 +360,40 @@ def apply(report,confirmation,*,allow_review=False):
                 job['applied_sha']=new_sha
                 job['result']='APPROVED_TRANSFERRED' if approved else 'REVIEW_REQUIRED'
             con.commit()
+        if store_plan['changed_count']:
+            stores.save(store_plan['new'])
+            store_saved=True
         result={'status':'APPLIED','count':len(saved),'backup':str(backup_root),
+                'store_assignments_rekeyed':store_plan['changed_count'],
                 'original_archive_changed':False,'items':[
                     {k:j[k] for k in ('relative','result','applied_sha')} for *_,j in saved]}
     except BaseException:
-        # Best-effort immediate rollback; persistent old copies always retained.
+        # File + DB + store JSON do not share a filesystem transaction.
+        # Undo every part if any step fails; retain original evidence even
+        # when an OS/filesystem issue stops the rollback.
         for target,backup,_ in saved:
             try:
                 rollback=target.with_name('.rollback-'+uuid.uuid4().hex+target.suffix)
                 shutil.copyfile(backup,rollback)
                 os.replace(rollback,target)
             except OSError:pass
+        try:
+            with sqlite3.connect(backup_db) as source_db, sqlite3.connect(db) as target_db:
+                source_db.backup(target_db)
+                if target_db.execute('PRAGMA quick_check').fetchone()[0]!='ok':
+                    raise RuntimeError('MAIN_DB_RESTORE_VERIFY_FAILED')
+        except (OSError,sqlite3.Error) as error:
+            (backup_root/'DB_RESTORE_REQUIRED.txt').write_text(str(error),encoding='utf-8')
+        if store_saved:
+            try:
+                if original_store_exists:
+                    stores.path.write_bytes(backup_store.read_bytes())
+                else:
+                    stores.path.unlink(missing_ok=True)
+            except OSError as error:
+                (backup_root/'STORE_RESTORE_REQUIRED.txt').write_text(str(error),encoding='utf-8')
         raise
+    pending.unlink(missing_ok=True)
     (backup_root/'APPLY_RECEIPT.json').write_text(
         json.dumps(result,ensure_ascii=False,indent=2),encoding='utf-8')
     return result
