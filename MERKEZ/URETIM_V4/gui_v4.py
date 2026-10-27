@@ -20,6 +20,7 @@ from .design_proxy_v43 import prepare_render_artwork
 from .upscale4k_v44 import preflight as upscale_preflight, UpscaleError
 from .unified_batch import _render_legacy_six_cover, _build_legacy_category_mask
 from .finish_material_v46 import DAYLIGHT, apply_material_finish
+from .optical_qa_v47 import measure_effect
 from PETEK_V3.cutout_paste import render_with_cutout_paste
 from PETEK_V3 import engine as petek_engine
 from .finish_v42 import GLASS
@@ -467,6 +468,7 @@ class UnifiedV4BatchWindow:
                         placement=placement,lighting='natural',marketplace=False)
                     reflected=apply_material_finish(scene,baseline,mask,
                                                      item['quad'],item['category'])
+                    effect_qa=measure_effect(baseline,reflected,mask,item['category'])
                     disabled=petek_engine.canvas_3x4(baseline)
                     enabled=petek_engine.canvas_3x4(reflected)
                 else:
@@ -474,17 +476,20 @@ class UnifiedV4BatchWindow:
                     radius = float(item.get('legacy_data',{}).get('glass_corner_radius',.008))
                     args=(src,proxy,item['quad'],mask,item['physical_aspect'])
                     common=dict(category=item['category'],corner_radius=radius,
-                                lighting='natural',placement=placement,marketplace=True)
-                    disabled,_=_render_legacy_six_cover(*args,glass_effect='off',**common)
-                    enabled,_=_render_legacy_six_cover(*args,glass_effect='on',**common)
-                self.messages.put(('ab_done',(disabled,enabled,item['uid'],art.name)))
+                                lighting='natural',placement=placement,marketplace=False)
+                    baseline,_=_render_legacy_six_cover(*args,glass_effect='off',**common)
+                    reflected,_=_render_legacy_six_cover(*args,glass_effect='on',**common)
+                    effect_qa=measure_effect(baseline,reflected,mask,item['category'])
+                    disabled=petek_engine.canvas_3x4(baseline)
+                    enabled=petek_engine.canvas_3x4(reflected)
+                self.messages.put(('ab_done',(disabled,enabled,item['uid'],art.name,effect_qa)))
             except Exception as exc:
                 self.messages.put(('ab_fail',str(exc)))
         self._worker_kind = 'preview'
         self.worker=threading.Thread(target=work,daemon=False)
         self.worker.start()
 
-    def show_ab(self, before, after, uid, artname):
+    def show_ab(self, before, after, uid, artname, qa):
         # Tk widgets must be constructed on the UI thread.
         popup=tk.Toplevel(self.window)
         popup.title('Malzeme Efekti A/B — Gerçek Baskı Önizlemesi')
@@ -499,6 +504,15 @@ class UnifiedV4BatchWindow:
             frame=ttk.Frame(slots);frame.pack(side='left',fill='both',expand=True)
             ttk.Label(frame,text=title,font=('Segoe UI',11,'bold')).pack()
             ttk.Label(frame,image=images[j]).pack(pady=8)
+        ttk.Label(
+            popup,
+            text=('Otomatik QA: '+qa['status']+
+                  f" | Maske dışı değişen piksel: {qa['protected_pixel_changes']}"+
+                  f" | Ortalama ışık farkı: {qa['mean_inside_delta']}"+
+                  f" | Yazı/kenar farkı: {qa['detail_edge_delta']}"+
+                  ' — GERÇEK GÖRSELİ İNSAN ONAYLAMALI'),
+            wraplength=825,
+        ).pack(pady=5)
         popup._keep_image_refs=images
         ttk.Label(popup,text=f'{uid} / {artname} — yalnız geçici önizleme; kaynakları ve onaylı dört köşeleri değiştirmez.',
                   wraplength=820).pack(pady=8)
