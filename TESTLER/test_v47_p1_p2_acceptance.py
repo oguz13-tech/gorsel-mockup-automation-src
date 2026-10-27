@@ -176,3 +176,34 @@ def test_120_jobs_stop_resume_idempotent_without_duplication(tmp_path,monkeypatc
     assert len(records)==120==len(set(r['key'] for r in records))
     assert all(Path(r['output']).is_file() and
                petek_engine.digest(Path(r['output']))==r['output_sha'] for r in records)
+
+
+def test_flask_live_route_rejects_csrf_cross_origin_and_dns_rebinding(monkeypatch):
+    pytest.importorskip('flask')
+    sys.path.insert(0,str(ROOT/'SABLON_V2_MIMARI'))
+    import app as editor
+    from core.loopback_security_v47 import token
+    previous_testing=editor.app.config.get('TESTING')
+    old_audit=editor.DB_STARTUP_AUDIT
+    try:
+        editor.app.config['TESTING']=False
+        editor.DB_STARTUP_AUDIT={'ready':True}
+        client=editor.app.test_client()
+        mutation='/api/tools/launch/unknown-tool-name-for-security-test'
+        no_token=client.post(mutation)
+        assert no_token.status_code==403
+        assert no_token.json['code']=='CSRF_HEADER_REQUIRED'
+        origin=client.post(mutation,headers={'X-V47-CSRF':token(),'Origin':'https://evil.example'})
+        assert origin.status_code==403
+        assert origin.json['code']=='CROSS_ORIGIN_FORBIDDEN'
+        dns=client.get('/api/session/csrf',base_url='http://remote.attacker.example:8080')
+        assert dns.status_code==403
+        assert dns.json['code']=='LOOPBACK_HOST_FORBIDDEN'
+        valid=client.get('/api/session/csrf')
+        assert valid.status_code==200 and isinstance(valid.json.get('csrf'),str)
+        allowed=client.post(mutation,headers={'X-V47-CSRF':valid.json['csrf']})
+        assert allowed.status_code!=403
+        assert valid.headers['X-Frame-Options']=='DENY'
+    finally:
+        editor.app.config['TESTING']=previous_testing
+        editor.DB_STARTUP_AUDIT=old_audit
