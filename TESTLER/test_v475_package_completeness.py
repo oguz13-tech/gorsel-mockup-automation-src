@@ -83,3 +83,12 @@ def test_real_package_integrity_detects_removed_number_spec(tmp_path):
     _package_integrity(tampered,errors)
     assert 'REQUIRED_CODE_MISSING' in {x['code'] for x in errors}
     assert 'PACKAGE_FILE_MISSING' in {x['code'] for x in errors}
+
+
+def test_old_pinned_daily_is_explicitly_blocked_without_missing_user_selection(tmp_path):
+    import merkez_saglik
+    report=merkez_saglik.report(platform='nt',userprofile=str(tmp_path))
+    assert report['legacy_ready'] is False
+    assert any('sabit seçim dosyası' in msg for msg in report['legacy_missing'])
+    # Seven-category production is the current active engine.
+    assert report['v42_installed_code_ready'] is True
