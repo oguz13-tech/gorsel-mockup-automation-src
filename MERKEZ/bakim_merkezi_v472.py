@@ -14,6 +14,9 @@ from external_inventory_v472 import (CONFIRM as INVENTORY_CONFIRM,
                                       build,save,stage)
 from runtime_relocate_v473 import (CONFIRM as RUNTIME_CONFIRM,
                                    stage as stage_runtime,activate as activate_runtime)
+from system_integrity_v475 import examine as audit_everything,write_report as audit_save
+from PETEK_V3.registry import store_root as petek_store_root
+from URETIM_V4.final_guard_v44 import store_v4_root
 ROOT=Path(__file__).resolve().parent.parent
 
 from URETIM_V4.deleted_receipts_v474 import (candidate_rows as deleted_candidates,
@@ -25,11 +28,22 @@ class Maintenance:
     def __init__(self):
         self.window=tk.Tk()
         self.window.title('V4.7.4 — Magenta ve Eski Sürüm Dosya Güvenliği')
-        self.window.geometry('920x740')
-        self.window.minsize(710,580)
+        self.window.geometry('980x820')
+        self.window.minsize(730,620)
         self.events=queue.Queue()
         self.working=False
-        frame=ttk.Frame(self.window,padding=16);frame.pack(fill='both',expand=True)
+        outer=ttk.Frame(self.window);outer.pack(fill='both',expand=True)
+        canvas=tk.Canvas(outer,highlightthickness=0)
+        vertical=ttk.Scrollbar(outer,orient='vertical',command=canvas.yview)
+        canvas.configure(yscrollcommand=vertical.set)
+        vertical.pack(side='right',fill='y')
+        canvas.pack(side='left',fill='both',expand=True)
+        frame=ttk.Frame(canvas,padding=16)
+        window_id=canvas.create_window((0,0),window=frame,anchor='nw')
+        frame.bind('<Configure>',lambda event:canvas.configure(scrollregion=canvas.bbox('all')))
+        canvas.bind('<Configure>',lambda event:canvas.itemconfigure(window_id,width=event.width))
+        canvas.bind_all('<MouseWheel>',lambda event:canvas.yview_scroll(
+            int(-event.delta/120) if event.delta else 0,'units'))
         ttk.Label(frame,text='GÜVENLİ DOSYA BİRLEŞTİRME / ÖN İNCELEME',
                   font=('Segoe UI',15,'bold')).pack(anchor='w')
         ttk.Label(frame,text='Varsayılan işlemler SALT OKUNUR. Test klasörlerini otomatik silmez, '
@@ -78,6 +92,15 @@ class Maintenance:
         hist=ttk.Frame(frame);hist.pack(fill='x',pady=6)
         self.btn(hist,'7. Kayıp Çıktıları Salt-Okunur Listele',self.plan_user_removed)
         self.btn(hist,'8. Tam 35 Kaydı USER_REMOVED Olarak İşaretle (ONAY)',self.mark_user_removed)
+        ttk.Separator(frame).pack(fill='x',pady=9)
+        ttk.Label(frame,text='AŞAMA 5 — 7 KATEGORİ / TÜM SİSTEM BÜTÜNLÜK DENETİMİ',
+                  font=('Segoe UI',11,'bold')).pack(anchor='w')
+        health=ttk.Frame(frame);health.pack(fill='x',pady=6)
+        self.btn(health,'9. SQLite / Şablon / Mağaza / PETEK / Kod / Çıktı SHA Raporu',
+                 self.full_integrity_report)
+        ttk.Label(frame,text='9 numaralı işlem yalnız okur; bütün bileşenlerin durumunu '
+                            'tek JSON raporunda gösterir. Eski klasör raporu olmadan '
+                            'final silme izni vermez.',wraplength=875).pack(anchor='w')
         self.status=tk.StringVar(value='Hazır. Önce 1 ve 3 numaralı raporları oluşturun.')
         ttk.Label(frame,textvariable=self.status,wraplength=850).pack(anchor='w',pady=5)
         self.output=tk.Text(frame,height=11,wrap='word')
@@ -235,6 +258,29 @@ class Maintenance:
                          '35 kayıt sınıflandırıldı',
                          f"Kayıt: {result['marked']}\\nLedger yedeği: {result['backup']}\\n"
                          'Ürün görsellerine dokunulmadı.',parent=self.window))
+
+    def full_integrity_report(self):
+        def work():
+            from datetime import datetime
+            runtime=Path(self.workspace.get())
+            code=Path(self.code.get())
+            report_dir=(Path(os.environ.get('LOCALAPPDATA') or Path.home())/
+                        'GorselMockup'/'UnifiedCenter'/'FULL_INTEGRITY')
+            report_dir.mkdir(parents=True,exist_ok=True)
+            audit=audit_everything(runtime,code,production_root=store_v4_root(),
+                                   petek_root=petek_store_root())
+            result=report_dir/('SISTEM_BUTUNLUK_'+datetime.now().strftime('%Y%m%d_%H%M%S')+'.json')
+            audit_save(audit,result)
+            return {'report':str(result),'status':audit['status'],
+                    'legacy':audit['legacy_templates'],'petek':audit['petek'],
+                    'store':audit['stores'],
+                    'blocking_findings':len(audit['blockers']),
+                    'warnings':len(audit['warnings']),
+                    'read_only':True}
+        self.enqueue(work,lambda record:messagebox.showinfo(
+            'Tam sistem SHA denetimi',
+            'Durum: '+record['status']+'\\n'+record['report']+
+            '\\nEski klasör silme izni verilmedi.',parent=self.window))
 
     def run(self):self.window.mainloop()
 if __name__=='__main__':Maintenance().run()
