@@ -46,6 +46,12 @@ def test_single_package_has_exact_sha_manifest_and_all_legacy_launchers_archived
             assert old not in paths  # Never activate or ship old launcher as executable.
         assert any(old.startswith('WINDOWS_HIZLI_BASLAT') for old in
                    manifest['legacy_launchers_archived_as_text'])
+        assert 'SABLON_DUZELTICI.py' in manifest['legacy_source_tools_archived_as_text']
+        assert 'toplu_gorsel_linkle.py' in manifest['legacy_source_tools_archived_as_text']
+        for old in manifest['legacy_source_tools_archived_as_text']:
+            ref='LEGACY_TOOLS_REFERENCE/'+old+'.reference.txt'
+            assert ref in paths and old not in paths
+            assert z.read(prefix+ref)==(ROOT/old).read_bytes()
         for row in manifest['files']:
             raw=z.read(prefix+row['path'])
             assert hashlib.sha256(raw).hexdigest()==row['sha256']
