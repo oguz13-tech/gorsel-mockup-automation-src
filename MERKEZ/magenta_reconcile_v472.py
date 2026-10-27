@@ -20,6 +20,7 @@ import sqlite3
 import tempfile
 import unicodedata
 import uuid
+from pathlib import PurePosixPath
 from PIL import Image
 
 CATEGORIES=('01_Wifi_Kutusu','02_Cam_Tablo_Dikey','02_Cam_Tablo_Yatay',
@@ -92,7 +93,8 @@ def analyze(workspace,lab=LAB):
     for p in profiles:
         cat=str(p.get('category') or '')
         rel=str(p.get('source_relative_path') or '').replace('\\','/')
-        if cat in CATEGORIES and rel:
+        parts=PurePosixPath(rel).parts
+        if cat in CATEGORIES and len(parts)==2 and parts[0]==cat and parts[1] not in ('.','..'):
             by_id.setdefault((cat,namekey(rel)),[]).append(p)
     files=[p for p in lab.rglob('*') if p.is_file() and p.suffix.lower() in EXT and not p.is_symlink()]
     jobs=[]
@@ -146,6 +148,19 @@ def analyze(workspace,lab=LAB):
             item['status']='ERROR'
             item['reason']=str(exc)
         jobs.append(item)
+    # Two LAB files must never replace the same target, even if in separate
+    # preview subfolders; fail safely instead of last-writer-wins.
+    destinations={}
+    for item in jobs:
+        target=item.get('destination')
+        if target:
+            destinations.setdefault(target,[]).append(item)
+    for group in destinations.values():
+        if len(group)>1:
+            for item in group:
+                item['status']='MULTIPLE_LAB_IMAGES_FOR_ONE_TEMPLATE'
+                item.pop('lab_record',None)
+                item['trusted_lab_approval']=False
     plan={'schema':1,'timestamp':datetime.now(timezone.utc).isoformat(),
           'workspace':str(workspace),'lab':str(lab),'db_sha':sha(db),
           'jobs':jobs,'rule':'EXACT_STEM_AND_CATEGORY_ONLY_ORIGINAL_ARCHIVE_IMMUTABLE'}
