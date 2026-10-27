@@ -43,7 +43,9 @@ print("INDEX_STATUS", index.status_code)
 read = client.get("/api/ayarlar")
 print("GET_SETTINGS_STATUS", read.status_code)
 assert work.read_bytes() == old
-headers = {"X-Active-Category": cat, "X-Active-Template": name}
+csrf = client.get('/api/session/csrf').get_json()['csrf']
+headers = {"X-Active-Category": cat, "X-Active-Template": name,
+           "X-V47-CSRF": csrf}
 res = client.post("/api/orijinal_yukle", headers=headers)
 print("ORIGINAL_RESTORE", res.status_code, res.get_json())
 assert res.status_code == 200, res.get_json()
@@ -52,7 +54,7 @@ assert backup.read_bytes() == expected
 trash = root / "SILINEN_SABLONLAR_COP_KUTUSU"
 trash.mkdir()
 (trash / "a_meta.json").write_text(json.dumps({"kategori":cat,"sablon":name}), encoding="utf-8")
-conflict = client.post("/api/sablon_sil_geri_al", json={})
+conflict = client.post("/api/sablon_sil_geri_al", json={}, headers={"X-V47-CSRF": csrf})
 print("TRASH_COLLISION_STATUS", conflict.status_code)
 assert conflict.status_code == 409
 assert work.read_bytes() == expected
