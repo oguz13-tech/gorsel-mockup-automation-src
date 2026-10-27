@@ -28,7 +28,7 @@ from test_v40_unified_seven_category import _build_seven_category_workspace,_wri
 
 def test_single_release_identity():
     import version_v45,version_v46,version_v47
-    assert version_v47.VERSION=='V4.7.5'
+    assert version_v47.VERSION=='V4.7.6'
     assert version_v45.TITLE==version_v46.TITLE==version_v47.TITLE
 
 
