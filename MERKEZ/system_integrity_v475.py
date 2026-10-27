@@ -23,6 +23,7 @@ from external_inventory_v472 import inspect_active_templates
 
 REQUIRED_CODE=(
     'MERKEZ/merkez.py',
+    'MERKEZ/GUNLUK/INSTALLED_NUMBER_SPEC.json',
     'MERKEZ/URETIM_V4/unified_batch.py',
     'MERKEZ/URETIM_V4/store_profiles_v47.py',
     'MERKEZ/URETIM_V4/upscale4k_v44.py',
@@ -202,6 +203,13 @@ def _package_integrity(root,issues):
         if file.is_symlink() or not file.is_file():
             _problem(issues,'REQUIRED_CODE_MISSING',path=rel)
     manifest=root/'SHA256_MANIFEST.json'
+    # Legacy Daily V2 is NOT the modern seven-category renderer. Its pinned
+    # BATCH_SELECTION.json is user-/backup-dependent and must never be made
+    # up just to make the old executable load. Keep the dependency explicit.
+    daily_selection=root/'MERKEZ'/'GUNLUK'/'BATCH_SELECTION.json'
+    result['legacy_daily_v2'] = (
+        'PINNED_BACKUP_AND_SELECTION_MANUAL_DEPENDENCY'
+        if not daily_selection.is_file() else 'PINNED_BACKUP_STILL_MUST_BE_VERIFIED')
     if not manifest.is_file():return result
     try:
         info=json.loads(manifest.read_text('utf-8'))
