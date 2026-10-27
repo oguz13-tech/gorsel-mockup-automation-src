@@ -67,19 +67,19 @@ def store_runtime_choice(folder:Path,env=None)->Path:
 
 
 def preferred_code(env=None)->Path:
-    env=os.environ if env is None else env
-    candidates=[]
-    if env.get('MOCKUP_LEGACY_SOURCE_ROOT'):
-        candidates.append(Path(env['MOCKUP_LEGACY_SOURCE_ROOT']))
-    # The released editor must load from THIS version's tested package.
-    # Otherwise an older C:/AI_WORK checkout silently defeats Group 1 fixes.
-    candidates.append(ROOT)
-    candidates.append(Path('C:/AI_WORK/gorsel-mockup-automation-src'))
-    candidates.append(EMBEDDED)
-    for cand in candidates:
-        if (cand/'SABLON_V2_MIMARI'/'app.py').is_file() and (cand/'SABLON_V2_MIMARI'/'core'/'db.py').is_file():
-            return cand.absolute()
-    return candidates[-1]
+    """Only launch the six-category editor from THIS signed code package.
+
+    A stale environment variable or old C:/AI_WORK checkout must never make
+    the active V4.7.2 application silently depend on a disposable test folder.
+    Data runtime remains independently selected by preferred_runtime().
+    """
+    expected=ROOT
+    if ((expected/'SABLON_V2_MIMARI'/'app.py').is_file()
+            and (expected/'SABLON_V2_MIMARI'/'core'/'db.py').is_file()):
+        return expected.absolute()
+    raise LegacyLaunchError(
+        'TEST_EDILMIS_KOD_EKSIK: Paket kodu eksik; eski/test '
+        'klasöründen otomatik yedek kod çalıştırılması engellendi.' )
 
 
 def inspect(runtime=None,code=None)->dict:
