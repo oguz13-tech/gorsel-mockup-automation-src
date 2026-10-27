@@ -49,7 +49,19 @@ def _valid_https_image_url(url: str) -> bool:
     if not isinstance(url, str) or len(url) > 2048:
         return False
     u = urlparse(url)
-    return u.scheme == "https" and bool(u.hostname) and u.username is None and u.password is None and not u.fragment
+    if (u.scheme != "https" or not u.hostname or u.username is not None
+            or u.password is not None or u.fragment or any(ord(c)<32 for c in url)):
+        return False
+    import ipaddress
+    try:
+        addr=ipaddress.ip_address(u.hostname)
+    except ValueError:
+        if u.hostname.lower() in ('localhost',) or u.hostname.lower().endswith(('.localhost','.local')):
+            return False
+    else:
+        if not addr.is_global:
+            return False
+    return True
 
 
 def upload_https(path: Path, imgbb_keys: list[str], freeimage_key: str) -> str | None:
@@ -132,6 +144,15 @@ class CloudExcel:
         except FileExistsError as ex:
             raise RuntimeError("Bulut Excel linkleme zaten çalışıyor; mevcut işlem durmadan ikinci yükleme başlatılmaz.") from ex
         counters = {"uploaded": 0, "reused": 0, "failed": 0, "skipped": 0}
+        original_count=len(successful_rows)
+        distinct={}
+        for item in successful_rows:
+            k=str(item['key'])
+            if k in distinct and distinct[k].get('output_sha')!=item.get('output_sha'):
+                raise ValueError('BULUT_DUPLICATE_KEY_SHA_CONFLICT')
+            distinct[k]=item
+        successful_rows=list(distinct.values())
+        counters['skipped']=original_count-len(successful_rows)
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as f:
                 f.write(str(os.getpid()))
@@ -139,7 +160,10 @@ class CloudExcel:
                 if stop and stop.is_set():
                     break
                 path = Path(row["output"])
-                if path.is_symlink() or not path.is_file() or petek_engine.digest(path) != row["output_sha"]:
+                safe_root=(self.root / 'uretilen_gorseller').resolve()
+                resolved=path.resolve(strict=False)
+                if (path.is_symlink() or safe_root not in resolved.parents
+                        or not path.is_file() or petek_engine.digest(path) != row["output_sha"]):
                     counters["failed"] += 1
                     notify(f"SHA/çıktı uyuşmazlığı: {row['sku']}; buluta gönderilmedi.")
                     continue
@@ -172,7 +196,10 @@ class CloudExcel:
             if not url:
                 continue
             path = Path(row["output"])
-            if path.is_symlink() or not path.is_file() or petek_engine.digest(path) != row["output_sha"]:
+            safe_root=(self.root / 'uretilen_gorseller').resolve()
+            resolved=path.resolve(strict=False)
+            if (path.is_symlink() or safe_root not in resolved.parents
+                    or not path.is_file() or petek_engine.digest(path) != row["output_sha"]):
                 continue
             cat = row["category"]
             sku = row["sku"]
