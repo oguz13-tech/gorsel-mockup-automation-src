@@ -52,7 +52,9 @@ def build(destination,source=ROOT):
     for required in ['BASLAT_V47_WINDOWS.bat','BASLAT_V46_WINDOWS.bat',
                      'MERKEZ/GUNLUK/INSTALLED_NUMBER_SPEC.json','MERKEZ/system_integrity_v475.py',
                      'MERKEZ/merkez.py','SABLON_V2_MIMARI/core/petek_web_v477.py',
-                     'SABLON_V2_MIMARI/static/js/petek_editor_v477.js',\n                     'SABLON_V2_MIMARI/static/css/petek_editor_v477.css',\n                     'SABLON_V2_MIMARI/app.py','SABLON_V2_MIMARI/static/js/edge_angles_v46.js']:
+                     'SABLON_V2_MIMARI/static/js/petek_editor_v477.js',
+                     'SABLON_V2_MIMARI/static/css/petek_editor_v477.css',
+                     'SABLON_V2_MIMARI/app.py','SABLON_V2_MIMARI/static/js/edge_angles_v46.js']:
         if required not in files:raise ValueError('Missing required code: '+required)
     manifest={'release':'V4.7.7 PETEK_SEVENTH_CATEGORY_CANDIDATE','acceptance':'WINDOWS_NOT_VERIFIED','live_user_acceptance':'PENDING',
               'source_commit':sha,'legacy_launchers_archived_as_text':legacy_launchers,
