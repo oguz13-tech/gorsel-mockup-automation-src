@@ -179,8 +179,27 @@ def port_occupied(host='127.0.0.1',port=8080,timeout=.3)->bool:
         return sock.connect_ex((host,port))==0
 
 
+def choose_review_port(*, candidates=range(8080,8091),occupied=None):
+    """Never stop an unknown TCP listener; take the first free loopback port.
+
+    The center separately authenticates the launched Flask process using its
+    unique token, PID and both workspace/code roots. Port selection alone is
+    never authentication.
+    """
+    busy=occupied or (lambda port:port_occupied(port=port))
+    for value in candidates:
+        port=int(value)
+        if not 1024 <= port <= 65535:
+            raise LegacyLaunchError('İNCELEME_PORTU_GECERSIZ')
+        if not busy(port):
+            return port
+    raise LegacyLaunchError(
+        '8080–8090 portları dolu. Herhangi bir program otomatik kapatılmadı. '
+        'Kullanılmayan bir port açıldıktan sonra tekrar deneyin.')
+
+
 def server_identity_diagnostic(runtime, code, pid, token, opener=None, *, timeout=1.8,
-                               windows_redirector=None):
+                               windows_redirector=None, port=8080):
     """Explain an editor handshake without leaking the bearer token.
 
     The operator must never be sent to an unknown/stale 8080 listener.  No
@@ -188,8 +207,12 @@ def server_identity_diagnostic(runtime, code, pid, token, opener=None, *, timeou
     """
     import urllib.request
     try:
-        req = urllib.request.Request('http://127.0.0.1:8080/api/center_identity',
-                                     headers={'X-Center-Token': str(token)})
+        selected_port=int(port)
+        if not 1024 <= selected_port <= 65535:
+            return {'ready':False,'reason':'IDENTITY_PORT_INVALID'}
+        req = urllib.request.Request(
+            f'http://127.0.0.1:{selected_port}/api/center_identity',
+            headers={'X-Center-Token': str(token)})
         with (opener or urllib.request.urlopen)(req, timeout=timeout) as response:
             data = json.load(response)
         if not isinstance(data, dict):
