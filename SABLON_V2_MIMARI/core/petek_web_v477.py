@@ -36,16 +36,25 @@ def _photo(name):
         raise ValueError('PETEK_SOURCE_NOT_IN_WORKING_POOL')
     return file
 
-def _identity(registry,file):
+def _identity(registry,file,selected=None):
     sha=engine.digest(file)
     matches=[row for row in registry.list() if row['source_sha']==sha]
-    if len(matches)>1:raise ValueError('PETEK_MULTIPLE_PROFILES_MATCH_ONE_SHA')
-    if matches:return matches[0]['uid'],sha
+    if selected is not None:
+        if not isinstance(selected,str) or not re.fullmatch('[A-Za-z0-9_-]{1,96}',selected):
+            raise ValueError('PETEK_SELECTED_UID_INVALID')
+        if any(row['uid']==selected for row in matches):
+            return selected,sha
+        if matches:raise ValueError('PETEK_UID_NOT_BOUND_TO_SOURCE_SHA')
+    if matches:
+        if len(matches)>1:raise ValueError('PETEK_SELECT_PROFILE_REVISION')
+        return matches[0]['uid'],sha
     uid=re.sub('[^A-Za-z0-9_-]','_',file.stem)[:80] or 'petek'
     if (registry.profiles/(uid+'.json')).is_file():
         uid=uid[:61]+'_'+sha[:16]
         if (registry.profiles/(uid+'.json')).exists():
             raise ValueError('PETEK_UID_SOURCE_CONFLICT')
+    if selected is not None and selected!=uid:
+        raise ValueError('PETEK_NEW_UID_CHANGED_RELOAD')
     return uid,sha
 
 def _png_data(mask):
@@ -95,12 +104,17 @@ def list_templates():
             for file in sorted(folder.iterdir(),key=lambda x:x.name.casefold()):
                 if file.is_symlink() or not file.is_file() or file.suffix.lower() not in SUFFIXES:
                     continue
-                uid,sha=_identity(registry,file)
-                status='NEW'
-                if (registry.profiles/(uid+'.json')).is_file():
-                    profile,_=registry.get(uid)
-                    status=profile['status']
-                items.append({'name':file.name,'uid':uid,'source_sha':sha,'status':status})
+                sha=engine.digest(file)
+                matches=[row for row in registry.list() if row['source_sha']==sha]
+                if matches:
+                    for match in matches:
+                        profile,_=registry.get(match['uid'])
+                        items.append({'name':file.name,'uid':match['uid'],
+                                      'source_sha':sha,'status':profile['status']})
+                else:
+                    uid,_=_identity(registry,file)
+                    items.append({'name':file.name,'uid':uid,
+                                  'source_sha':sha,'status':'NEW'})
         return jsonify({'success':True,'category':'06_Petek_Kapama','items':items,
                         'folder':'2_SABLON_HAVUZU/Petek_Dolabi'})
     except (ValueError,OSError,engine.MaskError) as exc:return _fail(exc)
@@ -118,7 +132,7 @@ def photo(name):
 def detail(name):
     try:
         file=_photo(name);r=Registry()
-        uid,sha=_identity(r,file);scene=engine.read_bgr(file)
+        uid,sha=_identity(r,file,request.args.get('uid'));scene=engine.read_bgr(file)
         row={'success':True,'name':file.name,'uid':uid,'source_sha':sha,
              'width':int(scene.shape[1]),'height':int(scene.shape[0]),
              'status':'NEW','quad':[],'mask':None,'base_mask':None,
@@ -162,7 +176,7 @@ def curve_preview():
 def save_draft():
     try:
         body,file,scene=_request_scene()
-        r=Registry();uid,sha=_identity(r,file)
+        r=Registry();uid,sha=_identity(r,file,body.get('uid'))
         if uid!=body.get('uid'):raise ValueError('PETEK_UID_CHANGED_RELOAD')
         if (r.profiles/(uid+'.json')).is_file():
             previous,_=r.get(uid)
@@ -189,10 +203,43 @@ def save_draft():
 def approve():
     try:
         body,file,scene=_request_scene()
-        r=Registry();uid,sha=_identity(r,file)
+        r=Registry();uid,sha=_identity(r,file,body.get('uid'))
         if uid!=body.get('uid') or sha!=body.get('confirmed_sha'):
             raise ValueError('PETEK_UID_OR_SHA_CHANGED_RELOAD')
         p=r.approve(uid,str(body.get('reviewer') or ''),str(body.get('confirm') or ''))
         return jsonify({'success':True,'uid':uid,'status':p['status'],
                         'mask_sha':p['mask_sha']})
+    except (ValueError,OSError,TypeError,KeyError,engine.MaskError) as exc:return _fail(exc)
+
+@petek_web.post('/api/petek/new-revision')
+def new_revision():
+    """Human-initiated copy of APPROVED mask to a fresh DRAFT (_r2 etc).
+
+    Existing V3 immutable approved masks are NEVER overwritten. Revision
+    carries source SHA, verified base mask, curves and geometry into new UID.
+    """
+    try:
+        body,file,scene=_request_scene()
+        r=Registry()
+        uid,sha=_identity(r,file,body.get('uid'))
+        old,mask=r.get(uid,require_approved=True)
+        if body.get('confirmed_sha')!=sha:
+            raise ValueError('PETEK_SOURCE_SHA_CONFIRM_REQUIRED')
+        next_uid=''
+        for num in range(2,100):
+            candidate=uid[:70]+'_r'+str(num)
+            if not (r.profiles/(candidate+'.json')).exists():
+                next_uid=candidate
+                break
+        if not next_uid:raise ValueError('PETEK_REVISION_UID_EXHAUSTED')
+        base=None
+        if old.get('base_mask_sha'):
+            base=engine.decode_mask(r.masks/(old['base_mask_sha']+'.png'))
+            if engine.mask_hash(base)!=old['base_mask_sha']:
+                raise ValueError('PETEK_BASE_MASK_SHA_INVALID')
+        cloned=r.save(next_uid,file,old['quad'],mask,old['physical_aspect'],
+                      approved=False,curve_points=old.get('curve_points'),base_mask=base)
+        return jsonify({'success':True,'uid':next_uid,'status':'DRAFT',
+                        'original_approved_uid':uid,'source_sha':sha,
+                        'mask_sha':cloned['mask_sha']})
     except (ValueError,OSError,TypeError,KeyError,engine.MaskError) as exc:return _fail(exc)
