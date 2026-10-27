@@ -154,6 +154,41 @@ def write_report(plan,folder=None):
     report=Path(folder or local_reports())/('MAGENTA_PLAN_'+uuid.uuid4().hex[:12]+'.json')
     report.write_text(json.dumps(plan,ensure_ascii=False,indent=2),encoding='utf-8')
     return report
+def html_comparison(report):
+    """Generate up to 240 side-by-side local thumbnails for human approval."""
+    from PIL import ImageOps, ImageDraw
+    folder=report.with_name(report.stem+'_PREVIEWS')
+    folder.mkdir(exist_ok=True)
+    plan=json.loads(report.read_text(encoding='utf-8'))
+    rows=[]
+    for index,item in enumerate(plan['jobs']):
+        name=item['name']
+        status=item.get('status')
+        thumbs=[]
+        for tag,file in (('LAB',item.get('source')),('ANA',item.get('destination'))):
+            if file and Path(file).is_file() and index<240:
+                try:
+                    with Image.open(file) as img:
+                        thumb=ImageOps.contain(ImageOps.exif_transpose(img).convert('RGB'),(240,200))
+                        canvas=Image.new('RGB',(250,228),'#202936')
+                        canvas.paste(thumb,((250-thumb.width)//2,5))
+                        ImageDraw.Draw(canvas).text((8,207),tag,fill='white')
+                        imagefile=f'{index:04d}_{tag}.jpg'
+                        canvas.save(folder/imagefile,quality=82)
+                        thumbs.append(f'<img src="{folder.name}/{imagefile}">')
+                except (OSError,ValueError):
+                    thumbs.append('(görsel açılamadı)')
+        import html
+        rows.append('<tr><td>'+str(index+1)+'</td><td>'+
+                    html.escape(name)+'</td><td>'+
+                    html.escape(str(status))+'</td><td>'+
+                    ''.join(thumbs)+'</td></tr>')
+    css='<style>body{font:14px Segoe UI,Arial;background:#121722;color:#e7eaf0;padding:24px}table{border-collapse:collapse;width:100%}td,th{padding:9px;border:1px solid #42495c;text-align:left}img{max-width:240px;vertical-align:top;margin:5px}h1{font-size:22px}</style>'
+    page='<meta charset="utf-8">'+css+'<h1>Magenta ↔ Ana şablon / yalnız önizleme</h1><p>Fotoğraflar ve DB bu raporla değiştirilmedi. Önce isim, ölçü ve onayı inceleyin.</p><table><tr><th>#</th><th>Dosya</th><th>Durum</th><th>LAB / ANA</th></tr>'+''.join(rows)+'</table>'
+    out=report.with_suffix('.html')
+    out.write_text(page,encoding='utf-8')
+    return out
+
 def app_busy():
     try:
         with socket.create_connection(('127.0.0.1',8080),timeout=.4):return True
@@ -274,6 +309,8 @@ def main():
         print(json.dumps(result,ensure_ascii=False,indent=2))
     else:
         report=write_report(analyze(Path(a.workspace),Path(a.lab)))
+        html_page=html_comparison(report)
         print('MAGENTA_READ_ONLY_REPORT='+str(report))
+        print('MAGENTA_SIDE_BY_SIDE_HTML='+str(html_page))
         print('No images or DB were modified.')
 if __name__=='__main__':main()
