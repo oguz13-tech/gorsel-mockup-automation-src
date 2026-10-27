@@ -100,10 +100,15 @@ function point(event){
 function paintAt(event,first){
  const p=point(event),c=s.base||s.mask,ctx=c.getContext('2d',{willReadFrequently:true});
  ctx.lineCap='round';ctx.lineJoin='round';
+ // Paint only within reviewed front face, even when brush touches its border.
+ ctx.save();ctx.beginPath();
+ s.quad.forEach((q,i)=>i?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1]));
+ ctx.closePath();ctx.clip();
  const brush=Math.max(2,Number($('petekV477Brush').value)||20);
  ctx.lineWidth=brush;ctx.strokeStyle=s.mode==='wood'?'#ffffff':'#000000';
  if(first){ctx.beginPath();ctx.arc(p[0],p[1],brush/2,0,Math.PI*2);ctx.fillStyle=ctx.strokeStyle;ctx.fill();s.lastPoint=p;}
  else{ctx.beginPath();ctx.moveTo(...s.lastPoint);ctx.lineTo(...p);ctx.stroke();s.lastPoint=p;}
+ ctx.restore();
  s.dirty=true;
  if(s.base){s.needsCurveApply=true;notice('Temel maske değişti. Kaydetmeden önce «Kavisleri Uygula» seç.');}
  draw();
@@ -273,10 +278,14 @@ function init(){
  $('petekV477Canvas').addEventListener('pointermove',pointerMove);
  $('petekV477Canvas').addEventListener('pointerup',pointerUp);
  $('petekV477Canvas').addEventListener('pointercancel',pointerUp);
- document.querySelector('#categories').addEventListener('click',()=>{
-   if(s.active){s.active=false;$('main').style.display='flex';pane.style.display='none';
-    $('petekV477Nav').classList.remove('selected');}
- });
+ document.querySelector('#categories').addEventListener('click',event=>{
+   if(!s.active)return;
+   if(s.dirty&&!confirm('PETEK taslağında kaydedilmemiş değişiklikler var. Altı kategoriye dönüp bunları kaybetmek istiyor musun?')){
+     event.preventDefault();event.stopPropagation();return;
+   }
+   s.active=false;$('main').style.display='flex';pane.style.display='none';
+   $('petekV477Nav').classList.remove('selected');
+ },true);
  window.addEventListener('resize',()=>{if(s.active)fit();});
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);
