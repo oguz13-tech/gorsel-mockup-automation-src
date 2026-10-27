@@ -8,8 +8,8 @@ ROOT=Path(__file__).resolve().parents[1]
 DIRS={'MERKEZ','SABLON_V2_MIMARI','99_SISTEM_MOTORLARI_VE_KODLAR','BAGIMSIZ_ARACLAR',
       'AI_Kalite_Artirici','scripts','TESTLER','tests','LEGACY_REFERANS_KOD'}
 EXT={'.py','.js','.cjs','.html','.css','.bat','.ps1','.txt','.md'}
-TOP={'BASLAT_V46_WINDOWS.bat','KUR_REAL_ESRGAN_4K_WINDOWS.bat','KUR_REAL_ESRGAN_4K_WINDOWS.ps1'}
-DOCS={'docs/V46_CANDIDATE_RUNBOOK.md','docs/V46_ACCEPTANCE_CURRENT.md','docs/V46_LIVE_CHECKPOINTS.md'}
+TOP={'BASLAT_V47_WINDOWS.bat','BASLAT_V46_WINDOWS.bat','KUR_REAL_ESRGAN_4K_WINDOWS.bat','KUR_REAL_ESRGAN_4K_WINDOWS.ps1'}
+DOCS={'docs/V47_P1_P2_QA_RUNBOOK.md','docs/V46_CANDIDATE_RUNBOOK.md','docs/V46_ACCEPTANCE_CURRENT.md','docs/V46_LIVE_CHECKPOINTS.md'}
 
 def allowed(name):
     p=PurePosixPath(name)
@@ -23,12 +23,12 @@ def build(destination,source=ROOT):
     paths=subprocess.check_output(['git','ls-files','-z'],cwd=source).decode().split('\0')
     sha=subprocess.check_output(['git','rev-parse','HEAD'],cwd=source,text=True).strip()
     files={n:(source/n).read_bytes() for n in sorted(paths) if n and allowed(n) and not (source/n).is_symlink()}
-    for required in ['BASLAT_V46_WINDOWS.bat','MERKEZ/merkez.py','SABLON_V2_MIMARI/app.py','SABLON_V2_MIMARI/static/js/edge_angles_v46.js']:
+    for required in ['BASLAT_V47_WINDOWS.bat','BASLAT_V46_WINDOWS.bat','MERKEZ/merkez.py','SABLON_V2_MIMARI/app.py','SABLON_V2_MIMARI/static/js/edge_angles_v46.js']:
         if required not in files:raise ValueError('Missing required code: '+required)
-    manifest={'release':'V4.6 CANDIDATE','acceptance':'WINDOWS_NOT_VERIFIED','source_commit':sha,
+    manifest={'release':'V4.7.1 CANDIDATE','acceptance':'WINDOWS_NOT_VERIFIED','source_commit':sha,
               'files':[{ 'path':n,'bytes':len(b),'sha256':hashlib.sha256(b).hexdigest()} for n,b in files.items()]}
     files['SHA256_MANIFEST.json']=json.dumps(manifest,ensure_ascii=False,indent=2).encode()
-    target=destination/('GORSEL_V46_WINDOWS_CANDIDATE_'+sha[:12]+'.zip')
+    target=destination/('GORSEL_V47_WINDOWS_CANDIDATE_'+sha[:12]+'.zip')
     with target.open('xb') as f:
         with zipfile.ZipFile(f,'w',compression=zipfile.ZIP_DEFLATED) as z:
             for name,data in files.items():
