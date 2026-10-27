@@ -185,3 +185,89 @@ def test_preferred_editor_code_can_never_silently_revert_to_old_folder(tmp_path,
     (root/'SABLON_V2_MIMARI'/'app.py').unlink()
     with pytest.raises(manager.LegacyLaunchError,match='TEST_EDILMIS_KOD_EKSIK'):
         manager.preferred_code(env={'MOCKUP_LEGACY_SOURCE_ROOT':str(old)})
+
+
+def test_store_membership_rekey_after_approved_magenta_replace(tmp_path,monkeypatch):
+    from URETIM_V4.store_profiles_v47 import StoreProfiles,key_for
+    monkeypatch.setenv('LOCALAPPDATA',str(tmp_path/'AppData'))
+    monkeypatch.setattr('magenta_reconcile_v472.app_busy',lambda:False)
+    root,src,work,original=_fixture(tmp_path)
+    store=StoreProfiles(tmp_path/'AppData'/'GorselMockup'/'UnifiedV4')
+    store.add_store('Magaza_01')
+    old_item={'category':'03_Ahsap_Tablo','uid':'Ahsap_UID_001','source_sha':sha(work)}
+    store.assign('Magaza_01',[old_item])
+    previous=key_for(old_item)
+    plan=write_report(analyze(root,src.parent))
+    receipt=apply(plan,CONFIRM)
+    updated=store.load()['stores']['Magaza_01']['templates']
+    assert receipt['store_assignments_rekeyed']==1
+    assert previous not in updated
+    assert updated==[key_for({**old_item,'source_sha':sha(src)})]
+    assert len(updated)==len(set(updated))==1
+    assert sha(work)==sha(src)
+    assert (Path(receipt['backup'])/'store_profiles_v47.before.json').is_file()
+    assert sha(original)!=sha(work)
+
+
+def test_store_rekey_works_even_if_new_photo_needs_approval(tmp_path,monkeypatch):
+    from URETIM_V4.store_profiles_v47 import StoreProfiles,key_for
+    monkeypatch.setenv('LOCALAPPDATA',str(tmp_path/'AppData'))
+    monkeypatch.setattr('magenta_reconcile_v472.app_busy',lambda:False)
+    root,src,work,_=_fixture(tmp_path,lab_db=False)
+    store=StoreProfiles(tmp_path/'AppData'/'GorselMockup'/'UnifiedV4')
+    store.add_store('Magaza_01')
+    item={'category':'03_Ahsap_Tablo','uid':'Ahsap_UID_001','source_sha':sha(work)}
+    store.assign('Magaza_01',[item])
+    result=apply(write_report(analyze(root,src.parent)),CONFIRM,allow_review=True)
+    assert result['count']==1
+    assert store.load()['stores']['Magaza_01']['templates']==[
+        key_for({**item,'source_sha':sha(src)})]
+    with sqlite3.connect(root/'SABLON_V2_MIMARI'/'ayarlar.db') as con:
+        assert con.execute('SELECT review_status FROM template_profiles').fetchone()[0]=='REVIEW_REQUIRED'
+
+
+def test_store_rekey_conflict_blocks_before_any_image_change(tmp_path,monkeypatch):
+    from URETIM_V4.store_profiles_v47 import StoreProfiles
+    monkeypatch.setenv('LOCALAPPDATA',str(tmp_path/'AppData'))
+    monkeypatch.setattr('magenta_reconcile_v472.app_busy',lambda:False)
+    root,src,work,_=_fixture(tmp_path)
+    manager=StoreProfiles(tmp_path/'AppData'/'GorselMockup'/'UnifiedV4')
+    manager.add_store('Magaza_01');manager.add_store('Magaza_02')
+    manager.assign('Magaza_01',[{'category':'03_Ahsap_Tablo',
+                                 'uid':'Ahsap_UID_001','source_sha':sha(work)}])
+    manager.assign('Magaza_02',[{'category':'03_Ahsap_Tablo',
+                                 'uid':'other_uid','source_sha':sha(src)}])
+    before=sha(work)
+    report=write_report(analyze(root,src.parent))
+    with pytest.raises(ValueError,match='STORE_SOURCE_IMAGE_REUSED_ACROSS_STORES'):
+        apply(report,CONFIRM)
+    assert sha(work)==before
+
+
+def test_duplicate_extension_in_active_pool_blocks_magenta_apply(tmp_path):
+    root,src,work,_=_fixture(tmp_path)
+    conflict=work.with_suffix('.jpeg')
+    _image(conflict)
+    job=analyze(root,src.parent)['jobs'][0]
+    assert job['status']=='ACTIVE_SAME_NAME_DIFFERENT_EXTENSION'
+    assert job['active_same_stem_variants']==[str(conflict)]
+
+
+def test_recovery_after_store_save_failure_keeps_original_and_db(tmp_path,monkeypatch):
+    from URETIM_V4.store_profiles_v47 import StoreProfiles
+    monkeypatch.setenv('LOCALAPPDATA',str(tmp_path/'AppData'))
+    monkeypatch.setattr('magenta_reconcile_v472.app_busy',lambda:False)
+    root,src,work,orig=_fixture(tmp_path)
+    manager=StoreProfiles(tmp_path/'AppData'/'GorselMockup'/'UnifiedV4')
+    manager.add_store('Magaza_01')
+    manager.assign('Magaza_01',[{'category':'03_Ahsap_Tablo',
+                                 'uid':'Ahsap_UID_001','source_sha':sha(work)}])
+    old=sha(work);db=root/'SABLON_V2_MIMARI'/'ayarlar.db'
+    def broken(self,config):
+        raise OSError('SYNTHETIC_STORE_WRITE_FAILURE')
+    monkeypatch.setattr(StoreProfiles,'save',broken)
+    with pytest.raises(OSError,match='SYNTHETIC_STORE_WRITE_FAILURE'):
+        apply(write_report(analyze(root,src.parent)),CONFIRM)
+    assert sha(work)==old and sha(orig)==old
+    with sqlite3.connect(db) as con:
+        assert con.execute('SELECT source_asset_sha256 FROM template_profiles').fetchone()[0]==old
