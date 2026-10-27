@@ -49,6 +49,10 @@
     </div>
 
     <div id="categories" style="flex:1; overflow-y:auto;">Yükleniyor...</div>
+    <button id="petekV477Nav" type="button" class="category-title petek-v477-nav"
+            title="PETEK fotoğraf, delik, kavis ve maske incelemesi aynı ekranda">
+        07_Petek_Dolabi — Şablon / Maske / Onay
+    </button>
 
     <div class="status-legend">
         <b>Durumlar:</b> ✅ Onaylı · 📝 Kontrol bekliyor · ⚠️ Şüpheli · ⛔ Eski/uyumsuz
@@ -235,6 +239,71 @@
     </div>
 </div>
 
+<section id="petekV477Editor" class="petek-v477-editor" aria-label="PETEK yedinci kategori maske düzenleyicisi" style="display:none">
+  <div class="petek-v477-head">
+    <div><strong>07 — PETEK DOLABI · Şablon / Maske İnceleme</strong>
+      <div class="petek-v477-note">Diğer 6 kategoriyle aynı inceleme merkezindesin. Onaylar mevcut PETEK V3 maskesiyle ortak üretime bağlı.</div>
+    </div>
+    <button type="button" id="petekV477Close">Altı kategoriye dön</button>
+  </div>
+  <div class="petek-v477-selectrow">
+    <label for="petekV477Select">PETEK Şablon</label>
+    <select id="petekV477Select"></select>
+    <button type="button" id="petekV477Reload">Listeyi Yenile</button>
+    <span id="petekV477Count">—</span>
+  </div>
+  <div class="petek-v477-workspace">
+    <div class="petek-v477-stage">
+      <div id="petekV477Name">PETEK şablonunu seç</div>
+      <div id="petekV477Drawing"><canvas id="petekV477Canvas" aria-label="PETEK baskı maskesi ve kavis görseli"></canvas></div>
+      <div class="petek-v477-notice" id="petekV477Status" role="status" aria-live="polite">
+         Maske yalnız PETEK V3 kayıtlarına kaydedilir. Üretim görseli ve orijinal değiştirilmez.
+      </div>
+      <div class="petek-v477-legend">Yeşil = baskı yapılacak ahşap · Siyah/şeffaf = korunacak delik/kavis/yan yüz · Kırmızı = 4 köşe</div>
+    </div>
+    <div class="petek-v477-tools">
+      <h3>Ön Panel ve 4 Köşe</h3>
+      <div id="petekV477Mode">Mod: Dört köşe</div>
+      <div class="petek-v477-actionrow">
+        <button type="button" data-petek-mode="corners">1. Dört Köşe</button>
+        <button type="button" id="petekV477Auto">2. Otomatik Maske Taslağı</button>
+      </div>
+      <div class="petek-v477-note">Köşeleri sol üst, sağ üst, sağ alt, sol alt sırasıyla işaretle. Otomatik öneri asla insan onayı yerine geçmez.</div>
+      <h3>Ahşap, Delikler ve Yan Yüzler</h3>
+      <div class="petek-v477-actionrow">
+        <button type="button" data-petek-mode="wood">Ahşabı Boya</button>
+        <button type="button" data-petek-mode="protect">Delikleri Koru</button>
+      </div>
+      <label for="petekV477Brush">Fırça (gerçek fotoğraf pikseli)</label>
+      <input id="petekV477Brush" type="range" min="2" max="100" step="2" value="24">
+      <div class="petek-v477-note">Dikey yarıkların içini, siyah gölgeleri, zemini ve yan yüzleri yeşile boyama.</div>
+      <h3>Üst ve Alt Kavis</h3>
+      <div class="petek-v477-actionrow">
+        <button type="button" data-petek-mode="top">Üst Kavis Noktaları</button>
+        <button type="button" data-petek-mode="bottom">Alt Kavis Noktaları</button>
+      </div>
+      <div class="petek-v477-actionrow">
+        <button type="button" id="petekV477CurveUndo">Son Noktayı Geri Al</button>
+        <button type="button" id="petekV477CurveApply">Kavisleri Uygula</button>
+      </div>
+      <div class="petek-v477-note">Üst ve alt kavis birbirinden bağımsızdır; her kavis yan kenarlara ulaşmalı. Maske üzerinde yeşil olan kısım baskı yüzeyidir.</div>
+      <h3>Kaydetme ve Onay</h3>
+      <label for="petekV477Aspect">Gerçek ön panel en/boy oranı</label>
+      <input id="petekV477Aspect" type="number" min="0.12" max="12" step="0.0001" value="1.1163">
+      <button type="button" id="petekV477Save" class="petek-v477-full">3. Düzenlediğim Maskeyi TASLAK Kaydet</button>
+      <label for="petekV477Reviewer">İnceleyen kişi</label>
+      <input id="petekV477Reviewer" type="text" maxlength="80" placeholder="İnceleme adını gir">
+      <label class="petek-v477-confirm"><input id="petekV477Confirm" type="checkbox">
+        Dikey yarıkları, üst-alt kavisleri, yan yüzleri ve zemini görsel olarak kontrol ettim.
+      </label>
+      <button type="button" id="petekV477Approve" class="petek-v477-full success">4. PETEK Maskesini İnsan Onayıyla Kilitle</button>
+      <div class="petek-v477-note">Onaylı maske değiştirilemez. Değişiklik gerekiyorsa yeni UID/revizyon açılır. Mevcut 45 onaylı görsel korunur.</div>
+    </div>
+  </div>
+</section>
+
+<link rel="stylesheet" href="/static/css/petek_editor_v477.css">
+<script src="/static/js/petek_editor_v477.js"></script>
 <script src="/static/js/edge_angles_v46.js"></script>
 <script src="/static/js/main.js"></script>
 <script src="/static/js/review_v46.js"></script>
