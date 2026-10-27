@@ -6,6 +6,7 @@
 - Bu sürüm yalnız "PETEK için ayrı uygulamayı aç" kısayolu eklemez.
 
 ## Gerçek entegrasyon
+- Ana Windows merkezindeki giriş düğmesi artık **7 KATEGORİ — ŞABLON / 4 KÖŞE / PETEK MASKE İNCELE** olarak adlandırılır.
 - `SABLON_V2_MIMARI/templates/index.html` sol kategori sütununda
   **07_Petek_Dolabi — Şablon / Maske / Onay**.
 - Aynı sayfadaki `petekV477Editor` orta alanda PETEK fotoğrafını, kaynak-piksel
