@@ -33,12 +33,22 @@ def build(destination,source=ROOT):
         source_path=source/original
         if source_path.is_symlink():raise ValueError('Legacy launcher symlink refused')
         files['LEGACY_LAUNCHERS_REFERENCE/'+original+'.reference.txt']=source_path.read_bytes()
+    # Independent pre-consolidation Python tools at repository root are
+    # preserved byte-for-byte but never implicitly executed: many still
+    # contain historic absolute Windows paths or act on live directories.
+    legacy_tools=[n for n in paths if n and '/' not in n and
+                  n.lower().endswith('.py')]
+    for original in sorted(legacy_tools):
+        source_path=source/original
+        if source_path.is_symlink():raise ValueError('Legacy Python tool symlink refused')
+        files['LEGACY_TOOLS_REFERENCE/'+original+'.reference.txt']=source_path.read_bytes()
     for required in ['BASLAT_V47_WINDOWS.bat','BASLAT_V46_WINDOWS.bat',
                      'MERKEZ/GUNLUK/INSTALLED_NUMBER_SPEC.json','MERKEZ/system_integrity_v475.py',
                      'MERKEZ/merkez.py','SABLON_V2_MIMARI/app.py','SABLON_V2_MIMARI/static/js/edge_angles_v46.js']:
         if required not in files:raise ValueError('Missing required code: '+required)
     manifest={'release':'V4.7.5 CODE_FINAL_CANDIDATE','acceptance':'LIVE_WINDOWS_NOT_VERIFIED',
               'source_commit':sha,'legacy_launchers_archived_as_text':legacy_launchers,
+              'legacy_source_tools_archived_as_text':legacy_tools,
               'missing_untracked_external_files':'REQUIRES_USER_WINDOWS_INVENTORY',
               'files':[{ 'path':n,'bytes':len(b),'sha256':hashlib.sha256(b).hexdigest()} for n,b in files.items()]}
     files['SHA256_MANIFEST.json']=json.dumps(manifest,ensure_ascii=False,indent=2).encode()
