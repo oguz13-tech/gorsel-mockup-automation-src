@@ -16,7 +16,11 @@ from runtime_relocate_v473 import (CONFIRM as RUNTIME_CONFIRM,
                                    stage as stage_runtime,activate as activate_runtime)
 ROOT=Path(__file__).resolve().parent.parent
 
-class Maintenance:
+from URETIM_V4.deleted_receipts_v474 import (candidate_rows as deleted_candidates,
+                                          save_plan as save_deleted_plan,
+                                          mark_selected as confirm_deleted,
+                                          CONFIRM as REMOVED_CONFIRM)
+\nclass Maintenance:
     def __init__(self):
         self.window=tk.Tk()
         self.window.title('V4.7.3 — Magenta ve Eski Sürüm Dosya Güvenliği')
@@ -67,6 +71,12 @@ class Maintenance:
         rw=ttk.Frame(frame);rw.pack(fill='x',pady=6)
         self.btn(rw,'5. OneDrive Dışı Yedek Kopyayı Hazırla',self.stage_runtime)
         self.btn(rw,'6. Doğrulanan Kopyayı Etkinleştir (AÇIK ONAY)',self.activate_runtime)
+        ttk.Separator(frame).pack(fill='x',pady=9)
+        ttk.Label(frame,text='AŞAMA 4 — GEÇMİŞTE BİLEREK SİLİNEN 35 ÇIKTI',
+                  font=('Segoe UI',11,'bold')).pack(anchor='w')
+        hist=ttk.Frame(frame);hist.pack(fill='x',pady=6)
+        self.btn(hist,'7. Kayıp Çıktıları Salt-Okunur Listele',self.plan_user_removed)
+        self.btn(hist,'8. Tam 35 Kaydı USER_REMOVED Olarak İşaretle (ONAY)',self.mark_user_removed)
         self.status=tk.StringVar(value='Hazır. Önce 1 ve 3 numaralı raporları oluşturun.')
         ttk.Label(frame,textvariable=self.status,wraplength=850).pack(anchor='w',pady=5)
         self.output=tk.Text(frame,height=11,wrap='word')
@@ -183,6 +193,47 @@ class Maintenance:
                      lambda record:messagebox.showinfo(
                          'Yeni ana çalışma alanı',str(record.get('active_workspace'))+
                          '\nEski dosyalar silinmedi. Yeni programı yeniden açın.',parent=self.window))
+
+    def plan_user_removed(self):
+        def work():
+            plan=deleted_candidates()
+            report=save_deleted_plan(plan)
+            return {'plan':str(report),'count':plan['count'],
+                    'status_counts':plan['status_counts'],
+                    'note':'Hiçbir çıktı, SQLite satırı veya statü değiştirilmedi.'}
+        self.enqueue(work,lambda record:messagebox.showinfo(
+            'Silinen çıktı kayıtları',f"Bulunan: {record['count']}\\n{record['plan']}\\n"
+            'Sadece senin sildiğini onayladığın eksik kayıtları işaretle.',
+            parent=self.window))
+
+    def mark_user_removed(self):
+        plan=filedialog.askopenfilename(
+            parent=self.window,title='7. adımdaki USER_REMOVED_PLAN_...json',
+            filetypes=[('Çıktı planı','USER_REMOVED_PLAN_*.json'),('JSON','*.json')])
+        if not plan:return
+        record=json.loads(Path(plan).read_text('utf-8'))
+        items=record.get('rendered_missing_candidates') or []
+        if len(items)!=35:
+            messagebox.showwarning('Kayıt sayısı uyuşmuyor',
+                f'{len(items)} eksik kayıt bulundu. Tam 35 olduğuna dair kanıt yok. '
+                'Yanlış silinme/senkronizasyon hatasını sessizce işaretlemeyeceğim.',
+                parent=self.window)
+            return
+        if not messagebox.askyesno(
+            '35 GEÇMİŞ ÇIKTI KAYDI',
+            'Aşağıdaki 35 eksik dosyanın tamamını gerçekten SEN mi sildin?\\n'
+            'Sadece ledger durumu USER_REMOVED olacak. Eski satır, SHA ve yol kalacak. '
+            'Yeni silme veya yeniden üretim yok. Önce SQLite yedeği alınır.',
+            parent=self.window):
+            return
+        phrase=simpledialog.askstring('AÇIK ONAY',REMOVED_CONFIRM,parent=self.window)
+        if phrase!=REMOVED_CONFIRM:return
+        keys=[item['key'] for item in items]
+        self.enqueue(lambda:confirm_deleted(plan,keys,phrase,expected_count=35),
+                     lambda result:messagebox.showinfo(
+                         '35 kayıt sınıflandırıldı',
+                         f"Kayıt: {result['marked']}\\nLedger yedeği: {result['backup']}\\n"
+                         'Ürün görsellerine dokunulmadı.',parent=self.window))
 
     def run(self):self.window.mainloop()
 if __name__=='__main__':Maintenance().run()
