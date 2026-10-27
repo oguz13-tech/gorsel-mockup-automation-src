@@ -184,7 +184,12 @@ def build(code_root,workspace,roots):
                                  'active':str(dst),'status':status,
                                  'active_sha256':checksum(dst) if dst.is_file() and not dst.is_symlink() else None})
         components.append({'root':str(candidate),'counts':counts,
-                           'safe_to_delete_without_manual_review':counts['changed']==0 and counts['missing']==0})
+                           # A byte-identical code tree may still contain DBs,
+                           # model binaries, customer photos, environment files
+                           # or state not included in the code comparison.
+                           'code_files_identical_only':counts['changed']==0 and counts['missing']==0,
+                           'safe_to_delete_without_manual_review':False,
+                           'reason':'FULL_STATE_AND_MODEL_PROOF_REQUIRED'})
     state_list=[]
     for p in states:
         if code_root in p.parents or workspace in p.parents:continue
