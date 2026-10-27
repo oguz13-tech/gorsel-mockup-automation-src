@@ -27,7 +27,7 @@ from URETIM_V4.deleted_receipts_v474 import (candidate_rows as deleted_candidate
 class Maintenance:
     def __init__(self):
         self.window=tk.Tk()
-        self.window.title('V4.7.4 — Magenta ve Eski Sürüm Dosya Güvenliği')
+        self.window.title('V4.7.5 — Magenta ve Eski Sürüm Dosya Güvenliği')
         self.window.geometry('980x820')
         self.window.minsize(730,620)
         self.events=queue.Queue()
