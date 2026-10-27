@@ -55,8 +55,6 @@ def test_authenticated_editor_identity_is_strictly_bound_to_selected_port(tmp_pa
     result=server_identity_diagnostic(tmp_path,tmp_path,expected_pid,expected_token,
                    opener=open_request,port=8081,windows_redirector=False)
     assert result['ready'] and requests==['http://127.0.0.1:8081/api/center_identity']
-    with pytest.raises(AssertionError):
-        assert result['ready'] is False
     def mismatched(request,timeout):
         class Wrong(Response):
             def read(self):
