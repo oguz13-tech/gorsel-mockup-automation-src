@@ -38,7 +38,8 @@ def test_manifest_all_legacy_launchers_and_tools_inert_and_byte_exact(tmp_path):
     root=_distribution_root(tmp_path)
     manifest=json.loads((root/'SHA256_MANIFEST.json').read_text('utf-8'))
     assert manifest['release']=='V4.7.5 CODE_FINAL_CANDIDATE'
-    assert manifest['acceptance']=='LIVE_WINDOWS_NOT_VERIFIED'
+    assert manifest['acceptance']=='WINDOWS_NOT_VERIFIED'
+    assert manifest['live_user_acceptance']=='PENDING'
     paths={row['path'] for row in manifest['files']}
     assert 'MERKEZ/GUNLUK/INSTALLED_NUMBER_SPEC.json' in paths
     assert 'MERKEZ/system_integrity_v475.py' in paths
