@@ -9,7 +9,7 @@ DIRS={'MERKEZ','SABLON_V2_MIMARI','99_SISTEM_MOTORLARI_VE_KODLAR','BAGIMSIZ_ARAC
       'AI_Kalite_Artirici','scripts','TESTLER','tests','LEGACY_REFERANS_KOD'}
 EXT={'.py','.js','.cjs','.html','.css','.bat','.ps1','.txt','.md'}
 TOP={'BAKIM_V472_MAGENTA_KLASOR_DENETIM_WINDOWS.bat','BASLAT_V47_WINDOWS.bat','BASLAT_V46_WINDOWS.bat','KUR_REAL_ESRGAN_4K_WINDOWS.bat','KUR_REAL_ESRGAN_4K_WINDOWS.ps1'}
-DOCS={'docs/V476_EDITOR_PORT_AND_PETEK_LAYOUT.md','docs/V475_FINAL_CODE_DELIVERY.md','docs/V473_FINAL_SAFE_HANDOFF.md','docs/V472_MAGENTA_AND_EXTERNAL_INVENTORY.md','docs/V47_P1_P2_QA_RUNBOOK.md','docs/V46_CANDIDATE_RUNBOOK.md','docs/V46_ACCEPTANCE_CURRENT.md','docs/V46_LIVE_CHECKPOINTS.md'}
+DOCS={'docs/V477_PETEK_7_CATEGORY_NATIVE.md','docs/V476_EDITOR_PORT_AND_PETEK_LAYOUT.md','docs/V475_FINAL_CODE_DELIVERY.md','docs/V473_FINAL_SAFE_HANDOFF.md','docs/V472_MAGENTA_AND_EXTERNAL_INVENTORY.md','docs/V47_P1_P2_QA_RUNBOOK.md','docs/V46_CANDIDATE_RUNBOOK.md','docs/V46_ACCEPTANCE_CURRENT.md','docs/V46_LIVE_CHECKPOINTS.md'}
 
 PINNED_PUBLIC_DATA={'MERKEZ/GUNLUK/INSTALLED_NUMBER_SPEC.json'}
 def allowed(name):
@@ -51,15 +51,16 @@ def build(destination,source=ROOT):
         files['LEGACY_TOOLS_REFERENCE/'+original+'.reference.txt']=source_path.read_bytes()
     for required in ['BASLAT_V47_WINDOWS.bat','BASLAT_V46_WINDOWS.bat',
                      'MERKEZ/GUNLUK/INSTALLED_NUMBER_SPEC.json','MERKEZ/system_integrity_v475.py',
-                     'MERKEZ/merkez.py','SABLON_V2_MIMARI/app.py','SABLON_V2_MIMARI/static/js/edge_angles_v46.js']:
+                     'MERKEZ/merkez.py','SABLON_V2_MIMARI/core/petek_web_v477.py',
+                     'SABLON_V2_MIMARI/static/js/petek_editor_v477.js',\n                     'SABLON_V2_MIMARI/static/css/petek_editor_v477.css',\n                     'SABLON_V2_MIMARI/app.py','SABLON_V2_MIMARI/static/js/edge_angles_v46.js']:
         if required not in files:raise ValueError('Missing required code: '+required)
-    manifest={'release':'V4.7.6 WINDOWS_FIX_CANDIDATE','acceptance':'WINDOWS_NOT_VERIFIED','live_user_acceptance':'PENDING',
+    manifest={'release':'V4.7.7 PETEK_SEVENTH_CATEGORY_CANDIDATE','acceptance':'WINDOWS_NOT_VERIFIED','live_user_acceptance':'PENDING',
               'source_commit':sha,'legacy_launchers_archived_as_text':legacy_launchers,
               'legacy_source_tools_archived_as_text':legacy_tools,
               'missing_untracked_external_files':'REQUIRES_USER_WINDOWS_INVENTORY',
               'files':[{ 'path':n,'bytes':len(b),'sha256':hashlib.sha256(b).hexdigest()} for n,b in files.items()]}
     files['SHA256_MANIFEST.json']=json.dumps(manifest,ensure_ascii=False,indent=2).encode()
-    target=destination/('GORSEL_V476_WINDOWS_ARAYUZ_DUZELTME_ADAY_'+sha[:12]+'.zip')
+    target=destination/('GORSEL_V477_WINDOWS_YEDI_KATEGORI_WEB_ENTEGRE_'+sha[:12]+'.zip')
     with target.open('xb') as f:
         with zipfile.ZipFile(f,'w',compression=zipfile.ZIP_DEFLATED) as z:
             for name,data in files.items():
