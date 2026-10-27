@@ -44,7 +44,9 @@ def test_runtime_copy_integrity_and_explicit_activation(tmp_path,monkeypatch):
         migration.activate(newroot,'wrong')
     activation=migration.activate(newroot,migration.CONFIRM)
     assert activation['files_verified']==3
-    assert legacy_manager.preferred_runtime()==newroot
+    # CI may deliberately set MOCKUP_RUNTIME_WORKSPACE globally to isolate tests.
+    # A fresh Windows launch without that override reads the saved workspace.json.
+    assert legacy_manager.preferred_runtime(env={'LOCALAPPDATA':str(tmp_path/'AppData')})==newroot
     assert migration.digest(image)==before[1] and migration.digest(original)==before[2]
     assert (newroot/migration.RECEIPT).is_file()
     assert source.is_dir()
