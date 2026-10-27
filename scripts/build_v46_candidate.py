@@ -46,7 +46,7 @@ def build(destination,source=ROOT):
                      'MERKEZ/GUNLUK/INSTALLED_NUMBER_SPEC.json','MERKEZ/system_integrity_v475.py',
                      'MERKEZ/merkez.py','SABLON_V2_MIMARI/app.py','SABLON_V2_MIMARI/static/js/edge_angles_v46.js']:
         if required not in files:raise ValueError('Missing required code: '+required)
-    manifest={'release':'V4.7.5 CODE_FINAL_CANDIDATE','acceptance':'LIVE_WINDOWS_NOT_VERIFIED',
+    manifest={'release':'V4.7.5 CODE_FINAL_CANDIDATE','acceptance':'WINDOWS_NOT_VERIFIED','live_user_acceptance':'PENDING',
               'source_commit':sha,'legacy_launchers_archived_as_text':legacy_launchers,
               'legacy_source_tools_archived_as_text':legacy_tools,
               'missing_untracked_external_files':'REQUIRES_USER_WINDOWS_INVENTORY',
