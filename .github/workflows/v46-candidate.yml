@@ -23,7 +23,7 @@ jobs:
       - name: Install candidate dependencies
         run: python -m pip install -r MERKEZ/requirements-v46-lock.txt
       - name: Targeted code and safety tests
-        run: python -m pytest -q TESTLER/test_v46_workspace_identity.py TESTLER/test_v46_inbox_identity.py TESTLER/test_v46_petek_folders_and_user_deleted.py TESTLER/test_v47_material_store_random.py TESTLER/test_v47_pause_stop_resume.py TESTLER/test_v47_audit_integrity.py TESTLER/test_v47_p1_p2_acceptance.py TESTLER/test_v472_magenta_external_reconciliation.py TESTLER/test_v473_runtime_relocation.py TESTLER/test_v46_review_layout.py TESTLER/test_v46_chroma_detector.py TESTLER/test_v46_chroma_batch.py TESTLER/test_v46_chroma_render.py TESTLER/test_v46_optional_4k.py TESTLER/test_v46_package.py TESTLER/test_v40_unified_seven_category.py TESTLER/test_v45_final_closure.py --junitxml=test-results.xml
+        run: python -m pytest -q TESTLER/test_v46_workspace_identity.py TESTLER/test_v46_inbox_identity.py TESTLER/test_v46_petek_folders_and_user_deleted.py TESTLER/test_v47_material_store_random.py TESTLER/test_v47_pause_stop_resume.py TESTLER/test_v47_audit_integrity.py TESTLER/test_v47_p1_p2_acceptance.py TESTLER/test_v472_magenta_external_reconciliation.py TESTLER/test_v473_runtime_relocation.py TESTLER/test_v474_deleted_receipts.py TESTLER/test_v46_review_layout.py TESTLER/test_v46_chroma_detector.py TESTLER/test_v46_chroma_batch.py TESTLER/test_v46_chroma_render.py TESTLER/test_v46_optional_4k.py TESTLER/test_v46_package.py TESTLER/test_v40_unified_seven_category.py TESTLER/test_v45_final_closure.py --junitxml=test-results.xml
       - name: Canvas angle regression
         run: node --test tests/js/test_edge_angles_v46.cjs
       - name: Build clean tracked-source ZIP
@@ -32,7 +32,7 @@ jobs:
         run: python -c "import pathlib,zipfile; zipfile.ZipFile(next(pathlib.Path('dist').glob('*.zip'))).extractall('zip-smoke')"
       - name: Run tests from actual extracted ZIP
         working-directory: zip-smoke/GORSEL_V46_CANDIDATE
-        run: python -m pytest -q TESTLER/test_v46_workspace_identity.py TESTLER/test_v46_chroma_detector.py TESTLER/test_v46_chroma_render.py TESTLER/test_v46_optional_4k.py TESTLER/test_v47_material_store_random.py TESTLER/test_v47_pause_stop_resume.py TESTLER/test_v47_audit_integrity.py TESTLER/test_v47_p1_p2_acceptance.py TESTLER/test_v472_magenta_external_reconciliation.py TESTLER/test_v473_runtime_relocation.py --junitxml=zip-test-results.xml
+        run: python -m pytest -q TESTLER/test_v46_workspace_identity.py TESTLER/test_v46_chroma_detector.py TESTLER/test_v46_chroma_render.py TESTLER/test_v46_optional_4k.py TESTLER/test_v47_material_store_random.py TESTLER/test_v47_pause_stop_resume.py TESTLER/test_v47_audit_integrity.py TESTLER/test_v47_p1_p2_acceptance.py TESTLER/test_v472_magenta_external_reconciliation.py TESTLER/test_v473_runtime_relocation.py TESTLER/test_v474_deleted_receipts.py --junitxml=zip-test-results.xml
       - uses: actions/upload-artifact@v4
         with:
           name: V47-CANDIDATE-${{ matrix.os }}-${{ github.sha }}
