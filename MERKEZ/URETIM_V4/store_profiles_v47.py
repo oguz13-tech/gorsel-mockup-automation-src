@@ -24,6 +24,38 @@ def default():
     return {'schema': SCHEMA, 'stores': {}}
 
 
+def perceptual_fingerprint(item: dict) -> str | None:
+    """64-bit dHash with source SHA proof; conservative near-image warning."""
+    source=item.get('source')
+    if not source:
+        return None
+    import cv2
+    import numpy as np
+    from hashlib import sha256
+    try:
+        path=Path(source)
+        if path.is_symlink() or not path.is_file():
+            return None
+        data=path.read_bytes()
+        if sha256(data).hexdigest()!=str(item['source_sha']):
+            raise ValueError('DUPLICATE_SOURCE_SHA_CHANGED')
+        img=cv2.imdecode(np.frombuffer(data,dtype=np.uint8),cv2.IMREAD_GRAYSCALE)
+        if img is None:
+            return None
+        small=cv2.resize(img,(9,8),interpolation=cv2.INTER_AREA)
+        bits=(small[:,1:]>small[:,:-1]).reshape(-1)
+        value=0
+        for bit in bits:
+            value=(value<<1)|int(bit)
+        return f'{value:016x}'
+    except OSError:
+        return None
+
+
+def near_distance(a: str,b: str) -> int:
+    return (int(a,16)^int(b,16)).bit_count()
+
+
 class StoreProfiles:
     def __init__(self, state_root: Path):
         self.root = Path(state_root).resolve()
@@ -93,7 +125,7 @@ class StoreProfiles:
         raw['stores'][store]={'templates':[]}
         return self.save(raw)
 
-    def assign(self, store, items: list[dict]):
+    def assign(self, store, items: list[dict], all_approved: list[dict] | None=None):
         raw=self.load()
         if store not in raw['stores']:
             raise ValueError('Mağaza bulunamadı.')
@@ -104,6 +136,22 @@ class StoreProfiles:
         for key in template_keys:
             if key in owned and owned[key]!=store:
                 raise ValueError('Şablon başka mağazaya atanmış: '+key)
+        # Old SHA-only profiles remain supported. For new UI assignment,
+        # compare every approved source via conservative perceptual similarity.
+        if all_approved is not None:
+            available={key_for(x):x for x in all_approved}
+            fingerprints={key:perceptual_fingerprint(item) for key,item in available.items()}
+            for key in template_keys:
+                fp=fingerprints.get(key)
+                if not fp:
+                    raise ValueError('BENZERLIK_KAYNAK_OKUNAMADI: '+key)
+                for other,owner in owned.items():
+                    if owner==store or other==key:continue
+                    other_fp=fingerprints.get(other)
+                    if other_fp is None:
+                        raise ValueError('BENZERLIK_ESKI_ATAMA_DOGRULANAMIYOR: '+other)
+                    if near_distance(fp,other_fp)<=4:
+                        raise ValueError('MAGAZALAR_ARASI_BENZER_MOCKUP: '+key+' / '+other)
         raw['stores'][store]['templates']=sorted(set(raw['stores'][store]['templates'])|set(template_keys))
         return self.save(raw)
 
