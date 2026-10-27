@@ -107,6 +107,9 @@ class Center:
         retired_row=ttk.Frame(self.advanced_panel);retired_row.pack(fill='x',pady=3)
         ttk.Button(retired_row,text='Bilerek Silinen Eski Çıktıları Arşivle (Kayıt Korunur)',
                    command=self.archive_user_deleted_outputs).pack(side='left',fill='x',expand=True,padx=3)
+        mt=ttk.Frame(self.advanced_panel);mt.pack(fill='x',pady=3)
+        ttk.Button(mt,text='Magenta / Eski Sürüm Güvenli Dosya Denetimi',
+                   command=self.open_consolidation).pack(side='left',fill='x',expand=True,padx=3)
         r7=ttk.Frame(self.advanced_panel);r7.pack(fill='x',pady=3)
         ttk.Button(r7,text='G3 Salt-Okunur Veri / SHA Denetimi',command=self.g3_audit).pack(side='left',fill='x',expand=True,padx=3)
         ttk.Button(r7,text='G3 Onaylı İki DB Yedeği + Geri Yükleme Provası',command=self.g3_backup).pack(side='left',fill='x',expand=True,padx=3)
@@ -125,6 +128,19 @@ class Center:
         ttk.Label(p,text='Koruma: kaynak görüntüler, orijinal yedek ve onaylı profiller kendiliğinden değiştirilmez.\n'
                     'Tek güncel seri üretim yolu 7 Kategoridir; şablonlar üretim öncesi onay ve SHA kontrolünden geçer.',
                   foreground=MUTED,wraplength=920).pack(anchor='w',pady=(7,0))
+
+    def open_consolidation(self):
+        """Independent utility; editor or batch must be stopped before APPLY."""
+        try:
+            executable=ROOT/'BAKIM_V472_MAGENTA_KLASOR_DENETIM_WINDOWS.bat'
+            if os.name=='nt' and executable.is_file():
+                os.startfile(str(executable))
+            else:
+                from bakim_merkezi_v472 import Maintenance
+                Maintenance().run()
+            self._log('Magenta ve eski sürüm dosya denetimi ayrı pencerede açıldı.')
+        except Exception as exc:
+            messagebox.showerror('Bakım merkezi açılamadı',str(exc),parent=self.root)
 
     def g3_audit(self):
         """Only reads live databases, original folders and local output receipts."""
