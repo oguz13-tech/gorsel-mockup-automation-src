@@ -1,6 +1,6 @@
 """Seven-category single entry point: legacy six review/tools/daily + PETEK.
 
-The legacy corner editor is served from 127.0.0.1:8080, started with the
+The legacy corner editor uses an authenticated available localhost port, started with the
 actual user's original runtime workspace. No data migration/approval happens
 in this GUI: on explicit editor start we first create an external SQLite backup.
 """
@@ -28,7 +28,7 @@ class Center:
         self.root.title('Görsel Üretim Merkezi '+VERSION+' — 7 Kategori / Tüm Araçlar')
         self.root.geometry('1020x760');self.root.minsize(800,570)
         self.running=False;self.messages=queue.Queue();self.proc=None
-        self.batch_windows=[];self.editor_proc=None;self.editor_log=None
+        self.batch_windows=[];self.editor_proc=None;self.editor_log=None;self.editor_port=8080
         from legacy_manager import preferred_runtime
         self.runtime=preferred_runtime()
         self.inbox_watcher=None
@@ -243,11 +243,12 @@ class Center:
         messagebox.showinfo('7 kategori çalışma hazırlığı',text,parent=self.root)
 
     def _open_legacy(self,route):
-        from legacy_manager import inspect,backup_database,launch_spec,port_occupied,local_state_dir,LegacyLaunchError
+        from legacy_manager import inspect,backup_database,launch_spec,choose_review_port,local_state_dir,LegacyLaunchError
         if self.editor_proc is not None and self.editor_proc.poll() is None:
             from legacy_manager import server_identity_diagnostic
             runtime,code,token=self.editor_identity
-            identity = server_identity_diagnostic(runtime, code, self.editor_proc.pid, token)
+            identity = server_identity_diagnostic(runtime, code, self.editor_proc.pid, token,
+                                                  port=self.editor_port)
             if not identity['ready']:
                 detail = self._safe_identity_error(identity)
                 self._log('İnceleme servisi kimlik kontrolü: '+detail)
@@ -255,47 +256,18 @@ class Center:
                     detail+'\n\nBu merkezin başlattığı servisi Gelişmiş Araçlar > 4 Köşe Servisini Durdur ile durdurup tekrar açın. Bilinmeyen süreci kapatmayın.',
                     parent=self.root)
                 return
-            webbrowser.open('http://127.0.0.1:8080'+route)
+            webbrowser.open(f'http://127.0.0.1:{self.editor_port}'+route)
             self.status.set('Dört köşe inceleme merkezi açık.')
             return
-        if port_occupied():
-            if os.name != 'nt':
-                messagebox.showwarning('8080 portu dolu',
-                    '8080 portunu başka bir program kullanıyor. Otomatik kapatma yapılmadı.',
-                    parent=self.root)
-                return
-            from port_transition_v46 import (
-                PortSafetyError, classify_owner, owner_of_8080, stop_old_server_if_same,
-            )
-            try:
-                owner = owner_of_8080()
-                code_path = Path(__file__).resolve().parent / '..' / 'SABLON_V2_MIMARI' / 'app.py'
-                if not owner or classify_owner(owner, code_path) != 'old_review':
-                    raise PortSafetyError(
-                        '8080 port sahibi doğrulanmış eski V4.x inceleme sunucusu değil.'
-                    )
-                pid = int(owner['ProcessId'])
-                command_line = str(owner['CommandLine'])
-                if not messagebox.askyesno(
-                    'Eski 8080 inceleme sunucusu bulundu',
-                    'Doğrulanmış eski V4.x inceleme sunucusu normal kapatılsın mı?',
-                    parent=self.root,
-                ):
-                    return
-                stopped = stop_old_server_if_same(pid, command_line)
-                if not stopped:
-                    if not messagebox.askyesno(
-                        'Normal kapatma başarısız',
-                        'Eski sunucu normal kapanmadı. Aynı doğrulanmış süreç için zorla kapatma denensin mi?',
-                        parent=self.root,
-                    ):
-                        return
-                    if not stop_old_server_if_same(pid, command_line, force=True):
-                        raise PortSafetyError('Eski inceleme sunucusu zorla kapatma sonrası da çalışıyor.')
-            except (KeyError, TypeError, ValueError, PortSafetyError) as exc:
-                messagebox.showerror('8080 geçişi engellendi', str(exc), parent=self.root)
-                self._log('8080 güvenli geçiş reddedildi: '+str(exc))
-                return
+        try:
+            editor_port=choose_review_port()
+        except LegacyLaunchError as exc:
+            messagebox.showerror('İnceleme portu seçilemedi',str(exc),parent=self.root)
+            return
+        if editor_port != 8080:
+            self._log(
+                f'8080 başka bir işlem tarafından kullanılıyor. '
+                f'Hiçbir işlem kapatılmadan güvenli yerel port {editor_port} seçildi.')
         s=inspect(self.runtime)
         if not s['ready']:
             messagebox.showerror('6 kategori inceleme başlatılamadı',
@@ -312,6 +284,7 @@ class Center:
             backup=backup_database(self.runtime)
             command,env,cwd=launch_spec(self.runtime)
             env['MOCKUP_CENTER_TOKEN']=os.urandom(32).hex()
+            env['MOCKUP_PORT']=str(editor_port)
             self.editor_identity=(self.runtime,cwd,env['MOCKUP_CENTER_TOKEN'])
             logs=local_state_dir()/'LOG';logs.mkdir(parents=True,exist_ok=True)
             output=logs/('inceleme_'+str(int(time.time()))+'_'+os.urandom(3).hex()+'.log')
@@ -321,9 +294,9 @@ class Center:
                 if os.name=='nt':options['creationflags']=getattr(subprocess,'CREATE_NO_WINDOW',0)
                 child=subprocess.Popen(command,**options)
             finally:log.close()
-            self.editor_proc=child;self.editor_log=output
+            self.editor_proc=child;self.editor_log=output;self.editor_port=editor_port
             self.review_button.configure(state='disabled');self.tools_button.configure(state='disabled')
-            self.status.set('Eski 6 kategori inceleme merkezi açılıyor...')
+            self.status.set(f'6 kategori inceleme merkezi açılıyor: 127.0.0.1:{editor_port}')
             self._log('SQLite güvenlik yedeği: '+str(backup))
             self._log('Altı kategori kodu: '+str(cwd))
             self._log('Sunucu logu: '+str(output))
@@ -338,7 +311,8 @@ class Center:
                               'exit_code':child.returncode}
                         break
                     last=server_identity_diagnostic(
-                        self.runtime,cwd,child.pid,env['MOCKUP_CENTER_TOKEN'])
+                        self.runtime,cwd,child.pid,env['MOCKUP_CENTER_TOKEN'],
+                        port=editor_port)
                     if last['ready']:
                         self.messages.put(('legacy_started',route));return
                     time.sleep(.25)
@@ -493,7 +467,9 @@ class Center:
                     self.status.set(route+' işlemi sonlandı: '+str(code))
                 elif kind=='legacy_started':
                     self.review_button.configure(state='normal');self.tools_button.configure(state='normal')
-                    self.status.set('6 kategori inceleme + profesyonel araçlar hazır: 127.0.0.1:8080')
+                    self.status.set(
+                        f'6 kategori inceleme + profesyonel araçlar hazır: '
+                        f'127.0.0.1:{self.editor_port}')
                     webbrowser.open('http://127.0.0.1:8080'+value)
                 elif kind=='legacy_error':
                     self.review_button.configure(state='normal');self.tools_button.configure(state='normal')
