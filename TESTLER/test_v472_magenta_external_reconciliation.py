@@ -23,8 +23,13 @@ def _db(path, category='03_Ahsap_Tablo', name='Ahsap_001.png', src_hash=None,
             template_uid TEXT, category TEXT,source_relative_path TEXT,
             source_asset_sha256 TEXT,review_status TEXT,manually_verified INTEGER,
             is_active INTEGER,surface_quad TEXT,outer_quad TEXT,
-            nominal_aspect TEXT,orientation TEXT,component_confidences TEXT)""")
-        db.execute("""INSERT INTO template_profiles VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+            nominal_aspect TEXT,orientation TEXT,component_confidences TEXT,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)""")
+        db.execute("""INSERT INTO template_profiles
+            (template_uid,category,source_relative_path,source_asset_sha256,
+             review_status,manually_verified,is_active,surface_quad,outer_quad,
+             nominal_aspect,orientation,component_confidences)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
            (uid,category,category+'/'+name,src_hash,
             'APPROVED' if approved else 'REVIEW_REQUIRED',int(approved),1,
             json.dumps([[15,15],[380,15],[380,278],[15,278]] if new_quad
