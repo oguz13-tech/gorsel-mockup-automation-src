@@ -89,6 +89,14 @@ def analyze(workspace,lab=LAB):
     db=safe(workspace/'SABLON_V2_MIMARI'/'ayarlar.db')
     profiles=db_rows(db)
     originals=lab_profiles(lab)
+    # DB identities are durable; active photo variants or duplicate incoming
+    # pixels must never become new independent template numbers.
+    known_sha={}
+    for profile in profiles:
+        source_hash=str(profile.get('source_asset_sha256') or '').lower()
+        uid=str(profile.get('template_uid') or '')
+        if source_hash and uid:
+            known_sha.setdefault(source_hash,set()).add(uid)
     by_id={}
     for p in profiles:
         cat=str(p.get('category') or '')
@@ -118,12 +126,23 @@ def analyze(workspace,lab=LAB):
                 item['old_sha']=sha(dest);item['old_dimensions']=png_info(dest)
                 item['old_approved']=prof.get('review_status')=='APPROVED'
                 item['expected_db_sha']=prof.get('source_asset_sha256')
-                if item['dimensions']!=item['old_dimensions']:
+                variants=[str(p) for p in dest.parent.iterdir()
+                          if p.is_file() and not p.is_symlink()
+                          and p.suffix.lower() in EXT and namekey(p)==namekey(dest)
+                          and p.resolve()!=dest.resolve()]
+                item['active_same_stem_variants']=variants
+                other_uids=known_sha.get(item['source_sha'].lower(),set())-{str(item['uid'])}
+                if variants:
+                    item['status']='ACTIVE_SAME_NAME_DIFFERENT_EXTENSION'
+                elif other_uids:
+                    item['status']='INCOMING_BYTES_ALREADY_USED_BY_ANOTHER_TEMPLATE'
+                    item['colliding_uids']=sorted(other_uids)
+                elif item['expected_db_sha']!=item['old_sha']:
+                    item['status']='MAIN_SOURCE_SHA_CONFLICT'
+                elif item['dimensions']!=item['old_dimensions']:
                     item['status']='DIMENSIONS_CHANGED_REVIEW_COORDINATES'
                 elif item['source_sha']==item['old_sha']:
                     item['status']='ALREADY_IDENTICAL'
-                elif item['expected_db_sha']!=item['old_sha']:
-                    item['status']='MAIN_SOURCE_SHA_CONFLICT'
                 else:
                     lab_match=[x for x in originals.get((cat,namekey(source),item['source_sha']),[])
                                if x.get('template_uid')==prof['template_uid']]
@@ -148,6 +167,18 @@ def analyze(workspace,lab=LAB):
             item['status']='ERROR'
             item['reason']=str(exc)
         jobs.append(item)
+    # Different target names containing identical incoming bytes are NOT two
+    # independent templates. Report and require a human identity decision.
+    grouped_sha={}
+    for item in jobs:
+        if item.get('destination') and item.get('source_sha'):
+            grouped_sha.setdefault(item['source_sha'],[]).append(item)
+    for duplicate_group in grouped_sha.values():
+        if len({j['destination'] for j in duplicate_group})>1:
+            for item in duplicate_group:
+                item['status']='DUPLICATE_CHROMA_BYTES_DIFFERENT_TEMPLATE'
+                item.pop('lab_record',None)
+                item['trusted_lab_approval']=False
     # Two LAB files must never replace the same target, even if in separate
     # preview subfolders; fail safely instead of last-writer-wins.
     destinations={}
