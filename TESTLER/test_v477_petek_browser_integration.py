@@ -149,6 +149,8 @@ def test_ui_category_is_inside_existing_page_with_native_operations():
     for op in ('/api/petek/templates','/api/petek/auto-mask',
                '/api/petek/curve-preview','/api/petek/save-draft','/api/petek/approve'):
         assert op in js or op in (ROOT/'SABLON_V2_MIMARI'/'core'/'petek_web_v477.py').read_text('utf-8')
+    center=(ROOT/'MERKEZ'/'merkez.py').read_text('utf-8')
+    assert '7 KATEGORİ — ŞABLON / 4 KÖŞE / PETEK MASKE İNCELE' in center
     assert "window.open" not in js
     assert 'tkinter' not in js
 
