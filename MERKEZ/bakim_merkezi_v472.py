@@ -12,6 +12,8 @@ from magenta_reconcile_v472 import (LAB,CONFIRM as MAGENTA_CONFIRM,analyze,
                                     write_report,html_comparison,apply)
 from external_inventory_v472 import (CONFIRM as INVENTORY_CONFIRM,
                                       build,save,stage)
+from runtime_relocate_v473 import (CONFIRM as RUNTIME_CONFIRM,
+                                   stage as stage_runtime,activate as activate_runtime)
 ROOT=Path(__file__).resolve().parent.parent
 
 class Maintenance:
@@ -59,6 +61,12 @@ class Maintenance:
                             'yalnız SHA kanıtlı ayrı kurtarma alanına kopyalar. '
                             'Farklı kodları körlemesine etkinleştirmek tehlikelidir.',
                   wraplength=850).pack(anchor='w',pady=4)
+        ttk.Separator(frame).pack(fill='x',pady=9)
+        ttk.Label(frame,text='AŞAMA 3 — ONEDRIVE / SQLite Güvenli Çalışma Alanı',
+                  font=('Segoe UI',11,'bold')).pack(anchor='w')
+        rw=ttk.Frame(frame);rw.pack(fill='x',pady=6)
+        self.btn(rw,'5. OneDrive Dışı Yedek Kopyayı Hazırla',self.stage_runtime)
+        self.btn(rw,'6. Doğrulanan Kopyayı Etkinleştir (AÇIK ONAY)',self.activate_runtime)
         self.status=tk.StringVar(value='Hazır. Önce 1 ve 3 numaralı raporları oluşturun.')
         ttk.Label(frame,textvariable=self.status,wraplength=850).pack(anchor='w',pady=5)
         self.output=tk.Text(frame,height=11,wrap='word')
@@ -149,5 +157,32 @@ class Maintenance:
         phrase=simpledialog.askstring('AÇIK ONAY','Şu onayı yaz:\n'+INVENTORY_CONFIRM,parent=self.window)
         if phrase!=INVENTORY_CONFIRM:return
         self.enqueue(lambda:str(stage(plan,phrase)))
+    def stage_runtime(self):
+        target=simpledialog.askstring(
+            'Yeni ana çalışma kopyası',
+            'Orijinal OneDrive dosyaları taşınmaz veya silinmez. '
+            'Yeni ve daha önce var olmayan, OneDrive DIŞINDA bir hedef gir:',
+            initialvalue=r'C:\GorselMockup_Runtime_V473',parent=self.window)
+        if not target:return
+        if not messagebox.askyesno(
+            'Yalnız doğrulanmış kopya oluştur',
+            'Program ve 4 köşe sunucusu kapalı olmalı. Bütün çalışma alanının '
+            'SHA denetimli kopyası oluşturulacak. Ana çalışma klasörü '
+            'HENÜZ DEĞİŞMEYECEK. Devam?',parent=self.window):return
+        self.enqueue(lambda:stage_runtime(self.workspace.get(),target))
+
+    def activate_runtime(self):
+        target=filedialog.askdirectory(parent=self.window,title='5. adımda hazırlanmış doğrulanmış çalışma kopyası')
+        if not target:return
+        phrase=simpledialog.askstring(
+            'AYRI AKTİVASYON ONAYI',RUNTIME_CONFIRM,parent=self.window)
+        if phrase!=RUNTIME_CONFIRM:
+            messagebox.showwarning('İptal','Açık onay yok; çalışma alanı değişmedi.',parent=self.window)
+            return
+        self.enqueue(lambda:activate_runtime(target,phrase),
+                     lambda record:messagebox.showinfo(
+                         'Yeni ana çalışma alanı',str(record.get('active_workspace'))+
+                         '\nEski dosyalar silinmedi. Yeni programı yeniden açın.',parent=self.window))
+
     def run(self):self.window.mainloop()
 if __name__=='__main__':Maintenance().run()
