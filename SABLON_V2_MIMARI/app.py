@@ -82,6 +82,11 @@ import uuid
 from functools import wraps
 
 app = Flask(__name__)
+# PETEK is seventh category of THIS editor, not a second Flask/Tk app.
+# All PETEK writes use the existing PETEK_V3 source SHA / human mask registry.
+from core.petek_web_v477 import petek_web
+app.config['PETEK_WORKSPACE_V477'] = BASE_DIR
+app.register_blueprint(petek_web)
 from core.loopback_security_v47 import check as _loopback_check, token as _csrf_token
 
 @app.before_request
