@@ -21,7 +21,7 @@ def test_real_center_exposes_one_production_entry_and_review_tools():
                 for child in w.winfo_children():walk(child)
             except Exception:pass
         walk(app.root)
-        for part in ('6 KATEGORİ — ŞABLON / 4 KÖŞE', '6 KATEGORİ — PROFESYONEL',
+        for part in ('7 KATEGORİ — ŞABLON / 4 KÖŞE / PETEK MASKE', '6 KATEGORİ — PROFESYONEL',
                      '7 KATEGORİ — SERİ GÖRSEL ÜRET', 'PETEK — ŞABLON / MASKE',
                      'GELİŞMİŞ ARAÇLAR', 'Kurulum / Klasör / DB Durumu',
                      'Kesinti / Kilit Kurtarma'):
