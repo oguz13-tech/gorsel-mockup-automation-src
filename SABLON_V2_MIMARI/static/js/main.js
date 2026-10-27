@@ -1659,6 +1659,9 @@ window.onerror = function(msg, url, line, col, error) {
     
     function renderSidebar() {
         const catDiv = document.getElementById('categories');
+        // Keep the real PETEK seventh category node (and its event handlers)
+        // when legacy categories are refreshed after approvals/health scans.
+        const petekSeventhCategory = document.getElementById('petekV477Nav');
         catDiv.innerHTML = '';
         allTemplates = [];
         for (const cat in ayarlar.kategoriler) {
@@ -1885,6 +1888,9 @@ window.onerror = function(msg, url, line, col, error) {
             }
             div.appendChild(list);
             catDiv.appendChild(div);
+        }
+        if (petekSeventhCategory) {
+            catDiv.appendChild(petekSeventhCategory);
         }
         applyBulkSelectionUi();
     }
