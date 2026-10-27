@@ -60,9 +60,19 @@ def _decode(data,shape):
     except (ValueError,TypeError) as exc:raise ValueError('PETEK_BAD_MASK_ENCODING') from exc
     if len(raw)>MAX_MASK:raise ValueError('PETEK_MASK_TOO_LARGE')
     mask=cv2.imdecode(np.frombuffer(raw,dtype=np.uint8),cv2.IMREAD_UNCHANGED)
-    if (mask is None or mask.ndim!=2 or mask.dtype!=np.uint8
-            or mask.shape!=shape[:2]):
+    if mask is None or mask.dtype!=np.uint8 or mask.shape[:2]!=shape[:2]:
         raise ValueError('PETEK_MASK_SHAPE_INVALID')
+    # Canvas.toDataURL produces RGBA PNG on all major browsers. Accept only
+    # equal-channel opaque grayscale, otherwise FAIL rather than letting
+    # colored/transparent brush pixels silently turn into a wrong print mask.
+    if mask.ndim==3 and mask.shape[2]==4:
+        if (not np.all(mask[:,:,3]==255) or not
+                np.array_equal(mask[:,:,0],mask[:,:,1]) or not
+                np.array_equal(mask[:,:,1],mask[:,:,2])):
+            raise ValueError('PETEK_MASK_NOT_OPAQUE_GRAYSCALE')
+        mask=mask[:,:,0].copy()
+    elif mask.ndim!=2:
+        raise ValueError('PETEK_MASK_NOT_GRAYSCALE')
     return mask
 
 def _request_scene():
