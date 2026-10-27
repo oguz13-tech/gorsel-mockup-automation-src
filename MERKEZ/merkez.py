@@ -71,7 +71,7 @@ class Center:
                     'İnsan onayları, dört köşe, maske, kategoriler, yedekler, raporlar ve tarama işlemleri burada.',
                   wraplength=920).pack(anchor='w')
         row=ttk.Frame(p);row.pack(fill='x',pady=(9,6))
-        self.review_button=ttk.Button(row,text='6 KATEGORİ — ŞABLON / 4 KÖŞE İNCELE',command=self.open_legacy_review)
+        self.review_button=ttk.Button(row,text='7 KATEGORİ — ŞABLON / 4 KÖŞE / PETEK MASKE İNCELE',command=self.open_legacy_review)
         self.review_button.pack(side='left',fill='x',expand=True,padx=(0,6))
         self.tools_button=ttk.Button(row,text='6 KATEGORİ — PROFESYONEL ARAÇLAR',command=self.open_legacy_tools)
         self.tools_button.pack(side='left',fill='x',expand=True,padx=(6,0))
@@ -232,7 +232,7 @@ class Center:
         from legacy_manager import inspect
         from merkez_saglik import report
         legacy=inspect(self.runtime);other=report()
-        lines=['ESKİ 6 KATEGORİ — 4 KÖŞE EDİTÖRÜ:',
+        lines=['7 KATEGORİ — 4 KÖŞE + PETEK MASKE EDİTÖRÜ:',
                'Ana klasör: '+legacy['runtime'],'Kaynak kod: '+legacy['code'],
                'Kaynak: '+legacy['source'],'DB kayıtları: '+str(legacy['counts']),
                'Hazır: '+('EVET' if legacy['ready'] else 'HAYIR'),
@@ -270,7 +270,7 @@ class Center:
                 f'Hiçbir işlem kapatılmadan güvenli yerel port {editor_port} seçildi.')
         s=inspect(self.runtime)
         if not s['ready']:
-            messagebox.showerror('6 kategori inceleme başlatılamadı',
+            messagebox.showerror('7 kategori inceleme başlatılamadı',
                 '\n'.join(s['problems'])+'\n\nAna çalışma klasörünü kontrol edin.',parent=self.root)
             return
         if s['warnings']:
@@ -296,7 +296,7 @@ class Center:
             finally:log.close()
             self.editor_proc=child;self.editor_log=output;self.editor_port=editor_port
             self.review_button.configure(state='disabled');self.tools_button.configure(state='disabled')
-            self.status.set(f'6 kategori inceleme merkezi açılıyor: 127.0.0.1:{editor_port}')
+            self.status.set(f'7 kategori şablon/maske incelemesi açılıyor: 127.0.0.1:{editor_port}')
             self._log('SQLite güvenlik yedeği: '+str(backup))
             self._log('Altı kategori kodu: '+str(cwd))
             self._log('Sunucu logu: '+str(output))
@@ -345,7 +345,7 @@ class Center:
             messagebox.showwarning('Günlük V2 — referanslar eksik',
                  'Günlük V2 yalnızca sabit kod/yedek SHA eşleşmesiyle çalışır.\n\n'
                  +'\n'.join(state['legacy_missing'])+'\n\n'
-                 'Ancak 6 kategorinin 4 köşe inceleme arayüzü yukarıdan ayrıca açılabilir.',parent=self.root)
+                 '7 kategori şablon/maske inceleme arayüzü yukarıdan ayrıca açılabilir.',parent=self.root)
             return
         self.start([sys.executable,'-B',str(HERE/'GUNLUK'/'run.py')],'Altı kategori günlük V2')
 
@@ -468,7 +468,7 @@ class Center:
                 elif kind=='legacy_started':
                     self.review_button.configure(state='normal');self.tools_button.configure(state='normal')
                     self.status.set(
-                        f'6 kategori inceleme + profesyonel araçlar hazır: '
+                        f'7 kategori şablon/maske incelemesi hazır: '
                         f'127.0.0.1:{self.editor_port}')
                     webbrowser.open('http://127.0.0.1:8080'+value)
                 elif kind=='legacy_error':
