@@ -75,6 +75,81 @@ def local_area():
     root=Path(os.environ.get('LOCALAPPDATA') or Path.home())/'GorselMockup'/'UnifiedCenter'/'EXTERNAL_INVENTORY'
     root.mkdir(parents=True,exist_ok=True)
     return root
+def inspect_active_templates(workspace: Path) -> dict:
+    """Identity + SHA-only scan of ACTIVE working images, no removal/copying.
+
+    Archives, laboratory previews, historical deleted numbers, and approved
+    originals are intentionally not counted as active duplicates.
+    """
+    import unicodedata
+    from collections import defaultdict
+    workspace=Path(workspace)
+    active=workspace/'2_SABLON_HAVUZU'
+    suffixes={'.jpg','.jpeg','.png','.webp'}
+    by_identity=defaultdict(list)
+    by_content=defaultdict(list)
+    files=[]
+    if active.is_dir():
+        for category in sorted(active.iterdir()):
+            if category.is_symlink() or not category.is_dir():continue
+            for file in sorted(category.iterdir()):
+                if not file.is_file() or file.is_symlink() or file.suffix.lower() not in suffixes:
+                    continue
+                identity=unicodedata.normalize('NFC',file.stem).casefold()
+                sha=checksum(file)
+                record={'file':str(file),'category':category.name,
+                        'identity':identity,'sha256':sha}
+                files.append(record)
+                by_identity[(category.name,identity)].append(record)
+                by_content[sha].append(record)
+    identity_duplicates=[
+        {'category':key[0],'identity':key[1],'files':[x['file'] for x in rows]}
+        for key,rows in by_identity.items() if len(rows)>1
+    ]
+    content_duplicates=[
+        {'sha256':hashvalue,'files':[x['file'] for x in rows],
+         'distinct_identities':len({(x['category'],x['identity']) for x in rows})}
+        for hashvalue,rows in by_content.items()
+        if len({(x['category'],x['identity']) for x in rows})>1
+    ]
+    # Read-only validation of legacy SQLite active profiles. The PETEK
+    # registry is separate; do not fabricate a SQLite row for PETEK.
+    registered=set()
+    stale=[]
+    db=workspace/'SABLON_V2_MIMARI'/'ayarlar.db'
+    if db.is_file() and not db.is_symlink():
+        try:
+            with sqlite3.connect(db.resolve().as_uri()+'?mode=ro',uri=True,timeout=3) as connection:
+                connection.row_factory=sqlite3.Row
+                columns={r[1] for r in connection.execute('PRAGMA table_info(template_profiles)')}
+                if {'category','source_relative_path','source_asset_sha256','is_active'}.issubset(columns):
+                    for row in connection.execute(
+                        'SELECT category,source_relative_path,source_asset_sha256 '
+                        'FROM template_profiles WHERE is_active=1'):
+                        category=str(row['category'])
+                        rel=str(row['source_relative_path'] or '').replace('\\','/')
+                        parts=rel.split('/')
+                        if len(parts)!=2 or parts[0]!=category:continue
+                        identity=unicodedata.normalize('NFC',Path(parts[1]).stem).casefold()
+                        key=(category,identity)
+                        registered.add(key)
+                        current=by_identity.get(key,[])
+                        if len(current)!=1 or current[0]['sha256']!=row['source_asset_sha256']:
+                            stale.append({'category':category,'identity':identity,
+                                          'relative_path':rel,'status':'ACTIVE_PROFILE_SHA_OR_FILE_MISMATCH'})
+        except sqlite3.Error as exc:
+            stale.append({'status':'SQLITE_READONLY_CHECK_FAILED','reason':str(exc)[:200]})
+    extras=[r['file'] for r in files if (r['category'],r['identity']) not in registered
+            and r['category'] not in ('Petek_Dolabi','06_Petek_Kapama')]
+    return {'active_images':len(files),
+            'same_identity_different_files':identity_duplicates,
+            'same_bytes_different_identities':content_duplicates,
+            'db_active_profile_mismatches':stale,
+            'working_without_legacy_db_profile':extras,
+            'photos_deleted_by_this_scan':0,
+            'note':'PETEK mask registry separately maintained; raw original archive is not an active duplicate.'}
+
+
 def build(code_root,workspace,roots):
     code_root=Path(code_root).resolve();workspace=Path(workspace).resolve()
     if not (code_root/'MERKEZ'/'merkez.py').is_file():
@@ -135,6 +210,7 @@ def build(code_root,workspace,roots):
             'scan_roots':[str(Path(r)) for r in roots],
             'candidate_code_roots':components,'different_code_files':diff,
             'external_state_files':state_list,
+            'active_template_identity_audit':inspect_active_templates(workspace),
             'standalone_tool_or_model_suspects':orphan,
             'known_active_external_state':[
                 str(Path(local)/'GorselMockup'/'UnifiedV4'),
