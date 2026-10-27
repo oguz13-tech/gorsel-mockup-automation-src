@@ -55,9 +55,10 @@ def store(tmp_path):
 
 
 def paths(root: Path, cat: str, filename: str):
-    inbox = root / 'YENI-BOS MOCKUP SABLON HAVUZU' / cat / filename
-    working = root / '2_SABLON_HAVUZU' / cat / filename
-    archive = root / '2_SABLON_HAVUZU_ORIJINAL_YEDEK' / cat / filename
+    physical = 'Petek_Dolabi' if cat == '06_Petek_Kapama' else cat
+    inbox = root / 'YENI-BOS MOCKUP SABLON HAVUZU' / physical / filename
+    working = root / '2_SABLON_HAVUZU' / physical / filename
+    archive = root / '2_SABLON_HAVUZU_ORIJINAL_YEDEK' / physical / filename
     return inbox, working, archive
 
 
