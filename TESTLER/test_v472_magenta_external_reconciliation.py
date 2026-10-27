@@ -159,3 +159,29 @@ def test_external_code_inventory_and_staging_never_change_live_code(tmp_path):
     assert (rescue/'STAGING_RECEIPT.json').is_file()
     assert tool.is_file()
     assert scan['candidate_code_roots'][0]['safe_to_delete_without_manual_review'] is False
+
+
+def test_two_lab_previews_for_one_template_are_blocked(tmp_path):
+    root,src,work,_=_fixture(tmp_path)
+    duplicate=src.parent/'different_experiment'/'Ahsap_001.png'
+    _image(duplicate,magenta=True)
+    plan=analyze(root,src.parent)
+    assert len(plan['jobs'])==2
+    assert all(item['status']=='MULTIPLE_LAB_IMAGES_FOR_ONE_TEMPLATE' for item in plan['jobs'])
+    assert sha(work)!=sha(src)
+
+def test_preferred_editor_code_can_never_silently_revert_to_old_folder(tmp_path,monkeypatch):
+    import legacy_manager as manager
+    root=tmp_path/'tested_install'
+    (root/'SABLON_V2_MIMARI'/'core').mkdir(parents=True)
+    (root/'SABLON_V2_MIMARI'/'app.py').write_text('valid')
+    (root/'SABLON_V2_MIMARI'/'core'/'db.py').write_text('valid')
+    old=tmp_path/'old_version'
+    (old/'SABLON_V2_MIMARI'/'core').mkdir(parents=True)
+    (old/'SABLON_V2_MIMARI'/'app.py').write_text('old')
+    (old/'SABLON_V2_MIMARI'/'core'/'db.py').write_text('old')
+    monkeypatch.setattr(manager,'ROOT',root)
+    assert manager.preferred_code(env={'MOCKUP_LEGACY_SOURCE_ROOT':str(old)})==root
+    (root/'SABLON_V2_MIMARI'/'app.py').unlink()
+    with pytest.raises(manager.LegacyLaunchError,match='TEST_EDILMIS_KOD_EKSIK'):
+        manager.preferred_code(env={'MOCKUP_LEGACY_SOURCE_ROOT':str(old)})
