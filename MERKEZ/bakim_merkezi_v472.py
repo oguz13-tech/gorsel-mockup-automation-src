@@ -19,7 +19,7 @@ ROOT=Path(__file__).resolve().parent.parent
 class Maintenance:
     def __init__(self):
         self.window=tk.Tk()
-        self.window.title('V4.7.2 — Magenta ve Eski Sürüm Dosya Güvenliği')
+        self.window.title('V4.7.3 — Magenta ve Eski Sürüm Dosya Güvenliği')
         self.window.geometry('920x740')
         self.window.minsize(710,580)
         self.events=queue.Queue()
