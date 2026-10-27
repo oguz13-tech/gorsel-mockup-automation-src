@@ -18,6 +18,10 @@ def report(*, platform=None, userprofile=None):
     backup=Path('C:/AI_BACKUPS/GORSEL_MOCKUP/P0_20261019_214610_99f583e8')
     runtime=user/'OneDrive'/'Masaüstü'/'GörselÜretme-ve-Mockup Otomasyonu'
     required={
+      # Legacy Daily V2 imports these files before its GUI opens. Its user
+      # selection was never part of the code-only ZIP and must not be invented.
+      'Günlük V2 sabit seçim dosyası (haricî)':Path(__file__).resolve().parent/'GUNLUK'/'BATCH_SELECTION.json',
+      'Günlük V2 sayı güvenliği dosyası':Path(__file__).resolve().parent/'GUNLUK'/'INSTALLED_NUMBER_SPEC.json',
       r'Kurulu 6 kategori motoru: C:\AI_WORK\gorsel-mockup-automation-src':code/'99_SISTEM_MOTORLARI_VE_KODLAR'/'SISTEM_MOTORU'/'pc_master_factory.py',
       r'Onaylı 6 kategori yedeği: C:\AI_BACKUPS\GORSEL_MOCKUP':backup/'RUNTIME_BACKUP_SHA256.json',
       '6 kategori çalışma klasörü (OneDrive Masaüstü)':runtime/'SABLON_V2_MIMARI'/'ayarlar.db',
