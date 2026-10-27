@@ -151,3 +151,51 @@ def test_ui_category_is_inside_existing_page_with_native_operations():
         assert op in js or op in (ROOT/'SABLON_V2_MIMARI'/'core'/'petek_web_v477.py').read_text('utf-8')
     assert "window.open" not in js
     assert 'tkinter' not in js
+
+
+def test_same_web_editor_creates_r2_draft_without_mutating_previous_approval(tmp_path,monkeypatch):
+    client,photo,r,_=fixture(tmp_path,monkeypatch)
+    data=params(photo)
+    original=r.save(photo.stem,photo,data['quad'],valid_mask(),1.1163,
+                    approved=True,reviewer='Owner')
+    old_mask_sha=original['mask_sha']
+    result=client.post('/api/petek/new-revision',json={
+        'name':photo.name,'uid':photo.stem,
+        'source_sha':engine.digest(photo),'confirmed_sha':engine.digest(photo)})
+    assert result.status_code==200,result.get_json()
+    newer=result.get_json()['uid']
+    assert newer==photo.stem+'_r2'
+    old,mask=r.get(photo.stem,require_approved=True)
+    assert old['mask_sha']==old_mask_sha and old['status']=='APPROVED'
+    draft,_=r.get(newer)
+    assert draft['status']=='DRAFT' and draft['source_sha']==old['source_sha']
+    items=client.get('/api/petek/templates').get_json()['items']
+    assert len(items)==2
+    assert {x['uid'] for x in items}=={photo.stem,newer}
+    assert {x['status'] for x in items}=={'APPROVED','DRAFT'}
+    detail=client.get('/api/petek/detail/'+photo.name+'?uid='+newer).get_json()
+    assert detail['uid']==newer and detail['status']=='DRAFT'
+    assert client.get('/api/petek/detail/'+photo.name+'?uid=wrong').status_code==409
+    saved=client.post('/api/petek/save-draft',json={**data,'uid':newer})
+    assert saved.status_code==200,saved.get_json()
+    approved=client.post('/api/petek/approve',json={**data,'uid':newer,
+        'reviewer':'Second Reviewer','confirmed_sha':engine.digest(photo),
+        'confirm':'I_VISUALLY_CHECKED_VENTS_ARCHES_FLOOR'})
+    assert approved.status_code==200,approved.get_json()
+    assert r.get(photo.stem,require_approved=True)[0]['mask_sha']==old_mask_sha
+
+
+def test_revision_requires_explicit_valid_sha_and_approved_original(tmp_path,monkeypatch):
+    client,photo,r,_=fixture(tmp_path,monkeypatch)
+    data=params(photo)
+    invalid=client.post('/api/petek/new-revision',json={
+       'name':photo.name,'uid':photo.stem,'source_sha':engine.digest(photo),
+       'confirmed_sha':engine.digest(photo)})
+    assert invalid.status_code==409
+    r.save(photo.stem,photo,data['quad'],valid_mask(),1.1163,
+           approved=True,reviewer='Manual')
+    invalid=client.post('/api/petek/new-revision',json={
+        'name':photo.name,'uid':photo.stem,'source_sha':engine.digest(photo),
+        'confirmed_sha':'wrong'})
+    assert invalid.status_code==409
+    assert not (r.profiles/(photo.stem+'_r2.json')).exists()
