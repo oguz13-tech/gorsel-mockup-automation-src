@@ -25,10 +25,10 @@ def build(destination,source=ROOT):
     files={n:(source/n).read_bytes() for n in sorted(paths) if n and allowed(n) and not (source/n).is_symlink()}
     for required in ['BASLAT_V47_WINDOWS.bat','BASLAT_V46_WINDOWS.bat','MERKEZ/merkez.py','SABLON_V2_MIMARI/app.py','SABLON_V2_MIMARI/static/js/edge_angles_v46.js']:
         if required not in files:raise ValueError('Missing required code: '+required)
-    manifest={'release':'V4.7.3 CANDIDATE','acceptance':'WINDOWS_NOT_VERIFIED','source_commit':sha,
+    manifest={'release':'V4.7.4 CANDIDATE','acceptance':'WINDOWS_NOT_VERIFIED','source_commit':sha,
               'files':[{ 'path':n,'bytes':len(b),'sha256':hashlib.sha256(b).hexdigest()} for n,b in files.items()]}
     files['SHA256_MANIFEST.json']=json.dumps(manifest,ensure_ascii=False,indent=2).encode()
-    target=destination/('GORSEL_V473_WINDOWS_CANDIDATE_'+sha[:12]+'.zip')
+    target=destination/('GORSEL_V474_WINDOWS_CANDIDATE_'+sha[:12]+'.zip')
     with target.open('xb') as f:
         with zipfile.ZipFile(f,'w',compression=zipfile.ZIP_DEFLATED) as z:
             for name,data in files.items():
