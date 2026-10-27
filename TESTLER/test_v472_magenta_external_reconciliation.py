@@ -120,9 +120,13 @@ def test_dimension_mismatch_keeps_old_geometry_and_file(tmp_path):
 def test_duplicate_template_stem_is_blocked_not_guessed(tmp_path):
     root,src,work,_=_fixture(tmp_path)
     with sqlite3.connect(root/'SABLON_V2_MIMARI'/'ayarlar.db') as con:
-        con.execute("""INSERT INTO template_profiles SELECT 'second_uid',category,source_relative_path,
-                  source_asset_sha256,review_status,manually_verified,is_active,surface_quad,
-                  outer_quad,nominal_aspect,orientation,component_confidences FROM template_profiles""")
+        con.execute("""INSERT INTO template_profiles
+          (template_uid,category,source_relative_path,source_asset_sha256,
+           review_status,manually_verified,is_active,surface_quad,outer_quad,
+           nominal_aspect,orientation,component_confidences)
+          SELECT 'second_uid',category,source_relative_path,source_asset_sha256,
+            review_status,manually_verified,is_active,surface_quad,outer_quad,
+            nominal_aspect,orientation,component_confidences FROM template_profiles""")
     item=analyze(root,src.parent)['jobs'][0]
     assert item['status']=='AMBIGUOUS_OR_NOT_REGISTERED'
 
