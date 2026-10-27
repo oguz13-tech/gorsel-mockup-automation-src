@@ -14,6 +14,13 @@ DOCS={'docs/V475_FINAL_CODE_DELIVERY.md','docs/V473_FINAL_SAFE_HANDOFF.md','docs
 PINNED_PUBLIC_DATA={'MERKEZ/GUNLUK/INSTALLED_NUMBER_SPEC.json'}
 def allowed(name):
     p=PurePosixPath(name)
+    # Generated references are .txt, never runnable .bat/.ps1/.py files.
+    if len(p.parts)==2 and (
+            (p.parts[0]=='LEGACY_LAUNCHERS_REFERENCE'
+             and p.name.lower().endswith(('.bat.reference.txt','.ps1.reference.txt')))
+            or (p.parts[0]=='LEGACY_TOOLS_REFERENCE'
+                and p.name.lower().endswith('.py.reference.txt'))):
+        return True
     return (name in TOP or name in DOCS or name in PINNED_PUBLIC_DATA or
             (p.parts[0] in DIRS and p.suffix in EXT and
              not any(x in {'.venv','__pycache__','logs','output','artifacts'} for x in p.parts) and
