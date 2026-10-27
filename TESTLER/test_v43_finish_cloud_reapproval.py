@@ -43,8 +43,10 @@ def test_editing_glass_effect_or_corners_yields_new_sku_identity():
     assert len({a,b,c,d})==4
 
 
-def make_row(tmp_path):
-    f=tmp_path/'hello.png'; f.write_bytes(b'safe mockup rendered bytes')
+def make_row(tmp_path, state='localstate'):
+    f=tmp_path/state/'uretilen_gorseller'/'LOCAL'/'04_Cam_Dograma'/'hello.png'
+    f.parent.mkdir(parents=True,exist_ok=True)
+    f.write_bytes(b'safe mockup rendered bytes')
     return dict(key='k001',sku='CMD-LOCAL-001',category='04_Cam_Dograma',
                 art_name='art.png',uid='CMD_01',output=str(f),output_sha=hashlib.sha256(f.read_bytes()).hexdigest())
 
@@ -74,7 +76,7 @@ def test_old_outputs_are_published_once_then_excel_backfilled(tmp_path, monkeypa
 def test_cloud_bad_url_never_in_excel(tmp_path):
     runtime=tmp_path/'runtime';runtime.mkdir()
     (runtime/'ayarlar.json').write_text('{"bulut_ayarlari":{"imgbb_keys":["fake"]}}')
-    row=make_row(tmp_path)
+    row=make_row(tmp_path,state='s')
     c=CloudExcel(tmp_path/'s', tmp_path/'s'/'r', runtime)
     a=c.publish_existing([row],upload_fn=lambda *_: 'file:///C:/local.png')
     assert a['linked']==0 and a['failed']==1
