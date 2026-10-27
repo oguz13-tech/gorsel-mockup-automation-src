@@ -271,3 +271,42 @@ def test_recovery_after_store_save_failure_keeps_original_and_db(tmp_path,monkey
     assert sha(work)==old and sha(orig)==old
     with sqlite3.connect(db) as con:
         assert con.execute('SELECT source_asset_sha256 FROM template_profiles').fetchone()[0]==old
+
+
+def test_active_identity_report_distinguishes_real_duplication_from_original_backup(tmp_path):
+    from external_inventory_v472 import inspect_active_templates
+    root,src,work,archive=_fixture(tmp_path)
+    # Working + ORIGINAL_ARCHIVE share expected old bytes. That is NOT a
+    # duplicate active template; different extensions in working ARE.
+    clean=inspect_active_templates(root)
+    assert clean['same_identity_different_files']==[]
+    assert clean['same_bytes_different_identities']==[]
+    assert clean['db_active_profile_mismatches']==[]
+    assert clean['working_without_legacy_db_profile']==[]
+    other=work.with_suffix('.jpeg')
+    _image(other)
+    dup=inspect_active_templates(root)
+    assert len(dup['same_identity_different_files'])==1
+    assert len(dup['db_active_profile_mismatches'])==1
+    assert dup['photos_deleted_by_this_scan']==0
+    assert archive.is_file()
+
+
+def test_store_rekey_many_stores_keeps_memberships_unique(tmp_path):
+    from URETIM_V4.store_profiles_v47 import StoreProfiles
+    manager=StoreProfiles(tmp_path/'private')
+    manager.add_store('Magaza_01')
+    manager.add_store('Magaza_03')
+    one={'category':'03_Ahsap_Tablo','uid':'ahsap_1','source_sha':'a'*64}
+    two={'category':'02_Cam_Tablo_Yatay','uid':'cam_7','source_sha':'b'*64}
+    manager.assign('Magaza_01',[one])
+    manager.assign('Magaza_03',[two])
+    plan=manager.preview_rekey([
+        {'category':one['category'],'uid':one['uid'],'old_sha':one['source_sha'],'new_sha':'c'*64},
+        {'category':two['category'],'uid':two['uid'],'old_sha':two['source_sha'],'new_sha':'d'*64},
+    ])
+    assert plan['changed_count']==2
+    assert manager.load()['stores']['Magaza_01']['templates']==['03_Ahsap_Tablo:ahsap_1@'+'a'*64]
+    manager.save(plan['new'])
+    assert manager.load()['stores']['Magaza_01']['templates']==['03_Ahsap_Tablo:ahsap_1@'+'c'*64]
+    assert manager.load()['stores']['Magaza_03']['templates']==['02_Cam_Tablo_Yatay:cam_7@'+'d'*64]
