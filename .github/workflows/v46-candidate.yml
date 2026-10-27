@@ -35,7 +35,7 @@ jobs:
         run: python -m pytest -q TESTLER/test_v46_workspace_identity.py TESTLER/test_v46_chroma_detector.py TESTLER/test_v46_chroma_render.py TESTLER/test_v46_optional_4k.py TESTLER/test_v47_material_store_random.py TESTLER/test_v47_pause_stop_resume.py TESTLER/test_v47_audit_integrity.py TESTLER/test_v47_p1_p2_acceptance.py --junitxml=zip-test-results.xml
       - uses: actions/upload-artifact@v4
         with:
-          name: V46-CANDIDATE-${{ matrix.os }}-${{ github.sha }}
+          name: V47-CANDIDATE-${{ matrix.os }}-${{ github.sha }}
           path: |
             dist/*.zip
             dist/*.sha256
