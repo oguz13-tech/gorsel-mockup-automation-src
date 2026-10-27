@@ -56,7 +56,7 @@ class UnifiedV4BatchWindow:
 
         ttk.Label(
             area,
-            text="7 Kategori Ortak Seri Üretim Merkezi (V4.5 — Duraklat/Devam, Sınırsız İş, 4K, Bulut Excel)",
+            text="7 Kategori Ortak Seri Üretim Merkezi (V4.7.1 — Güvenli Devam, Mağazalar, Efektler, 4K, Excel)",
             font=("Segoe UI", 15, "bold"),
         ).pack(anchor="w", pady=(0, 6))
         ttk.Label(
@@ -273,7 +273,7 @@ class UnifiedV4BatchWindow:
                     store=names[sel[0]]
                     templates=[self.template_items[self.mapping[int(i)]]
                                for i in self.listbox.curselection()]
-                    if action=="assign":mgr.assign(store,templates)
+                    if action=="assign":mgr.assign(store,templates,all_approved=list(self.template_items.values()))
                     else:mgr.unassign(store,templates)
                 refresh()
             except (ValueError,KeyError,OSError) as exc:
