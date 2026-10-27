@@ -20,7 +20,8 @@ from URETIM_V4.deleted_receipts_v474 import (candidate_rows as deleted_candidate
                                           save_plan as save_deleted_plan,
                                           mark_selected as confirm_deleted,
                                           CONFIRM as REMOVED_CONFIRM)
-\nclass Maintenance:
+
+class Maintenance:
     def __init__(self):
         self.window=tk.Tk()
         self.window.title('V4.7.4 — Magenta ve Eski Sürüm Dosya Güvenliği')
