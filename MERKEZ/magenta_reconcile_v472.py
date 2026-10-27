@@ -361,6 +361,8 @@ def apply(report,confirmation,*,allow_review=False):
                 job['result']='APPROVED_TRANSFERRED' if approved else 'REVIEW_REQUIRED'
             con.commit()
         if store_plan['changed_count']:
+            if stores.load()!=store_plan['old']:
+                raise RuntimeError('STORE_PROFILE_CHANGED_WHILE_APPLYING: RESTORE_IMAGES_AND_DB')
             stores.save(store_plan['new'])
             store_saved=True
         result={'status':'APPLIED','count':len(saved),'backup':str(backup_root),
