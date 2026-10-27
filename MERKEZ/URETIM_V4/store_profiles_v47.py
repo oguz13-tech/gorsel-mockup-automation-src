@@ -116,6 +116,43 @@ class StoreProfiles:
             temp.unlink(missing_ok=True)
         return self.path
 
+    def preview_rekey(self, substitutions: list[dict]) -> dict:
+        """Plan source-SHA changes without writing store config or touching outputs.
+
+        A template UID stays the same: only the source SHA changes. Keep
+        membership even for REVIEW_REQUIRED templates; the production
+        discoverer excludes them until human reapproval. Never create a
+        second mapping for a changed photo.
+        """
+        raw=self.load()
+        planned=json.loads(json.dumps(raw))
+        changes={}
+        for item in substitutions:
+            category=str(item['category'])
+            uid=str(item['uid'])
+            previous=str(item['old_sha']).lower()
+            current=str(item['new_sha']).lower()
+            if not re.fullmatch(r'[0-9a-f]{64}',previous) or not re.fullmatch(r'[0-9a-f]{64}',current):
+                raise ValueError('STORE_REKEY_SHA_INVALID')
+            old=f'{category}:{uid}@{previous}'
+            new=f'{category}:{uid}@{current}'
+            if old in changes and changes[old]!=new:
+                raise ValueError('STORE_REKEY_DUPLICATE_SOURCE_IDENTITY')
+            changes[old]=new
+        impacted=[]
+        for store,row in planned['stores'].items():
+            before=list(row['templates'])
+            after=[changes.get(key,key) for key in before]
+            if len(set(after)) != len(after):
+                raise ValueError('STORE_REKEY_DUPLICATE_IN_STORE: '+store)
+            if after!=before:
+                impacted.append({'store':store,'old':[key for key in before if key in changes],
+                                 'new':[changes[key] for key in before if key in changes]})
+                row['templates']=after
+        self.validate(planned)
+        return {'old':raw,'new':planned,'changed':impacted,
+                'changed_count':sum(len(row['old']) for row in impacted)}
+
     def add_store(self, store):
         if not STORE_ID.fullmatch(str(store)) or store == 'LOCAL':
             raise ValueError('Mağaza kimliği 2-36 harf/rakam/_/- olmalı (LOCAL özel).')
