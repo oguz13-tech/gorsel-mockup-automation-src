@@ -123,9 +123,11 @@ def inspect_active_templates(workspace: Path) -> dict:
                 connection.row_factory=sqlite3.Row
                 columns={r[1] for r in connection.execute('PRAGMA table_info(template_profiles)')}
                 if {'category','source_relative_path','source_asset_sha256','is_active'}.issubset(columns):
+                    approval_fields=(',review_status,manually_verified'
+                        if {'review_status','manually_verified'}.issubset(columns) else '')
                     for row in connection.execute(
-                        'SELECT category,source_relative_path,source_asset_sha256 '
-                        'FROM template_profiles WHERE is_active=1'):
+                        'SELECT category,source_relative_path,source_asset_sha256'
+                        + approval_fields + ' FROM template_profiles WHERE is_active=1'):
                         category=str(row['category'])
                         rel=str(row['source_relative_path'] or '').replace('\\','/')
                         parts=rel.split('/')
@@ -133,6 +135,14 @@ def inspect_active_templates(workspace: Path) -> dict:
                         identity=unicodedata.normalize('NFC',Path(parts[1]).stem).casefold()
                         key=(category,identity)
                         registered.add(key)
+                        if approval_fields and not (
+                                row['review_status']=='APPROVED'
+                                and int(row['manually_verified'] or 0)==1):
+                            # DRAFT / REVIEW_REQUIRED may deliberately be
+                            # missing until the operator uploads and approves
+                            # the magenta source. Never claim this is a P0
+                            # corruption of an approved production template.
+                            continue
                         current=by_identity.get(key,[])
                         if len(current)!=1 or current[0]['sha256']!=row['source_asset_sha256']:
                             stale.append({'category':category,'identity':identity,
