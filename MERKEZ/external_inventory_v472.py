@@ -22,6 +22,8 @@ CODE_EXT={'.py','.js','.html','.css','.bat','.ps1','.cjs','.json','.yaml','.yml'
 STATE_NAMES={'ayarlar.db','v4_ortak_uretim.sqlite3','petek_v3.sqlite3',
              'store_profiles_v47.json','PETEK_REGISTRY.sqlite3'}
 LIMIT=50000
+SUSPECT_EXT={'.py','.bat','.ps1','.exe','.dll','.onnx','.pth','.safetensors','.zip','.7z'}
+SUSPECT_HINTS=('gorsel','görsel','mockup','sablon','şablon','petek','chroma','esrgan','jarvis','v46','v47')
 CONFIRM='YALNIZ EKSİK FARKLI KODU KARANTİNAYA KOPYALA'
 def checksum(path):
     h=hashlib.sha256()
@@ -29,7 +31,7 @@ def checksum(path):
         for chunk in iter(lambda:f.read(1048576),b''):h.update(chunk)
     return h.hexdigest()
 def visit_folders(roots,max_depth=8):
-    seen=set(); discovered=[]; states=[]
+    seen=set(); discovered=[]; states=[]; suspects=[]
     for root in roots:
         root=Path(root).expanduser().resolve()
         if not root.is_dir():continue
@@ -40,6 +42,8 @@ def visit_folders(roots,max_depth=8):
             dirs[:]=[x for x in dirs if x not in SKIP and not (d/x).is_symlink()]
             if len(d.parts)-base_depth>=max_depth:dirs[:]=[]
             marker=(d/'MERKEZ'/'merkez.py')
+            if not marker.is_file():
+                marker=(d/'SABLON_V2_MIMARI'/'app.py')
             if marker.is_file() and not marker.is_symlink() and str(d).casefold() not in seen:
                 discovered.append(d)
                 seen.add(str(d).casefold())
@@ -50,7 +54,11 @@ def visit_folders(roots,max_depth=8):
                 if p.is_symlink():continue
                 if filename in STATE_NAMES or (filename=='SHA256_MANIFEST.json'):
                     states.append(p)
-    return discovered,states
+                if (p.suffix.lower() in SUSPECT_EXT
+                        and len(suspects)<10000
+                        and any(hint in str(d).casefold() for hint in SUSPECT_HINTS)):
+                    suspects.append(p)
+    return discovered,states,suspects
 def db_counts(path):
     if path.name not in {'ayarlar.db','v4_ortak_uretim.sqlite3'}:return None
     try:
@@ -73,7 +81,7 @@ def build(code_root,workspace,roots):
         raise ValueError('ACTIVE_CODE_ROOT_INVALID')
     if not (workspace/'SABLON_V2_MIMARI'/'ayarlar.db').is_file():
         raise ValueError('ACTIVE_WORKSPACE_DB_INVALID')
-    found,states=visit_folders(roots)
+    found,states,suspects=visit_folders(roots)
     components=[]; diff=[]
     for candidate in found:
         if candidate==code_root or candidate==workspace:continue
@@ -109,12 +117,25 @@ def build(code_root,workspace,roots):
                            'sha256':checksum(p) if p.stat().st_size<1024*1024*350 else None,
                            'read_only_sqlite':db_counts(p),
                            'decision':'REVIEW_EXTERNAL_STATE_NO_AUTOMATIC_MERGE'})
+    # Source scripts, model binaries and ZIPs in experiment-only directories
+    # can matter even when they are not inside a complete app checkout.
+    known_code=[Path(x['root']) for x in components]
+    orphan=[]
+    for item in suspects:
+        if (code_root in item.parents or workspace in item.parents
+                or any(parent in item.parents for parent in known_code)):
+            continue
+        if item.name in STATE_NAMES:continue
+        orphan.append({'path':str(item),'size':item.stat().st_size,
+                       'sha256':checksum(item) if item.stat().st_size<1024*1024*350 else None,
+                       'status':'STANDALONE_TOOL_OR_MODEL_REVIEW_BEFORE_DELETE'})
     local=os.environ.get('LOCALAPPDATA') or str(Path.home())
     report={'schema':1,'timestamp':datetime.now(timezone.utc).isoformat(),
             'workspace':str(workspace),'active_code':str(code_root),
             'scan_roots':[str(Path(r)) for r in roots],
             'candidate_code_roots':components,'different_code_files':diff,
             'external_state_files':state_list,
+            'standalone_tool_or_model_suspects':orphan,
             'known_active_external_state':[
                 str(Path(local)/'GorselMockup'/'UnifiedV4'),
                 str(Path(local)/'GorselMockup'/'PetekV3'),
@@ -154,6 +175,20 @@ def stage(report_path,phrase):
         if checksum(dest)!=row['source_sha256']:raise RuntimeError('STAGED_SHA_MISMATCH')
         result.append({'source':row['source'],'staged':str(dest),
                        'sha256':row['source_sha256'],'integrated_into_active_code':False})
+    # Scripts outside recognized code roots may be important. Preserve only
+    # small SHA-verifiable source scripts; binaries/models remain review-only
+    # and are not silently copied into executable folders.
+    for suspect in refreshed.get('standalone_tool_or_model_suspects',[]):
+        src=Path(suspect['path'])
+        if (src.suffix.lower() not in CODE_EXT or not suspect.get('sha256')
+                or src.stat().st_size>20*1024*1024):
+            continue
+        dest=folder/'standalone'/hashlib.sha256(str(src).encode()).hexdigest()[:12]/src.name
+        dest.parent.mkdir(parents=True,exist_ok=True)
+        shutil.copy2(src,dest)
+        if checksum(dest)!=suspect['sha256']:raise RuntimeError('STANDALONE_STAGE_SHA_CHANGED')
+        result.append({'source':str(src),'staged':str(dest),'sha256':suspect['sha256'],
+                       'integrated_into_active_code':False})
     receipt={'staged_count':len(result),'items':result,
              'meaning':'ARCHIVED_FOR_HUMAN_CODE_REVIEW_NOT_ACTIVE',
              'external_folders_deleted':0}
