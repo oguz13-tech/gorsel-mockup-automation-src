@@ -113,16 +113,18 @@ def _legacy_profiles(runtime, problems):
                 _problem(problems,'APPROVED_IMAGE_SHA_NOT_FOUND',uid=uid,category=cat,relative=rel)
             if approved and not working_matches and archive_matches:
                 _problem(problems,'APPROVED_ONLY_IN_ARCHIVE',uid=uid,category=cat,relative=rel)
-            if not working.is_file():
-                _problem(problems,'ACTIVE_TEMPLATE_IMAGE_MISSING',uid=uid,category=cat,relative=rel)
-            if working.is_file() and not working.is_symlink() and not working_matches:
-                _problem(problems,'WORKING_TEMPLATE_SHA_DIFFERS_FROM_PROFILE',uid=uid,category=cat,relative=rel)
+            # Unapproved staging/DRAFT templates are intentionally incomplete.
+            # They must not turn a healthy production into a false P0 blocker.
+            if approved and not working.is_file():
+                _problem(problems,'APPROVED_WORKING_IMAGE_MISSING',uid=uid,category=cat,relative=rel)
+            if approved and working.is_file() and not working.is_symlink() and not working_matches:
+                _problem(problems,'APPROVED_WORKING_SHA_DIFFERS_FROM_PROFILE',uid=uid,category=cat,relative=rel)
             known[f'{cat}:{uid}@{expected}']={'approved':approved,'category':cat,'uid':uid,'source_sha':expected}
     except (sqlite3.Error,OSError,ValueError,TypeError) as exc:
         _problem(problems,'LEGACY_SQLITE_AUDIT_ERROR',error=str(exc)[:250])
     return known,details
 
-def _petek_profiles(root, problems):
+def _petek_profiles(root, problems, workspace=None):
     root=Path(root).absolute()
     profiles=root/'profiles'
     masks=root/'masks'
@@ -142,6 +144,14 @@ def _petek_profiles(root, problems):
             if source.is_symlink() or not source.is_file():raise ValueError('PETEK_SOURCE_UNAVAILABLE')
             expected=record['source_sha']
             if petek_engine.digest(source)!=expected:raise ValueError('PETEK_SOURCE_SHA_CHANGED')
+            if workspace is not None:
+                # Profiles can legitimately refer to older LAB paths. Before
+                # deleting that experiment folder, it must be rehomed with an
+                # explicit source+mask migration. Surface the dependency.
+                approved_roots=[Path(workspace).resolve(),root.resolve()]
+                if not any(base==source.resolve() or base in source.resolve().parents
+                           for base in approved_roots):
+                    details['source_outside_expected_roots'].append(str(source))
             mask_sha=record['mask_sha']
             mask_path=masks/(mask_sha+'.png')
             if mask_path.is_symlink() or not mask_path.is_file():
@@ -222,7 +232,10 @@ def examine(workspace,code_root,*,production_root=None,petek_root=None,external_
     known={}
     legacy,legacy_stats=_legacy_profiles(workspace,blockers)
     known.update(legacy)
-    petek,petek_stats=_petek_profiles(petek_root,blockers)
+    petek,petek_stats=_petek_profiles(petek_root,blockers,workspace=workspace)
+    if petek_stats['source_outside_expected_roots']:
+        _problem(warnings,'PETEK_SOURCE_DEPENDS_ON_EXTERNAL_DIRECTORY',
+                 count=len(petek_stats['source_outside_expected_roots']))
     known.update(petek)
     stores=_store_integrity(production_root,known,blockers)
     candidates=inspect_active_templates(workspace)
