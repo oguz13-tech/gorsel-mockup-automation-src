@@ -109,7 +109,8 @@ def analyze(workspace,lab=LAB):
             else:
                 cat,prof=possibilities[0]
                 item['category']=cat;item['uid']=prof['template_uid']
-                item['relative']=str(prof['source_relative_path']).replace('\\','/')
+                item['db_relative']=str(prof['source_relative_path'])
+                item['relative']=item['db_relative'].replace('\\','/')
                 dest=safe(workspace/'2_SABLON_HAVUZU'/item['relative'])
                 item['destination']=str(dest)
                 item['old_sha']=sha(dest);item['old_dimensions']=png_info(dest)
@@ -124,9 +125,23 @@ def analyze(workspace,lab=LAB):
                 else:
                     lab_match=[x for x in originals.get((cat,namekey(source),item['source_sha']),[])
                                if x.get('template_uid')==prof['template_uid']]
-                    item['trusted_lab_approval']=len(lab_match)==1
-                    item['lab_record']=lab_match[0] if len(lab_match)==1 else None
-                    item['status']='READY_APPROVED_TRANSFER' if lab_match else 'READY_REQUIRES_REAPPROVAL'
+                                        # Human approval binds exact bytes. PNG->JPG conversion
+                    # changes the SHA and MUST NOT preserve APPROVED status.
+                    same_codec = (source.suffix.lower() == dest.suffix.lower()
+                                  or {source.suffix.lower(),dest.suffix.lower()}=={'.jpg','.jpeg'})
+                    proof=lab_match[0] if len(lab_match)==1 and same_codec else None
+                    if proof:
+                        try:
+                            quad=json.loads(proof['surface_quad']) if isinstance(proof['surface_quad'],str) else proof['surface_quad']
+                            if (len(quad)!=4 or any(len(pt)!=2 or not
+                                  (0<=float(pt[0])<dim[0] and 0<=float(pt[1])<dim[1])
+                                  for pt in quad)):
+                                proof=None
+                        except (ValueError,TypeError,KeyError):
+                            proof=None
+                    item['trusted_lab_approval']=proof is not None
+                    item['lab_record']=proof
+                    item['status']='READY_APPROVED_TRANSFER' if proof else 'READY_REQUIRES_REAPPROVAL'
         except (OSError,ValueError,sqlite3.Error) as exc:
             item['status']='ERROR'
             item['reason']=str(exc)
@@ -197,7 +212,8 @@ def apply(report,confirmation,*,allow_review=False):
                     if sha(staged)!=job['source_sha']:raise RuntimeError('STAGED_SHA_MISMATCH')
                     # Extension differs? Preserve target pathname and use decoded
                     # Pillow to encode to TARGET format, with hash recomputed.
-                    if src.suffix.lower()!=destination.suffix.lower():
+                    if src.suffix.lower()!=destination.suffix.lower() and not (
+                            {src.suffix.lower(),destination.suffix.lower()}=={'.jpg','.jpeg'}):
                         with Image.open(staged) as im:
                             converted=destination.with_name('.magenta-convert-'+uuid.uuid4().hex+destination.suffix)
                             im.save(converted)
@@ -214,7 +230,7 @@ def apply(report,confirmation,*,allow_review=False):
                            updated_at=CURRENT_TIMESTAMP
                        WHERE category=? AND template_uid=? AND source_relative_path=?
                          AND source_asset_sha256=? AND is_active=1''',
-                    (new_sha,*extra,job['category'],job['uid'],job['relative'],job['old_sha']))
+                    (new_sha,*extra,job['category'],job['uid'],job['db_relative'],job['old_sha']))
                 if update.rowcount!=1:raise RuntimeError('MAIN_PROFILE_CHANGED_OR_DUPLICATE')
                 if approved and lab['surface_quad']:
                     # Geometry is transferred only if the lab DB shows a human
