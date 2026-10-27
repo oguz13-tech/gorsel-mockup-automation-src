@@ -58,6 +58,7 @@ from .design_proxy_v43 import prepare_render_artwork
 from .upscale4k_v44 import process as upscale_new_outputs
 from .finish_v42 import GLASS, projected_rounded_alpha
 from .finish_material_v46 import apply_material_finish, DAYLIGHT, RECIPE as MATERIAL_RECIPE
+from PETEK_V3.geometry_qa_v47 import inspect_print_safety
 from .store_profiles_v47 import StoreProfiles, key_for
 from .resume_checkpoint_v47 import (read_checkpoint, write_checkpoint,
                                     snapshot_inputs, same_inputs, SCHEMA as RESUME_SCHEMA)
@@ -753,6 +754,14 @@ class UnifiedV4Batch:
                                     raw_scene = petek_engine.read_bgr(source_path)
                                     picture = apply_material_finish(raw_scene, picture, mask,
                                         item["quad"], cat, enabled=True)
+                                # Assert untouched vent/curve/floor/background pixels
+                                # before portrait conversion. The operator-approved
+                                # semantic mask is still the only source of truth.
+                                source_scene = petek_engine.read_bgr(source_path)
+                                geometry_report = inspect_print_safety(
+                                    source_scene, picture, mask, item["quad"])
+                                if geometry_report['status'] != 'PASS':
+                                    raise petek_engine.MaskError('PETEK_PROTECTED_PIXELS_CHANGED')
                                 picture = petek_engine.canvas_3x4(picture)
                             else:
                                 picture, _ = _render_legacy_six_cover(
