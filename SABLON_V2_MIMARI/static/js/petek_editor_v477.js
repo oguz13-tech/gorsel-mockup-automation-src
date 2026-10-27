@@ -303,6 +303,8 @@ function init(){
  $('petekV477Canvas').addEventListener('pointerup',pointerUp);
  $('petekV477Canvas').addEventListener('pointercancel',pointerUp);
  document.querySelector('#categories').addEventListener('click',event=>{
+   // Reclicking PETEK itself must not trigger discard/close/reopen.
+   if(event.target.closest('#petekV477Nav'))return;
    if(!s.active)return;
    if(s.dirty&&!confirm('PETEK taslağında kaydedilmemiş değişiklikler var. Altı kategoriye dönüp bunları kaybetmek istiyor musun?')){
      event.preventDefault();event.stopPropagation();return;
