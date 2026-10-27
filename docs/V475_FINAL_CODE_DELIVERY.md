@@ -25,6 +25,11 @@ korunur; hiçbir eski görsele bu teslim sırasında dokunulmadı.
   `LEGACY_LAUNCHERS_REFERENCE/*.reference.txt` altında orijinal
   byte'larıyla korunur. Böylece eski C:\AI_WORK yoluna sessizce
   geri dönülmez; kayıp araçların tarihsel içerikleri tek pakette vardır.
+- GitHub kök dizinindeki önceki bağımsız Python araçları da
+  `LEGACY_TOOLS_REFERENCE/*.reference.txt` içine orijinal SHA ile
+  eklenir (ör. `SABLON_DUZELTICI.py`, `toplu_gorsel_linkle.py`).
+  Önceden kalmış mutlak Windows yollarına veya veri dosyalarına
+  dokunmasınlar diye otomatik olarak çalıştırılmazlar.
 - `MERKEZ/GUNLUK/BATCH_SELECTION.json` GitHub'da bulunmuyor ve
   Günlük V2'nin sabit PR9 snapshot/backupları ayrıca gerekli.
   Eski Günlük V2 bu yüzden **doğrulanmadan çalışır sayılmaz**.
