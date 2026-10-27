@@ -82,6 +82,26 @@ import uuid
 from functools import wraps
 
 app = Flask(__name__)
+from core.loopback_security_v47 import check as _loopback_check, token as _csrf_token
+
+@app.before_request
+def _enforce_loopback_csrf_v47():
+    reason = _loopback_check(request, testing=app.config.get('TESTING') is True)
+    if reason:
+        return jsonify({'success':False,'code':reason,'error':'Yerel inceleme güvenlik denetimi'}),403
+
+@app.after_request
+def _private_editor_headers(response):
+    response.headers['X-Frame-Options']='DENY'
+    response.headers['X-Content-Type-Options']='nosniff'
+    response.headers['Referrer-Policy']='same-origin'
+    response.headers['Cache-Control']='private, no-store'
+    response.headers['Content-Security-Policy']="frame-ancestors 'none'"
+    return response
+
+@app.route('/api/session/csrf')
+def csrf_session_token():
+    return jsonify({'csrf':_csrf_token()})
 
 @app.route('/api/center_identity')
 def center_identity():
