@@ -310,3 +310,65 @@ def test_store_rekey_many_stores_keeps_memberships_unique(tmp_path):
     manager.save(plan['new'])
     assert manager.load()['stores']['Magaza_01']['templates']==['03_Ahsap_Tablo:ahsap_1@'+'c'*64]
     assert manager.load()['stores']['Magaza_03']['templates']==['02_Cam_Tablo_Yatay:cam_7@'+'d'*64]
+
+
+def test_store_written_then_exception_rolls_back_all_three(tmp_path,monkeypatch):
+    """P0 regression: StoreProfiles.save may succeed on disk and then raise."""
+    from URETIM_V4.store_profiles_v47 import StoreProfiles
+    monkeypatch.setenv('LOCALAPPDATA',str(tmp_path/'AppData'))
+    monkeypatch.setattr('magenta_reconcile_v472.app_busy',lambda:False)
+    root,src,work,original=_fixture(tmp_path)
+    store=StoreProfiles(tmp_path/'AppData'/'GorselMockup'/'UnifiedV4')
+    store.add_store('Magaza_01')
+    store.assign('Magaza_01',[{'category':'03_Ahsap_Tablo',
+                                'uid':'Ahsap_UID_001','source_sha':sha(work)}])
+    initial_store=store.path.read_bytes()
+    old_photo=sha(work)
+    old_db_sha=sha(root/'SABLON_V2_MIMARI'/'ayarlar.db')
+    original_save=StoreProfiles.save
+
+    def written_then_failed(self,config):
+        original_save(self,config)
+        raise OSError('AFTER_STORE_JSON_REPLACE_FAULT')
+
+    monkeypatch.setattr(StoreProfiles,'save',written_then_failed)
+    with pytest.raises(OSError,match='AFTER_STORE_JSON_REPLACE_FAULT'):
+        apply(write_report(analyze(root,src.parent)),CONFIRM)
+    assert store.path.read_bytes()==initial_store
+    assert sha(work)==old_photo
+    assert sha(original)==old_photo
+    with sqlite3.connect(root/'SABLON_V2_MIMARI'/'ayarlar.db') as conn:
+        assert conn.execute('SELECT source_asset_sha256 FROM template_profiles').fetchone()[0]==old_photo
+    recovery=tmp_path/'AppData'/'GorselMockup'/'GorselMockup-MagentaRollback'
+    assert len(list(recovery.glob('BEFORE_*/ROLLBACK_VERIFIED.json')))==1
+    assert not list(recovery.glob('BEFORE_*/INCOMPLETE_MAGENTA_APPLY.json'))
+
+
+def test_prior_interrupted_magenta_journal_blocks_new_apply(tmp_path,monkeypatch):
+    monkeypatch.setenv('LOCALAPPDATA',str(tmp_path/'AppData'))
+    monkeypatch.setattr('magenta_reconcile_v472.app_busy',lambda:False)
+    root,src,work,_=_fixture(tmp_path)
+    old=sha(work)
+    report=write_report(analyze(root,src.parent))
+    journal=(tmp_path/'AppData'/'GorselMockup'/'GorselMockup-MagentaRollback'
+             /'BEFORE_crashed'/'INCOMPLETE_MAGENTA_APPLY.json')
+    journal.parent.mkdir(parents=True)
+    journal.write_text('{}',encoding='utf-8')
+    with pytest.raises(RuntimeError,match='MAGENTA_RECOVERY_REQUIRED'):
+        apply(report,CONFIRM)
+    assert sha(work)==old
+
+
+def test_magenta_active_fallback_port_is_busy(monkeypatch):
+    import magenta_reconcile_v472 as module
+    visited=[]
+    class Connected:
+        def __enter__(self):return self
+        def __exit__(self,*args):return None
+    def connect(addr,timeout=None):
+        visited.append(addr[1])
+        if addr[1]==8081:return Connected()
+        raise ConnectionRefusedError()
+    monkeypatch.setattr(module.socket,'create_connection',connect)
+    assert module.app_busy()
+    assert visited==[8080,8081]
