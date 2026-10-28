@@ -70,9 +70,18 @@ function draw(){
  ctx.clearRect(0,0,w,h);ctx.drawImage(s.img,0,0,w,h);
  if(s.mask){
     const tint=document.createElement('canvas');tint.width=w;tint.height=h;
-    const t=tint.getContext('2d');
-    t.drawImage(s.mask,0,0,w,h);t.globalCompositeOperation='source-in';
-    t.fillStyle='rgba(45,222,116,.60)';t.fillRect(0,0,w,h);
+    const t=tint.getContext('2d',{willReadFrequently:true});
+    t.drawImage(s.mask,0,0,w,h);
+    // The registry mask is opaque grayscale: black pixels have alpha=255 too.
+    // source-in would wrongly tint the entire PETEK photo, including vents.
+    // Convert the grayscale *value* to overlay coverage, at preview size only.
+    const overlay=t.getImageData(0,0,w,h);
+    for(let i=0;i<overlay.data.length;i+=4){
+       const coverage=overlay.data[i];
+       overlay.data[i]=45;overlay.data[i+1]=222;overlay.data[i+2]=116;
+       overlay.data[i+3]=Math.round(coverage*0.60);
+    }
+    t.putImageData(overlay,0,0);
     ctx.drawImage(tint,0,0);
  }
  if(s.quad.length){
