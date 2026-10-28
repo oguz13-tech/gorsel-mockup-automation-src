@@ -174,7 +174,17 @@ def activate(target,phrase):
             raise RuntimeError('STAGED_SYMLINK_FORBIDDEN')
         for name in files:
             p=parent/name
-            if p!=receipt:actual_files.add(p.relative_to(target).as_posix())
+            if p==receipt:continue
+            # A harmless read of a WAL-mode staged SQLite DB may create
+            # -wal/-shm sidecars. They are not independent application files.
+            # Only tolerate sidecars of a manifest-listed DB, then verify the
+            # DB's full committed WAL state against the receipt below.
+            if p.name.endswith(('-wal','-shm')):
+                base=Path(str(p)[:-4])
+                if (base.relative_to(target).as_posix() in saved_names
+                        and is_sqlite(base)):
+                    continue
+            actual_files.add(p.relative_to(target).as_posix())
     if actual_files!=set(saved_names):
         raise RuntimeError('STAGED_EXTRA_OR_MISSING_FILES')
     for item in saved:
