@@ -18,6 +18,10 @@ from system_integrity_v475 import examine as audit_everything,write_report as au
 from PETEK_V3.registry import store_root as petek_store_root
 from URETIM_V4.final_guard_v44 import store_v4_root
 ROOT=Path(__file__).resolve().parent.parent
+# Keep high-impact writes inaccessible in the operator UI until real Windows
+# backup/restore acceptance, even if isolated CI regression tests pass.
+P0_USER_WRITE_LOCKED=True
+P0_LOCKED_TITLES=('2.','5.','6.')
 
 from URETIM_V4.deleted_receipts_v474 import (candidate_rows as deleted_candidates,
                                           save_plan as save_deleted_plan,
@@ -64,6 +68,7 @@ class Maintenance:
                   font=('Segoe UI',11,'bold')).pack(anchor='w')
         row=ttk.Frame(frame);row.pack(fill='x',pady=6)
         self.buttons=[]
+        self.locked_buttons=[]
         self.btn(row,'1. Magenta ↔ Ana Önizleme / Rapor',self.magenta_report)
         self.btn(row,'2. İncelediğim Planı Uygula (açık onay)',self.magenta_apply)
         self.allow_review=tk.BooleanVar(value=False)
@@ -101,7 +106,9 @@ class Maintenance:
         ttk.Label(frame,text='9 numaralı işlem yalnız okur; bütün bileşenlerin durumunu '
                             'tek JSON raporunda gösterir. Eski klasör raporu olmadan '
                             'final silme izni vermez.',wraplength=875).pack(anchor='w')
-        self.status=tk.StringVar(value='Hazır. Önce 1 ve 3 numaralı raporları oluşturun.')
+        ttk.Label(frame,text='GÜVENLİK KİLİDİ: 2 / 5 / 6 işlemleri gerçek Windows veri yedeği ve geri dönüş testi kabul edilene kadar kapalıdır.',
+                  wraplength=870,foreground='#bd5b25').pack(anchor='w',pady=5)
+        self.status=tk.StringVar(value='Hazır. Önce 1, 3 ve 9 numaralı salt-okunur raporları oluşturun.')
         ttk.Label(frame,textvariable=self.status,wraplength=850).pack(anchor='w',pady=5)
         self.output=tk.Text(frame,height=11,wrap='word')
         self.output.pack(fill='both',expand=True)
@@ -110,6 +117,9 @@ class Maintenance:
         b=ttk.Button(parent,text=title,command=fn)
         b.pack(side='left',padx=(0,8),fill='x',expand=True)
         self.buttons.append(b)
+        if P0_USER_WRITE_LOCKED and title.startswith(P0_LOCKED_TITLES):
+            b.configure(state='disabled')
+            self.locked_buttons.append(b)
     def enqueue(self,fn,on_success=None):
         if self.working:
             messagebox.showwarning('İşlem devam ediyor','Önce devam eden raporun bitmesini bekleyin.')
@@ -126,7 +136,8 @@ class Maintenance:
             while True:
                 kind,result,on_success=self.events.get_nowait()
                 self.working=False
-                for b in self.buttons:b.configure(state='normal')
+                for b in self.buttons:
+                    b.configure(state='disabled' if b in self.locked_buttons else 'normal')
                 if kind=='error':
                     self.status.set('İŞLEM DURDU: '+str(result))
                     messagebox.showerror('Güvenli engel',str(result))
@@ -150,6 +161,10 @@ class Maintenance:
             os.startfile(r['html']) if os.name=='nt' else None
         self.enqueue(work,open_result)
     def magenta_apply(self):
+        if P0_USER_WRITE_LOCKED:
+            messagebox.showwarning('Veri güvenliği kilidi',
+                'Bu işlem gerçek Windows yedekleme / geri alma kabulü bitene kadar kapalı.',parent=self.window)
+            return
         plan=filedialog.askopenfilename(
             parent=self.window,title='1. adımda oluşan MAGENTA_PLAN_...json dosyasını seç',
             filetypes=[('Magenta planı','MAGENTA_PLAN_*.json'),('JSON','*.json')])
@@ -192,6 +207,10 @@ class Maintenance:
         if phrase!=INVENTORY_CONFIRM:return
         self.enqueue(lambda:str(stage(plan,phrase)))
     def stage_runtime(self):
+        if P0_USER_WRITE_LOCKED:
+            messagebox.showwarning('Veri güvenliği kilidi',
+                'Bu işlem gerçek Windows yedekleme / geri alma kabulü bitene kadar kapalı.',parent=self.window)
+            return
         target=simpledialog.askstring(
             'Yeni ana çalışma kopyası',
             'Orijinal OneDrive dosyaları taşınmaz veya silinmez. '
@@ -206,6 +225,10 @@ class Maintenance:
         self.enqueue(lambda:stage_runtime(self.workspace.get(),target))
 
     def activate_runtime(self):
+        if P0_USER_WRITE_LOCKED:
+            messagebox.showwarning('Veri güvenliği kilidi',
+                'Bu işlem gerçek Windows yedekleme / geri alma kabulü bitene kadar kapalı.',parent=self.window)
+            return
         target=filedialog.askdirectory(parent=self.window,title='5. adımda hazırlanmış doğrulanmış çalışma kopyası')
         if not target:return
         phrase=simpledialog.askstring(
