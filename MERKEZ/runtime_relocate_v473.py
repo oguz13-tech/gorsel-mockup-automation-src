@@ -15,6 +15,7 @@ import socket
 import sqlite3
 import uuid
 import tempfile
+from contextlib import closing
 from legacy_manager import store_runtime_choice, local_state_dir
 
 CONFIRM='ONAYLIYORUM: ONEDRIVE DIŞINDAKİ DOĞRULANMIŞ ÇALIŞMA ALANINI ETKİNLEŞTİR'
@@ -50,8 +51,8 @@ def sqlite_state_digest(path):
     path=Path(path)
     with tempfile.TemporaryDirectory(prefix='gorsel-sqlite-check-') as folder:
         snapshot=Path(folder)/'snapshot.sqlite3'
-        with sqlite3.connect(path.resolve().as_uri()+'?mode=ro',uri=True,timeout=30) as src:
-            with sqlite3.connect(snapshot,timeout=30) as dst:
+        with closing(sqlite3.connect(path.resolve().as_uri()+'?mode=ro',uri=True,timeout=30)) as src:
+            with closing(sqlite3.connect(snapshot,timeout=30)) as dst:
                 src.backup(dst,pages=256,sleep=.05)
                 if dst.execute('PRAGMA integrity_check').fetchone()[0]!='ok':
                     raise RuntimeError('SQLITE_SOURCE_INTEGRITY_FAILED: '+str(path))
@@ -113,8 +114,8 @@ def stage(source, target):
         if is_sqlite(rel):
             # Every SQLite database needs an online snapshot, not just ayarlar.db.
             # Copying the main file without WAL silently loses committed rows.
-            with sqlite3.connect((source/rel).resolve().as_uri()+'?mode=ro',uri=True,timeout=30) as connection:
-                with sqlite3.connect(dst) as clone:
+            with closing(sqlite3.connect((source/rel).resolve().as_uri()+'?mode=ro',uri=True,timeout=30)) as connection:
+                with closing(sqlite3.connect(dst)) as clone:
                     connection.backup(clone,pages=256,sleep=.05)
                     if clone.execute('PRAGMA integrity_check').fetchone()[0]!='ok':
                         raise RuntimeError('SNAPSHOT_INTEGRITY_FAILED: '+rel)
