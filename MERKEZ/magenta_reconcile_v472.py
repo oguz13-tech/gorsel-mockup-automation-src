@@ -238,17 +238,30 @@ def html_comparison(report):
     return out
 
 def app_busy():
-    try:
-        with socket.create_connection(('127.0.0.1',8080),timeout=.4):return True
-    except OSError:return False
+    # The review server may use 8081-8090 when 8080 belongs to another app.
+    # Never change images while any candidate review server is accepting work.
+    for port in range(8080,8091):
+        try:
+            with socket.create_connection(('127.0.0.1',port),timeout=.15):
+                return True
+        except OSError:
+            continue
+    return False
 def apply(report,confirmation,*,allow_review=False):
     if confirmation!=CONFIRM:raise PermissionError('EXPLICIT_MAGENTA_CONFIRMATION_REQUIRED')
     report=safe(report)
     planned=json.loads(report.read_text(encoding='utf-8'))
     if planned.get('schema')!=1:raise ValueError('UNKNOWN_PLAN')
     workspace=Path(planned['workspace']).resolve()
-    if app_busy():raise RuntimeError('STOP_4_KOSE_FLASK_8080_FIRST')
+    if app_busy():raise RuntimeError('STOP_4_KOSE_FLASK_8080_8090_FIRST')
     local=Path(os.environ.get('LOCALAPPDATA') or Path.home())/'GorselMockup'
+    # After a power failure there can be an unfinished multi-file transaction.
+    # Fail closed instead of starting another transfer over unrecovered state.
+    recovery_home=local/'GorselMockup-MagentaRollback'
+    if recovery_home.is_dir():
+        unfinished=next(recovery_home.glob('BEFORE_*/INCOMPLETE_MAGENTA_APPLY.json'),None)
+        if unfinished:
+            raise RuntimeError('MAGENTA_RECOVERY_REQUIRED: '+str(unfinished))
     production_root=store_v4_root()
     if (production_root/'V4_ORTAK_FABRIKA.lock').exists():
         raise RuntimeError('ACTIVE_PRODUCTION_LOCK')
@@ -363,8 +376,10 @@ def apply(report,confirmation,*,allow_review=False):
         if store_plan['changed_count']:
             if stores.load()!=store_plan['old']:
                 raise RuntimeError('STORE_PROFILE_CHANGED_WHILE_APPLYING: RESTORE_IMAGES_AND_DB')
-            stores.save(store_plan['new'])
+            # Mark before invoking save: it can atomically replace the JSON and
+            # *then* raise (disk/fsync/hook failure). Restore must still run.
             store_saved=True
+            stores.save(store_plan['new'])
         result={'status':'APPLIED','count':len(saved),'backup':str(backup_root),
                 'store_assignments_rekeyed':store_plan['changed_count'],
                 'original_archive_changed':False,'items':[
@@ -373,27 +388,46 @@ def apply(report,confirmation,*,allow_review=False):
         # File + DB + store JSON do not share a filesystem transaction.
         # Undo every part if any step fails; retain original evidence even
         # when an OS/filesystem issue stops the rollback.
-        for target,backup,_ in saved:
+        restored=True
+        for target,backup,job in saved:
             try:
                 rollback=target.with_name('.rollback-'+uuid.uuid4().hex+target.suffix)
                 shutil.copyfile(backup,rollback)
                 os.replace(rollback,target)
-            except OSError:pass
+                if sha(target)!=job['old_sha']:
+                    raise RuntimeError('IMAGE_RESTORE_SHA_MISMATCH')
+            except (OSError,RuntimeError) as error:
+                restored=False
+                (backup_root/'IMAGE_RESTORE_REQUIRED.txt').write_text(str(error),encoding='utf-8')
         try:
             with sqlite3.connect(backup_db) as source_db, sqlite3.connect(db) as target_db:
                 source_db.backup(target_db)
                 if target_db.execute('PRAGMA quick_check').fetchone()[0]!='ok':
                     raise RuntimeError('MAIN_DB_RESTORE_VERIFY_FAILED')
-        except (OSError,sqlite3.Error) as error:
+        except (OSError,sqlite3.Error,RuntimeError) as error:
+            restored=False
             (backup_root/'DB_RESTORE_REQUIRED.txt').write_text(str(error),encoding='utf-8')
         if store_saved:
             try:
                 if original_store_exists:
-                    stores.path.write_bytes(backup_store.read_bytes())
+                    recovery_copy=stores.path.with_name('.magenta-store-restore-'+uuid.uuid4().hex+'.tmp')
+                    try:
+                        shutil.copyfile(backup_store,recovery_copy)
+                        os.replace(recovery_copy,stores.path)
+                    finally:
+                        recovery_copy.unlink(missing_ok=True)
+                    if sha(stores.path)!=sha(backup_store):
+                        raise RuntimeError('STORE_RESTORE_SHA_MISMATCH')
                 else:
                     stores.path.unlink(missing_ok=True)
-            except OSError as error:
+            except (OSError,RuntimeError) as error:
+                restored=False
                 (backup_root/'STORE_RESTORE_REQUIRED.txt').write_text(str(error),encoding='utf-8')
+        if restored:
+            (backup_root/'ROLLBACK_VERIFIED.json').write_text(
+                json.dumps({'image_count':len(saved),'db_restored':True,
+                            'store_restored':True},indent=2),encoding='utf-8')
+            pending.unlink(missing_ok=True)
         raise
     pending.unlink(missing_ok=True)
     (backup_root/'APPLY_RECEIPT.json').write_text(
