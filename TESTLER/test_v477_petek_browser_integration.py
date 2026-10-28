@@ -201,3 +201,12 @@ def test_revision_requires_explicit_valid_sha_and_approved_original(tmp_path,mon
         'confirmed_sha':'wrong'})
     assert invalid.status_code==409
     assert not (r.profiles/(photo.stem+'_r2.json')).exists()
+
+
+def test_petek_overlay_uses_grayscale_intensity_not_opaque_alpha():
+    """Black vents in an opaque grayscale mask must remain visually untinted."""
+    js=(ROOT/'SABLON_V2_MIMARI'/'static'/'js'/'petek_editor_v477.js').read_text('utf-8')
+    assert 'const coverage=overlay.data[i]' in js
+    assert 'Math.round(coverage*0.60)' in js
+    assert "globalCompositeOperation='source-in'" not in js
+    assert 't.putImageData(overlay,0,0)' in js
