@@ -180,3 +180,26 @@ def test_fallback_review_port_blocks_runtime_move(tmp_path,monkeypatch):
     monkeypatch.setattr(migration.socket,'create_connection',fake)
     with pytest.raises(RuntimeError,match='STOP_FLASK_SERVER'):
         migration.check_stopped(tmp_path)
+
+
+def test_target_wal_tampering_is_not_ignored(tmp_path,monkeypatch):
+    """A permitted -wal sidecar never makes a changed staged DB acceptable."""
+    monkeypatch.setenv('LOCALAPPDATA',str(tmp_path/'AppData'))
+    monkeypatch.setattr(migration,'state_root',lambda:tmp_path/'LocalProduction')
+    root=tmp_path/'OneDrive'/'Gorsel_Ana'
+    db,_,_=make_workspace(root)
+    with sqlite3.connect(db) as connection:
+        connection.execute('PRAGMA journal_mode=WAL')
+    target=tmp_path/'outside'
+    migration.stage(root,target)
+    staged=target/'SABLON_V2_MIMARI'/'ayarlar.db'
+    conn=sqlite3.connect(staged)
+    try:
+        conn.execute('PRAGMA wal_autocheckpoint=0')
+        conn.execute("INSERT INTO template_profiles VALUES('UNMANIFESTED_TARGET_CHANGE')")
+        conn.commit()
+        with pytest.raises(RuntimeError,match='STAGED_SQLITE_STATE_CHANGED'):
+            migration.activate(target,migration.CONFIRM)
+        assert not (legacy_manager.local_state_dir()/'workspace.json').exists()
+    finally:
+        conn.close()
