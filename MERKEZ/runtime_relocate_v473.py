@@ -14,10 +14,12 @@ import shutil
 import socket
 import sqlite3
 import uuid
+import tempfile
 from legacy_manager import store_runtime_choice, local_state_dir
 
 CONFIRM='ONAYLIYORUM: ONEDRIVE DIŞINDAKİ DOĞRULANMIŞ ÇALIŞMA ALANINI ETKİNLEŞTİR'
 RECEIPT='.V473_RUNTIME_MIGRATION_RECEIPT.json'
+SQLITE_EXT={'.db','.sqlite','.sqlite3','.db3'}
 
 def digest(path):
     h=hashlib.sha256()
@@ -26,15 +28,37 @@ def digest(path):
     return h.hexdigest()
 
 def check_stopped(state_root):
-    try:
-        with socket.create_connection(('127.0.0.1',8080),timeout=.4):
-            raise RuntimeError('STOP_FLASK_SERVER_BEFORE_MIGRATION')
-    except (ConnectionError,OSError):
-        pass
+    # Review may have moved from 8080 to any free port up to 8090.
+    for port in range(8080,8091):
+        try:
+            with socket.create_connection(('127.0.0.1',port),timeout=.15):
+                raise RuntimeError('STOP_FLASK_SERVER_BEFORE_MIGRATION')
+        except (ConnectionError,OSError):
+            pass
     if (state_root/'V4_ORTAK_FABRIKA.lock').exists():
         raise RuntimeError('STOP_RENDER_BEFORE_MIGRATION')
     if (state_root/'V43_BULUT_LINKLEME.lock').exists():
         raise RuntimeError('STOP_CLOUD_BEFORE_MIGRATION')
+
+def sqlite_state_digest(path):
+    """Canonical physical snapshot includes committed WAL pages, not just the .db file.
+
+    A short lived read-only connection takes a consistent SQLite online backup
+    into an isolated local temp file. This detects changes that plain file SHA
+    misses while WAL mode is active. The user's source is never checkpointed.
+    """
+    path=Path(path)
+    with tempfile.TemporaryDirectory(prefix='gorsel-sqlite-check-') as folder:
+        snapshot=Path(folder)/'snapshot.sqlite3'
+        with sqlite3.connect(path.resolve().as_uri()+'?mode=ro',uri=True,timeout=30) as src:
+            with sqlite3.connect(snapshot,timeout=30) as dst:
+                src.backup(dst,pages=256,sleep=.05)
+                if dst.execute('PRAGMA integrity_check').fetchone()[0]!='ok':
+                    raise RuntimeError('SQLITE_SOURCE_INTEGRITY_FAILED: '+str(path))
+        return digest(snapshot)
+
+def is_sqlite(path):
+    return Path(path).suffix.lower() in SQLITE_EXT
 
 def state_root():
     from URETIM_V4.final_guard_v44 import store_v4_root
@@ -56,8 +80,11 @@ def inspect_source(root):
             if p.name.endswith(('-wal','-shm','-journal')):
                 continue
             if not p.is_file():raise RuntimeError('SOURCE_NOT_FILE: '+str(p))
-            rows.append({'rel':p.relative_to(root).as_posix(),
-                         'sha256':digest(p),'bytes':p.stat().st_size})
+            row={'rel':p.relative_to(root).as_posix(),
+                 'sha256':digest(p),'bytes':p.stat().st_size}
+            if is_sqlite(p):
+                row['db_state_sha256']=sqlite_state_digest(p)
+            rows.append(row)
     return sorted(rows,key=lambda row:row['rel'])
 
 def stage(source, target):
@@ -83,13 +110,16 @@ def stage(source, target):
         rel=row['rel']
         dst=target/rel
         dst.parent.mkdir(parents=True,exist_ok=True)
-        if rel==db_rel:
-            # Snapshot includes committed WAL pages without copying live WAL.
-            with sqlite3.connect(source/rel,timeout=30) as connection:
+        if is_sqlite(rel):
+            # Every SQLite database needs an online snapshot, not just ayarlar.db.
+            # Copying the main file without WAL silently loses committed rows.
+            with sqlite3.connect((source/rel).resolve().as_uri()+'?mode=ro',uri=True,timeout=30) as connection:
                 with sqlite3.connect(dst) as clone:
                     connection.backup(clone,pages=256,sleep=.05)
                     if clone.execute('PRAGMA integrity_check').fetchone()[0]!='ok':
-                        raise RuntimeError('SNAPSHOT_INTEGRITY_FAILED')
+                        raise RuntimeError('SNAPSHOT_INTEGRITY_FAILED: '+rel)
+            if sqlite_state_digest(dst)!=row['db_state_sha256']:
+                raise RuntimeError('SOURCE_SQLITE_CHANGED_DURING_MIGRATION: '+rel)
         else:
             with (source/rel).open('rb') as src, dst.open('xb') as out:
                 shutil.copyfileobj(src,out,length=1024*1024)
@@ -97,10 +127,11 @@ def stage(source, target):
             if digest(dst)!=row['sha256']:
                 raise RuntimeError('COPIED_IMAGE_SHA_CHANGED: '+rel)
         copies.append({'rel':rel,'sha256':digest(dst),'source_sha256':row['sha256'],
+                       'source_db_state_sha256':row.get('db_state_sha256'),
                        'bytes':dst.stat().st_size})
     if inspect_source(source)!=entries:
         raise RuntimeError('SOURCE_CHANGED_DURING_MIGRATION_RESTAGE')
-    manifest={'schema':1,'origin':str(source),'target':str(target),
+    manifest={'schema':2,'origin':str(source),'target':str(target),
               'files':copies,'source_file_count':len(entries),
               'source_unchanged':True,'source_was_deleted':False,
               'source_db_sha256':original[db_rel]['sha256'],
@@ -119,19 +150,41 @@ def activate(target,phrase):
         raise RuntimeError('RUNTIME_MIGRATION_INCOMPLETE')
     receipt=target/RECEIPT
     record=json.loads(receipt.read_text(encoding='utf-8'))
-    if record.get('schema')!=1 or record.get('target')!=str(target):
+    if record.get('schema')!=2:
+        raise RuntimeError('RUNTIME_RESTAGE_REQUIRED_OLD_UNSAFE_RECEIPT')
+    if record.get('target')!=str(target):
         raise RuntimeError('RUNTIME_RECEIPT_INVALID')
     source=Path(record['origin'])
     rows=inspect_source(source)
     if len(rows)!=record['source_file_count']:
         raise RuntimeError('LIVE_SOURCE_FILE_SET_CHANGED_AFTER_STAGING')
     expected={r['rel']:r for r in rows}
-    for item in record['files']:
+    saved=record.get('files')
+    if not isinstance(saved,list) or len(saved)!=len(expected):
+        raise RuntimeError('RUNTIME_RECEIPT_FILESET_INVALID')
+    saved_names=[item['rel'] for item in saved]
+    if len(saved_names)!=len(set(saved_names)) or set(saved_names)!=set(expected):
+        raise RuntimeError('RUNTIME_RECEIPT_FILESET_INVALID')
+    # The target must be an exact copy, with no unmanifested files added later.
+    actual_files=set()
+    for folder,dirs,files in os.walk(target,followlinks=False):
+        parent=Path(folder)
+        if parent.is_symlink() or any((parent/name).is_symlink() for name in dirs+files):
+            raise RuntimeError('STAGED_SYMLINK_FORBIDDEN')
+        for name in files:
+            p=parent/name
+            if p!=receipt:actual_files.add(p.relative_to(target).as_posix())
+    if actual_files!=set(saved_names):
+        raise RuntimeError('STAGED_EXTRA_OR_MISSING_FILES')
+    for item in saved:
         rel=item['rel']
-        if rel not in expected or item['source_sha256']!=expected[rel]['sha256']:
+        if (item['source_sha256']!=expected[rel]['sha256'] or
+                item.get('source_db_state_sha256')!=expected[rel].get('db_state_sha256')):
             raise RuntimeError('LIVE_SOURCE_CHANGED_AFTER_STAGING: '+rel)
         if digest(target/rel)!=item['sha256']:
             raise RuntimeError('STAGED_COPY_TAMPERED: '+rel)
+        if is_sqlite(rel) and sqlite_state_digest(target/rel)!=item['source_db_state_sha256']:
+            raise RuntimeError('STAGED_SQLITE_STATE_CHANGED: '+rel)
     with sqlite3.connect(target/'SABLON_V2_MIMARI'/'ayarlar.db') as con:
         if con.execute('PRAGMA integrity_check').fetchone()[0]!='ok':
             raise RuntimeError('STAGED_SQLITE_BROKEN')
