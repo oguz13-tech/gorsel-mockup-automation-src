@@ -289,13 +289,14 @@
       <h3>Ön Panel ve 4 Köşe</h3>
       <div id="petekV477Mode">Mod: Dört köşe</div>
       <div class="petek-v477-actionrow">
-        <button type="button" data-petek-mode="corners">1. Dört Köşe (Elle)</button>
+        <button type="button" data-petek-mode="corners">1. Dört Köşe / Köşe Sürükle</button>
+        <button type="button" id="petekV477ResetCorners">4 Köşeyi Baştan Seç</button>
         <button type="button" id="petekV477AutoCorners">🧭 Magenta 4 Köşe Otomatik Öner</button>
       </div>
       <div class="petek-v477-actionrow">
         <button type="button" id="petekV477Auto">2. Otomatik Maske Taslağı</button>
       </div>
-      <div class="petek-v477-note">Magenta #FF00FF ön panelden kırmızı 4 köşe TASLAĞI önerilir; kesinlikle otomatik kaydetmez veya onaylamaz. Köşeleri düzeltmek için sol üst, sağ üst, sağ alt, sol alt sırasıyla elle işaretle; ardından maskeyi incele.</div>
+      <div class="petek-v477-note">Otomatik 4 köşeden sonra kırmızı noktaları FAREYLE TUTUP SÜRÜKLE; zoom ile ince ayar yap, Ctrl+Z ile geri al. Köşe değiştiğinde taslak maske/kavis eski geometriye ait olduğundan sıfırlanır ve yeniden önerilir. Baştan 4 köşe seçmek ayrı düğmededir; onaylı profiller kilitlidir.</div>
       <h3>Ahşap, Delikler ve Yan Yüzler</h3>
       <div class="petek-v477-actionrow">
         <button type="button" data-petek-mode="wood">Ahşabı Boya</button>
@@ -331,6 +332,7 @@
 </section>
 
 <link rel="stylesheet" href="/static/css/petek_editor_v477.css">
+<script src="/static/js/petek_quad_drag_v481.js"></script>
 <script src="/static/js/petek_editor_v477.js"></script>
 <script src="/static/js/edge_angles_v46.js"></script>
 <script src="/static/js/main.js"></script>
