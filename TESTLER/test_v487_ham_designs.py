@@ -196,3 +196,12 @@ def test_gui_and_watcher_wired_to_one_working_root():
     assert 'self.ham_design_watcher.stop()' in center
     assert "self.runtime_root/'HAM BASKI TASARIMLARI'" in gui
     assert 'validate_for_production()' in gui
+
+def test_all_seven_category_product_engine_refuses_duplicate_extensions(tmp_path):
+    from URETIM_V4.unified_batch import assert_unique_print_names
+    a=tmp_path/'one'/'Ham301.jpg';b=tmp_path/'two'/'ham301.PNG'
+    pic(a,'red');pic(b,'green')
+    with pytest.raises(ValueError,match='HAM_BASKI_TASARIM_NUMARASI_CAKISMASI'):
+        assert_unique_print_names(list(iter_designs(tmp_path)))
+    b.rename(b.with_name('Ham302.png'))
+    assert_unique_print_names(list(iter_designs(tmp_path)))
