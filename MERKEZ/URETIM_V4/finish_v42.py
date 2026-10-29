@@ -50,10 +50,24 @@ def subdued_reflection(scene, printed, mask, quad, category, lighting="strong"):
     sw, sh = 256, 320
     y, x = np.mgrid[0:sh, 0:sw].astype(np.float32)
     u, v = x / (sw - 1), y / (sh - 1)
-    # Two offset, broad *soft* reflections with visible tonal gradients.
-    main = np.exp(-(((u - .76) / .23) ** 2 + ((v - .26) / .66) ** 2) * .75)
-    bounce = np.exp(-(((u - .16) / .34) ** 2 + ((v - .83) / .30) ** 2) * 1.4)
-    edge = np.exp(-(((u - .975) / .085) ** 2)) * .60
+    # Broad reflected room shapes stay soft and category-aware; no mullion or
+    # cross-shaped line is painted onto the artwork.
+    if category == '04_Cam_Dograma':
+        main = np.exp(-(((u - .70) / .18) ** 2 + ((v - .34) / .44) ** 2) * .85)
+        bounce = np.exp(-(((u - .22) / .28) ** 2 + ((v - .78) / .22) ** 2) * 1.5)
+        edge = np.exp(-(((u - .93) / .13) ** 2)) * .38
+    elif category == '05_Ocak_Arkasi':
+        main = np.exp(-(((u - .58) / .38) ** 2 + ((v - .20) / .30) ** 2) * .90)
+        bounce = np.exp(-(((u - .20) / .40) ** 2 + ((v - .72) / .26) ** 2) * 1.3)
+        edge = np.exp(-(((u - .96) / .10) ** 2)) * .45
+    elif category == '02_Cam_Tablo_Dikey':
+        main = np.exp(-(((u - .72) / .20) ** 2 + ((v - .28) / .58) ** 2) * .80)
+        bounce = np.exp(-(((u - .18) / .30) ** 2 + ((v - .78) / .34) ** 2) * 1.4)
+        edge = np.exp(-(((u - .97) / .075) ** 2)) * .52
+    else:
+        main = np.exp(-(((u - .76) / .30) ** 2 + ((v - .27) / .42) ** 2) * .78)
+        bounce = np.exp(-(((u - .16) / .42) ** 2 + ((v - .83) / .25) ** 2) * 1.4)
+        edge = np.exp(-(((u - .975) / .085) ** 2)) * .60
     envelope = np.clip(main * .80 + bounce * .32 + edge * .55, 0, 1).astype(np.float32)
     H = cv2.getPerspectiveTransform(
         np.float32([[0, 0], [sw-1, 0], [sw-1, sh-1], [0, sh-1]]),

@@ -18,7 +18,6 @@ import threading
 from typing import Callable
 
 from PIL import Image
-from openpyxl import Workbook
 
 MODELS = {
     "photo": "realesrgan-x4plus",
@@ -85,6 +84,7 @@ def preflight(*, enabled: bool, model: str = "photo", exe: Path | str | None = N
     # NCNN official models are shipped next to exe in `models`.
     stem = MODELS[model]
     if any(not (directory / f"{stem}.{ext}").is_file() or (directory / f"{stem}.{ext}").is_symlink()
+           or (directory / f"{stem}.{ext}").stat().st_size == 0
            for ext in ("bin", "param")):
         raise UpscaleError(f"Real-ESRGAN modeli eksik: {stem}.bin/.param; beklenen klasör: {directory}")
     return found
@@ -189,26 +189,7 @@ def process(
             notify(f"4K ATLANDI {row.get('sku', '?')}: {exc}")
     if result["failed"]:
         result["status"] = "PARTIAL_4K" if result["status"] != "STOPPED" else "STOPPED"
-    if result["items"]:
-        stamp = hashlib.sha256("|".join(sorted(x["output_sha256"] for x in result["items"])).encode()).hexdigest()[:18]
-        report = report_root / f"4K_DOSYA_LINKLERI_{stamp}.xlsx"
-        if not report.exists():
-            wb = Workbook()
-            sheet = wb.active
-            sheet.title = "4K Ciktilar"
-            sheet.append(["Stok Kodu", "Orijinal Gorsel", "4K Gorsel", "4K SHA256", "AI Model", "Durum"])
-            for item in result["items"]:
-                sheet.append([item["recipe"]["sku"], item["source_output"], item["output"],
-                              item["output_sha256"], item["recipe"]["model"], item["status"]])
-                for col, path in ((2, item["source_output"]), (3, item["output"])):
-                    sheet.cell(sheet.max_row, col).hyperlink = Path(path).as_uri()
-                    sheet.cell(sheet.max_row, col).style = "Hyperlink"
-            with tempfile.TemporaryDirectory(prefix="excel_", dir=report_root) as tmp:
-                temp = Path(tmp) / "4k.xlsx"
-                wb.save(temp)
-                try:
-                    os.link(temp, report)
-                except FileExistsError:
-                    pass
-        result["report"] = str(report)
+    # 4K verification remains in the per-output JSON receipts. The unified
+    # marketplace workbook is the only Excel export; a duplicate 4K workbook
+    # caused two competing product-link reports.
     return result

@@ -1,0 +1,258 @@
+{
+  "publication": "LOCAL_ONLY_PRIVATE_IMAGES_NOT_UPLOADED",
+  "glass_review_cards": [
+    {
+      "image_id": "02_Cam_Tablo_Dikey/CamTabloDikey_002.png",
+      "overlay": "overlays/44d558c5967a.jpg",
+      "qa_status": "UNREVIEWED"
+    },
+    {
+      "image_id": "02_Cam_Tablo_Dikey/CamTabloDikey_003.png",
+      "overlay": "overlays/2f189be6c673.jpg",
+      "qa_status": "UNREVIEWED"
+    },
+    {
+      "image_id": "02_Cam_Tablo_Dikey/CamTabloDikey_004.png",
+      "overlay": "overlays/1079edc39d80.jpg",
+      "qa_status": "UNREVIEWED"
+    },
+    {
+      "image_id": "02_Cam_Tablo_Dikey/CamTabloDikey_005.png",
+      "overlay": "overlays/065f16507c6c.jpg",
+      "qa_status": "UNREVIEWED"
+    },
+    {
+      "image_id": "02_Cam_Tablo_Dikey/CamTabloDikey_007.png",
+      "overlay": "overlays/039367bfac60.jpg",
+      "qa_status": "UNREVIEWED"
+    },
+    {
+      "image_id": "02_Cam_Tablo_Yatay/CamTabloYatay_002.png",
+      "overlay": "overlays/ab5247efebc0.jpg",
+      "qa_status": "UNREVIEWED"
+    },
+    {
+      "image_id": "02_Cam_Tablo_Yatay/CamTabloYatay_003.png",
+      "overlay": "overlays/3e5e8007bb10.jpg",
+      "qa_status": "UNREVIEWED"
+    },
+    {
+      "image_id": "02_Cam_Tablo_Yatay/CamTabloYatay_004.png",
+      "overlay": "overlays/3e95ac19ea00.jpg",
+      "qa_status": "UNREVIEWED"
+    },
+    {
+      "image_id": "02_Cam_Tablo_Yatay/CamTabloYatay_007.png",
+      "overlay": "overlays/a20ce011ab7c.jpg",
+      "qa_status": "UNREVIEWED"
+    },
+    {
+      "image_id": "02_Cam_Tablo_Yatay/CamTabloYatay_008.png",
+      "overlay": "overlays/878b8d5d8293.jpg",
+      "qa_status": "UNREVIEWED"
+    },
+    {
+      "image_id": "04_Cam_Dograma/CamDograma_002.png",
+      "overlay": "overlays/42c38550bacc.jpg",
+      "qa_status": "UNREVIEWED"
+    },
+    {
+      "image_id": "04_Cam_Dograma/CamDograma_005.png",
+      "overlay": "overlays/a20801feaede.jpg",
+      "qa_status": "UNREVIEWED"
+    },
+    {
+      "image_id": "04_Cam_Dograma/CamDograma_006.png",
+      "overlay": "overlays/0534de405fac.jpg",
+      "qa_status": "UNREVIEWED"
+    },
+    {
+      "image_id": "04_Cam_Dograma/CamDograma_007.png",
+      "overlay": "overlays/6a2bd55dda38.jpg",
+      "qa_status": "UNREVIEWED"
+    },
+    {
+      "image_id": "04_Cam_Dograma/CamDograma_009.png",
+      "overlay": "overlays/1146a8913155.jpg",
+      "qa_status": "UNREVIEWED"
+    },
+    {
+      "image_id": "05_Ocak_Arkasi/OcakArkasi_003.png",
+      "overlay": "overlays/03ca9b0aeaaf.jpg",
+      "qa_status": "UNREVIEWED"
+    },
+    {
+      "image_id": "05_Ocak_Arkasi/OcakArkasi_006.png",
+      "overlay": "overlays/e6ccfc5790fc.jpg",
+      "qa_status": "UNREVIEWED"
+    },
+    {
+      "image_id": "05_Ocak_Arkasi/OcakArkasi_007.png",
+      "overlay": "overlays/33697800e44d.jpg",
+      "qa_status": "UNREVIEWED"
+    },
+    {
+      "image_id": "05_Ocak_Arkasi/OcakArkasi_008.png",
+      "overlay": "overlays/23f83d8e4505.jpg",
+      "qa_status": "UNREVIEWED"
+    },
+    {
+      "image_id": "05_Ocak_Arkasi/OcakArkasi_009.png",
+      "overlay": "overlays/8a4a0265c671.jpg",
+      "qa_status": "UNREVIEWED"
+    }
+  ],
+  "seven_category_review_cards": [
+    {
+      "image_id": "01_Wifi_Kutusu/Wifi_Kutusu_003.png",
+      "overlay": "overlays/cc0e03ecaecc.jpg",
+      "qa_status": "UNREVIEWED"
+    },
+    {
+      "image_id": "01_Wifi_Kutusu/Wifi_Kutusu_006.png",
+      "overlay": "overlays/1b42dd7da7cc.jpg",
+      "qa_status": "UNREVIEWED"
+    },
+    {
+      "image_id": "01_Wifi_Kutusu/Wifi_Kutusu_012.png",
+      "overlay": "overlays/0cfd35f92d67.jpg",
+      "qa_status": "UNREVIEWED"
+    },
+    {
+      "image_id": "01_Wifi_Kutusu/Wifi_Kutusu_016.png",
+      "overlay": "overlays/561b9f4c4e3f.jpg",
+      "qa_status": "UNREVIEWED"
+    },
+    {
+      "image_id": "02_Cam_Tablo_Dikey/CamTabloDikey_002.png",
+      "overlay": "overlays/44d558c5967a.jpg",
+      "qa_status": "UNREVIEWED"
+    },
+    {
+      "image_id": "02_Cam_Tablo_Dikey/CamTabloDikey_003.png",
+      "overlay": "overlays/2f189be6c673.jpg",
+      "qa_status": "UNREVIEWED"
+    },
+    {
+      "image_id": "02_Cam_Tablo_Dikey/CamTabloDikey_004.png",
+      "overlay": "overlays/1079edc39d80.jpg",
+      "qa_status": "UNREVIEWED"
+    },
+    {
+      "image_id": "02_Cam_Tablo_Dikey/CamTabloDikey_005.png",
+      "overlay": "overlays/065f16507c6c.jpg",
+      "qa_status": "UNREVIEWED"
+    },
+    {
+      "image_id": "02_Cam_Tablo_Yatay/CamTabloYatay_002.png",
+      "overlay": "overlays/ab5247efebc0.jpg",
+      "qa_status": "UNREVIEWED"
+    },
+    {
+      "image_id": "02_Cam_Tablo_Yatay/CamTabloYatay_003.png",
+      "overlay": "overlays/3e5e8007bb10.jpg",
+      "qa_status": "UNREVIEWED"
+    },
+    {
+      "image_id": "02_Cam_Tablo_Yatay/CamTabloYatay_004.png",
+      "overlay": "overlays/3e95ac19ea00.jpg",
+      "qa_status": "UNREVIEWED"
+    },
+    {
+      "image_id": "02_Cam_Tablo_Yatay/CamTabloYatay_007.png",
+      "overlay": "overlays/a20ce011ab7c.jpg",
+      "qa_status": "UNREVIEWED"
+    },
+    {
+      "image_id": "03_Ahsap_Tablo/AhsapTablo_002.png",
+      "overlay": "overlays/79a535cd749c.jpg",
+      "qa_status": "UNREVIEWED"
+    },
+    {
+      "image_id": "03_Ahsap_Tablo/AhsapTablo_003.png",
+      "overlay": "overlays/0a2b222ef729.jpg",
+      "qa_status": "UNREVIEWED"
+    },
+    {
+      "image_id": "03_Ahsap_Tablo/AhsapTablo_007.png",
+      "overlay": "overlays/b939ac6795e9.jpg",
+      "qa_status": "UNREVIEWED"
+    },
+    {
+      "image_id": "03_Ahsap_Tablo/AhsapTablo_009.png",
+      "overlay": "overlays/8a9a42b6d4b0.jpg",
+      "qa_status": "UNREVIEWED"
+    },
+    {
+      "image_id": "04_Cam_Dograma/CamDograma_002.png",
+      "overlay": "overlays/42c38550bacc.jpg",
+      "qa_status": "UNREVIEWED"
+    },
+    {
+      "image_id": "04_Cam_Dograma/CamDograma_005.png",
+      "overlay": "overlays/a20801feaede.jpg",
+      "qa_status": "UNREVIEWED"
+    },
+    {
+      "image_id": "04_Cam_Dograma/CamDograma_006.png",
+      "overlay": "overlays/0534de405fac.jpg",
+      "qa_status": "UNREVIEWED"
+    },
+    {
+      "image_id": "04_Cam_Dograma/CamDograma_007.png",
+      "overlay": "overlays/6a2bd55dda38.jpg",
+      "qa_status": "UNREVIEWED"
+    },
+    {
+      "image_id": "05_Ocak_Arkasi/OcakArkasi_003.png",
+      "overlay": "overlays/03ca9b0aeaaf.jpg",
+      "qa_status": "UNREVIEWED"
+    },
+    {
+      "image_id": "05_Ocak_Arkasi/OcakArkasi_006.png",
+      "overlay": "overlays/e6ccfc5790fc.jpg",
+      "qa_status": "UNREVIEWED"
+    },
+    {
+      "image_id": "05_Ocak_Arkasi/OcakArkasi_007.png",
+      "overlay": "overlays/33697800e44d.jpg",
+      "qa_status": "UNREVIEWED"
+    },
+    {
+      "image_id": "05_Ocak_Arkasi/OcakArkasi_008.png",
+      "overlay": "overlays/23f83d8e4505.jpg",
+      "qa_status": "UNREVIEWED"
+    },
+    {
+      "image_id": "06_PETEK/Gemini_Generated_Image_20yweq20yweq20yw.jpeg",
+      "overlay": "overlays/8cde277aac6d.jpg",
+      "qa_status": "UNREVIEWED"
+    },
+    {
+      "image_id": "06_PETEK/Gemini_Generated_Image_391un9391un9391u.jpeg",
+      "overlay": "overlays/fffe40b8f6ab.jpg",
+      "qa_status": "UNREVIEWED"
+    },
+    {
+      "image_id": "06_PETEK/Gemini_Generated_Image_7kd3vw7kd3vw7kd3 (1).jpeg",
+      "overlay": "overlays/1af800d7f195.jpg",
+      "qa_status": "UNREVIEWED"
+    },
+    {
+      "image_id": "06_PETEK/Gemini_Generated_Image_7kd3vw7kd3vw7kd3 (2).jpeg",
+      "overlay": "overlays/7b99e8499de7.jpg",
+      "qa_status": "UNREVIEWED"
+    }
+  ],
+  "counts": {
+    "glass": 20,
+    "seven_category": 28
+  },
+  "review_labels": [
+    "GOOD_CANDIDATE",
+    "WRONG",
+    "SUSPECT",
+    "UNREVIEWED"
+  ],
+  "note": "Cards are unreviewed local candidates; no visual quality claim is made."
+}

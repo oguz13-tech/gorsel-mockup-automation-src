@@ -212,7 +212,11 @@ def choose_rename_category(root, folder: Path):
     dialog.minsize(490, 270)
     dialog.resizable(True, False)
     dialog.attributes("-topmost", True)
-    dialog.transient(root)
+    # The parent Tk root is intentionally withdrawn for a standalone utility.
+    # Windows can hide transient children of an unmapped parent: do NOT make
+    # this selection dialog transient to the invisible root.
+    dialog.lift()
+    dialog.focus_force()
     frame = ttk.Frame(dialog, padding=18)
     frame.pack(fill="both", expand=True)
     ttk.Label(frame, text="Şablon kategorisini seçin:").pack(anchor="w")
@@ -262,6 +266,7 @@ def choose_rename_category(root, folder: Path):
     combo.bind("<<ComboboxSelected>>", refresh)
     dialog.protocol("WM_DELETE_WINDOW", dialog.destroy)
     refresh()
+    dialog.wait_visibility()
     dialog.grab_set()
     dialog.wait_window()
     return output[0] if output else None

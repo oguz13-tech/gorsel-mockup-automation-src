@@ -48,23 +48,26 @@ def _display_size(shape, canvas):
 
 class MaskEditor:
     """Human-reviewed editable mask; masks stay in source-pixel coordinates."""
-    def __init__(self,parent, registry=None, on_saved=None):
+    def __init__(self,parent, registry=None, on_saved=None, runtime_root=None):
         self.registry=registry or Registry();self.on_saved=on_saved
+        self.runtime_root=Path(runtime_root).resolve() if runtime_root else None
         self.window=tk.Toplevel(parent)
         self.window.title('PETEK — Mockup Baskı Alanı Düzenleyici')
         # Match the *usable* screen, including small laptops / display scaling.
         screen_w = self.window.winfo_screenwidth()
         screen_h = self.window.winfo_screenheight()
-        window_w = min(1300, max(540, screen_w - 46))
-        window_h = min(970, max(440, screen_h - 86))
+        window_w = min(1440, max(620, screen_w - 46))
+        window_h = min(970, max(480, screen_h - 86))
         self.window.geometry(f'{window_w}x{window_h}+12+12')
-        self.window.minsize(min(700, window_w), min(480, window_h))
+        # Do not let resize/display scaling squeeze the tool rail into a
+        # 280px strip where labels, buttons and review steps are unreadable.
+        self.window.minsize(min(930, window_w), min(580, window_h))
         self.window.transient(parent)
         wrapper = ttk.Frame(self.window, padding=9)
         wrapper.pack(fill='both', expand=True)
 
         # Scrollable tool column: all actions remain reachable on 720px screens.
-        control_width = min(285, max(205, int(screen_w * .34)))
+        control_width = min(370, max(310, int(screen_w * .32)))
         left_host = ttk.Frame(wrapper, width=control_width)
         left_host.pack(side='left', fill='y', padx=(0, 12))
         left_host.pack_propagate(False)
@@ -82,6 +85,13 @@ class MaskEditor:
             scrollregion=self.tools_scroll.bbox('all')))
         self.tools_scroll.bind('<Configure>', lambda event: self.tools_scroll.itemconfigure(
             tool_window, width=event.width))
+        # Wheel over the left rail scrolls its controls, not the obscured
+        # main-center window underneath. Touchpad and laptop friendly.
+        def scroll_tools(event):
+            if getattr(event,'delta',0):
+                self.tools_scroll.yview_scroll(-1 if event.delta>0 else 1,'units')
+            return 'break'
+        self.tools_scroll.bind('<MouseWheel>',scroll_tools)
 
         # CRITICAL: canvas must be an ACTUAL child of wrapper, not self.window.
         # Otherwise its sibling wrapper paints over it: image loads but is blank.
@@ -90,13 +100,13 @@ class MaskEditor:
         self.canvas.pack(side='right', fill='both', expand=True)
         self.canvas.bind('<Configure>', self._canvas_resized)
         def hint(parent, value):
-            ttk.Label(parent, text=value, wraplength=280, foreground=MUTED,
+            ttk.Label(parent, text=value, wraplength=320, foreground=MUTED,
                       font=('Segoe UI', 9)).pack(anchor='w', pady=(0, 5))
-        ttk.Label(left,text='PETEK: Mockup Hazırlama',font=('Segoe UI',16,'bold')).pack(anchor='w',pady=(2,12))
+        ttk.Label(left,text='PETEK: Mockup Hazırlama',font=('Segoe UI',15,'bold')).pack(anchor='w',pady=(2,12))
         ttk.Button(left,text='1. PETEK Mockup Fotoğrafını Seç',command=self.pick).pack(fill='x',pady=3)
         hint(left, 'Baskısız dolabın ODA fotoğrafını seç. Sonraki adım: dört köşeyi belirt.')
         self.path=tk.StringVar(value='Mockup fotoğrafı seçilmedi')
-        ttk.Label(left,textvariable=self.path,wraplength=278).pack(anchor='w',pady=4)
+        ttk.Label(left,textvariable=self.path,wraplength=320).pack(anchor='w',pady=4)
         ttk.Label(left,text='Mockup Adı / Numarası').pack(anchor='w',pady=(10,2))
         self.uid=tk.StringVar();ttk.Entry(left,textvariable=self.uid).pack(fill='x')
         hint(left, 'Aynı mockup için benzersiz ad. Onaylı eski profil yerine yeni taslak oluştur.')
@@ -289,8 +299,20 @@ class MaskEditor:
         self.refresh()
 
     def pick(self):
-        path=filedialog.askopenfilename(parent=self.window,title='PETEK Mockup Fotoğrafı (baskısız dolap bulunan oda görseli)',
-                                        filetypes=[('Mockup fotoğrafı','*.jpg *.jpeg *.png *.webp')])
+        initial=None
+        if self.runtime_root is not None:
+            try:
+                from petek_folders_v46 import petek_directory
+                approved_work=petek_directory(self.runtime_root,'2_SABLON_HAVUZU')
+                if approved_work.is_dir():initial=str(approved_work)
+            except (ValueError,OSError) as exc:
+                messagebox.showerror('PETEK klasör uyuşmazlığı',str(exc),parent=self.window)
+                return
+        options=dict(parent=self.window,
+                     title='PETEK Mockup Fotoğrafı — Çalışma Havuzu / Petek_Dolabi',
+                     filetypes=[('Mockup fotoğrafı','*.jpg *.jpeg *.png *.webp')])
+        if initial:options['initialdir']=initial
+        path=filedialog.askopenfilename(**options)
         if path:self.load(Path(path))
 
     def load(self,path):
@@ -1089,5 +1111,6 @@ class BatchWindow:
         if self.window.winfo_exists():self.window.after(200,self.poll)
 
 
-def open_mask_editor(parent,registry=None,after_save=None):return MaskEditor(parent,registry,on_saved=after_save)
+def open_mask_editor(parent,registry=None,after_save=None,runtime_root=None):
+    return MaskEditor(parent,registry,on_saved=after_save,runtime_root=runtime_root)
 def open_batch_window(parent,registry=None):return BatchWindow(parent,registry)

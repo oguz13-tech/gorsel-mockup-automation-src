@@ -68,7 +68,7 @@ class Registry:
 
     def _profile_path(self,uid):return self.profiles/(_safe_id(uid)+'.json')
 
-    def get(self,uid,require_approved=False):
+    def get(self,uid,require_approved=False,*,source_override=None):
         path=self._profile_path(uid)
         if path.is_symlink() or not path.is_file():raise engine.MaskError('Sablon kaydi bulunamadi.')
         profile=json.loads(path.read_text(encoding='utf-8'))
@@ -76,9 +76,23 @@ class Registry:
             raise engine.MaskError('Sablon kaydi / motor surumu uyusmuyor.')
         if require_approved and profile.get('status')!='APPROVED':
             raise engine.MaskError('Sablon insan onayina sahip degil.')
-        source=engine.safe_file(Path(profile['source']))
+        original=Path(profile['source'])
+        # Historic PETEK approved profiles may point to an old disposable LAB
+        # folder. When that source is GONE, an explicitly selected working-pool
+        # file may be used for this read ONLY if its SHA and dimensions match.
+        # Never rewrite the approved profile or mask, and never bypass a
+        # present-but-tampered source or a symlink at the old source path.
+        if original.exists() or original.is_symlink() or source_override is None:
+            source=engine.safe_file(original)
+        else:
+            source=engine.safe_file(Path(source_override))
         if engine.digest(source)!=profile['source_sha']:
             raise engine.MaskError('Orijinal sablon degismis: yeni inceleme gerekir.')
+        saved_size=profile.get('source_size')
+        if saved_size is not None:
+            scene_size=engine.read_bgr(source).shape
+            if [int(scene_size[1]),int(scene_size[0])]!=list(saved_size):
+                raise engine.MaskError('PETEK_KAYNAK_BOYUTU_KAYITLA_UYUSMUYOR')
         mask_path=self.masks/(profile['mask_sha']+'.png')
         mask=engine.decode_mask(mask_path)
         if engine.mask_hash(mask)!=profile['mask_sha']:

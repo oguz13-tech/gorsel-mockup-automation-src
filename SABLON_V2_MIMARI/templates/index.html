@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
+<script src="/static/js/loopback_csrf_v47.js"></script>
 
 <div id="sidebar">
     <h2 style="margin-top:0;">Şablon İnceleme</h2>
@@ -19,7 +20,7 @@
 
     <div id="bulk-select-panel">
         <button type="button" id="bulkModeButton" onclick="toggleBulkSelectionMode()">☑️ Toplu Seçim</button>
-        <div class="tool-note">Birden fazla şablonu birlikte seçip güvenli şekilde çöpe atmak için açın.</div>
+        <div class="tool-note">Çoklu şablon seçerek otomatik köşe önerisi çıkarın, inceleyin, güvenli onaylayın veya çöpe taşıyın.</div>
 
         <div id="bulkSelectionActions" style="display:none;">
             <div class="bulk-action-row">
@@ -33,6 +34,13 @@
                 </div>
             </div>
             <div id="bulkSelectedCount">0 şablon seçildi</div>
+            <div class="v46-bulk-extra">
+              <button type="button" onclick="v46SelectByReviewStatus(false)">📝 Kontrol Bekleyenleri Seç</button>
+              <button type="button" onclick="v46SelectByReviewStatus(true)">✅ Onaylıları Seç</button>
+            </div>
+            <button type="button" id="bulkDetectButton" onclick="bulkDetectSelectedCorners()" class="bulk-detect" title="Yalnız seçtiklerinize otomatik 4 köşe TASLAĞI oluşturur. Hiçbir onaylı 4 köşeyi veya şablon dosyasını değiştirmez.">🧭 Seçilenlerin 4 Köşesini Algıla (Taslak)</button>
+            <div class="bulk-run-status" id="bulkDetectStatus" aria-live="polite">Seçili şablonlara taslak öneri üretir; kayıtlı onaylı koordinatları değiştirmez.</div>
+            <button type="button" id="bulkDetectStopButton" onclick="stopBulkCornerDetect()" style="display:none;background:#b45309;">⏹ Tarama Sonrası Durdur</button>
             <button type="button" id="bulkApproveButton" onclick="bulkApproveSelected()" class="success" style="width:100%;padding:9px;margin:0 0 8px 0" title="Kaydedilmiş 4 köşesi geçerli olan seçili şablonları toplu onaylar; her biri ayrı güvenli kaynak kontrolünden geçer.">✅ Seçilenleri Toplu Onayla</button>
             <div class="tool-note">Onaydan önce kayıtlı dört köşeleri kontrol eder. Onaysız, köşesiz veya değişmiş kaynakları otomatik geçirmez; sonuçları tek tek bildirir.</div>
             <button type="button" id="bulkDeleteButton" onclick="bulkDeleteSelected()">🗑️ Seçilenleri Çöpe At</button>
@@ -40,7 +48,12 @@
         </div>
     </div>
 
-    <div id="categories" style="flex:1; overflow-y:auto;">Yükleniyor...</div>
+    <div id="categories" style="flex:1; overflow-y:auto;">
+        <button id="petekV477Nav" type="button" class="category-title petek-v477-nav"
+                title="PETEK fotoğraf, delik, kavis ve maske incelemesi aynı ekranda">
+            07_Petek_Dolabi — Şablon / Maske / Onay
+        </button>
+    </div>
 
     <div class="status-legend">
         <b>Durumlar:</b> ✅ Onaylı · 📝 Kontrol bekliyor · ⚠️ Şüpheli · ⛔ Eski/uyumsuz
@@ -95,20 +108,31 @@
         <div class="resizer" id="resizer-right"></div>
 
         <div id="right-toolbar" style="width:230px; flex-shrink:0; box-sizing:border-box; background:#252526; display:flex; flex-direction:column; gap:10px; padding:15px; border-left:1px solid #444; overflow-y:auto; z-index:10;">
+            <section id="v46QuickApproval" class="v46-quick-approval" aria-label="Hızlı kontrol ve onay">
+                <div class="v46-quick-title">✅ Hızlı Kontrol / Onay <span class="v46-quick-badge">V4.6</span></div>
+                <div id="v46QuickOptions"></div>
+                <div class="v46-quick-buttons">
+                  <button type="button" id="v46OverlayQuick" onclick="toggleReviewOverlay()" class="v46-overlay-btn">👁️ Yerleşim</button>
+                  <button type="button" id="v46ApproveQuick" onclick="approveTemplate()" class="v46-approve-btn">✅ Bu Şablonu Onayla</button>
+                </div>
+                <div id="v46-draft-alert" class="v46-draft-alert" style="display:none;" aria-live="polite"></div>
+            </section>
+            <section class="v46-alignment" id="v46-alignment-panel" aria-label="Köşe doğrultu ölçümü">
+                <b>📐 Köşe Doğrultu Rehberi</b>
+                <div id="v46-alignment-text">Ölçüm için şablon açın.</div>
+                <small>Görsel pikselleridir, santimetre değildir. Perspektifli fotoğraflarda fark normal olabilir.</small>
+            </section>
             <h3 class="tool-section-title">Köşe Ayarı</h3>
 
             <button type="button" id="btnCorner" onclick="focusCornerEditing()" style="outline:3px solid #00aaff; width:100%; text-align:left; padding:12px 10px;">✋ Köşeleri Elle Ayarla</button>
             <div class="tool-note">Kırmızı noktaları gerçek baskı alanının dört köşesine sürükleyin. Sistem daima perspektif kullanır.</div>
 
             <button type="button" id="btnAutoCorner" onclick="autoDetectCorners()" style="background:linear-gradient(135deg,#00c853,#00bfa5); box-shadow:0 2px 6px rgba(0,200,83,0.4); width:100%; text-align:left; padding:12px 10px; font-weight:bold;">🧭 Köşeleri Yeniden Algıla</button>
+                <button type="button" id="batchAnalyzeButton" onclick="batchAnalyze()" class="advanced-action">⚡ Bir Kategoride Tüm Köşeleri Hızlı Tara</button>
+                <div class="tool-note"><b>Kalite algoritmasını değiştirmez.</b> Kaynağı değişmemiş insan onaylı <b>APPROVED</b> şablonları ağır analizden atlayıp aynen korur. Onaysız/değişmiş şablonlarda mevcut tam kalite 4 köşe motorunu çalıştırır. Hesaplamada en fazla 2 görsel paralel işlenir; veritabanı kayıtları tek sıra yapılır. Tarama başladıktan sonra <b>Arka Planda Sürdür</b> ile diğer şablonlarda çalışabilirsiniz. O anda işlenen küçük paketteki şablonlarda çakışan kayıt işlemleri kısa süreli engellenir. <b>Taramayı Durdur</b> derseniz mevcut küçük paket tamamlanır ve sonra durur; o ana kadar biten analizler korunur. Ham/orijinal görselleri silmez veya değiştirmez.</div>
             <div class="tool-note tool-note-accent">Yeni şablonda ilk tespit zaten otomatik yapılır. Yalnız sonuç yanlışsa tekrar kullanın.</div>
 
-            <div class="tool-divider"></div>
-            <h3 class="tool-section-title">Otomatik Nesne Koruma</h3>
-
-            <button type="button" id="btnAutoForeground" onclick="autoDetectForeground()" style="background:linear-gradient(135deg,#6f42c1,#0d6efd); width:100%; text-align:left; padding:10px; font-weight:bold;">🤖 Öndeki Nesneleri Otomatik Bul</button>
-            <div class="tool-note">Baskının önünde kalması gereken gerçek bir nesne varsa otomatik olarak bulur. Elle maske/fırça düzenlemesi yoktur.</div>
-
+            <details class="v46-secondary-tools"><summary>⚙️ Kaynak Görsel / Güvenli Geri Yükleme</summary>
             <div class="tool-divider"></div>
             <h3 class="tool-section-title">Ham Görsel Kontrolü</h3>
 
@@ -117,12 +141,13 @@
             </div>
 
             <button type="button" onclick="showOriginalPreview()" style="background:#6f42c1; width:100%; padding:11px 10px; margin-top:5px; text-align:left; font-weight:bold;">👁️ Ham Orijinali Göster</button>
+            <button type="button" onclick="showWorkingPreview()" style="background:#0d6efd; width:100%; padding:11px 10px; margin-top:5px; text-align:left; font-weight:bold;">↩️ Çalışma Görseline Dön</button>
             <div class="tool-note"><b>Sadece görüntüler.</b> Korunmuş ilk ham/yedek dosyayı ekranda açar. Çalışma dosyasını, köşeleri ve onay durumunu değiştirmez.</div>
 
             <button type="button" onclick="showIsolatedWhitePreview()" style="background:#0f766e; width:100%; padding:11px 10px; margin-top:5px; text-align:left; font-weight:bold;">🖼️ Beyazlatma Önizlemesi (Kaydetmez)</button>
             <div class="tool-note"><b>Önizleme yalnız ayrılmış klasöre kaydedilir.</b> Mevcut 4 köşe ayarlarını kaydettikten sonra kullanın. Çalışma şablonu, orijinal yedek ve insan onayı değişmez.</div>
 
-            <button type="button" onclick="showWorkingPreview()" style="background:#0d6efd; width:100%; padding:11px 10px; margin-top:5px; text-align:left; font-weight:bold;">↩️ Çalışma Görseline Dön</button>
+
             <div class="tool-note"><b>Sadece görüntüler.</b> Sistemin aktif kullandığı çalışma kopyasını tekrar ekranda gösterir. Hiçbir dosyayı değiştirmez.</div>
 
             <button type="button" onclick="restoreOriginal()" style="background:#d97706; width:100%; padding:11px 10px; margin-top:5px; text-align:left; font-weight:bold;">🔄 Ham Orijinali Geri Yükle</button>
@@ -132,6 +157,8 @@
             <button type="button" onclick="chooseReplacementOriginal()" style="background:#9a3412; width:100%; padding:11px 10px; margin-top:5px; text-align:left; font-weight:bold;">🆕 Ham Dosyayı Yenisiyle Değiştir</button>
             <div class="tool-note"><b>Güvenli kaynak değişimi.</b> Yeni bir ham görsel seçersiniz. Eski ham ve eski çalışma dosyaları silinmez; recovery operasyonunda korunur. Yeni kaynak geldikten sonra eski onay otomatik olarak geçersizleşir ve şablon yeniden kontrol ister.</div>
 
+            </details>
+            <details id="v46-reports"><summary>📊 Taramalar ve Raporlar</summary>
             <button type="button" id="templateHealthScanButton" onclick="runTemplateHealthScan()" style="background:#0f766e; width:100%; padding:11px 10px; margin-top:5px; text-align:left; font-weight:bold;">🩺 Ham Dosya Sağlık Taraması</button>
             <div class="tool-note"><b>Sadece kontrol eder; hiçbir dosyayı silmez.</b> Çalışma dosyası eksik, ham yedek eksik/okunamıyor, DB kaydı olmayan dosya ve benzeri sorunları tarar. Çok siyah/beyaz-düz görselleri otomatik bozuk saymaz; yalnız insan kontrolüne işaretler. Tamamlanan bu manuel tarama ayrıca <b>son rapor</b> ve <b>geçmiş kaydı</b> olarak saklanır.</div>
 
@@ -150,6 +177,8 @@
             <button type="button" onclick="openWorkspaceConsistencyHistory()" style="background:#475569; width:100%; padding:11px 10px; margin-top:5px; text-align:left; font-weight:bold;">📚 Tutarlılık Rapor Geçmişi</button>
             <div class="tool-note">Önceki klasör auditlerini listeler. Her yeni tarama, önceki rapora göre yeni sorunları ve düzelmiş sorunları hesaplar.</div>
 
+            <button type="button" id="v46BulkAlign" onclick="v46BulkAlignmentReport()">📐 Seçililerin Hizalama Raporu (Salt-Okunur)</button>
+            </details>
             <div class="tool-divider"></div>
             <h3 class="tool-section-title">Kontrol ve Onay</h3>
 
@@ -163,7 +192,7 @@
                 <div class="tool-note" style="margin-top:5px;">Cam Doğrama için gerçek ürünün yatay/dikey yönünü seçin.</div>
             </div>
 
-            <button type="button" onclick="toggleReviewOverlay()" style="background:#17a2b8; width:100%; padding:12px 10px; margin-top:5px; font-weight:bold;">👁️ Yerleşimi Kontrol Et</button>
+            <div class="tool-note">Yerleşimi kontrol düğmesi üstteki hızlı kontrol alanına taşındı.</div>
             <div class="tool-note">Baskı alanını yeşil kaplama ile daha net görmenizi sağlar.</div>
 
             <div id="glassCornerWrap" class="tool-note" style="padding:7px; margin:6px 0; border:1px solid #64748b;">
@@ -175,7 +204,7 @@
                 </select>
                 <div>4 köşe noktalarını değiştirmez; onaylanınca sonraki üretimlere uygulanır. Eski çıktı dosyaları korunur.</div>
             </div>
-            <button type="button" onclick="approveTemplate()" style="background:#28a745; width:100%; padding:12px 10px; margin-top:5px; font-weight:bold;">✅ Bu Şablonu Onayla</button>
+            <div class="tool-note">✅ Onay düğmesi artık sağ panelin daima görünen en üst bölümündedir.</div>
             <div class="tool-note">Dört köşe doğruysa şablonu üretimde kullanılabilir hale getirir.</div>
 
             <div class="tool-divider"></div>
@@ -201,8 +230,7 @@
                 <button type="button" onclick="undoLastLifecycleOperation()" class="advanced-action" style="background:#0f766e;">↩️ Son Lifecycle İşlemini Geri Al</button>
                 <div class="tool-note">Son geri alınabilir duplicate/yetim taşımasını eski yerine döndürür. Hedefte çakışma varsa güvenlik nedeniyle işlemi durdurur.</div>
 
-                <button type="button" id="batchAnalyzeButton" onclick="batchAnalyze()" class="advanced-action">⚡ Bir Kategoride Tüm Köşeleri Hızlı Tara</button>
-                <div class="tool-note"><b>Kalite algoritmasını değiştirmez.</b> Kaynağı değişmemiş insan onaylı <b>APPROVED</b> şablonları ağır analizden atlayıp aynen korur. Onaysız/değişmiş şablonlarda mevcut tam kalite 4 köşe motorunu çalıştırır. Hesaplamada en fazla 2 görsel paralel işlenir; veritabanı kayıtları tek sıra yapılır. Tarama başladıktan sonra <b>Arka Planda Sürdür</b> ile diğer şablonlarda çalışabilirsiniz. O anda işlenen küçük paketteki şablonlarda çakışan kayıt işlemleri kısa süreli engellenir. <b>Taramayı Durdur</b> derseniz mevcut küçük paket tamamlanır ve sonra durur; o ana kadar biten analizler korunur. Ham/orijinal görselleri silmez veya değiştirmez.</div>
+
 
                 <button type="button" onclick="toggleCanvasBg()" class="advanced-action">🎨 Önizleme Arka Planı</button>
                 <div class="tool-note">Sadece ekrandaki kontrol arka planını siyah, beyaz veya yeşil yapar.</div>
@@ -212,7 +240,121 @@
     </div>
 </div>
 
-<script src="/static/js/main.js"></script>
+<section id="petekV477Editor" class="petek-v477-editor" aria-label="PETEK yedinci kategori maske düzenleyicisi" style="display:none">
+  <div class="petek-v477-head">
+    <div><strong>07 — PETEK DOLABI · Şablon / Maske İnceleme</strong>
+      <div class="petek-v477-note">Diğer 6 kategoriyle aynı inceleme merkezindesin. Onaylar mevcut PETEK V3 maskesiyle ortak üretime bağlı.</div>
+    </div>
+    <button type="button" id="petekV477Close">Altı kategoriye dön</button>
+  </div>
+  <div id="petekV477Workspace" class="petek-v477-workspace">
+    <aside id="petekV477ListPane" class="petek-v477-list-pane" aria-label="PETEK şablonlarının dikey listesi">
+      <strong>Petek Şablonları</strong>
+      <input type="search" id="petekV477Search" placeholder="Şablon adına göre ara..." aria-label="PETEK şablonlarda ara">
+      <button type="button" id="petekV477Reload">Listeyi Yenile</button>
+      <div id="petekV477Count">—</div>
+      <div id="petekV484Summary" class="petek-v484-summary" aria-live="polite">Şablon durumları yükleniyor...</div>
+      <div class="petek-v484-legend">📁 Çalışma · 🗄️ Ham · 🎭 Maske · ✅ Onay · 📝 Taslak · ⚠️ Kontrol</div>
+      <button type="button" id="petekV484BulkMode">☑️ PETEK Toplu Seçim</button>
+      <select id="petekV477Select" aria-label="PETEK mevcut şablon seçimi" hidden></select>
+      <div id="petekV477List" role="listbox" aria-label="PETEK şablon listesi"></div>
+      <div id="petekV484BulkPanel" class="petek-v484-bulk" hidden>
+        <div id="petekV484BulkCount">0 şablon seçildi</div>
+        <div class="petek-v484-bulk-row">
+          <button type="button" id="petekV484BulkAll">Görünenleri Seç</button>
+          <button type="button" id="petekV484BulkNew">Yalnız Yenileri Seç</button>
+          <button type="button" id="petekV484BulkDraft">Taslakları Seç</button>
+          <button type="button" id="petekV484BulkApproved">Onaylıları Seç</button>
+          <button type="button" id="petekV484BulkClear">Seçimi Temizle</button>
+        </div>
+        <button type="button" id="petekV484BulkDetect" class="petek-v484-primary">🧭 Seçilenlerde TOPLU OTOMATİK 4 KÖŞE TESPİT ET (Önizleme, kaydetmez)</button>
+        <button type="button" id="petekV484BulkSave">📝 Seçilen YENİ PETEK'lere Toplu Köşe + Maske TASLAĞI Kaydet (Onaylamaz)</button>
+        <button type="button" id="petekV484BulkStop">⏹ Taramayı Durdur (Mevcut 8 bitince)</button>
+        <button type="button" id="petekV484BulkReport">📋 Toplu İşlem Sonuçlarını Kopyala</button>
+        <pre id="petekV484BulkStatus" aria-live="polite">Hazır. En fazla 8 fotoğraf / istek, büyük seçimlerde otomatik gruplar hâlinde devam eder.</pre>
+      </div>
+    </aside>
+    <div class="petek-v477-stage">
+      <div id="petekV477Name">PETEK şablonunu seç</div>
+      <div class="petek-v477-viewport-bar">
+        <button type="button" id="petekV477Prev">◀ Önceki</button>
+        <button type="button" id="petekV477Next">Sonraki ▶</button>
+        <button type="button" id="petekV477ZoomOut">−</button>
+        <input type="range" min="40" max="500" step="10" value="100" id="petekV477Zoom" aria-label="PETEK yakınlaştırma">
+        <button type="button" id="petekV477ZoomIn">+</button>
+        <button type="button" id="petekV477ZoomFit">Sığdır</button>
+        <span id="petekV477ZoomLabel">100%</span>
+      </div>
+      <div id="petekV477Drawing"><canvas id="petekV477Canvas" aria-label="PETEK baskı maskesi ve kavis görseli"></canvas></div>
+      <div class="petek-v477-notice" id="petekV477Status" role="status" aria-live="polite">
+         Maske yalnız PETEK V3 kayıtlarına kaydedilir. Üretim görseli ve orijinal değiştirilmez.
+      </div>
+      <div class="petek-v477-legend">Yeşil = baskı yapılacak ahşap · Siyah/şeffaf = korunacak delik/kavis/yan yüz · Kırmızı = 4 köşe</div>
+    </div>
+    <div class="petek-v477-tools">
+      <h3>Gerçek Baskı Önizlemesi</h3>
+      <label for="petekV477Artwork">Baskı tasarımını seç (PNG / JPG / WEBP)</label>
+      <input id="petekV477Artwork" type="file" accept="image/png,image/jpeg,image/webp">
+      <button type="button" id="petekV477Preview" class="petek-v477-full">🎨 Gerçek Tasarımla Önizle</button>
+      <button type="button" id="petekV477Original" class="petek-v477-full">📷 Ham Şablona / Maskeye Dön</button>
+      <div class="petek-v477-note">PETEK V3 gerçek baskı motoru kullanılır. Dikey ızgara yarıkları, üst-alt kavis boşlukları, yanlar ve zemin orijinalinden korunur. Magenta sahnelerde pembe çizgi bırakmayan kenar geçişi kullanılır. Önizleme dosya veya maske kaydetmez.</div>
+      <h3>Şablon Araçları — Ortak</h3>
+      <div class="petek-v477-actionrow"><button type="button" id="petekV477Undo">↶ Son İşlemi Geri Al (Ctrl+Z)</button></div>
+      <div class="petek-v477-actionrow"><button type="button" id="petekV477Reset">↩ Kaydedilmemiş Değişiklikleri Geri Al</button></div>
+      <div class="petek-v477-actionrow"><a href="/tools" target="_blank" rel="noopener">🧰 Profesyonel Araçlar / İsimlendirici</a></div>
+      <div class="petek-v477-actionrow"><a href="/api/petek/templates" target="_blank" rel="noopener">📋 PETEK Kaynak / Maske Liste Raporu</a></div>
+      <div class="petek-v477-note">Ortak gezinme, liste yenileme, zoom, ham fotoğraf, maske ve araç merkezine erişim burada da vardır. Altı kategorinin SQLite onaylama / çöpe taşıma / 4 köşe kopyalama araçları PETEK V3 maskelerini değiştirmemelidir.</div>
+      <h3>Ön Panel ve 4 Köşe</h3>
+      <div id="petekV477Mode">Mod: Dört köşe</div>
+      <div class="petek-v477-actionrow">
+        <button type="button" data-petek-mode="corners">1. Dört Köşe / Köşe Sürükle</button>
+        <button type="button" id="petekV477ResetCorners">4 Köşeyi Baştan Seç</button>
+        <button type="button" id="petekV477AutoCorners">🧭 Magenta 4 Köşe Otomatik Öner</button>
+      </div>
+      <div class="petek-v477-actionrow">
+        <button type="button" id="petekV477Auto">2. Otomatik Maske Taslağı</button>
+      </div>
+      <div class="petek-v477-note">Otomatik 4 köşeden sonra kırmızı noktaları FAREYLE TUTUP SÜRÜKLE; zoom ile ince ayar yap, Ctrl+Z ile geri al. Köşe değiştiğinde taslak maske/kavis eski geometriye ait olduğundan sıfırlanır ve yeniden önerilir. Baştan 4 köşe seçmek ayrı düğmededir; onaylı profiller kilitlidir.</div>
+      <h3>Ahşap, Delikler ve Yan Yüzler</h3>
+      <div class="petek-v477-actionrow">
+        <button type="button" data-petek-mode="wood">Ahşabı Boya</button>
+        <button type="button" data-petek-mode="protect">Delikleri Koru</button>
+      </div>
+      <label for="petekV477Brush">Fırça (gerçek fotoğraf pikseli)</label>
+      <input id="petekV477Brush" type="range" min="2" max="100" step="2" value="24">
+      <div class="petek-v477-note">Dikey yarıkların içini, siyah gölgeleri, zemini ve yan yüzleri yeşile boyama.</div>
+      <h3>Üst ve Alt Kavis</h3>
+      <div class="petek-v477-actionrow">
+        <button type="button" data-petek-mode="top">Üst Kavis Noktaları</button>
+        <button type="button" data-petek-mode="bottom">Alt Kavis Noktaları</button>
+      </div>
+      <div class="petek-v477-actionrow">
+        <button type="button" id="petekV477CurveUndo">Son Noktayı Geri Al</button>
+        <button type="button" id="petekV477CurveApply">Kavisleri Uygula</button>
+      </div>
+      <div class="petek-v477-note">Üst ve alt kavis birbirinden bağımsızdır; her kavis yan kenarlara ulaşmalı. Maske üzerinde yeşil olan kısım baskı yüzeyidir.</div>
+      <h3>Kaydetme ve Onay</h3>
+      <input id="petekV477Aspect" type="hidden" value="1.1163">
+      <div class="petek-v477-note">Ön panelin en/boy oranı tasarımın gerilmeden yerleşmesi için şablon profilinden otomatik kullanılır. Değiştirme gerektirmez.</div>
+      <button type="button" id="petekV477Save" class="petek-v477-full">3. Düzenlediğim Maskeyi TASLAK Kaydet</button>
+      <label for="petekV477Reviewer">İnceleyen kişi</label>
+      <input id="petekV477Reviewer" type="text" maxlength="80" value="Can" placeholder="İnceleme adını gir">
+      <label class="petek-v477-confirm"><input id="petekV477Confirm" type="checkbox" checked>
+        Dikey yarıkları, üst-alt kavisleri, yan yüzleri ve zemini kontrol edeceğim; onay düğmesi ayrıca açık teyit ister.
+      </label>
+      <button type="button" id="petekV477Approve" class="petek-v477-full success">4. PETEK Maskesini İnsan Onayıyla Kilitle</button>
+      <button type="button" id="petekV477Revision" class="petek-v477-full" disabled>Onaylı Maskeden Yeni Revizyon Taslağı (_r2) Aç</button>
+      <div class="petek-v477-note">Onaylı maske değiştirilemez. Yeni UID/revizyon açılınca önceki maske kilitli ve değişmez kalır. Eski 45 başarılı PETEK üretim görseli ve kayıtları korunur.</div>
+    </div>
+  </div>
+</section>
+
+<link rel="stylesheet" href="/static/css/petek_editor_v477.css?v=488-legible">
+<script src="/static/js/petek_quad_drag_v481.js?v=482-sidebar"></script>
+<script src="/static/js/petek_editor_v477.js?v=488-legible"></script>
+<script src="/static/js/edge_angles_v46.js"></script>
+<script src="/static/js/main.js?v=488-legible"></script>
+<script src="/static/js/review_v46.js"></script>
 
 </body>
 </html>

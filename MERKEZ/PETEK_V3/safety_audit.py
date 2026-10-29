@@ -51,10 +51,14 @@ def audit_ledger(ledger, output_root):
 
 def audit_summary(items):
     verified=sum(row['audit']=='VERIFIED' for row in items)
+    user_removed=sum(row['audit']=='USER_REMOVED' for row in items)
+    # User-confirmed removal is a retained historic receipt, not broken output.
+    # This shared helper is also used for PETEK where user_removed remains 0.
     return {'total':len(items),'verified':verified,
-            'review_required':len(items)-verified,
+            'user_removed':user_removed,
+            'review_required':len(items)-verified-user_removed,
             'issues':[{'key':row['key'],'reason':row['detail']}
-                      for row in items if row['audit']!='VERIFIED']}
+                      for row in items if row['audit'] not in ('VERIFIED','USER_REMOVED')]}
 
 
 def receipt_identity(profile, art_sha, *, group, placement, lighting, recipe):

@@ -1,4 +1,3 @@
-"""Single UI-facing version identity for the current isolated release candidate."""
-VERSION = "V4.5"
-STATUS = "Birleşik 103 Görev Kapanış Adayı — Gerçek Windows kabulü bekliyor"
-TITLE = f"{VERSION} — {STATUS}"
+"""Compatibility import: V4.5 module path retained for old UI callers."""
+from version_v47 import VERSION, RELEASE_CHANNEL, RELEASE_STATUS, TITLE
+STATUS = RELEASE_STATUS

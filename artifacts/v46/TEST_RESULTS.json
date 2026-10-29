@@ -1,0 +1,85 @@
+{
+  "branch": "feature/v46-safe-consolidation-20261024",
+  "commit": "4193b2a",
+  "release": "NO-GO",
+  "root_cause_report": "docs/V46_ROOT_CAUSE_ACCEPTANCE_20261024.md",
+  "tests": [
+    {
+      "name": "TESTLER/test_port_transition_force_fallback.py",
+      "result": "6 PASS"
+    },
+    {
+      "name": "TESTLER/test_v46_review_bulk_esrgan.py",
+      "result": "4 PASS, 2 SKIP"
+    },
+    {
+      "name": "TESTLER/test_v44_group1_upscale_ui.py",
+      "result": "8 PASS"
+    },
+    {
+      "name": "TESTLER/test_petek_cover_v3_2.py + TESTLER/test_v40_unified_seven_category.py + tests/test_p0_regressions.py",
+      "result": "63 PASS"
+    },
+    {
+      "name": "tests/test_v46_synthetic_corner_benchmark.py",
+      "result": "1 PASS"
+    },
+    {
+      "name": "scripts/create_v46_final_candidate.py + ZIP manifest verification",
+      "result": "PASS; 389 manifest files + manifest; 390 ZIP entries; private asset scan PASS"
+    },
+    {
+      "name": "Issue #35 full local suite: TESTLER tests",
+      "result": "580 passed, 10 failed, 4 skipped, 12 subtests passed",
+      "classification": "NOT_RELEASE_BLOCKING_BY_ITSELF",
+      "failure_classes": [
+        "Tk display unavailable in this non-GUI session",
+        "Windows symlink privilege unavailable",
+        "UTF-8 source read under legacy Windows encoding test fixture",
+        "git checkout expectation conflicts with source workspace",
+        "port 8080 occupied by protected installed V4.6 candidate process"
+      ]
+    },
+    {
+      "name": "Issue #52 follow-up launcher/batch group",
+      "result": "18 PASS",
+      "tests": [
+        "TESTLER/test_v46_launcher_preflight.py",
+        "TESTLER/test_final_parallel_reserve.py",
+        "TESTLER/test_final_integrity.py",
+        "TESTLER/test_emergency_release.py",
+        "TESTLER/test_port_transition_force_fallback.py"
+      ]
+    }
+  ],
+  "skips": [
+    "V4.6 Flask endpoint checks: isolated production DB safety guard blocked startup."
+  ],
+  "not_run_as_pass": [
+    "Win11 real GUI acceptance",
+    "GPU smoke / Real-ESRGAN reinstall",
+    "real four-category reflection QA",
+    "real HTTPS upload and marketplace workbook acceptance",
+    "isolated Win11 GUI and seven-category production smoke",
+    "real PETEK Golden Dataset quality comparison",
+    "100/200/1000 real render and interruption acceptance"
+  ],
+  "user_reported": [
+    "Historical G3 missing=35 classified as USER_REPORTED_INTENTIONAL_DELETION; receipts and safety guards retained."
+  ],
+  "candidate": {
+    "path": "C:/AI_WORK/GORSEL_V46_PR52_SAFE_20261024/V46_FINAL_CANDIDATE.zip",
+    "sha256": "898f8432448667995af491b1e97950ae9661d3127616caf5a9e6d9349ff40570",
+    "source_commit": "4193b2a",
+    "manifest_files": 389,
+    "zip_entries": 390,
+    "manifest_verification": "PASS"
+  },
+  "protected_environment": {
+    "port_8080": {
+      "status": "BLOCKED_NOT_TOUCHED",
+      "pid": 23936,
+      "process": "C:\\GorselMockup_V46_ADAY\\...\\SABLON_V2_MIMARI\\app.py"
+    }
+  }
+}

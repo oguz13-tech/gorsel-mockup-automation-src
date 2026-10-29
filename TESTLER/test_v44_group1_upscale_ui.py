@@ -7,7 +7,6 @@ import sys
 
 import pytest
 from PIL import Image
-from openpyxl import load_workbook
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'MERKEZ'))
@@ -59,10 +58,8 @@ def test_fake_engine_creates_separate_sha_verified_4k(tmp_path,monkeypatch):
     assert original.read_bytes()==original_before
     assert item['output_sha256']==sr.sha256(file)
     assert len(calls)==1
-    report=load_workbook(first['report'])
-    assert report.active['A2'].value==row['sku']
-    assert report.active['C2'].hyperlink.target==file.as_uri()
-    report.close()
+    assert first['report']==''
+    assert not list((root/'raporlar'/'4k').glob('*.xlsx'))
     second=sr.process([row],state_root=root,enabled=True,exe=exe)
     assert second['reused']==1 and second['upscaled']==0
     assert len(calls)==1

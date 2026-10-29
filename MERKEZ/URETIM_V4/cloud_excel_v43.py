@@ -22,6 +22,7 @@ from urllib.parse import urlparse
 import requests
 from openpyxl import Workbook, load_workbook
 from PETEK_V3 import engine as petek_engine
+from .store_identity_v485 import store_codes,design_number
 
 REMOTE_HEADERS = [
     "Stok Kodu", "Barkod", "Model Kodu", "Kategori", "Ham Baskı Dosyası",
@@ -49,7 +50,19 @@ def _valid_https_image_url(url: str) -> bool:
     if not isinstance(url, str) or len(url) > 2048:
         return False
     u = urlparse(url)
-    return u.scheme == "https" and bool(u.hostname) and u.username is None and u.password is None and not u.fragment
+    if (u.scheme != "https" or not u.hostname or u.username is not None
+            or u.password is not None or u.fragment or any(ord(c)<32 for c in url)):
+        return False
+    import ipaddress
+    try:
+        addr=ipaddress.ip_address(u.hostname)
+    except ValueError:
+        if u.hostname.lower() in ('localhost',) or u.hostname.lower().endswith(('.localhost','.local')):
+            return False
+    else:
+        if not addr.is_global:
+            return False
+    return True
 
 
 def upload_https(path: Path, imgbb_keys: list[str], freeimage_key: str) -> str | None:
@@ -132,6 +145,15 @@ class CloudExcel:
         except FileExistsError as ex:
             raise RuntimeError("Bulut Excel linkleme zaten çalışıyor; mevcut işlem durmadan ikinci yükleme başlatılmaz.") from ex
         counters = {"uploaded": 0, "reused": 0, "failed": 0, "skipped": 0}
+        original_count=len(successful_rows)
+        distinct={}
+        for item in successful_rows:
+            k=str(item['key'])
+            if k in distinct and distinct[k].get('output_sha')!=item.get('output_sha'):
+                raise ValueError('BULUT_DUPLICATE_KEY_SHA_CONFLICT')
+            distinct[k]=item
+        successful_rows=list(distinct.values())
+        counters['skipped']=original_count-len(successful_rows)
         try:
             with os.fdopen(fd, "w", encoding="utf-8") as f:
                 f.write(str(os.getpid()))
@@ -139,7 +161,10 @@ class CloudExcel:
                 if stop and stop.is_set():
                     break
                 path = Path(row["output"])
-                if path.is_symlink() or not path.is_file() or petek_engine.digest(path) != row["output_sha"]:
+                safe_root=(self.root / 'uretilen_gorseller').resolve()
+                resolved=path.resolve(strict=False)
+                if (path.is_symlink() or safe_root not in resolved.parents
+                        or not path.is_file() or petek_engine.digest(path) != row["output_sha"]):
                     counters["failed"] += 1
                     notify(f"SHA/çıktı uyuşmazlığı: {row['sku']}; buluta gönderilmedi.")
                     continue
@@ -160,19 +185,40 @@ class CloudExcel:
                 counters["uploaded"] += 1
                 notify(f"HTTPS link oluşturuldu: {row['sku']}")
             csv_out, xlsx_out, count = self.export(successful_rows)
-            return {**counters, "linked": count, "xlsx": str(xlsx_out), "csv": str(csv_out),
+            return {**counters, "linked": count,
+                    "xlsx": str(xlsx_out) if xlsx_out else "",
+                    "csv": str(csv_out) if csv_out else "",
                     "status": "PARTIAL" if counters["failed"] else ("STOPPED" if stop and stop.is_set() else "LINKS_READY")}
         finally:
             lock.unlink(missing_ok=True)
 
     def export(self, rows):
+        # Store-coded pictures are destined for each store's real marketplace
+        # product-upload template, not an EXTRA generic CSV/XLSX report.
+        # Keep legacy LOCAL export behavior unchanged for historical users.
+        legacy=[];store_linked=0
+        for row in rows:
+            try:
+                parts=Path(row['output']).resolve().relative_to((self.root/'uretilen_gorseller').resolve()).parts
+                store=parts[0] if len(parts)>=3 else 'LOCAL'
+                expected=store_codes(design_number(row['art_name']),store,row['category'])['sku'] if store!='LOCAL' else None
+            except (ValueError,KeyError,IndexError,TypeError):expected=None
+            if expected and expected==row.get('sku'):
+                if self._url_for(row):store_linked+=1
+            else:legacy.append(row)
+        if not legacy:
+            return None,None,store_linked
+        rows=legacy
         selected = []
         for row in rows:
             url = self._url_for(row)
             if not url:
                 continue
             path = Path(row["output"])
-            if path.is_symlink() or not path.is_file() or petek_engine.digest(path) != row["output_sha"]:
+            safe_root=(self.root / 'uretilen_gorseller').resolve()
+            resolved=path.resolve(strict=False)
+            if (path.is_symlink() or safe_root not in resolved.parents
+                    or not path.is_file() or petek_engine.digest(path) != row["output_sha"]):
                 continue
             cat = row["category"]
             sku = row["sku"]

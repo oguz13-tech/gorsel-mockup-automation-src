@@ -1,0 +1,273 @@
+{
+  "dataset": "synthetic_only",
+  "real_golden_samples": 0,
+  "categories": {
+    "01_Wifi_Kutusu": {
+      "real_samples": 0,
+      "synthetic_samples": 3,
+      "detection_rate": 1.0,
+      "median_iou": 0.9823962522810427,
+      "mean_corner_error": 0.30776662266403604,
+      "wrong_object_or_failure_count": 0,
+      "mean_elapsed_ms": 4.381333333333333,
+      "status": "HUMAN_REVIEW_REQUIRED"
+    },
+    "02_Cam_Tablo_Dikey": {
+      "real_samples": 0,
+      "synthetic_samples": 3,
+      "detection_rate": 1.0,
+      "median_iou": 0.9825782987223458,
+      "mean_corner_error": 0.37685025930808375,
+      "wrong_object_or_failure_count": 0,
+      "mean_elapsed_ms": 2.9500000000000006,
+      "status": "HUMAN_REVIEW_REQUIRED"
+    },
+    "02_Cam_Tablo_Yatay": {
+      "real_samples": 0,
+      "synthetic_samples": 3,
+      "detection_rate": 1.0,
+      "median_iou": 0.9808109404990403,
+      "mean_corner_error": 0.6260566258181962,
+      "wrong_object_or_failure_count": 0,
+      "mean_elapsed_ms": 2.8196666666666665,
+      "status": "HUMAN_REVIEW_REQUIRED"
+    },
+    "03_Ahsap_Tablo": {
+      "real_samples": 0,
+      "synthetic_samples": 3,
+      "detection_rate": 1.0,
+      "median_iou": 0.9832708216489063,
+      "mean_corner_error": 0.4742538760317531,
+      "wrong_object_or_failure_count": 0,
+      "mean_elapsed_ms": 2.7866666666666666,
+      "status": "HUMAN_REVIEW_REQUIRED"
+    },
+    "04_Cam_Dograma": {
+      "real_samples": 0,
+      "synthetic_samples": 3,
+      "detection_rate": 1.0,
+      "median_iou": 0.35792349726775957,
+      "mean_corner_error": 0.3445742610299536,
+      "wrong_object_or_failure_count": 0,
+      "mean_elapsed_ms": 2.9923333333333333,
+      "status": "HUMAN_REVIEW_REQUIRED"
+    },
+    "05_Ocak_Arkasi": {
+      "real_samples": 0,
+      "synthetic_samples": 3,
+      "detection_rate": 0.0,
+      "median_iou": 0.0,
+      "mean_corner_error": 1.0,
+      "wrong_object_or_failure_count": 3,
+      "mean_elapsed_ms": 2.7846666666666664,
+      "status": "HUMAN_REVIEW_REQUIRED"
+    },
+    "06_Petek_Kapama": {
+      "real_samples": 0,
+      "synthetic_samples": 3,
+      "mask_outside_preserved": true,
+      "status": "HUMAN_REVIEW_REQUIRED"
+    }
+  },
+  "records": [
+    {
+      "category": "01_Wifi_Kutusu",
+      "sample": 0,
+      "type": "quad",
+      "detected": true,
+      "iou": 0.9823962522810427,
+      "mean_corner_error": 0.30776662266403604,
+      "elapsed_ms": 6.615
+    },
+    {
+      "category": "01_Wifi_Kutusu",
+      "sample": 1,
+      "type": "quad",
+      "detected": true,
+      "iou": 0.9823962522810427,
+      "mean_corner_error": 0.30776662266403604,
+      "elapsed_ms": 3.237
+    },
+    {
+      "category": "01_Wifi_Kutusu",
+      "sample": 2,
+      "type": "quad",
+      "detected": true,
+      "iou": 0.9823962522810427,
+      "mean_corner_error": 0.30776662266403604,
+      "elapsed_ms": 3.292
+    },
+    {
+      "category": "02_Cam_Tablo_Dikey",
+      "sample": 0,
+      "type": "quad",
+      "detected": true,
+      "iou": 0.9825782987223458,
+      "mean_corner_error": 0.3768502593080837,
+      "elapsed_ms": 2.829
+    },
+    {
+      "category": "02_Cam_Tablo_Dikey",
+      "sample": 1,
+      "type": "quad",
+      "detected": true,
+      "iou": 0.9825782987223458,
+      "mean_corner_error": 0.3768502593080837,
+      "elapsed_ms": 2.577
+    },
+    {
+      "category": "02_Cam_Tablo_Dikey",
+      "sample": 2,
+      "type": "quad",
+      "detected": true,
+      "iou": 0.9825782987223458,
+      "mean_corner_error": 0.3768502593080837,
+      "elapsed_ms": 3.444
+    },
+    {
+      "category": "02_Cam_Tablo_Yatay",
+      "sample": 0,
+      "type": "quad",
+      "detected": true,
+      "iou": 0.9808109404990403,
+      "mean_corner_error": 0.6260566258181962,
+      "elapsed_ms": 3.053
+    },
+    {
+      "category": "02_Cam_Tablo_Yatay",
+      "sample": 1,
+      "type": "quad",
+      "detected": true,
+      "iou": 0.9808109404990403,
+      "mean_corner_error": 0.6260566258181962,
+      "elapsed_ms": 2.666
+    },
+    {
+      "category": "02_Cam_Tablo_Yatay",
+      "sample": 2,
+      "type": "quad",
+      "detected": true,
+      "iou": 0.9808109404990403,
+      "mean_corner_error": 0.6260566258181962,
+      "elapsed_ms": 2.74
+    },
+    {
+      "category": "03_Ahsap_Tablo",
+      "sample": 0,
+      "type": "quad",
+      "detected": true,
+      "iou": 0.9832708216489063,
+      "mean_corner_error": 0.47425387603175306,
+      "elapsed_ms": 3.157
+    },
+    {
+      "category": "03_Ahsap_Tablo",
+      "sample": 1,
+      "type": "quad",
+      "detected": true,
+      "iou": 0.9832708216489063,
+      "mean_corner_error": 0.47425387603175306,
+      "elapsed_ms": 2.682
+    },
+    {
+      "category": "03_Ahsap_Tablo",
+      "sample": 2,
+      "type": "quad",
+      "detected": true,
+      "iou": 0.9832708216489063,
+      "mean_corner_error": 0.47425387603175306,
+      "elapsed_ms": 2.521
+    },
+    {
+      "category": "04_Cam_Dograma",
+      "sample": 0,
+      "type": "quad",
+      "detected": true,
+      "iou": 0.3577647943779818,
+      "mean_corner_error": 0.3447344900048695,
+      "elapsed_ms": 2.762
+    },
+    {
+      "category": "04_Cam_Dograma",
+      "sample": 1,
+      "type": "quad",
+      "detected": true,
+      "iou": 0.3580163533815205,
+      "mean_corner_error": 0.344266498386556,
+      "elapsed_ms": 3.534
+    },
+    {
+      "category": "04_Cam_Dograma",
+      "sample": 2,
+      "type": "quad",
+      "detected": true,
+      "iou": 0.35792349726775957,
+      "mean_corner_error": 0.34472179469843534,
+      "elapsed_ms": 2.681
+    },
+    {
+      "category": "05_Ocak_Arkasi",
+      "sample": 0,
+      "type": "quad",
+      "detected": false,
+      "iou": 0.0,
+      "mean_corner_error": 1.0,
+      "elapsed_ms": 2.819
+    },
+    {
+      "category": "05_Ocak_Arkasi",
+      "sample": 1,
+      "type": "quad",
+      "detected": false,
+      "iou": 0.0,
+      "mean_corner_error": 1.0,
+      "elapsed_ms": 2.643
+    },
+    {
+      "category": "05_Ocak_Arkasi",
+      "sample": 2,
+      "type": "quad",
+      "detected": false,
+      "iou": 0.0,
+      "mean_corner_error": 1.0,
+      "elapsed_ms": 2.892
+    },
+    {
+      "category": "06_Petek_Kapama",
+      "sample": 0,
+      "type": "mask",
+      "metrics": {
+        "mask_outside_pixels": 389967,
+        "mask_outside_preserved": true,
+        "independent_curve_regions": 2,
+        "slot_count": 9,
+        "status": "SYNTHETIC_PASS_HUMAN_REVIEW_REQUIRED"
+      }
+    },
+    {
+      "category": "06_Petek_Kapama",
+      "sample": 1,
+      "type": "mask",
+      "metrics": {
+        "mask_outside_pixels": 389967,
+        "mask_outside_preserved": true,
+        "independent_curve_regions": 2,
+        "slot_count": 9,
+        "status": "SYNTHETIC_PASS_HUMAN_REVIEW_REQUIRED"
+      }
+    },
+    {
+      "category": "06_Petek_Kapama",
+      "sample": 2,
+      "type": "mask",
+      "metrics": {
+        "mask_outside_pixels": 389967,
+        "mask_outside_preserved": true,
+        "independent_curve_regions": 2,
+        "slot_count": 9,
+        "status": "SYNTHETIC_PASS_HUMAN_REVIEW_REQUIRED"
+      }
+    }
+  ],
+  "note": "Synthetic metrics are regression evidence, not real visual acceptance."
+}

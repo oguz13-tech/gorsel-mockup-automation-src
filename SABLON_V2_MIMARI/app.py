@@ -82,6 +82,45 @@ import uuid
 from functools import wraps
 
 app = Flask(__name__)
+# PETEK is seventh category of THIS editor, not a second Flask/Tk app.
+# All PETEK writes use the existing PETEK_V3 source SHA / human mask registry.
+from core.petek_web_v477 import petek_web
+app.config['PETEK_WORKSPACE_V477'] = BASE_DIR
+app.register_blueprint(petek_web)
+from core.loopback_security_v47 import check as _loopback_check, token as _csrf_token
+
+@app.before_request
+def _enforce_loopback_csrf_v47():
+    reason = _loopback_check(request, testing=app.config.get('TESTING') is True)
+    if reason:
+        return jsonify({'success':False,'code':reason,'error':'Yerel inceleme güvenlik denetimi'}),403
+
+@app.after_request
+def _private_editor_headers(response):
+    response.headers['X-Frame-Options']='DENY'
+    response.headers['X-Content-Type-Options']='nosniff'
+    response.headers['Referrer-Policy']='same-origin'
+    response.headers['Cache-Control']='private, no-store'
+    response.headers['Content-Security-Policy']="frame-ancestors 'none'"
+    return response
+
+@app.route('/api/session/csrf')
+def csrf_session_token():
+    return jsonify({'csrf':_csrf_token()})
+
+@app.route('/api/center_identity')
+def center_identity():
+    import secrets
+    token = os.environ.get('MOCKUP_CENTER_TOKEN', '')
+    if not token or not secrets.compare_digest(request.headers.get('X-Center-Token', ''), token):
+        return jsonify({'error': 'Not authorized'}), 403
+    # On Windows venv python.exe is a launcher/redirector. Popen.pid can
+    # identify that launcher while Flask runs in its direct Python child.
+    # A launcher-to-child identity still requires the secret token + both roots.
+    return jsonify({'pid': os.getpid(), 'parent_pid': os.getppid(),
+                    'token': token, 'runtime_root': BASE_DIR,
+                    'code_root': SOURCE_ROOT})
+
 
 
 def _template_guard_values(source):
@@ -951,6 +990,75 @@ def api_replace_original():
         return jsonify({"success": False, "error": str(exc)}), 500
 
 
+# V4.6 proposals live OUTSIDE production DB and working/backup template pools.
+# A bulk analyze request NEVER writes to template_profiles or APPROVED geometry.
+def _v46_draft_folder():
+    user_root = Path(os.environ.get("LOCALAPPDATA") or
+                     (Path.home() / ".local" / "share"))
+    folder = user_root / "GorselMockup" / "v46_review_proposals"
+    if folder.exists() and folder.is_symlink():
+        raise ValueError("Taslak klasörü bağlantı (symlink) olamaz")
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder
+
+
+def _v46_draft_path(category, template):
+    # Collision-safe unique identity without using the filename as a path.
+    key = hashlib.sha256(json.dumps([str(Path(BASE_DIR).resolve()), category, template],
+                                   ensure_ascii=False).encode("utf-8")).hexdigest()
+    return _v46_draft_folder() / f"{key}.json"
+
+
+def _v46_store_draft(category, template, corners, source_hash, surface_mode):
+    path = _v46_draft_path(category, template)
+    if path.is_symlink():
+        raise ValueError("Taslak dosyası symlink")
+    payload = {"category": category, "template": template, "corners": corners,
+               "source_sha256": source_hash, "surface_mode": surface_mode,
+               "approved": False, "version": "v46-draft-1"}
+    temp = path.with_name(path.name + "." + uuid.uuid4().hex + ".tmp")
+    try:
+        with temp.open("x", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temp, path)
+    finally:
+        temp.unlink(missing_ok=True)
+
+
+@app.route('/api/v46/corner_draft', methods=['GET'])
+def api_v46_corner_draft():
+    category = str(request.args.get("category", ""))
+    template = str(request.args.get("template", ""))
+    if not category or not template:
+        return jsonify({"success": False, "error": "Kategori / şablon eksik"}), 400
+    try:
+        img_path = _safe_template_path(category, template)
+        if not os.path.isfile(img_path):
+            return jsonify({"success": False, "error": "Kaynak yok"}), 404
+        path = _v46_draft_path(category, template)
+        if path.is_symlink():
+            return jsonify({"success": False, "error": "Güvensiz taslak dosyası"}), 409
+        if not path.is_file():
+            return jsonify({"success": True, "available": False})
+        draft = json.loads(path.read_text(encoding="utf-8"))
+        if draft.get("source_sha256") != _sha256_file(img_path):
+            return jsonify({"success": True, "available": False,
+                            "stale": True, "reason": "Kaynak resmi değişmiş; eski öneri kullanılamaz."})
+        if draft.get("category") != category or draft.get("template") != template:
+            return jsonify({"success": False, "error": "Taslak kimlik uyuşmazlığı"}), 409
+        corners = draft.get("corners")
+        if not isinstance(corners, list) or len(corners) != 4:
+            return jsonify({"success": False, "error": "Taslak geometri bozuk"}), 409
+        return jsonify({"success": True, "available": True, "corners": corners,
+                        "surface_mode": draft.get("surface_mode"),
+                        "source_sha256": draft.get("source_sha256"),
+                        "approved": False})
+    except (ValueError, OSError, json.JSONDecodeError) as exc:
+        return jsonify({"success": False, "error": str(exc)}), 400
+
+
 @app.route('/api/auto_detect_corners', methods=['POST'])
 @template_guard('auto-detect-corners', source='headers')
 def api_auto_detect_corners():
@@ -970,12 +1078,63 @@ def api_auto_detect_corners():
         if not os.path.exists(img_path):
             return jsonify({"success": False, "error": "Resim dosyasi bulunamadi"}), 404
 
+        detected_source_hash = _sha256_file(img_path)
         img_cv = cv2.imdecode(
             np.fromfile(img_path, dtype=np.uint8),
             cv2.IMREAD_COLOR,
         )
         if img_cv is None:
             return jsonify({"success": False, "error": "Resim okunamadi"}), 500
+
+        # BEGIN ISOLATED_MAGENTA_QUAD_V1: independent color-only review suggestion.
+        from core.chroma_quad_detector import detect as _chroma_detect
+        chroma_result = _chroma_detect(img_cv, active_cat)
+        if chroma_result.get("chroma_present", False):
+            if not chroma_result.get("quad"):
+                return jsonify({
+                    "success": False,
+                    "error": "Magenta belirsiz: insan incelemesi gerekli",
+                    "code": "CHROMA_REVIEW_REQUIRED",
+                    "engine": "magenta_color_quad_v1",
+                    "review_status": "REVIEW_REQUIRED",
+                    "reason": chroma_result.get("reason", "CHROMA_NO_VALID_QUAD"),
+                }), 422
+            candidate = np.asarray(chroma_result["quad"], dtype=np.float32)
+            valid, reason = GeometryValidator.is_valid_quad(
+                candidate, img_cv.shape[1], img_cv.shape[0])
+            if not valid:
+                return jsonify({
+                    "success": False,
+                    "error": "Magenta geometri gecersiz: " + str(reason),
+                    "engine": "magenta_color_quad_v1",
+                    "review_status": "REVIEW_REQUIRED",
+                }), 422
+            candidate = GeometryValidator.canonical_sort(candidate).astype(float).tolist()
+            if detected_source_hash != _sha256_file(img_path):
+                return jsonify({"success": False, "code": "SOURCE_CHANGED", "error": "Kaynak tespit sırasında değişti."}), 409
+            draft_saved = (request.get_json(silent=True) or {}).get("save_as_draft") is True
+            if draft_saved:
+                _v46_store_draft(active_cat, active_tmpl, candidate, detected_source_hash, "MAGENTA_MARKED_SOURCE")
+            return jsonify({
+                "success": True,
+                "corners": candidate,
+                "source_sha256": _sha256_file(img_path),
+                "engine": "magenta_color_quad_v1",
+                "review_status": "REVIEW_REQUIRED",
+                "confidence": 0.0,
+                "component_confidences": {},
+                "surface_mode": "MAGENTA_MARKED_SOURCE",
+                "surface_mode_confidence": 0.0,
+                "nominal_aspect": "UNKNOWN",
+                "occlusions": [],
+                "magenta_mask_iou": chroma_result.get("magenta_mask_iou"),
+                "magenta_polygon_purity": chroma_result.get("magenta_polygon_purity"),
+                "chroma_detector_status": chroma_result.get("status"),
+                "chroma_warning": chroma_result.get("reason"),
+                "draft_saved": draft_saved,
+                "warning": "Renk dedektoru sadece DRAFT oneri verir. INSAN ONAYI ZORUNLU.",
+            })
+        # END ISOLATED_MAGENTA_QUAD_V1
 
         analysis, cache_hit = _analyze_auto_cached(
             active_cat,
@@ -1034,14 +1193,31 @@ def api_auto_detect_corners():
         except Exception:
             occlusion_data = []
 
+        source_hash = _sha256_file(img_path)
+        if (request.get_json(silent=True) or {}).get("save_as_draft") is True:
+            try:
+                _v46_store_draft(active_cat, active_tmpl, corners, source_hash,
+                                 analysis.get("surface_mode", "UNKNOWN"))
+            except (OSError, ValueError) as exc:
+                return jsonify({"success": False, "error": f"Taslak kaydı başarısız: {exc}"}), 500
+
         return jsonify({
             "success": True,
             "corners": corners,
+            "source_sha256": source_hash,
             "occlusions": occlusion_data,
             "engine": engine,
             "confidence": float(analysis.get("confidence_total", 0.0) or 0.0),
             "component_confidences": analysis.get("component_confidences", {}),
             "surface_mode": analysis.get("surface_mode", "UNKNOWN"),
+            "surface_priority_hint": (
+                "SEFFAF_CAM_ONCELIKLI" if analysis.get("surface_mode") == "TRANSPARENT_GLASS"
+                else "BEYAZ_CAM_ADAYI_KATEGORI_TAHMINI" if analysis.get("surface_mode") == "WHITE" and (
+                    "Cam" in active_cat or "Ocak_Arkasi" in active_cat)
+                else "CAM_OLMAYAN_BEYAZ" if analysis.get("surface_mode") == "WHITE"
+                else "CAM_OLMAYAN_SIYAH" if analysis.get("surface_mode") == "BLACK"
+                else "DIGER_VEYA_KARARSIZ"
+            ),
             "surface_mode_confidence": float(
                 analysis.get("surface_mode_confidence", 0.0) or 0.0
             ),
@@ -1972,10 +2148,30 @@ def _analyze_template_for_batch(category, template_name):
             "batch-analyze",
             wait_seconds=0.35,
         ):
-            analysis, cache_hit = _analyze_auto_cached(
-                category,
-                img_path,
-            )
+            # Use the same source-specific engine as single-image review.
+            from core.chroma_quad_detector import detect
+            source_hash = _sha256_file(img_path)
+            image = cv2.imdecode(np.fromfile(img_path, dtype=np.uint8), cv2.IMREAD_COLOR)
+            if image is None:
+                raise ValueError("Görsel okunamadı")
+            chroma = detect(image, category)
+            if chroma.get("chroma_present"):
+                quad = chroma.get("quad")
+                if not quad:
+                    return {"template": template_name, "status": "REVIEW_REQUIRED",
+                            "reason": chroma.get("reason"), "engine": "magenta_color_quad_v1"}
+                valid, reason = GeometryValidator.is_valid_quad(np.asarray(quad), image.shape[1], image.shape[0])
+                if not valid:
+                    return {"template": template_name, "status": "REVIEW_REQUIRED", "reason": str(reason)}
+                if source_hash != _sha256_file(img_path):
+                    return {"template": template_name, "status": "SOURCE_CHANGED"}
+                # Sidecar draft only. Never replace a profile or its approval.
+                _v46_store_draft(category, template_name, quad, source_hash, "MAGENTA_MARKED_SOURCE")
+                return {"template": template_name, "status": "ANALYZED",
+                        "draft_only": True, "review_status": "REVIEW_REQUIRED",
+                        "engine": "magenta_color_quad_v1", "reason": chroma.get("reason"),
+                        "draft_saved": True}
+            analysis, cache_hit = _analyze_auto_cached(category, img_path)
         return {
             "template": template_name,
             "status": "ANALYZED",
@@ -2319,6 +2515,14 @@ def _run_batch_analysis_core(
                 "preserved": True,
             }
             continue
+        conn = sqlite3.connect(Path(db_path).resolve().as_uri()+"?mode=ro", uri=True)
+        try:
+            protected = conn.execute("SELECT 1 FROM template_profiles WHERE template_uid=? AND is_active=1 AND manually_verified=1 AND review_status='APPROVED'", (uid,)).fetchone()
+        finally:
+            conn.close()
+        if protected:
+            results_by_name[template_name] = {"template": template_name, "status": "REVIEW_REQUIRED", "reason": "APPROVED_SOURCE_SHA_MISMATCH"}
+            continue
         to_analyze.append(template_name)
 
     analysis_results = {}
@@ -2364,7 +2568,7 @@ def _run_batch_analysis_core(
             "status": "FAILED",
             "error": "Analiz sonucu alınamadı",
         }
-        if item.get("status") != "ANALYZED":
+        if item.get("status") != "ANALYZED" or item.get("draft_only"):
             results_by_name[template_name] = item
             continue
 
@@ -3857,14 +4061,21 @@ if __name__ == '__main__':
     job_engine.start()
     print("Kalıcı Job Engine aktif: 2 worker, restart-resume açık.")
 
-    print("SABLON_V2_MIMARI (Flask MVC) Baslatiliyor... http://127.0.0.1:8080")
+    try:
+        bind_port = int(os.environ.get("MOCKUP_PORT", "8080"))
+    except ValueError:
+        bind_port = 8080
+    if not 1024 <= bind_port <= 65535:
+        bind_port = 8080
+    bind_url = f"http://127.0.0.1:{bind_port}"
+    print(f"SABLON_V2_MIMARI (Flask MVC) Baslatiliyor... {bind_url}")
     auto_browser_disabled = str(
         os.environ.get("MOCKUP_NO_AUTO_BROWSER", "")
     ).strip().lower() in {"1", "true", "yes", "on"}
     if not auto_browser_disabled:
         threading.Timer(
             1.25,
-            lambda: webbrowser.open("http://127.0.0.1:8080/"),
+            lambda: webbrowser.open(bind_url + "/"),
         ).start()
     debug_enabled = str(os.environ.get("MOCKUP_FLASK_DEBUG", "")).strip().lower() in {"1", "true", "yes", "on"}
-    app.run(host='127.0.0.1', port=8080, debug=debug_enabled, use_reloader=False)
+    app.run(host='127.0.0.1', port=bind_port, debug=debug_enabled, use_reloader=False)

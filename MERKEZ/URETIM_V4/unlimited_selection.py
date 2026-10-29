@@ -25,6 +25,7 @@ from typing import Any
 
 from PETEK_V3 import engine as petek_engine
 from PETEK_V3.registry import Registry as PetekRegistry
+from petek_folders_v46 import petek_directory
 from .manual_geometry import validated_legacy_manual_quad
 
 LEGACY_SIX_CATEGORIES = (
@@ -265,7 +266,33 @@ def discover_all_approved_seven_categories(
                 )
                 continue
             try:
-                profile, mask = petek_registry.get(uid, require_approved=True)
+                stored=Path(str(entry.get("source") or ""))
+                if stored.exists() or stored.is_symlink():
+                    # A present source must pass its ORIGINAL SHA check; never
+                    # use a different photo to conceal source tampering.
+                    profile,mask=petek_registry.get(uid,require_approved=True)
+                    source_file=Path(profile["source"]).resolve(strict=True)
+                else:
+                    if runtime_root is None:
+                        raise petek_engine.MaskError('PETEK_ESKI_KAYNAK_YOK_CALISMA_KOKU_GEREKLI')
+                    # An old LAB path went missing. The approved record stays
+                    # immutable; use an unambiguous working-pool photo ONLY
+                    # if SHA and geometry match. No silent path migrations.
+                    working=petek_directory(runtime_root,'2_SABLON_HAVUZU')
+                    if not working.is_dir() or working.is_symlink():
+                        raise petek_engine.MaskError('PETEK_CALISMA_KLASORU_YOK')
+                    matches=[]
+                    for candidate in working.iterdir():
+                        if (candidate.is_file() and not candidate.is_symlink() and
+                                candidate.suffix.lower() in ('.png','.jpg','.jpeg','.webp') and
+                                petek_engine.digest(candidate)==entry['source_sha']):
+                            matches.append(candidate)
+                    if len(matches)!=1:
+                        raise petek_engine.MaskError(
+                            'PETEK_ESKI_KAYNAK_ESLESMESI_GUVENSIZ: '+str(len(matches))+' eslesme')
+                    source_file=matches[0].resolve(strict=True)
+                    profile,mask=petek_registry.get(
+                        uid,require_approved=True,source_override=source_file)
                 if per_category_limit is not None and counts["06_Petek_Kapama"] >= int(per_category_limit):
                     skipped.append(
                         {
@@ -281,7 +308,7 @@ def discover_all_approved_seven_categories(
                         "uid": uid,
                         "category": "06_Petek_Kapama",
                         "engine_type": "PETEK_V3_CUTOUT",
-                        "source": str(Path(profile["source"]).resolve(strict=True)),
+                        "source": str(source_file),
                         "source_sha": str(profile["source_sha"]),
                         "mask_sha": str(profile["mask_sha"]),
                         "quad": profile["quad"],

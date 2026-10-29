@@ -12,6 +12,7 @@ from pathlib import Path
 import sqlite3
 import tempfile
 import socket
+import shutil
 import sys
 
 ROOT=Path(__file__).resolve().parent.parent
@@ -38,7 +39,7 @@ def preferred_runtime(userprofile=None, env=None) -> Path:
     if state.is_file():
         try:
             selected=Path(json.loads(state.read_text('utf-8'))['path']).expanduser().absolute()
-            if (selected/'SABLON_V2_MIMARI'/'ayarlar.db').is_file():return selected
+            return selected  # Missing selection must fail preflight, never switch datasets.
         except (ValueError, KeyError, OSError, TypeError):pass
     user=Path(userprofile or env.get('USERPROFILE') or Path.home())
     places=[user/'OneDrive'/'Masaüstü'/'GörselÜretme-ve-Mockup Otomasyonu',
@@ -66,19 +67,19 @@ def store_runtime_choice(folder:Path,env=None)->Path:
 
 
 def preferred_code(env=None)->Path:
-    env=os.environ if env is None else env
-    candidates=[]
-    if env.get('MOCKUP_LEGACY_SOURCE_ROOT'):
-        candidates.append(Path(env['MOCKUP_LEGACY_SOURCE_ROOT']))
-    # The released editor must load from THIS version's tested package.
-    # Otherwise an older C:/AI_WORK checkout silently defeats Group 1 fixes.
-    candidates.append(ROOT)
-    candidates.append(Path('C:/AI_WORK/gorsel-mockup-automation-src'))
-    candidates.append(EMBEDDED)
-    for cand in candidates:
-        if (cand/'SABLON_V2_MIMARI'/'app.py').is_file() and (cand/'SABLON_V2_MIMARI'/'core'/'db.py').is_file():
-            return cand.absolute()
-    return candidates[-1]
+    """Only launch the six-category editor from THIS signed code package.
+
+    A stale environment variable or old C:/AI_WORK checkout must never make
+    the active V4.7.2 application silently depend on a disposable test folder.
+    Data runtime remains independently selected by preferred_runtime().
+    """
+    expected=ROOT
+    if ((expected/'SABLON_V2_MIMARI'/'app.py').is_file()
+            and (expected/'SABLON_V2_MIMARI'/'core'/'db.py').is_file()):
+        return expected.absolute()
+    raise LegacyLaunchError(
+        'TEST_EDILMIS_KOD_EKSIK: Paket kodu eksik; eski/test '
+        'klasöründen otomatik yedek kod çalıştırılması engellendi.' )
 
 
 def inspect(runtime=None,code=None)->dict:
@@ -138,6 +139,17 @@ def backup_database(runtime:Path,env=None)->Path:
         test=backup.execute('PRAGMA quick_check(1)').fetchone()
         if not test or test[0]!='ok':raise LegacyLaunchError('SQLite yedek bütünlüğü doğrulanamadı.')
         backup.close();backup=None;source.close();source=None
+        # Restore only into a disposable third copy; never restore over live data.
+        with tempfile.TemporaryDirectory(prefix='center-restore-') as directory:
+            restored=Path(directory)/'trial.db'
+            shutil.copyfile(path,restored)
+            trial=sqlite3.connect(restored.as_uri()+'?mode=ro',uri=True)
+            try:
+                if trial.execute('PRAGMA integrity_check').fetchone()[0]!='ok':
+                    raise LegacyLaunchError('İzole geri yükleme provası başarısız.')
+            finally:trial.close()
+            if restored.read_bytes()!=path.read_bytes():
+                raise LegacyLaunchError('Geri yükleme SHA uyuşmazlığı.')
         digest=hashlib.sha256(path.read_bytes()).hexdigest()
         receipt=path.with_suffix('.sha256')
         with receipt.open('x',encoding='ascii') as f:f.write(digest+'  '+path.name+'\n')
@@ -165,3 +177,104 @@ def port_occupied(host='127.0.0.1',port=8080,timeout=.3)->bool:
     with socket.socket() as sock:
         sock.settimeout(timeout)
         return sock.connect_ex((host,port))==0
+
+
+def choose_review_port(*, candidates=range(8080,8091),occupied=None):
+    """Never stop an unknown TCP listener; take the first free loopback port.
+
+    The center separately authenticates the launched Flask process using its
+    unique token, PID and both workspace/code roots. Port selection alone is
+    never authentication.
+    """
+    busy=occupied or (lambda port:port_occupied(port=port))
+    for value in candidates:
+        port=int(value)
+        if not 1024 <= port <= 65535:
+            raise LegacyLaunchError('İNCELEME_PORTU_GECERSIZ')
+        if not busy(port):
+            return port
+    raise LegacyLaunchError(
+        '8080–8090 portları dolu. Herhangi bir program otomatik kapatılmadı. '
+        'Kullanılmayan bir port açıldıktan sonra tekrar deneyin.')
+
+
+def server_identity_diagnostic(runtime, code, pid, token, opener=None, *, timeout=1.8,
+                               windows_redirector=None, port=8080, include_pid=False):
+    """Explain an editor handshake without leaking the bearer token.
+
+    The operator must never be sent to an unknown/stale 8080 listener.  No
+    path/PID mismatch is ignored, and no process is terminated here.
+    """
+    import urllib.request
+    try:
+        selected_port=int(port)
+        if not 1024 <= selected_port <= 65535:
+            return {'ready':False,'reason':'IDENTITY_PORT_INVALID'}
+        req = urllib.request.Request(
+            f'http://127.0.0.1:{selected_port}/api/center_identity',
+            headers={'X-Center-Token': str(token)})
+        with (opener or urllib.request.urlopen)(req, timeout=timeout) as response:
+            data = json.load(response)
+        if not isinstance(data, dict):
+            return {'ready': False, 'reason': 'IDENTITY_INVALID_RESPONSE'}
+        if not token or not isinstance(data.get('token'), str):
+            return {'ready': False, 'reason': 'IDENTITY_TOKEN_MISSING'}
+        import secrets
+        if not secrets.compare_digest(data['token'], str(token)):
+            return {'ready': False, 'reason': 'IDENTITY_TOKEN_MISMATCH'}
+        # Python 3.11 Windows venv Scripts/python.exe is a redirector:
+        # Popen.pid is the redirector, whereas os.getpid() in Flask identifies
+        # its direct child.  Only accept this ONE parent/child relationship on
+        # Windows, along with the unique bearer token and both matching roots.
+        if windows_redirector is None:
+            windows_redirector = (os.name == 'nt')
+        observed_pid = data.get('pid')
+        direct_pid_match = type(observed_pid) is int and observed_pid == int(pid)
+        parent_pid = data.get('parent_pid')
+        redirector_child_match = (
+            bool(windows_redirector)
+            and type(observed_pid) is int and observed_pid > 0
+            and type(parent_pid) is int and parent_pid == int(pid)
+        )
+        if not (direct_pid_match or redirector_child_match):
+            return {'ready': False, 'reason': 'IDENTITY_PID_MISMATCH',
+                    'expected_pid': int(pid), 'actual_pid': observed_pid,
+                    'actual_parent_pid': parent_pid}
+        for key, expected in [('runtime_root', runtime), ('code_root', code)]:
+            actual = data.get(key)
+            if not isinstance(actual, str) or not actual:
+                return {'ready': False, 'reason': 'IDENTITY_' + key.upper() + '_MISSING'}
+            try:
+                matched = Path(actual).resolve() == Path(expected).resolve()
+                if not matched and Path(actual).exists() and Path(expected).exists():
+                    matched = os.path.samefile(actual, expected)
+            except (OSError, ValueError, TypeError):
+                matched = False
+            if not matched:
+                return {'ready': False, 'reason': 'IDENTITY_' + key.upper() + '_MISMATCH',
+                        'expected_path': str(Path(expected).resolve()),
+                        'actual_path': str(Path(actual).resolve())}
+        matched={'ready': True, 'reason': ('MATCHED_WIN_VENV_REDIRECTOR'
+                                           if redirector_child_match and not direct_pid_match
+                                           else 'MATCHED')}
+        if include_pid:
+            matched.update(actual_pid=observed_pid,actual_parent_pid=parent_pid)
+        return matched
+    except Exception as exc:
+        # Distinguish transient timeout/connect failures from bad identities.
+        import urllib.error
+        if isinstance(exc, urllib.error.HTTPError):
+            return {'ready': False, 'reason': 'IDENTITY_HTTP_' + str(exc.code)}
+        if isinstance(exc, (TimeoutError, socket.timeout)):
+            return {'ready': False, 'reason': 'IDENTITY_TIMEOUT'}
+        if isinstance(exc, (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError)):
+            return {'ready': False, 'reason': 'IDENTITY_NO_VALID_RESPONSE',
+                    'error_type': type(exc).__name__}
+        raise
+
+
+def server_matches(runtime, code, pid, token, opener=None):
+    """Backward compatible strict boolean wrapper around an explainable probe."""
+    return bool(server_identity_diagnostic(
+        runtime, code, pid, token, opener=opener,
+    )['ready'])
