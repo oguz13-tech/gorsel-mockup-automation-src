@@ -67,6 +67,55 @@ def test_petek_alias_conflict_fails_before_mkdir(tmp_path):
     assert not (root / SECTIONS[1]).exists()
 
 
+def test_center_starts_with_all_three_petek_category_directories_without_touching_data(tmp_path):
+    """New main-center startup must fix the exact missing PETEK working folder."""
+    from merkez import Center
+    root, db = _workspace(tmp_path)
+    old_image = root / SECTIONS[1] / '01_Wifi_Kutusu' / 'Wifi_Kutusu_001.png'
+    _photo(old_image)
+    old_image_sha = hashlib.sha256(old_image.read_bytes()).hexdigest()
+    old_db_sha = hashlib.sha256(db.read_bytes()).hexdigest()
+    logs = []
+    center = Center.__new__(Center)  # No Tk window or user's real filesystem.
+    center.runtime = root
+    center._log = logs.append
+    done = center.ensure_petek_workspace()
+    assert done is not None
+    assert len(done['created']) == 3
+    for section in SECTIONS:
+        assert (root / section / 'Petek_Dolabi').is_dir()
+        assert not (root / section / '06_Petek_Kapama').exists()
+    assert hashlib.sha256(old_image.read_bytes()).hexdigest() == old_image_sha
+    assert hashlib.sha256(db.read_bytes()).hexdigest() == old_db_sha
+    assert center.ensure_petek_workspace()['created'] == []
+    assert any('PETEK kategori klasörleri' in msg for msg in logs)
+
+
+def test_center_petek_folder_preflight_refuses_alias_conflict_without_side_effects(tmp_path):
+    from merkez import Center
+    root, db = _workspace(tmp_path)
+    for name in ('Petek_Dolabi', '06_Petek_Kapama'):
+        _photo(root / SECTIONS[0] / name / (name + '.png'))
+    old_db_sha = hashlib.sha256(db.read_bytes()).hexdigest()
+    logs = []
+    center = Center.__new__(Center)
+    center.runtime = root
+    center._log = logs.append
+    assert center.ensure_petek_workspace() is None
+    assert any('PETEK KLASÖRÜ OTOMATİK HAZIRLANAMADI' in msg for msg in logs)
+    assert not (root / SECTIONS[1]).exists()
+    assert hashlib.sha256(db.read_bytes()).hexdigest() == old_db_sha
+
+
+def test_main_center_autoprepares_petek_before_inbox_and_after_switch():
+    import inspect
+    from merkez import Center
+    init = inspect.getsource(Center.__init__)
+    assert init.index('self.root.after(0,self.ensure_petek_workspace)') < init.index('self.root.after(400,self.start_auto_inbox)')
+    switch = inspect.getsource(Center.select_runtime)
+    assert switch.index('self.ensure_petek_workspace()') < switch.index('self.start_auto_inbox()')
+
+
 def test_petek_auto_ingest_from_friendly_folder_no_db_write(tmp_path):
     root, db = _workspace(tmp_path)
     original_sha = hashlib.sha256(db.read_bytes()).hexdigest()
