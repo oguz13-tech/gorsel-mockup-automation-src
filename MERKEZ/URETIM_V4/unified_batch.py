@@ -35,6 +35,7 @@ import re
 import sqlite3
 import tempfile
 import threading
+import unicodedata
 from typing import Any
 
 import cv2
@@ -105,6 +106,21 @@ def iter_designs(folder: Path):
             p = Path(directory) / name
             if p.suffix.lower() in EXT and not p.is_symlink():
                 yield p
+
+
+def assert_unique_print_names(designs: list[Path]) -> None:
+    """Collision guard on ANY design folder, regardless of file extension.
+
+    Same photo base in nested folders is ambiguous to the print operator and
+    may produce duplicate SKU/Excel identity, so refuse before any rendering.
+    """
+    seen={}
+    for file in designs:
+        name=unicodedata.normalize('NFC',Path(file).stem).casefold()
+        if name in seen:
+            raise ValueError('HAM_BASKI_TASARIM_NUMARASI_CAKISMASI: '+
+                             str(seen[name])+' / '+str(file))
+        seen[name]=file
 
 
 def unified_receipt_identity(
@@ -507,6 +523,7 @@ class UnifiedV4Batch:
         rng = random.Random(seed)
         rng.shuffle(production_plan)
         designs_in_run = list(iter_designs(designs))
+        assert_unique_print_names(designs_in_run) # Detect PNG/JPG/JPEG/WEBP twins before writing.
         if not designs_in_run:
             raise petek_engine.MaskError("Tasarım klasöründe kullanılabilir görsel yok.")
         rng.shuffle(designs_in_run)
