@@ -174,6 +174,92 @@ def list_templates():
                             'legacy_bulk_delete':False}})
     except (ValueError,OSError,engine.MaskError) as exc:return _fail(exc)
 
+def _bulk_selected():
+    body=request.get_json(silent=True)
+    if not isinstance(body,dict) or not isinstance(body.get('items'),list):
+        raise ValueError('PETEK_BULK_JSON_ITEMS_REQUIRED')
+    selected=body['items']
+    if not 1<=len(selected)<=8:raise ValueError('PETEK_BULK_LIMIT_1_TO_8')
+    seen=set()
+    for item in selected:
+        if not isinstance(item,dict):raise ValueError('PETEK_BULK_INVALID_ITEM')
+        identity=(item.get('name'),item.get('uid'))
+        if identity in seen:raise ValueError('PETEK_BULK_DUPLICATE_SELECTION')
+        seen.add(identity)
+    return body,selected
+
+
+def _bulk_propose_one(registry,item,save_new):
+    file=_photo(item.get('name'))
+    if engine.digest(file)!=item.get('source_sha'):
+        raise ValueError('PETEK_BULK_SOURCE_SHA_CHANGED')
+    uid,sha=_identity(registry,file,item.get('uid'))
+    if uid!=item.get('uid'):raise ValueError('PETEK_BULK_UID_CHANGED')
+    # Read only on proposal. Save mode may create NEW DRAFTs, but never
+    # modify ANY previously registered profile, including APPROVED and DRAFT.
+    if (registry.profiles/(uid+'.json')).exists():
+        raise ValueError('PETEK_BULK_ALREADY_REGISTERED_REVIEW_INDIVIDUALLY')
+    scene=engine.read_bgr(file)
+    suggestion=detect_magenta_quad(scene)
+    mask,mask_qa=engine.auto_mask_candidate(scene,suggestion['quad'])
+    safety=engine.mask_check(mask,scene,suggestion['quad'])
+    result={'name':file.name,'uid':uid,'source_sha':sha,
+            'quad':suggestion['quad'],'method':suggestion['method'],
+            'coverage':suggestion['coverage'],
+            'mask_status':'TASLAK','mask_fraction':safety['printable_fraction'],
+            'saved':False}
+    if save_new:
+        # Source SHA is revalidated on save. No automatic human approval.
+        profile=registry.save(uid,file,suggestion['quad'],mask,1.1163,
+                              approved=False,curve_points={'top':[],'bottom':[]})
+        result['saved']=True
+        result['mask_sha']=profile['mask_sha']
+        result['status']='DRAFT'
+    return result
+
+
+@petek_web.post('/api/petek/bulk-propose')
+def bulk_propose():
+    """Eight-at-a-time, unsaved PETEK MAGENTA quad + grille mask QA proposals."""
+    try:
+        _,selected=_bulk_selected()
+        registry=Registry()
+        successes=[];failed=[]
+        for item in selected:
+            try:successes.append(_bulk_propose_one(registry,item,False))
+            except (ValueError,OSError,KeyError,TypeError,engine.MaskError,cv2.error) as exc:
+                failed.append({'name':str(item.get('name') or '')[:180],
+                               'uid':str(item.get('uid') or '')[:96],
+                               'error':str(exc)[:200]})
+        return jsonify({'success':True,'proposals':successes,'failed':failed,
+                        'read_only':True,'human_approval_required':True})
+    except (ValueError,OSError,TypeError,KeyError,engine.MaskError) as exc:return _fail(exc)
+
+
+@petek_web.post('/api/petek/bulk-save-new-drafts')
+def bulk_save_new_drafts():
+    """Optional, explicit NEW-only write. Never APPROVE or overwrite any mask.
+
+    Partial successes are reported individually; each registry.save is atomic.
+    """
+    try:
+        body,selected=_bulk_selected()
+        if body.get('confirm')!='CREATE_NEW_DRAFTS_ONLY_NO_APPROVAL':
+            raise ValueError('PETEK_BULK_DRAFT_EXPLICIT_CONFIRM_REQUIRED')
+        registry=Registry()
+        successes=[];failed=[]
+        for item in selected:
+            try:successes.append(_bulk_propose_one(registry,item,True))
+            except (ValueError,OSError,KeyError,TypeError,engine.MaskError,cv2.error) as exc:
+                failed.append({'name':str(item.get('name') or '')[:180],
+                               'uid':str(item.get('uid') or '')[:96],
+                               'error':str(exc)[:200]})
+        return jsonify({'success':True,'drafts':successes,'failed':failed,
+                        'created_count':len(successes),
+                        'approved_count':0,'human_approval_required':True})
+    except (ValueError,OSError,TypeError,KeyError,engine.MaskError) as exc:return _fail(exc)
+
+
 @petek_web.get('/api/petek/photo/<path:name>')
 def photo(name):
     try:
