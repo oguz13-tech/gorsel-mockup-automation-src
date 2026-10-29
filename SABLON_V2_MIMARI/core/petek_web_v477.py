@@ -265,6 +265,31 @@ def bulk_save_new_drafts():
     except (ValueError,OSError,TypeError,KeyError,engine.MaskError) as exc:return _fail(exc)
 
 
+@petek_web.get('/api/petek/thumbnail/<path:name>')
+def thumbnail(name):
+    """Tiny lazy thumbnail for bulk PETEK selection; no full-size image delivery.
+
+    Read only, 136px JPEG; never emit private mask/registry/source paths.
+    """
+    try:
+        import io
+        from PIL import Image,ImageOps,UnidentifiedImageError
+        photo=_photo(name)
+        with Image.open(photo) as original:
+            original.draft('RGB',(136,136))
+            original=ImageOps.exif_transpose(original)
+            original.thumbnail((136,136),Image.Resampling.LANCZOS)
+            output=io.BytesIO()
+            original.convert('RGB').save(output,format='JPEG',quality=72,optimize=True)
+        output.seek(0)
+        response=send_file(output,mimetype='image/jpeg',download_name='petek-preview.jpg')
+        response.cache_control.private=True
+        response.cache_control.max_age=90
+        return response
+    except (OSError,ValueError,UnidentifiedImageError,Image.DecompressionBombError) as exc:
+        return _fail(exc)
+
+
 @petek_web.get('/api/petek/photo/<path:name>')
 def photo(name):
     try:
