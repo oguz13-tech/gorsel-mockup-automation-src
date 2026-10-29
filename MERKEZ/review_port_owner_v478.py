@@ -70,11 +70,11 @@ def _validated_owner(snapshot):
         raise PortOwnerError('8080_SAHIP_BILINMIYOR')
     # Windows can expose IPv4 127.0.0.1 and IPv6 ::1 simultaneously for
     # ONE verified Flask process. Accept that case, never two owning PIDs.
-    if any(row.get('address') not in ('127.0.0.1','::1') for row in listeners):
-        raise PortOwnerError('8080_BASKA_AYGIT_VEYA_GENEL_AG_SERVISI')
     if len({(row.get('pid'),row.get('created'),row.get('sid'),
              row.get('command'),row.get('exe')) for row in listeners})!=1:
         raise PortOwnerError('8080_SAHIP_BELIRSIZ_BIRDEN_FAZLA_LISTENER')
+    if any(row.get('address') not in ('127.0.0.1','::1') for row in listeners):
+        raise PortOwnerError('8080_BASKA_AYGIT_VEYA_GENEL_AG_SERVISI')
     owner=next((row for row in listeners if row.get('address')=='127.0.0.1'),listeners[0])
     if not snapshot.get('current_sid') or owner.get('sid')!=snapshot['current_sid']:
         raise PortOwnerError('8080_FARKLI_WINDOWS_KULLANICISI')
