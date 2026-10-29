@@ -249,7 +249,8 @@ class Center:
         messagebox.showinfo('7 kategori çalışma hazırlığı',text,parent=self.root)
 
     def _open_legacy(self,route):
-        from legacy_manager import inspect,backup_database,launch_spec,choose_review_port,local_state_dir,LegacyLaunchError
+        from legacy_manager import inspect,backup_database,launch_spec,local_state_dir,port_occupied
+        from review_port_owner_v478 import ensure_canonical_8080,PortOwnerError
         if self.editor_proc is not None and self.editor_proc.poll() is None:
             from legacy_manager import server_identity_diagnostic
             runtime,code,token=self.editor_identity
@@ -265,15 +266,8 @@ class Center:
             webbrowser.open(f'http://127.0.0.1:{self.editor_port}'+route)
             self.status.set('Dört köşe inceleme merkezi açık.')
             return
-        try:
-            editor_port=choose_review_port()
-        except LegacyLaunchError as exc:
-            messagebox.showerror('İnceleme portu seçilemedi',str(exc),parent=self.root)
-            return
-        if editor_port != 8080:
-            self._log(
-                f'8080 başka bir işlem tarafından kullanılıyor. '
-                f'Hiçbir işlem kapatılmadan güvenli yerel port {editor_port} seçildi.')
+        # One canonical URL: never run a second 8081-8090 editor in parallel.
+        editor_port=8080
         s=inspect(self.runtime)
         if not s['ready']:
             messagebox.showerror('7 kategori inceleme başlatılamadı',
@@ -288,6 +282,19 @@ class Center:
             return
         try:
             backup=backup_database(self.runtime)
+            try:
+                reclaimed=ensure_canonical_8080(occupied=lambda:port_occupied(port=8080))
+            except PortOwnerError as exc:
+                self._log('8080 KORUMA: '+str(exc))
+                messagebox.showerror('8080 kullanımda — güvenli devir engeli',
+                    '8080 kullanan süreç bize ait güvenli eski inceleme sunucusu olarak doğrulanamadı '
+                    'veya üzerinde aktif bir analiz var. Hiçbir program kapatılmadı.\\n\\n'
+                    +str(exc)+'\\n\\nEski şablon inceleme penceresini güvenli durdurup tekrar deneyin.',
+                    parent=self.root)
+                return
+            if reclaimed['reclaimed']:
+                self._log('8080 onaylı eski inceleme sunucusundan devralındı; eski PID: '+
+                          str(reclaimed['pid']))
             command,env,cwd=launch_spec(self.runtime)
             env['MOCKUP_CENTER_TOKEN']=os.urandom(32).hex()
             env['MOCKUP_PORT']=str(editor_port)
@@ -499,7 +506,7 @@ class Center:
                     self.status.set(
                         f'7 kategori şablon/maske incelemesi hazır: '
                         f'127.0.0.1:{self.editor_port}')
-                    webbrowser.open('http://127.0.0.1:8080'+value)
+                    webbrowser.open(f'http://127.0.0.1:{self.editor_port}'+value)
                 elif kind=='legacy_error':
                     self.review_button.configure(state='normal');self.tools_button.configure(state='normal')
                     filename,diagnostic=value
