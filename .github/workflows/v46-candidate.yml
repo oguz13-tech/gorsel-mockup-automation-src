@@ -1,4 +1,4 @@
-name: V4.8.7 HAM auto-naming seven-category Windows candidate
+name: V4.8.8 Modern Center and PETEK readable Windows candidate
 on:
   push:
     branches: [feature/v46-safe-consolidation-20261024]
