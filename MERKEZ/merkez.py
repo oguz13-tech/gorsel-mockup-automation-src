@@ -46,97 +46,149 @@ class Center:
         self.root.after(180,self.poll)
 
     def build(self):
-        frame=ttk.Frame(self.root);frame.pack(fill='both',expand=True)
+        """Single-purpose home: two everyday actions, the rest under Advanced."""
         from dark_theme_v42 import BG, PANEL, FG, MUTED
+        style=ttk.Style(self.root)
+        for name,background,font,size in (
+            ('Center.Primary.TButton','#0e7490',('Segoe UI',12,'bold'),(16,15)),
+            ('Center.Secondary.TButton','#334155',('Segoe UI',11,'bold'),(12,11)),
+            ('Center.Small.TButton','#344256',('Segoe UI',10), (10,8))):
+            style.configure(name,background=background,foreground='#f8fafc',
+                            padding=size,borderwidth=0,font=font)
+            style.map(name,background=[('active','#0f94b6'),('disabled','#364253')])
+        style.configure('Center.Card.TFrame',background='#232d3b')
+        style.configure('Center.Header.TFrame',background='#172b3c')
+        style.configure('Center.Title.TLabel',background='#172b3c',foreground='#f8fafc',
+                        font=('Segoe UI',19,'bold'))
+        style.configure('Center.Subtitle.TLabel',background='#172b3c',foreground='#cbd5e1',
+                        font=('Segoe UI',11))
+        style.configure('Center.Heading.TLabel',background='#232d3b',foreground='#f1f5f9',
+                        font=('Segoe UI',13,'bold'))
+        style.configure('Center.Info.TLabel',background='#232d3b',foreground='#cbd5e1',
+                        font=('Segoe UI',11))
+        style.configure('Center.Status.TLabel',background='#172d31',foreground='#b8f7e0',
+                        font=('Segoe UI',11),padding=(12,10))
+        style.configure('Center.Path.TEntry',fieldbackground='#111d2b',foreground='#f8fafc',
+                        padding=9,font=('Segoe UI',11))
+        self.root.geometry('1080x800')
+        self.root.minsize(870,600)
+        frame=ttk.Frame(self.root);frame.pack(fill='both',expand=True)
         canvas=tk.Canvas(frame,highlightthickness=0,background=BG)
         scrollbar=ttk.Scrollbar(frame,orient='vertical',command=canvas.yview)
         canvas.configure(yscrollcommand=scrollbar.set)
         scrollbar.pack(side='right',fill='y');canvas.pack(side='left',fill='both',expand=True)
-        p=ttk.Frame(canvas,padding=22)
+        p=ttk.Frame(canvas,padding=18)
         handle=canvas.create_window((0,0),window=p,anchor='nw')
         p.bind('<Configure>',lambda e:canvas.configure(scrollregion=canvas.bbox('all')))
         canvas.bind('<Configure>',lambda e:canvas.itemconfigure(handle,width=e.width))
         self._wheel_canvas=canvas
         def wheel(e):
-            if getattr(e,'delta',0):canvas.yview_scroll(int(-e.delta/120),'units')
-        canvas.bind_all('<MouseWheel>',wheel)
-        ttk.Label(p,text='Görsel Üretim Merkezi '+VERSION,font=('Segoe UI',21,'bold')).pack(anchor='w')
-        ttk.Label(p,text='Onaylı şablonlar • 7 kategori ortak üretim • PETEK maskeleri • Arşivler korunur',
-                  font=('Segoe UI',10)).pack(anchor='w',pady=(4,10))
-        ttk.Separator(p).pack(fill='x',pady=(4,12))
-        ttk.Label(p,text='ANA ÇALIŞMA KLASÖRÜ',font=('Segoe UI',11,'bold')).pack(anchor='w')
-        line=ttk.Frame(p);line.pack(fill='x',pady=(3,8))
+            if getattr(e,'delta',0) and canvas.winfo_ismapped():
+                canvas.yview_scroll(int(-e.delta/120),'units')
+        canvas.bind('<MouseWheel>',wheel)
+        def card():
+            x=ttk.Frame(p,style='Center.Card.TFrame',padding=17)
+            x.pack(fill='x',pady=(0,13))
+            return x
+        def label(parent,header,desc):
+            ttk.Label(parent,text=header,style='Center.Heading.TLabel').pack(anchor='w')
+            ttk.Label(parent,text=desc,style='Center.Info.TLabel',
+                      wraplength=910,justify='left').pack(anchor='w',pady=(5,12))
+        def actions(parent,items):
+            rail=ttk.Frame(parent,style='Center.Card.TFrame');rail.pack(fill='x')
+            buttons=[]
+            for title,callback,primary in items:
+                btn=ttk.Button(rail,text=title,command=callback,
+                     style='Center.Primary.TButton' if primary else 'Center.Secondary.TButton')
+                btn.pack(side='left',fill='x',expand=True,padx=(0,9))
+                buttons.append(btn)
+            return buttons
+
+        banner=ttk.Frame(p,style='Center.Header.TFrame',padding=20)
+        banner.pack(fill='x',pady=(0,13))
+        ttk.Label(banner,text='Görsel Üretim Merkezi',style='Center.Title.TLabel').pack(anchor='w')
+        ttk.Label(banner,text=VERSION+'   ·   7 kategori   ·   Tek çalışma alanı',
+                  style='Center.Subtitle.TLabel').pack(anchor='w',pady=(6,3))
+        ttk.Label(banner,text='Şablonları onayla, ham baskı tasarımlarını yönet, mağazalara mockup üret.',
+                  style='Center.Subtitle.TLabel').pack(anchor='w')
+
+        location=card()
+        label(location,'01  Ana Çalışma Alanı',
+              'Seçili klasörde şablonlar, kaynaklar ve onaylar korunur. Yeni kod paketleri bu verilerin üzerine açılmaz.')
+        location_bar=ttk.Frame(location,style='Center.Card.TFrame');location_bar.pack(fill='x')
         self.runtime_text=tk.StringVar(value=str(self.runtime))
-        ttk.Entry(line,textvariable=self.runtime_text,state='readonly').pack(side='left',fill='x',expand=True)
-        ttk.Button(line,text='Klasör seç',command=self.select_runtime).pack(side='left',padx=(8,0))
-        ttk.Button(line,text='Klasörü aç',command=self.open_runtime).pack(side='left',padx=(6,0))
-        ttk.Button(line,text='HAM Baskı Tasarımları',command=self.open_ham_design_folder).pack(side='left',padx=(6,0))
-        ttk.Separator(p).pack(fill='x',pady=(6,10))
-        ttk.Label(p,text='1 — ŞABLON VE DÖRT KÖŞE DÜZENLEME',
-                  font=('Segoe UI',12,'bold')).pack(anchor='w',pady=(0,4))
-        ttk.Label(p,text='Wi-Fi Kutusu • Cam Tablo Yatay/Dikey • Ahşap Tablo • Cam Doğrama • Ocak Arkası.\n'
-                    'İnsan onayları, dört köşe, maske, kategoriler, yedekler, raporlar ve tarama işlemleri burada.',
-                  wraplength=920).pack(anchor='w')
-        row=ttk.Frame(p);row.pack(fill='x',pady=(9,6))
-        self.review_button=ttk.Button(row,text='7 KATEGORİ — ŞABLON / 4 KÖŞE / PETEK MASKE İNCELE',command=self.open_legacy_review)
-        self.review_button.pack(side='left',fill='x',expand=True,padx=(0,6))
-        self.tools_button=ttk.Button(row,text='6 KATEGORİ — PROFESYONEL ARAÇLAR',command=self.open_legacy_tools)
-        self.tools_button.pack(side='left',fill='x',expand=True,padx=(6,0))
-        row_v4=ttk.Frame(p);row_v4.pack(fill='x',pady=(8,10))
-        ttk.Button(row_v4,text='▶ 7 KATEGORİ — SERİ GÖRSEL ÜRET',
-                   command=self.open_unified_v4).pack(side='left',fill='x',expand=True)
-        ttk.Label(p,text='Eski 10 şablon sınırı kaldırıldı. Aynı üretim ekranında isteğe bağlı bulut Excel ve AI 4K vardır.',
-                  wraplength=920).pack(anchor='w')
-        ttk.Separator(p).pack(fill='x',pady=(7,10))
-        ttk.Label(p,text='2 — PETEK DOLABI: ŞABLON VE MASKE',
-                  font=('Segoe UI',12,'bold')).pack(anchor='w',pady=(0,3))
-        ttk.Label(p,text='Sabit yarık sayısı yok; her gerçek ahşap panelin kavisleri ve delikleri korunur.\n'
-                    'Üst-alt kavis, görünür fırça, otomatik benek onarımı ve doğal ışık motoru dahildir.',
-                  wraplength=930).pack(anchor='w')
-        r3=ttk.Frame(p);r3.pack(fill='x',pady=(8,10))
-        ttk.Button(r3,text='PETEK — ŞABLON / MASKE DÜZENLE',command=self.open_review).pack(side='left',fill='x',expand=True,padx=(0,5))
-        ttk.Button(r3,text='PETEK Klasörlerini Kontrol / Eksikleri Oluştur',
-                   command=self.prepare_petek_folders).pack(side='left',fill='x',expand=True,padx=(5,0))
-        ttk.Separator(p).pack(fill='x',pady=(7,10))
-        self.advanced_toggle=ttk.Button(p,text='▶ GELİŞMİŞ ARAÇLAR / DENETİM / KURTARMA',command=self.toggle_advanced)
-        self.advanced_toggle.pack(fill='x',pady=(2,5))
-        self.advanced_panel=ttk.Frame(p)
-        r4=ttk.Frame(self.advanced_panel);r4.pack(fill='x',pady=3)
-        ttk.Button(r4,text='7 Kategori Kayıtlarını / SHA Denetle',command=self.open_unified_audit).pack(side='left',fill='x',expand=True,padx=3)
-        ttk.Button(r4,text='PETEK Eski Üretim Denetimi',command=self.audit_petek).pack(side='left',fill='x',expand=True,padx=3)
-        r5=ttk.Frame(self.advanced_panel);r5.pack(fill='x',pady=3)
-        ttk.Button(r5,text='Kurulum / Klasör / DB Durumu',command=self.show_health).pack(side='left',fill='x',expand=True,padx=3)
-        ttk.Button(r5,text='Kesinti / Kilit Kurtarma',command=self.open_crash_recovery).pack(side='left',fill='x',expand=True,padx=3)
-        r6=ttk.Frame(self.advanced_panel);r6.pack(fill='x',pady=3)
-        ttk.Button(r6,text='PETEK Çıktı Klasörü',command=self.open_petek_results).pack(side='left',fill='x',expand=True,padx=3)
-        ttk.Button(r6,text='PETEK Eski Ayrı Seri Üretimi',command=self.open_petek).pack(side='left',fill='x',expand=True,padx=3)
-        ttk.Button(r6,text='4 Köşe Servisini Durdur',command=self.stop_legacy_editor).pack(side='left',fill='x',expand=True,padx=3)
-        retired_row=ttk.Frame(self.advanced_panel);retired_row.pack(fill='x',pady=3)
-        ttk.Button(retired_row,text='Bilerek Silinen Eski Çıktıları Arşivle (Kayıt Korunur)',
-                   command=self.archive_user_deleted_outputs).pack(side='left',fill='x',expand=True,padx=3)
-        mt=ttk.Frame(self.advanced_panel);mt.pack(fill='x',pady=3)
-        ttk.Button(mt,text='Magenta / Eski Sürüm Güvenli Dosya Denetimi',
-                   command=self.open_consolidation).pack(side='left',fill='x',expand=True,padx=3)
-        ttk.Button(mt,text='MAGENTA LAB → Eşleştir / Güvenli Değiştir / Yeniden Onay',
-                   command=self.open_magenta_replace_v486).pack(side='left',fill='x',expand=True,padx=3)
-        r7=ttk.Frame(self.advanced_panel);r7.pack(fill='x',pady=3)
-        ttk.Button(r7,text='G3 Salt-Okunur Veri / SHA Denetimi',command=self.g3_audit).pack(side='left',fill='x',expand=True,padx=3)
-        ttk.Button(r7,text='G3 Onaylı İki DB Yedeği + Geri Yükleme Provası',command=self.g3_backup).pack(side='left',fill='x',expand=True,padx=3)
-        ttk.Label(self.advanced_panel,text=(
-            'Kesinti/Kilit Kurtarma: yarım işleri inceler, yalnız onayla güvenli kurtarır. '
-            'SHA kayıt denetimi yalnız okur; mevcut görsellere dokunmaz. '
-            'PETEK eski seri üretim arayüzü yalnız geriye dönük uyumluluk içindir.'),
-            wraplength=900).pack(anchor='w',pady=(5,3))
-        self.status=tk.StringVar(value='Hazır. Onaylı dört köşe / PETEK maskesi / 7 kategori seri üretim kullanılabilir.')
-        ttk.Label(p,textvariable=self.status,wraplength=920).pack(anchor='w',pady=(3,5))
-        self.log=scrolledtext.ScrolledText(p,height=7,state='disabled',font=('Consolas',9), bg=PANEL, fg=FG, insertbackground=FG)
+        ttk.Entry(location_bar,textvariable=self.runtime_text,state='readonly',
+                  style='Center.Path.TEntry').pack(side='left',fill='x',expand=True,padx=(0,8))
+        ttk.Button(location_bar,text='Değiştir',command=self.select_runtime,
+                   style='Center.Small.TButton').pack(side='left',padx=3)
+        ttk.Button(location_bar,text='Klasörü Aç',command=self.open_runtime,
+                   style='Center.Small.TButton').pack(side='left',padx=3)
+
+        daily=card()
+        label(daily,'02  Günlük İşlemler',
+              'PETEK dahil yedi kategori için tek şablon inceleme merkezi ve tek seri üretim merkezi.')
+        self.review_button,production_button=actions(daily,[
+          ('Şablonları İncele ve Onayla',self.open_legacy_review,True),
+          ('Seri Mockup Üretimi',self.open_unified_v4,True)])
+        ttk.Label(daily,text='Dört köşe, PETEK maskesi ve toplu köşe tespiti ilk ekranda; '
+                  'mağazalar, 4K ve Excel bağlantıları üretim ekranında.',
+                  style='Center.Info.TLabel',wraplength=900).pack(anchor='w',pady=(11,0))
+
+        designs=card()
+        label(designs,'03  Ham Baskı Tasarımları',
+              'Yeni dosyaları veya alt klasörleri buraya ekle. Sistem Ham1, Ham2… diye otomatik numaralandırır.')
+        actions(designs,[
+          ('HAM Tasarım Klasörünü Aç',self.open_ham_design_folder,False),
+          ('Numara ve Dosya Sorunlarını Kontrol Et',self.show_ham_design_audit,False)])
+        self.ham_home_status=tk.StringVar(value='Otomatik izleme: açılışta devreye girer.')
+        ttk.Label(designs,textvariable=self.ham_home_status,style='Center.Info.TLabel',
+                  wraplength=900).pack(anchor='w',pady=(10,0))
+
+        self.status=tk.StringVar(value='Hazır. Mevcut şablonlar ve onaylı maskeler korunur.')
+        ttk.Label(p,textvariable=self.status,style='Center.Status.TLabel',
+                  wraplength=950).pack(fill='x',pady=(0,12))
+
+        self.advanced_toggle=ttk.Button(p,text='▶ Diğer Araçlar ve Kurtarma',
+            style='Center.Secondary.TButton',command=self.toggle_advanced)
+        self.advanced_toggle.pack(fill='x',pady=(0,7))
+        self.advanced_panel=ttk.Frame(p,style='Center.Card.TFrame',padding=14)
+        label(self.advanced_panel,'İleri Araçlar',
+              'Eski özel ekranlar burada saklanır. Aynı işi yapan düğmeler ana menüyü kalabalıklaştırmaz.')
+        self.tools_button,check_button=actions(self.advanced_panel,[
+          ('Profesyonel Araçlar / İsimlendirici',self.open_legacy_tools,False),
+          ('PETEK Klasörlerini Denetle',self.prepare_petek_folders,False)])
+        advanced=[
+          (('PETEK — Eski Ayrı Maske Editörü',self.open_review),
+           ('PETEK — Eski Ayrı Üretim',self.open_petek)),
+          (('7 Kategori SHA Denetimi',self.open_unified_audit),
+           ('PETEK Geçmiş Çıktı Denetimi',self.audit_petek)),
+          (('Kurulum / SQLite Durumu',self.show_health),
+           ('Kesinti ve Kilit Kurtarma',self.open_crash_recovery)),
+          (('PETEK Çıktı Klasörü',self.open_petek_results),
+           ('İnceleme Servisini Durdur',self.stop_legacy_editor)),
+          (('Silinen Çıktı Kayıtlarını Koruma',self.archive_user_deleted_outputs),
+           ('G3 Salt Okunur Bütünlük Kontrolü',self.g3_audit)),
+          (('Magenta Dosya Denetimi',self.open_consolidation),
+           ('Magenta LAB Güvenli Değiştir / Yeniden Onay',self.open_magenta_replace_v486)),
+          (('SQLite Güvenli Yedek ve Geri Yükleme Provası',self.g3_backup),)
+        ]
+        for line in advanced:
+            actions(self.advanced_panel,[(title,fn,False) for title,fn in line])
+            ttk.Frame(self.advanced_panel,style='Center.Card.TFrame',height=6).pack(fill='x')
+        ttk.Label(self.advanced_panel,text='Eski PETEK bağımsız editörü uyumluluk içindir; '
+                  'günlük işlemlerde üstteki birleşik şablon inceleme düğmesini kullan.',
+                  style='Center.Info.TLabel',wraplength=900).pack(anchor='w',pady=6)
+
+        history=card()
+        label(history,'04  İşlem Günlüğü',
+              'Şablon, HAM numarası, dosya çakışması ve servis durumları.')
+        self.log=scrolledtext.ScrolledText(history,height=7,state='disabled',
+                 font=('Consolas',10),bg='#111f2d',fg=FG,insertbackground=FG,
+                 padx=10,pady=8,relief='flat',borderwidth=0,wrap='word')
         self.log.pack(fill='both',expand=True)
-        ttk.Label(p,text='Otomatik yeni şablon takibi: YENI-BOS klasörlerine görsel geldiğinde isim + SHA doğrulamasıyla ayrılır.\n'
-                    'Çakışmalar incelemeye, mevcut kopyalar ayrı klasöre, yeni şablonlar dört köşe onayına gider.',
-                  foreground=MUTED,wraplength=920).pack(anchor='w',pady=(3,3))
-        ttk.Label(p,text='Koruma: kaynak görüntüler, orijinal yedek ve onaylı profiller kendiliğinden değiştirilmez.\n'
-                    'Tek güncel seri üretim yolu 7 Kategoridir; şablonlar üretim öncesi onay ve SHA kontrolünden geçer.',
-                  foreground=MUTED,wraplength=920).pack(anchor='w',pady=(7,0))
+        ttk.Label(p,text='Veri koruma: onaylı şablon ve maskeler kendiliğinden değiştirilmez. '
+                  'Program sürümü ayrı, ana çalışma klasörün ayrıdır.',
+                  foreground=MUTED,wraplength=960).pack(anchor='w',pady=(4,10))
 
     def open_magenta_replace_v486(self):
         """Separate preview-first tool; NEVER apply photos without typed consent."""
@@ -202,6 +254,26 @@ class Center:
         else:
             self.advanced_panel.pack(fill='x',pady=(2,8),after=self.advanced_toggle)
             self.advanced_toggle.configure(text='▼ GELİŞMİŞ ARAÇLAR / DENETİM / KURTARMA')
+
+    def show_ham_design_audit(self):
+        try:
+            from ham_designs_v487 import HamDesignVault
+            v=self.ham_design_watcher.vault if self.ham_design_watcher else HamDesignVault(self.runtime)
+            report=v.audit()
+            self.ham_home_status.set('Son HAM numarası: '+str(report['high'])+
+                '   ·   Kayıtlı: '+str(report['registered'])+
+                '   ·   Kontrol: '+str(len(report['issues'])+len(report['unregistered'])))
+            if report['issues'] or report['unregistered']:
+                detail=str(report['issues'][:8]+
+                           [{'type':'KAYITSIZ','file':name} for name in report['unregistered'][:5]])
+                messagebox.showwarning('HAM tasarım kontrolü',detail,parent=self.root)
+                self._log('HAM BASKI DENETIM: '+detail)
+            else:
+                messagebox.showinfo('HAM tasarım kontrolü',
+                    'Kayıtlı numaralar tutarlı. Son numara: '+str(report['high']),
+                    parent=self.root)
+        except (OSError,ValueError,RuntimeError) as exc:
+            messagebox.showerror('HAM tasarım denetimi',str(exc),parent=self.root)
 
     def start_auto_ham_designs(self):
         """Separate automatic HAM design watcher, never an old template watcher.
