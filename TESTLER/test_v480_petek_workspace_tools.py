@@ -74,6 +74,12 @@ def test_petek_sidebar_zoom_preview_review_defaults_are_in_same_editor():
     assert "function restoreListHost()" in js
     assert 'id="petekV477ListPane"' in html
     assert 'id="petekV477Undo"' in html
+    assert 'id="petekV477ResetCorners"' in html
+    assert 'petek_quad_drag_v481.js' in html
+    assert 'PetekQuadDragV481.closest' in js and 'PetekQuadDragV481.moved' in js
+    assert 'setPointerCapture' in js and 'releasePointerCapture' in js
+    assert 's.mask=blank();s.base=null;s.curves={top:[],bottom:[]}' in js
+    assert "Switching to corner mode must NEVER discard an auto-detected quad" in js
     assert 'function snapshot()' in js and 'async function undoLast()' in js
     assert "addEventListener('click',undoLast)" in js
     assert "overflow:auto;" in css
