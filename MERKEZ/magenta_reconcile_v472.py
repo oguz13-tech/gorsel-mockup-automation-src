@@ -247,7 +247,7 @@ def app_busy():
         except OSError:
             continue
     return False
-def apply(report,confirmation,*,allow_review=False):
+def apply(report,confirmation,*,allow_review=False,force_reapproval=False):
     if confirmation!=CONFIRM:raise PermissionError('EXPLICIT_MAGENTA_CONFIRMATION_REQUIRED')
     report=safe(report)
     planned=json.loads(report.read_text(encoding='utf-8'))
@@ -276,7 +276,7 @@ def apply(report,confirmation,*,allow_review=False):
                 job['status'],job['source_sha'],job.get('old_sha')):
             raise RuntimeError('SOURCE_OR_DESTINATION_CHANGED_AFTER_REPORT')
     allowed={'READY_APPROVED_TRANSFER'}
-    if allow_review:allowed.add('READY_REQUIRES_REAPPROVAL')
+    if allow_review or force_reapproval:allowed.add('READY_REQUIRES_REAPPROVAL')
     selected=[j for j in fresh['jobs'] if j['status'] in allowed]
     if not selected:return {'status':'NO_ELIGIBLE_IMAGES','count':0}
     # Immutable template UID is preserved; source SHA is the only changing
@@ -350,7 +350,7 @@ def apply(report,confirmation,*,allow_review=False):
                 finally:staged.unlink(missing_ok=True)
                 new_sha=sha(destination)
                 lab=job.get('lab_record')
-                approved=bool(job['status']=='READY_APPROVED_TRANSFER' and lab)
+                approved=bool(job['status']=='READY_APPROVED_TRANSFER' and lab and not force_reapproval)
                 extra=('APPROVED',1) if approved else ('REVIEW_REQUIRED',0)
                 update=con.execute(
                     '''UPDATE template_profiles
@@ -441,9 +441,11 @@ def main():
     p.add_argument('--apply-plan')
     p.add_argument('--confirm',default='')
     p.add_argument('--allow-review',action='store_true')
+    p.add_argument('--force-reapproval',action='store_true',help='All replaced images require fresh human approval; never transfer old approval')
     a=p.parse_args()
     if a.apply_plan:
-        result=apply(Path(a.apply_plan),a.confirm,allow_review=a.allow_review)
+        result=apply(Path(a.apply_plan),a.confirm,allow_review=a.allow_review,
+                     force_reapproval=a.force_reapproval)
         print(json.dumps(result,ensure_ascii=False,indent=2))
     else:
         report=write_report(analyze(Path(a.workspace),Path(a.lab)))
