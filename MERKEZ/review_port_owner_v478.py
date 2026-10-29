@@ -43,8 +43,8 @@ foreach ($entry in $listeners) {
 # Accept either a complete quoted drive path, or a complete unquoted token;
 # reject arbitrary text that merely mentions app.py.
 _SCRIPT_PATH=re.compile(
-    r'(?i)(?:^|\\s)(?:"(?P<quoted>[A-Z]:\\\\[^"\\r\\n]+\\\\SABLON_V2_MIMARI\\\\app\\.py)"'
-    r'|(?P<plain>[A-Z]:\\\\[^\\s"\\r\\n]+\\\\SABLON_V2_MIMARI\\\\app\\.py))(?=\\s|$)'
+    r'(?i)(?:^|\s)(?:"(?P<quoted>[A-Z]:\\[^"\r\n]+\\SABLON_V2_MIMARI\\app\.py)"'
+    r'|(?P<plain>[A-Z]:\\[^\s"\r\n]+\\SABLON_V2_MIMARI\\app\.py))(?=\s|$)'
 )
 
 def _snapshot():
