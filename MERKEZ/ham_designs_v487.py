@@ -268,13 +268,15 @@ class HamDesignVault:
                                 {'type':'HAM_UNSUPPORTED_IMAGE_FORMAT',
                                  'file':str(candidate)})
                 result['warnings']+=self._check_existing(all_files,db)
+                db.commit() # _check_existing may update metadata after an unchanged-SHA touch.
                 # Deleted source is a permanent tombstone, not a global pause:
                 # keep the number reserved and warn while other imports proceed.
                 blocking={'HAM_NUMBER_EXTENSION_COLLISION',
                           'HAM_REGISTERED_BYTES_CHANGED',
                           'HAM_INTERRUPTED_DUPLICATE_REVIEW',
                           'HAM_INTERRUPTED_MISSING_SOURCE'}
-                if any(w['type'] in blocking for w in result['warnings']):
+                if any(w['type'] in blocking or w['type']=='HAM_SYMLINK_BLOCKED'
+                       for w in result['warnings']):
                     result['high']=db.execute('SELECT high FROM meta WHERE id=1').fetchone()[0]
                     return result # Existing identity ambiguity needs human review.
                 tracked={x['path'] for x in db.execute("SELECT path FROM history WHERE status='ACTIVE'")}
