@@ -345,9 +345,28 @@ class Center:
                                   'Dört köşe/şablon kaydını tamamladın mı?\n'
                                   'Devam eden analiz işleriniz varsa sunucuyu durdurmayın.',parent=self.root):return
         try:
-            self.editor_proc.terminate();self.editor_proc.wait(timeout=5)
-            self._log('İnceleme sunucusu kullanıcı isteğiyle kapatıldı.')
-            self.status.set('Dört köşe servisi kapatıldı. Onaylı veriler korunuyor.')
+            from legacy_manager import server_identity_diagnostic
+            runtime,code,token=self.editor_identity
+            check=server_identity_diagnostic(runtime,code,self.editor_proc.pid,token,
+                                             port=self.editor_port)
+            if not check['ready']:
+                raise RuntimeError('İnceleme kimliği doğrulanamadı; süreç kapatılmadı: '+
+                                   str(check.get('reason')))
+            actual_pid=check['actual_pid']
+            if os.name=='nt' and actual_pid!=self.editor_proc.pid:
+                # A Windows venv launcher is a redirector; terminating it alone
+                # leaves Flask listening on 8080. Stop only the authenticated
+                # child PID with the matching secret and both directory roots.
+                finished=subprocess.run(['taskkill.exe','/PID',str(actual_pid),'/F'],
+                    capture_output=True,text=True,timeout=6,
+                    creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+                if finished.returncode:
+                    raise RuntimeError('Doğrulanan Flask çocuk süreci kapatılamadı.')
+                self.editor_proc.wait(timeout=6)
+            else:
+                self.editor_proc.terminate();self.editor_proc.wait(timeout=5)
+            self._log('Doğrulanan inceleme sunucusu kullanıcı isteğiyle tamamen kapatıldı.')
+            self.status.set('8080 inceleme servisi kapatıldı. Onaylı veriler korunuyor.')
         except Exception as exc:self._log('İnceleme kapatma uyarısı: '+str(exc))
         finally:self.review_button.configure(state='normal');self.tools_button.configure(state='normal')
 
