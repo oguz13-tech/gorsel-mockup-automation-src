@@ -411,17 +411,26 @@ function pointerMove(e){
  if(!s.painting)return;e.preventDefault();paintAt(e,false);
 }
 function pointerUp(){s.panning=false;s.painting=false;s.lastPoint=null;}
+function restoreListHost(){
+ const list=$('petekV477ListPane'),workspace=$('petekV477Workspace');
+ if(list&&workspace&&list.parentElement!==workspace)workspace.prepend(list);
+ list?.classList.remove('in-sidebar');
+}
 function start(){
  s.active=true;
  const normal=$('main'),pane=$('petekV477Editor');
  normal.style.display='none';pane.style.display='flex';
  $('petekV477Nav').classList.add('selected');
+ const list=$('petekV477ListPane');
+ $('petekV477Nav').after(list);
+ list.classList.add('in-sidebar');
  reload();
 }
 function exit(){
  if(!s.active)return;
  if(s.dirty&&!confirm('Kaydedilmemiş PETEK taslağın var. Kaydetmeden çıkılsın mı?'))return;
  s.active=false;
+ restoreListHost();
  $('main').style.display='flex';$('petekV477Editor').style.display='none';
  $('petekV477Nav').classList.remove('selected');
 }
@@ -474,12 +483,12 @@ function init(){
  $('petekV477Canvas').addEventListener('pointercancel',pointerUp);
  document.querySelector('#categories').addEventListener('click',event=>{
    // Reclicking PETEK itself must not trigger discard/close/reopen.
-   if(event.target.closest('#petekV477Nav'))return;
+   if(event.target.closest('#petekV477Nav')||event.target.closest('#petekV477ListPane'))return;
    if(!s.active)return;
    if(s.dirty&&!confirm('PETEK taslağında kaydedilmemiş değişiklikler var. Altı kategoriye dönüp bunları kaybetmek istiyor musun?')){
      event.preventDefault();event.stopPropagation();return;
    }
-   s.active=false;$('main').style.display='flex';pane.style.display='none';
+   s.active=false;restoreListHost();$('main').style.display='flex';pane.style.display='none';
    $('petekV477Nav').classList.remove('selected');
  },true);
  window.addEventListener('resize',()=>{if(s.active)fit();});
