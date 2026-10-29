@@ -64,3 +64,22 @@
   .petek-v477-tools{width:100%;max-width:none;flex:1;overflow:visible;border-left:none;
     border-top:1px solid #536176;}
 }
+
+/* V4.8.4: PETEK seven-category-equivalent per-photo status and grouped tools */
+.petek-v484-summary{font-size:12px;font-weight:600;color:#cde5ee;background:#172536;padding:7px;line-height:1.6;border-radius:4px;}
+.petek-v484-legend{font-size:10px;color:#bbd4e7;line-height:1.5;border-bottom:1px solid #526879;padding-bottom:7px;}
+.petek-v484-bulk{display:flex;flex-direction:column;gap:7px;background:#1b2c3f;padding:8px;border:1px solid #607080;border-radius:5px;}
+.petek-v484-bulk[hidden]{display:none!important;}
+.petek-v484-bulk-row{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;}
+.petek-v484-bulk-row button{font-size:10px;padding:7px 3px;white-space:normal;}
+#petekV484BulkDetect{background:#0279bc;color:white;font-weight:700;white-space:normal;line-height:1.3;}
+#petekV484BulkSave{background:#0f766e;color:white;font-weight:650;white-space:normal;line-height:1.3;}
+#petekV484BulkStop{background:#93410e;}
+#petekV484BulkStatus{white-space:pre-wrap;overflow-wrap:anywhere;max-height:170px;overflow-y:auto;font-size:11px;color:#e9f3ff;padding:6px;background:#101c2c;}
+#petekV477List .petek-v484-line{display:flex;align-items:center;gap:4px;min-width:0;}
+#petekV477List .petek-v484-check{flex:none;accent-color:#22c55e;}
+#petekV477List .petek-v484-item-wrap{display:block;width:100%;box-sizing:border-box;}
+#petekV477List .petek-v484-name{flex:1;min-width:0;overflow-wrap:anywhere;}
+#petekV477List .petek-v484-pictos{display:block;color:#d5e7f6;font-size:10px;line-height:1.8;white-space:normal;}
+#petekV477List .petek-v484-selected{background:#17476b;border:1px solid #67ccee;border-radius:4px;}
+#petekV477List .petek-v484-warning{border-left:3px solid #f9b451;}
