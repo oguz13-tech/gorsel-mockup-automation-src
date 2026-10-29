@@ -237,6 +237,64 @@ def test_unified_discovery_reuses_approved_mask_with_verified_working_photo(tmp_
     assert 'PETEK_ESKI_KAYNAK_ESLESMESI_GUVENSIZ' in audit['skipped'][0]['reason']
 
 
+def test_petek_magenta_auto_corners_and_mask_keep_dark_vents_untouched(tmp_path,monkeypatch):
+    from MERKEZ.PETEK_V3.magenta_quad_v479 import detect_magenta_quad
+    client,photo,registry,_=fixture(tmp_path,monkeypatch)
+    scene=np.full((360,520,3),np.array([175,180,185],np.uint8),dtype=np.uint8)
+    target=np.asarray([[85,95],[435,85],[445,290],[80,305]],np.int32)
+    cv2.fillConvexPoly(scene,target,(255,0,255))  # BGR magenta
+    for col in range(120,421,30):
+        cv2.rectangle(scene,(col,119),(col+9,274),(10,12,16),-1)
+    assert cv2.imwrite(str(photo),scene)
+    payload={'name':photo.name,'uid':photo.stem,'source_sha':engine.digest(photo)}
+    answer=client.post('/api/petek/auto-corners',json=payload)
+    assert answer.status_code==200,answer.get_json()
+    data=answer.get_json()
+    assert data['draft_only'] and data['source_sha']==engine.digest(photo)
+    quad=engine.validated_quad(data['quad'],scene.shape)
+    for found,expected in zip(quad,target):
+        assert np.linalg.norm(found-expected)<24,(found,expected)
+    assert not list(registry.profiles.glob('*.json'))  # Auto detect never saves.
+    mask_reply=client.post('/api/petek/auto-mask',json={**payload,'quad':data['quad']})
+    assert mask_reply.status_code==200,mask_reply.get_json()
+    mask_data=mask_reply.get_json()
+    assert mask_data['qa']['mode']=='MAGENTA_BASKI_YUZEYI'
+    raw=base64.b64decode(mask_data['mask'].partition(',')[2])
+    mask=cv2.imdecode(np.frombuffer(raw,dtype=np.uint8),cv2.IMREAD_GRAYSCALE)
+    assert mask[190,160]==0  # the real black vertical vent stays protected
+    assert mask[190,177]>200  # magenta printable wood
+    assert mask[20,20]==0   # background never printed
+    assert not list(registry.profiles.glob('*.json'))
+
+
+def test_petek_auto_corners_no_magenta_or_wrong_sha_never_writes(tmp_path,monkeypatch):
+    client,photo,registry,_=fixture(tmp_path,monkeypatch)
+    payload={'name':photo.name,'uid':photo.stem,'source_sha':engine.digest(photo)}
+    assert client.post('/api/petek/auto-corners',json=payload).status_code==409
+    assert client.post('/api/petek/auto-corners',json={**payload,'source_sha':'f'*64}).status_code==409
+    assert not list(registry.profiles.glob('*.json'))
+
+
+def test_petek_auto_corners_approved_is_immutable(tmp_path,monkeypatch):
+    client,photo,registry,_=fixture(tmp_path,monkeypatch)
+    registry.save(photo.stem,photo,params(photo)['quad'],valid_mask(),1.1163,
+                  approved=True,reviewer='Human')
+    before=(registry.profiles/(photo.stem+'.json')).read_bytes()
+    response=client.post('/api/petek/auto-corners',json={
+        'name':photo.name,'uid':photo.stem,'source_sha':engine.digest(photo)})
+    assert response.status_code==409
+    assert (registry.profiles/(photo.stem+'.json')).read_bytes()==before
+
+
+def test_petek_magenta_rejects_two_competing_panels():
+    from MERKEZ.PETEK_V3.magenta_quad_v479 import detect_magenta_quad
+    image=np.full((600,900,3),180,np.uint8)
+    cv2.rectangle(image,(100,180),(350,460),(255,0,255),-1)
+    cv2.rectangle(image,(520,180),(770,460),(255,0,255),-1)
+    with pytest.raises(engine.MaskError,match='BIRDEN_COK_ADAY'):
+        detect_magenta_quad(image)
+
+
 def test_ui_category_is_inside_existing_page_with_native_operations():
     html=(ROOT/'SABLON_V2_MIMARI'/'templates'/'index.html').read_text('utf-8')
     js=(ROOT/'SABLON_V2_MIMARI'/'static'/'js'/'petek_editor_v477.js').read_text('utf-8')
