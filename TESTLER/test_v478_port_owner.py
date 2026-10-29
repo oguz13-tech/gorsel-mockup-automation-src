@@ -88,4 +88,4 @@ def test_blocked_busy_port_does_not_silently_fallback_8083():
     source=inspect.getsource(ensure_canonical_8080)
     assert 'port=PORT' not in source or '8083' not in source
     assert '8083' not in source
-    assert '/T' not in inspect.getsource(_terminate_exact)
+    assert "['taskkill.exe','/PID',str(pid),'/F']" in inspect.getsource(_terminate_exact)
