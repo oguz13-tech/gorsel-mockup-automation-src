@@ -11,7 +11,7 @@ const s={
   width:0,height:0,scale:1,quad:[],curves:{top:[],bottom:[]},
   img:null,mask:null,base:null,mode:'corners',painting:false,
   dragCorner:-1,dragChanged:false,dirty:false,needsCurveApply:false,
-  fitScale:1,zoom:1,preview:null,previewMode:false,entries:[],spaceHeld:false,panning:false,undoStack:[]
+  fitScale:1,zoom:1,preview:null,previewMode:false,entries:[],spaceHeld:false,panning:false,undoStack:[],listHost:null
 };
 const names={corners:'Dört köşe',wood:'Baskı ahşabını boya',protect:'Delik / yan yüzü koru',top:'Üst kavis',bottom:'Alt kavis'};
 function notice(message,bad=false){
@@ -97,7 +97,9 @@ function chooseRelative(delta){
  select(target.name,target.uid);
 }
 function listVisual(){
- const panel=$('petekV477List');panel.replaceChildren();
+ const panel=$('petekV477List')||s.listHost?.querySelector('#petekV477List');
+ if(!panel){notice('PETEK şablon listesi bulunamadı: HTML ve JS sürümlerini eşitle.',true);return;}
+ panel.replaceChildren();
  const word=$('petekV477Search').value.trim().toLocaleLowerCase('tr');
  for(const item of s.entries){
   if(word&&!item.name.toLocaleLowerCase('tr').includes(word)&&!item.uid.toLocaleLowerCase('tr').includes(word))continue;
@@ -446,17 +448,23 @@ function pointerUp(e){
  s.dragCorner=-1;s.dragChanged=false;s.panning=false;s.painting=false;s.lastPoint=null;
 }
 function restoreListHost(){
- const list=$('petekV477ListPane'),workspace=$('petekV477Workspace');
+ const list=$('petekV477ListPane')||s.listHost,workspace=$('petekV477Workspace');
  if(list&&workspace&&list.parentElement!==workspace)workspace.prepend(list);
  list?.classList.remove('in-sidebar');
 }
 function start(){
- s.active=true;
- const normal=$('main'),pane=$('petekV477Editor');
+ const normal=$('main'),pane=$('petekV477Editor'),nav=$('petekV477Nav');
+ // Category refresh can detach a live PETEK list. Retain the original DOM
+ // element (including listeners and controls); never recreate it from HTML.
+ const list=$('petekV477ListPane')||s.listHost;
+ if(!normal||!pane||!nav||!list){
+    notice('PETEK arayüzü eksik veya eski sürüm dosyaları karışmış. Güncel paketi açıp sayfayı Ctrl+Shift+R ile yenile.',true);
+    return;
+ }
+ s.listHost=list;s.active=true;
  normal.style.display='none';pane.style.display='flex';
- $('petekV477Nav').classList.add('selected');
- const list=$('petekV477ListPane');
- $('petekV477Nav').after(list);
+ nav.classList.add('selected');
+ nav.after(list);
  list.classList.add('in-sidebar');
  reload();
 }
@@ -466,10 +474,11 @@ function exit(){
  s.active=false;
  restoreListHost();
  $('main').style.display='flex';$('petekV477Editor').style.display='none';
- $('petekV477Nav').classList.remove('selected');
+ $('petekV477Nav')?.classList.remove('selected');
 }
 function init(){
  const pane=$('petekV477Editor');if(!pane)return;
+ s.listHost=$('petekV477ListPane');
  $('petekV477Nav').addEventListener('click',start);
  $('petekV477Close').addEventListener('click',exit);
  $('petekV477Reload').addEventListener('click',()=>{
@@ -525,7 +534,7 @@ function init(){
      event.preventDefault();event.stopPropagation();return;
    }
    s.active=false;restoreListHost();$('main').style.display='flex';pane.style.display='none';
-   $('petekV477Nav').classList.remove('selected');
+   $('petekV477Nav')?.classList.remove('selected');
  },true);
  window.addEventListener('resize',()=>{if(s.active)fit();});
 }
