@@ -312,6 +312,24 @@ class HamDesignVault:
                       'others':[str(q) for q in by_stem[
                           unicodedata.normalize('NFC',duplicate.stem).casefold()]
                           if q!=duplicate]})
+                # The source name disappears when renamed HamN, so protect
+                # against an image.jpg followed hours later by image.png.
+                # Otherwise they could receive two different print numbers.
+                past_sources={}
+                for row in db.execute("SELECT source_name FROM history"):
+                    old=Path(row['source_name'])
+                    key=unicodedata.normalize('NFC',old.stem).casefold()
+                    past_sources.setdefault(key,set()).add(old.suffix.lower())
+                for incoming in fresh:
+                    if incoming in ambiguous:continue
+                    old_exts=past_sources.get(
+                       unicodedata.normalize('NFC',incoming.stem).casefold(),set())
+                    if old_exts and incoming.suffix.lower() not in old_exts:
+                        ambiguous.add(incoming)
+                        result['warnings'].append({
+                           'type':'HAM_HISTORIC_NAME_OTHER_EXTENSION',
+                           'file':str(incoming),
+                           'prior_extensions':sorted(old_exts)})
                 for file in all_files:
                     rel=str(file.relative_to(self.folder))
                     if rel in tracked:continue
