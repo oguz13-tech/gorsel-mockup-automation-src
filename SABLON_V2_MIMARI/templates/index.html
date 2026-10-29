@@ -247,15 +247,26 @@
     </div>
     <button type="button" id="petekV477Close">Altı kategoriye dön</button>
   </div>
-  <div class="petek-v477-selectrow">
-    <label for="petekV477Select">PETEK Şablon</label>
-    <select id="petekV477Select"></select>
-    <button type="button" id="petekV477Reload">Listeyi Yenile</button>
-    <span id="petekV477Count">—</span>
-  </div>
   <div class="petek-v477-workspace">
+    <aside class="petek-v477-list-pane" aria-label="PETEK şablonlarının dikey listesi">
+      <strong>Petek Şablonları</strong>
+      <input type="search" id="petekV477Search" placeholder="Şablon adına göre ara..." aria-label="PETEK şablonlarda ara">
+      <button type="button" id="petekV477Reload">Listeyi Yenile</button>
+      <div id="petekV477Count">—</div>
+      <select id="petekV477Select" aria-label="PETEK mevcut şablon seçimi" hidden></select>
+      <div id="petekV477List" role="listbox" aria-label="PETEK şablon listesi"></div>
+    </aside>
     <div class="petek-v477-stage">
       <div id="petekV477Name">PETEK şablonunu seç</div>
+      <div class="petek-v477-viewport-bar">
+        <button type="button" id="petekV477Prev">◀ Önceki</button>
+        <button type="button" id="petekV477Next">Sonraki ▶</button>
+        <button type="button" id="petekV477ZoomOut">−</button>
+        <input type="range" min="40" max="500" step="10" value="100" id="petekV477Zoom" aria-label="PETEK yakınlaştırma">
+        <button type="button" id="petekV477ZoomIn">+</button>
+        <button type="button" id="petekV477ZoomFit">Sığdır</button>
+        <span id="petekV477ZoomLabel">100%</span>
+      </div>
       <div id="petekV477Drawing"><canvas id="petekV477Canvas" aria-label="PETEK baskı maskesi ve kavis görseli"></canvas></div>
       <div class="petek-v477-notice" id="petekV477Status" role="status" aria-live="polite">
          Maske yalnız PETEK V3 kayıtlarına kaydedilir. Üretim görseli ve orijinal değiştirilmez.
@@ -263,6 +274,17 @@
       <div class="petek-v477-legend">Yeşil = baskı yapılacak ahşap · Siyah/şeffaf = korunacak delik/kavis/yan yüz · Kırmızı = 4 köşe</div>
     </div>
     <div class="petek-v477-tools">
+      <h3>Gerçek Baskı Önizlemesi</h3>
+      <label for="petekV477Artwork">Baskı tasarımını seç (PNG / JPG / WEBP)</label>
+      <input id="petekV477Artwork" type="file" accept="image/png,image/jpeg,image/webp">
+      <button type="button" id="petekV477Preview" class="petek-v477-full">🎨 Gerçek Tasarımla Önizle</button>
+      <button type="button" id="petekV477Original" class="petek-v477-full">📷 Ham Şablona / Maskeye Dön</button>
+      <div class="petek-v477-note">PETEK V3 gerçek baskı motoru kullanılır. Tasarım şablonun yalnız maskeli ön yüzüne basılır; delikler, yanlar, kavis boşluğu ve zemin korunur. Önizleme dosya veya maske kaydetmez.</div>
+      <h3>Şablon Araçları — Ortak</h3>
+      <div class="petek-v477-actionrow"><button type="button" id="petekV477Reset">↩ Kaydedilmemiş Değişiklikleri Geri Al</button></div>
+      <div class="petek-v477-actionrow"><a href="/tools" target="_blank" rel="noopener">🧰 Profesyonel Araçlar / İsimlendirici</a></div>
+      <div class="petek-v477-actionrow"><a href="/api/petek/templates" target="_blank" rel="noopener">📋 PETEK Kaynak / Maske Liste Raporu</a></div>
+      <div class="petek-v477-note">Ortak gezinme, liste yenileme, zoom, ham fotoğraf, maske ve araç merkezine erişim burada da vardır. Altı kategorinin SQLite onaylama / çöpe taşıma / 4 köşe kopyalama araçları PETEK V3 maskelerini değiştirmemelidir.</div>
       <h3>Ön Panel ve 4 Köşe</h3>
       <div id="petekV477Mode">Mod: Dört köşe</div>
       <div class="petek-v477-actionrow">
@@ -296,9 +318,9 @@
       <input id="petekV477Aspect" type="number" min="0.12" max="12" step="0.0001" value="1.1163">
       <button type="button" id="petekV477Save" class="petek-v477-full">3. Düzenlediğim Maskeyi TASLAK Kaydet</button>
       <label for="petekV477Reviewer">İnceleyen kişi</label>
-      <input id="petekV477Reviewer" type="text" maxlength="80" placeholder="İnceleme adını gir">
-      <label class="petek-v477-confirm"><input id="petekV477Confirm" type="checkbox">
-        Dikey yarıkları, üst-alt kavisleri, yan yüzleri ve zemini görsel olarak kontrol ettim.
+      <input id="petekV477Reviewer" type="text" maxlength="80" value="Can" placeholder="İnceleme adını gir">
+      <label class="petek-v477-confirm"><input id="petekV477Confirm" type="checkbox" checked>
+        Dikey yarıkları, üst-alt kavisleri, yan yüzleri ve zemini kontrol edeceğim; onay düğmesi ayrıca açık teyit ister.
       </label>
       <button type="button" id="petekV477Approve" class="petek-v477-full success">4. PETEK Maskesini İnsan Onayıyla Kilitle</button>
       <button type="button" id="petekV477Revision" class="petek-v477-full" disabled>Onaylı Maskeden Yeni Revizyon Taslağı (_r2) Aç</button>
