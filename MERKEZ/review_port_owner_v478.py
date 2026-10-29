@@ -39,11 +39,12 @@ foreach ($entry in $listeners) {
 @{current_sid=$identity; listeners=@($rows)} | ConvertTo-Json -Compress -Depth 5
 """
 
-# The mandatory quoted absolute script path is part of the actual Windows
-# Python launch command created by launch_spec(). Never match free text or a
-# process name alone (a different service may also be called python.exe).
+# Windows subprocess quotes a script path only if it contains whitespace.
+# Accept either a complete quoted drive path, or a complete unquoted token;
+# reject arbitrary text that merely mentions app.py.
 _SCRIPT_PATH=re.compile(
-    r'(?i)(?:^|\s)"(?P<path>[A-Z]:\\[^"\r\n]+\\SABLON_V2_MIMARI\\app\.py)"(?=\s|$)'
+    r'(?i)(?:^|\\s)(?:"(?P<quoted>[A-Z]:\\\\[^"\\r\\n]+\\\\SABLON_V2_MIMARI\\\\app\\.py)"'
+    r'|(?P<plain>[A-Z]:\\\\[^\\s"\\r\\n]+\\\\SABLON_V2_MIMARI\\\\app\\.py))(?=\\s|$)'
 )
 
 def _snapshot():
@@ -80,7 +81,7 @@ def _validated_owner(snapshot):
     match=_SCRIPT_PATH.search(command)
     if not match:
         raise PortOwnerError('8080_BIZIM_INCELEME_SERVISIMIZ_DEGIL')
-    script=Path(match.group('path'))
+    script=Path(match.group('quoted') or match.group('plain'))
     if (not script.is_file() or script.is_symlink() or
             not (script.parent.parent/'MERKEZ'/'merkez.py').is_file() or
             not (script.parent.parent/'MERKEZ'/'legacy_manager.py').is_file()):
