@@ -372,3 +372,40 @@ def test_magenta_active_fallback_port_is_busy(monkeypatch):
     monkeypatch.setattr(module.socket,'create_connection',connect)
     assert module.app_busy()
     assert visited==[8080,8081]
+
+
+def test_operator_force_reapproval_even_for_lab_approved_source(tmp_path,monkeypatch):
+    monkeypatch.setenv('LOCALAPPDATA',str(tmp_path/'AppData'))
+    monkeypatch.setattr('magenta_reconcile_v472.app_busy',lambda:False)
+    root,src,work,original=_fixture(tmp_path,lab_db=True)
+    old_source_hash=sha(work)
+    old_original_hash=sha(original)
+    plan=write_report(analyze(root,src.parent))
+    result=apply(plan,CONFIRM,force_reapproval=True)
+    assert result['count']==1 and result['items'][0]['result']=='REVIEW_REQUIRED'
+    assert sha(work)==sha(src) and sha(original)==old_original_hash
+    with sqlite3.connect(root/'SABLON_V2_MIMARI'/'ayarlar.db') as db:
+        state=db.execute('SELECT review_status,manually_verified,source_asset_sha256 FROM template_profiles').fetchone()
+    assert state==('REVIEW_REQUIRED',0,sha(src))
+    assert sha(Path(result['backup'])/'working'/'03_Ahsap_Tablo'/'Ahsap_001.png')==old_source_hash
+
+def test_operator_chroma_gui_will_not_modify_without_preview_and_typed_confirmation(tmp_path):
+    from chroma_replace_ui_v486 import summary
+    mock={'jobs':[{'status':'READY_APPROVED_TRANSFER'},
+                  {'status':'READY_REQUIRES_REAPPROVAL'},
+                  {'status':'AMBIGUOUS_OR_NOT_REGISTERED'},
+                  {'status':'DIMENSIONS_CHANGED_REVIEW_COORDINATES'}]}
+    assert summary(mock)=={
+        'eligible':2,'total':4,'blocked':2,
+        'counts':{'READY_APPROVED_TRANSFER':1,
+                  'READY_REQUIRES_REAPPROVAL':1,
+                  'AMBIGUOUS_OR_NOT_REGISTERED':1,
+                  'DIMENSIONS_CHANGED_REVIEW_COORDINATES':1}}
+    text=(ROOT/'MERKEZ/chroma_replace_ui_v486.py').read_text('utf-8')
+    assert 'force_reapproval=True' in text
+    assert 'html_comparison(report)' in text
+    assert 'typed!=CONFIRM' in text
+    assert 'PETEK ayrı maskeye sahiptir' in text
+    batch=(ROOT/'MAGENTA_TOPLU_GUVENLI_DEGISTIR_WINDOWS.bat').read_text('utf-8')
+    assert 'chroma_replace_ui_v486.py' in batch
+
