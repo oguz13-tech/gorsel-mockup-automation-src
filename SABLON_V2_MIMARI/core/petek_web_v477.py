@@ -7,6 +7,7 @@ the parent app's existing global guard.
 import base64
 import re
 from pathlib import Path
+from functools import lru_cache
 import cv2
 import numpy as np
 from flask import Blueprint,current_app,jsonify,request,send_file
@@ -98,6 +99,19 @@ def _request_scene():
 def _fail(exc):
     return jsonify({'success':False,'error':str(exc)[:240]}),409
 
+@lru_cache(maxsize=4096)
+def _sidebar_digest(path, size, mtime_ns, ctime_ns, inode):
+    """Only for non-authoritative list display. Save/approve/production rehash."""
+    return engine.digest(Path(path))
+
+
+def _sidebar_sha(file):
+    stat=file.stat()
+    if file.is_symlink():raise ValueError('PETEK_SIDEBAR_SYMLINK')
+    return _sidebar_digest(str(file.resolve()),stat.st_size,stat.st_mtime_ns,
+                           stat.st_ctime_ns,getattr(stat,'st_ino',0))
+
+
 @petek_web.get('/api/petek/templates')
 def list_templates():
     """Unified PETEK sidebar statuses; only reads working/backup/profile bytes.
@@ -124,14 +138,14 @@ def list_templates():
                     continue
                 seen+=1
                 try:
-                    sha=engine.digest(file)
+                    sha=_sidebar_sha(file)
                     backup='MISSING'
                     if archive is not None and archive.is_dir():
                         original=archive/file.name
                         if original.is_symlink():
                             backup='UNSAFE'
                         elif original.is_file():
-                            backup='MATCH' if engine.digest(original)==sha else 'DIFFERENT'
+                            backup='MATCH' if _sidebar_sha(original)==sha else 'DIFFERENT'
                     matches=profiles.get(sha,[])
                     if matches:
                         for match in matches:
