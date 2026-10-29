@@ -37,7 +37,7 @@ def test_known_number_spec_is_pinned_but_user_private_json_never_included():
 def test_manifest_all_legacy_launchers_and_tools_inert_and_byte_exact(tmp_path):
     root=_distribution_root(tmp_path)
     manifest=json.loads((root/'SHA256_MANIFEST.json').read_text('utf-8'))
-    assert manifest['release']=='V4.7.7 PETEK_SEVENTH_CATEGORY_CANDIDATE'
+    assert manifest['release']=='V4.8.6 PETEK_BULK_MAGENTA_SAFE_REPLACEMENT'
     assert manifest['acceptance']=='WINDOWS_NOT_VERIFIED'
     assert manifest['live_user_acceptance']=='PENDING'
     paths={row['path'] for row in manifest['files']}
