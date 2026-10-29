@@ -195,10 +195,15 @@ def _bulk_propose_one(registry,item,save_new):
         raise ValueError('PETEK_BULK_SOURCE_SHA_CHANGED')
     uid,sha=_identity(registry,file,item.get('uid'))
     if uid!=item.get('uid'):raise ValueError('PETEK_BULK_UID_CHANGED')
-    # Read only on proposal. Save mode may create NEW DRAFTs, but never
-    # modify ANY previously registered profile, including APPROVED and DRAFT.
-    if (registry.profiles/(uid+'.json')).exists():
-        raise ValueError('PETEK_BULK_ALREADY_REGISTERED_REVIEW_INDIVIDUALLY')
+    # Read-only suggestions can examine unapproved DRAFT geometry, but only
+    # NEW entries may be written. Old APPROVED/DRAFT profiles stay immutable.
+    registered=(registry.profiles/(uid+'.json')).exists()
+    if registered and save_new:
+        raise ValueError('PETEK_BULK_EXISTING_PROFILE_NOT_OVERWRITTEN')
+    if registered:
+        previous,_=registry.get(uid,source_override=file)
+        if previous['status']=='APPROVED':
+            raise ValueError('PETEK_BULK_APPROVED_IMMUTABLE')
     scene=engine.read_bgr(file)
     suggestion=detect_magenta_quad(scene)
     mask,mask_qa=engine.auto_mask_candidate(scene,suggestion['quad'])
