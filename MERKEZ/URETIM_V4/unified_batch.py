@@ -606,6 +606,7 @@ class UnifiedV4Batch:
             # STOP only takes effect between jobs, so ledger replay is exact.
             write_checkpoint(self.root, checkpoint_record)
             processed_jobs = set()
+            artwork_cache = {}  # bounded to this batch, never persisted
             for group, templates in production_plan:
                 for art in designs_in_run:
                     if not self._wait_if_paused(notify):
@@ -614,8 +615,18 @@ class UnifiedV4Batch:
                         break
                     original_art = art
                     try:
-                        render_art, art_sha = prepare_render_artwork(
-                            original_art, self.root / "working_art_proxies")
+                        # Reuse safe high-resolution proxies across stores;
+                        # per-output original design SHA validation remains.
+                        current_stat=original_art.stat()
+                        signature=(current_stat.st_size,current_stat.st_mtime_ns)
+                        cached=artwork_cache.get(original_art)
+                        if cached is not None and cached[0]==signature:
+                            render_art,art_sha=cached[1:]
+                            stats["artwork_cache_hits"]=stats.get("artwork_cache_hits",0)+1
+                        else:
+                            render_art,art_sha=prepare_render_artwork(
+                                original_art,self.root/"working_art_proxies")
+                            artwork_cache[original_art]=(signature,render_art,art_sha)
                     except (petek_engine.MaskError, cv2.error, OSError, ValueError) as exc:
                         stats["rejected"] += 1
                         stats["errors"].append({"design": original_art.name,
@@ -775,13 +786,10 @@ class UnifiedV4Batch:
                                     edge_feather_px=grille_edge_px,
                                 )
                                 if lighting != "off" and glass_effect == "on":
-                                    raw_scene = petek_engine.read_bgr(source_path)
-                                    picture = apply_material_finish(raw_scene, picture, mask,
+                                    picture = apply_material_finish(source_scene, picture, mask,
                                         item["quad"], cat, enabled=True)
-                                # Assert untouched vent/curve/floor/background pixels
-                                # before portrait conversion. The operator-approved
-                                # semantic mask is still the only source of truth.
-                                source_scene = petek_engine.read_bgr(source_path)
+                                # The same source scene is used for render/finish/
+                                # QA; no three separate PETEK scene decodes.
                                 geometry_report = inspect_print_safety(
                                     source_scene, picture, mask, item["quad"])
                                 if geometry_report['status'] != 'PASS':
