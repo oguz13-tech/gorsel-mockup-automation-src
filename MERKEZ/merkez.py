@@ -348,7 +348,7 @@ class Center:
             from legacy_manager import server_identity_diagnostic
             runtime,code,token=self.editor_identity
             check=server_identity_diagnostic(runtime,code,self.editor_proc.pid,token,
-                                             port=self.editor_port)
+                                             port=self.editor_port,include_pid=True)
             if not check['ready']:
                 raise RuntimeError('İnceleme kimliği doğrulanamadı; süreç kapatılmadı: '+
                                    str(check.get('reason')))
