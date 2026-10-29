@@ -11,7 +11,7 @@ const s={
   width:0,height:0,scale:1,quad:[],curves:{top:[],bottom:[]},
   img:null,mask:null,base:null,mode:'corners',painting:false,
   dragCorner:-1,dirty:false,needsCurveApply:false,
-  fitScale:1,zoom:1,preview:null,previewMode:false,entries:[],spaceHeld:false,panning:false
+  fitScale:1,zoom:1,preview:null,previewMode:false,entries:[],spaceHeld:false,panning:false,undoStack:[]
 };
 const names={corners:'Dört köşe',wood:'Baskı ahşabını boya',protect:'Delik / yan yüzü koru',top:'Üst kavis',bottom:'Alt kavis'};
 function notice(message,bad=false){
@@ -55,6 +55,24 @@ function limited(){return s.status==='APPROVED';}
 function editingAllowed(){
  if(limited()){notice('Onaylı PETEK maskesi kilitli. Eski üretilmiş görseller ve onaylar korunur.',true);return false;}
  return true;
+}
+function snapshot(){
+ if(!s.img||!s.mask||s.status==='APPROVED')return;
+ const frame={name:s.name,uid:s.uid,quad:JSON.parse(JSON.stringify(s.quad)),
+   curves:JSON.parse(JSON.stringify(s.curves)),mask:maskUrl(s.mask),
+   base:s.base?maskUrl(s.base):null,needsCurveApply:s.needsCurveApply};
+ s.undoStack.push(frame);if(s.undoStack.length>6)s.undoStack.shift();
+}
+async function undoLast(){
+ if(!editingAllowed()||!s.undoStack.length){notice('Geri alınabilecek yerel değişiklik yok.',true);return;}
+ const frame=s.undoStack.pop();
+ if(frame.name!==s.name||frame.uid!==s.uid){notice('Bu geri alma başka şablona ait.',true);return;}
+ try{
+  s.quad=frame.quad;s.curves=frame.curves;
+  s.mask=await decodeCanvas(frame.mask);s.base=frame.base?await decodeCanvas(frame.base):null;
+  s.needsCurveApply=frame.needsCurveApply;s.dirty=true;s.preview=null;s.previewMode=false;
+  draw();notice('Son PETEK işlemi geri alındı (yalnız bellekte; onaylı maske korunuyor).');
+ }catch(e){notice('Geri alma başarısız: '+e.message,true);}
 }
 function fit(){
  const canvas=$('petekV477Canvas'),area=$('petekV477Drawing');
@@ -143,6 +161,7 @@ function paintAt(event,first){
  const p=point(event),c=s.base||s.mask,ctx=c.getContext('2d',{willReadFrequently:true});
  ctx.lineCap='round';ctx.lineJoin='round';
  // Paint only within reviewed front face, even when brush touches its border.
+ if(first)snapshot();
  ctx.save();ctx.beginPath();
  s.quad.forEach((q,i)=>i?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1]));
  ctx.closePath();ctx.clip();
@@ -160,7 +179,7 @@ function setMode(mode){
  if(!s.img){notice('Önce PETEK şablonu seç.',true);return;}
  if(mode==='corners'&&s.quad.length===4){
     if(!confirm('4 köşe yeniden işaretlenecek. Bu TASLAĞIN maskesi ve kavisleri sıfırlanacak. Onaylı kayıtlar değişmeyecek.'))return;
-    s.quad=[];s.curves={top:[],bottom:[]};s.base=null;s.mask=blank();s.dirty=true;
+    snapshot();s.quad=[];s.curves={top:[],bottom:[]};s.base=null;s.mask=blank();s.dirty=true;
  }
  s.mode=mode;
  $('petekV477Mode').textContent='Mod: '+names[mode];
@@ -174,7 +193,7 @@ async function select(name,uid){
  try{
   const data=await api(detailUrl(name,uid));
   s.name=name;s.uid=data.uid;s.sha=data.source_sha;s.status=data.status;
-  s.preview=null;s.previewMode=false;s.zoom=1;
+  s.preview=null;s.previewMode=false;s.zoom=1;s.undoStack=[];
   s.width=data.width;s.height=data.height;s.quad=data.quad||[];
   s.curves=data.curve_points||{top:[],bottom:[]};s.needsCurveApply=false;
   s.base=null;s.dirty=false;
@@ -284,7 +303,7 @@ async function autoCorners(){
   if(s.name!==expectedName||s.sha!==expectedSha||s.uid!==expectedUid||s.status==='APPROVED'){
     notice('Başka şablon açıldı; eski otomatik köşe sonucu uygulanmadı.',true);return;
   }
-  s.quad=data.quad;s.previewMode=false;s.preview=null;s.mask=blank();s.base=null;s.curves={top:[],bottom:[]};
+  snapshot();s.quad=data.quad;s.previewMode=false;s.preview=null;s.mask=blank();s.base=null;s.curves={top:[],bottom:[]};
   s.needsCurveApply=false;s.dirty=true;s.mode='corners';
   $('petekV477Mode').textContent='Mod: '+names[s.mode];
   draw();
@@ -299,7 +318,7 @@ async function autoMask(){
  if(!confirm('Yalnız açık TASLAK maske yeniden oluşturulacak. Mevcut taslak boyama sıfırlansın mı?'))return;
  try{
   const data=await api('/api/petek/auto-mask',{name:s.name,source_sha:s.sha,quad:s.quad});
-  s.mask=await decodeCanvas(data.mask);s.previewMode=false;s.preview=null;s.base=null;s.curves={top:[],bottom:[]};
+  snapshot();s.mask=await decodeCanvas(data.mask);s.previewMode=false;s.preview=null;s.base=null;s.curves={top:[],bottom:[]};
   s.needsCurveApply=false;s.dirty=true;draw();
   notice('Otomatik TASLAK oluşturuldu. Dikey delikler, kavisler ve yanları gözle kontrol et.');
  }catch(e){notice(e.message,true);}
@@ -315,14 +334,14 @@ async function applyCurves(){
   const data=await api('/api/petek/curve-preview',{
     name:s.name,source_sha:s.sha,quad:s.quad,base_mask:maskUrl(s.base),curve_points:s.curves
   });
-  s.mask=await decodeCanvas(data.mask);s.needsCurveApply=false;s.dirty=true;draw();
+  snapshot();s.mask=await decodeCanvas(data.mask);s.needsCurveApply=false;s.dirty=true;draw();
   notice('Kavis maskesi görüntülendi; delik ve yer gölgelerini kontrol et.');
  }catch(e){notice(e.message,true);}
 }
 function undoCurve(){
  if(!editingAllowed())return;
  const arr=s.curves[s.mode];if(!Array.isArray(arr)||!arr.length)return;
- arr.pop();s.needsCurveApply=true;s.dirty=true;draw();
+ snapshot();arr.pop();s.needsCurveApply=true;s.dirty=true;draw();
  notice('Son kavis noktası çıkarıldı. Kavisleri yeniden uygula.');
 }
 async function save(){
@@ -373,14 +392,14 @@ function pointerDown(e){
  e.preventDefault();const p=point(e);
  if(s.mode==='corners'){
    if(s.quad.length>=4)return;
-   s.quad.push(p);s.dirty=true;draw();
+   snapshot();s.quad.push(p);s.dirty=true;draw();
    notice('Köşeler: '+s.quad.length+'/4'+(s.quad.length===4?' · Şimdi Taslak Maske oluştur.':''));
  }else if(s.mode==='wood'||s.mode==='protect'){
    if(s.quad.length!==4){notice('Önce dört köşe gerekir.',true);return;}
    s.painting=true;paintAt(e,true);
  }else if(s.mode==='top'||s.mode==='bottom'){
    if(s.quad.length!==4){notice('Önce dört köşe gerekir.',true);return;}
-   s.curves[s.mode].push(p);s.needsCurveApply=true;s.dirty=true;
+   snapshot();s.curves[s.mode].push(p);s.needsCurveApply=true;s.dirty=true;
    draw();notice('Kavis noktası eklendi. Bitince «Kavisleri Uygula» seç.');
  }
 }
@@ -430,6 +449,12 @@ function init(){
  $('petekV477Preview').addEventListener('click',previewArtwork);
  $('petekV477Original').addEventListener('click',backToOriginal);
  $('petekV477Reset').addEventListener('click',resetUncommitted);
+ $('petekV477Undo').addEventListener('click',undoLast);
+ document.addEventListener('keydown',e=>{
+   if(!s.active||!e.ctrlKey||e.key.toLowerCase()!=='z')return;
+   if(['INPUT','TEXTAREA'].includes(e.target.tagName))return;
+   e.preventDefault();undoLast();
+ });
  $('petekV477Select').addEventListener('change',e=>{
     const [name,uid]=JSON.parse(e.target.value);
     select(name,uid);
