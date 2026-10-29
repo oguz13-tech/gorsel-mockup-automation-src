@@ -266,20 +266,21 @@ def discover_all_approved_seven_categories(
                 )
                 continue
             try:
-                source_file=None
-                try:
-                    profile, mask = petek_registry.get(uid, require_approved=True)
-                    source_file = Path(profile["source"]).resolve(strict=True)
-                except (petek_engine.MaskError,OSError) as exc:
-                    stored=Path(str(entry.get("source") or ""))
-                    if stored.exists() or stored.is_symlink() or runtime_root is None:
-                        raise
+                stored=Path(str(entry.get("source") or ""))
+                if stored.exists() or stored.is_symlink():
+                    # A present source must pass its ORIGINAL SHA check; never
+                    # use a different photo to conceal source tampering.
+                    profile,mask=petek_registry.get(uid,require_approved=True)
+                    source_file=Path(profile["source"]).resolve(strict=True)
+                else:
+                    if runtime_root is None:
+                        raise petek_engine.MaskError('PETEK_ESKI_KAYNAK_YOK_CALISMA_KOKU_GEREKLI')
                     # An old LAB path went missing. The approved record stays
                     # immutable; use an unambiguous working-pool photo ONLY
                     # if SHA and geometry match. No silent path migrations.
                     working=petek_directory(runtime_root,'2_SABLON_HAVUZU')
                     if not working.is_dir() or working.is_symlink():
-                        raise petek_engine.MaskError('PETEK_CALISMA_KLASORU_YOK') from exc
+                        raise petek_engine.MaskError('PETEK_CALISMA_KLASORU_YOK')
                     matches=[]
                     for candidate in working.iterdir():
                         if (candidate.is_file() and not candidate.is_symlink() and
@@ -288,9 +289,9 @@ def discover_all_approved_seven_categories(
                             matches.append(candidate)
                     if len(matches)!=1:
                         raise petek_engine.MaskError(
-                            'PETEK_ESKI_KAYNAK_ESLESMESI_GUVENSIZ: '+str(len(matches))+' eslesme') from exc
+                            'PETEK_ESKI_KAYNAK_ESLESMESI_GUVENSIZ: '+str(len(matches))+' eslesme')
                     source_file=matches[0].resolve(strict=True)
-                    profile, mask = petek_registry.get(
+                    profile,mask=petek_registry.get(
                         uid,require_approved=True,source_override=source_file)
                 if per_category_limit is not None and counts["06_Petek_Kapama"] >= int(per_category_limit):
                     skipped.append(
