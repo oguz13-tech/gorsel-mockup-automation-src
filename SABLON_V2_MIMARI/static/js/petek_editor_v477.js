@@ -240,7 +240,13 @@ function listVisual(){
    const button=document.createElement('button');button.type='button';button.className='petek-v477-list-item petek-v484-name';
    button.setAttribute('role','option');
    button.setAttribute('aria-selected',String(s.uid===item.uid&&s.name===item.name));
-   button.textContent=item.name+' — '+item.status;
+   // Keep the real filename and immutable UID unchanged; only shorten
+   // extremely long generated names visually. Full name remains in tooltip.
+   const shortName=item.name.length>43?
+      item.name.slice(0,25)+'…'+item.name.slice(-13):item.name;
+   const readableState=item.status==='APPROVED'?'ONAYLI':
+      item.status==='DRAFT'?'TASLAK':item.status==='NEW'?'YENİ':'KONTROL GEREK';
+   button.textContent=shortName+' — '+readableState;
    button.title=item.name+' · '+item.uid+' · '+item.status;
    if(s.name===item.name&&s.uid===item.uid)button.classList.add('selected');
    button.addEventListener('click',()=>{
