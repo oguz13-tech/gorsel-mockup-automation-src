@@ -199,7 +199,7 @@ def choose_review_port(*, candidates=range(8080,8091),occupied=None):
 
 
 def server_identity_diagnostic(runtime, code, pid, token, opener=None, *, timeout=1.8,
-                               windows_redirector=None, port=8080):
+                               windows_redirector=None, port=8080, include_pid=False):
     """Explain an editor handshake without leaking the bearer token.
 
     The operator must never be sent to an unknown/stale 8080 listener.  No
@@ -254,10 +254,12 @@ def server_identity_diagnostic(runtime, code, pid, token, opener=None, *, timeou
                 return {'ready': False, 'reason': 'IDENTITY_' + key.upper() + '_MISMATCH',
                         'expected_path': str(Path(expected).resolve()),
                         'actual_path': str(Path(actual).resolve())}
-        return {'ready': True, 'reason': ('MATCHED_WIN_VENV_REDIRECTOR'
+        matched={'ready': True, 'reason': ('MATCHED_WIN_VENV_REDIRECTOR'
                                            if redirector_child_match and not direct_pid_match
-                                           else 'MATCHED'),
-                'actual_pid': observed_pid, 'actual_parent_pid': parent_pid}
+                                           else 'MATCHED')}
+        if include_pid:
+            matched.update(actual_pid=observed_pid,actual_parent_pid=parent_pid)
+        return matched
     except Exception as exc:
         # Distinguish transient timeout/connect failures from bad identities.
         import urllib.error
