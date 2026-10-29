@@ -32,6 +32,7 @@ class Center:
         from legacy_manager import preferred_runtime
         self.runtime=preferred_runtime()
         self.inbox_watcher=None
+        self.ham_design_watcher=None
         self.build()
         from help_v42 import bind_help
         bind_help(self.root)
@@ -39,6 +40,7 @@ class Center:
         # Create-only bootstrap precedes the auto-inbox watcher; no images,
         # masks, approvals or SQLite records are migrated by this step.
         self.root.after(0,self.ensure_petek_workspace)
+        self.root.after(150,self.start_auto_ham_designs)
         self.root.after(400,self.start_auto_inbox)
         self.root.protocol('WM_DELETE_WINDOW',self.close)
         self.root.after(180,self.poll)
@@ -68,6 +70,7 @@ class Center:
         ttk.Entry(line,textvariable=self.runtime_text,state='readonly').pack(side='left',fill='x',expand=True)
         ttk.Button(line,text='Klasör seç',command=self.select_runtime).pack(side='left',padx=(8,0))
         ttk.Button(line,text='Klasörü aç',command=self.open_runtime).pack(side='left',padx=(6,0))
+        ttk.Button(line,text='HAM Baskı Tasarımları',command=self.open_ham_design_folder).pack(side='left',padx=(6,0))
         ttk.Separator(p).pack(fill='x',pady=(6,10))
         ttk.Label(p,text='1 — ŞABLON VE DÖRT KÖŞE DÜZENLEME',
                   font=('Segoe UI',12,'bold')).pack(anchor='w',pady=(0,4))
@@ -200,6 +203,44 @@ class Center:
             self.advanced_panel.pack(fill='x',pady=(2,8),after=self.advanced_toggle)
             self.advanced_toggle.configure(text='▼ GELİŞMİŞ ARAÇLAR / DENETİM / KURTARMA')
 
+    def start_auto_ham_designs(self):
+        """Separate automatic HAM design watcher, never an old template watcher.
+
+        The numbered design pool starts as soon as the main center opens and
+        remains usable even when the classic six-category intake is declined.
+        """
+        try:
+            if self.ham_design_watcher is not None:
+                self.ham_design_watcher.stop()
+                self.ham_design_watcher=None
+            from ham_designs_v487 import HamDesignWatcher
+            self.ham_design_watcher=HamDesignWatcher(
+                self.runtime,notify=lambda message:self.messages.put(('log',message)),interval=3.0)
+            self.ham_design_watcher.start()
+            report=self.ham_design_watcher.vault.audit()
+            self._log('HAM BASKI TASARIMLARI otomatik takip aktif. Son numara: '+
+                      str(report['high'])+'; klasör: '+report['path'])
+            for issue in report['issues'][:6]:
+                self._log('HAM TASARIM KONTROL: '+str(issue))
+        except (OSError,ValueError,RuntimeError) as exc:
+            self.messages.put(('log','⚠️ HAM TASARIM IZLEME AÇILAMADI: '+str(exc)))
+
+    def open_ham_design_folder(self):
+        try:
+            from ham_designs_v487 import HamDesignVault
+            vault=(self.ham_design_watcher.vault if self.ham_design_watcher is not None
+                   else HamDesignVault(self.runtime))
+            info=vault.audit()
+            self._log('HAM NUMARA DURUMU: '+str(info))
+            if info['issues']:
+                messagebox.showwarning('HAM TASARIM UYARISI',
+                    str(info['issues'][:5])+'\\nMevcut dosyalara otomatik müdahale edilmedi.',
+                    parent=self.root)
+            if os.name=='nt':os.startfile(str(vault.folder))
+            else:self._log('HAM KLASÖRÜ: '+str(vault.folder))
+        except (OSError,ValueError,RuntimeError) as exc:
+            messagebox.showerror('HAM TASARIM KLASÖRÜ',str(exc),parent=self.root)
+
     def start_auto_inbox(self):
         """New-image intake runs automatically while the unified center is open."""
         try:
@@ -234,6 +275,7 @@ class Center:
         if not chosen:return
         try:
             self.runtime=store_runtime_choice(Path(chosen))
+            self.start_auto_ham_designs()
             self.runtime_text.set(str(self.runtime))
             petek_ready = self.ensure_petek_workspace()
             self.start_auto_inbox()
@@ -583,6 +625,7 @@ class Center:
                 'Eski inceleme merkezi çalışıyor. Önce bu penceredeki "Eski inceleme sunucusunu durdur" düğmesini kullanın.',parent=self.root)
             return
         if self.inbox_watcher is not None:self.inbox_watcher.stop()
+        if self.ham_design_watcher is not None:self.ham_design_watcher.stop()
         self.root.destroy()
 
 if __name__=='__main__':Center().root.mainloop()
