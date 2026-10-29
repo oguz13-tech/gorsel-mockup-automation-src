@@ -74,6 +74,11 @@ def test_center_canonical_8080_uses_verified_reclaim_and_correct_browser_url():
     assert 'port=editor_port' in source
     assert 'choose_review_port()' not in source
     assert 'taskkill' not in source
+    stop=inspect.getsource(merkez.Center.stop_legacy_editor)
+    assert 'server_identity_diagnostic' in stop
+    assert "check['actual_pid']" in stop
+    assert "['taskkill.exe','/PID',str(actual_pid),'/F']" in stop
+    assert "'/T'" not in stop
     assert "webbrowser.open(f'http://127.0.0.1:{self.editor_port}'+value)" in poll
     assert "webbrowser.open('http://127.0.0.1:8080'+value)" not in poll
 
