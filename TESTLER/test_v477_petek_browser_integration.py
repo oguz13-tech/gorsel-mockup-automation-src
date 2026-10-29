@@ -159,8 +159,11 @@ def test_legacy_missing_lab_source_is_read_only_rebound_by_exact_sha(tmp_path,mo
     payload=listing.get_json()
     assert payload['scanned_photos']==1
     assert payload['working_path']==str(photo.parent)
-    assert payload['items']==[{'name':photo.name,'uid':old_lab.stem,
-                                'source_sha':engine.digest(photo),'status':'APPROVED'}]
+    assert len(payload['items'])==1
+    assert all(payload['items'][0][key]==value for key,value in {
+        'name':photo.name,'uid':old_lab.stem,
+        'source_sha':engine.digest(photo),'status':'APPROVED',
+        'working_ok':True,'approved':True,'mask_verified':True}.items())
     detail=client.get('/api/petek/detail/'+photo.name+'?uid='+old_lab.stem)
     assert detail.status_code==200,detail.get_json()
     assert detail.get_json()['status']=='APPROVED'
