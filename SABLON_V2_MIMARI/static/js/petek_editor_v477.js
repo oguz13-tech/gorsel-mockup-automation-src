@@ -10,7 +10,8 @@ const s={
   active:false,photo:null,name:'',uid:'',sha:'',status:'NEW',
   width:0,height:0,scale:1,quad:[],curves:{top:[],bottom:[]},
   img:null,mask:null,base:null,mode:'corners',painting:false,
-  dragCorner:-1,dirty:false,needsCurveApply:false
+  dragCorner:-1,dirty:false,needsCurveApply:false,
+  fitScale:1,zoom:1,preview:null,previewMode:false,entries:[],spaceHeld:false,panning:false
 };
 const names={corners:'Dört köşe',wood:'Baskı ahşabını boya',protect:'Delik / yan yüzü koru',top:'Üst kavis',bottom:'Alt kavis'};
 function notice(message,bad=false){
@@ -59,15 +60,47 @@ function fit(){
  const canvas=$('petekV477Canvas'),area=$('petekV477Drawing');
  if(!canvas||!s.img)return;
  const box=area.getBoundingClientRect();
- s.scale=Math.min(1,Math.max(0.05,Math.min((box.width-32)/s.width,(box.height-46)/s.height)));
+ s.fitScale=Math.min(1,Math.max(0.025,Math.min((box.width-32)/s.width,(box.height-46)/s.height)));
+ s.scale=s.fitScale*s.zoom;
  canvas.width=Math.max(1,Math.round(s.width*s.scale));
  canvas.height=Math.max(1,Math.round(s.height*s.scale));
+ $('petekV477ZoomLabel').textContent=Math.round(s.zoom*100)+'%';
+ $('petekV477Zoom').value=String(Math.round(s.zoom*100));
  draw();
+}
+function setZoom(value){
+ s.zoom=Math.max(.4,Math.min(5,Math.round(Number(value)*10)/10));
+ fit();
+}
+function chooseRelative(delta){
+ const list=s.entries,idx=list.findIndex(x=>x.uid===s.uid&&x.name===s.name);
+ const target=list[idx+delta];if(!target)return;
+ if(s.dirty&&!confirm('Kaydedilmemiş PETEK taslağını bırakıp sonraki şablona geçilsin mi?'))return;
+ select(target.name,target.uid);
+}
+function listVisual(){
+ const panel=$('petekV477List');panel.replaceChildren();
+ const word=$('petekV477Search').value.trim().toLocaleLowerCase('tr');
+ for(const item of s.entries){
+  if(word&&!item.name.toLocaleLowerCase('tr').includes(word)&&!item.uid.toLocaleLowerCase('tr').includes(word))continue;
+  const b=document.createElement('button');b.type='button';b.className='petek-v477-list-item';
+  b.setAttribute('role','option');b.setAttribute('aria-selected',String(s.uid===item.uid&&s.name===item.name));
+  b.textContent=item.name+' — '+item.status;
+  b.title=item.name+' · '+item.uid+' · '+item.status;
+  if(s.name===item.name&&s.uid===item.uid)b.classList.add('selected');
+  b.addEventListener('click',()=>{
+   if(s.name===item.name&&s.uid===item.uid)return;
+   if(s.dirty&&!confirm('Kaydedilmemiş değişiklikleri bırakarak farklı PETEK şablonu açılsın mı?'))return;
+   select(item.name,item.uid);
+  });
+  panel.append(b);
+ }
 }
 function draw(){
  const canvas=$('petekV477Canvas');if(!canvas||!s.img)return;
  let ctx=canvas.getContext('2d'),w=canvas.width,h=canvas.height,k=s.scale;
- ctx.clearRect(0,0,w,h);ctx.drawImage(s.img,0,0,w,h);
+ ctx.clearRect(0,0,w,h);ctx.drawImage(s.previewMode&&s.preview?s.preview:s.img,0,0,w,h);
+ if(s.previewMode&&s.preview)return;
  if(s.mask){
     const tint=document.createElement('canvas');tint.width=w;tint.height=h;
     const t=tint.getContext('2d',{willReadFrequently:true});
@@ -141,6 +174,7 @@ async function select(name,uid){
  try{
   const data=await api(detailUrl(name,uid));
   s.name=name;s.uid=data.uid;s.sha=data.source_sha;s.status=data.status;
+  s.preview=null;s.previewMode=false;s.zoom=1;
   s.width=data.width;s.height=data.height;s.quad=data.quad||[];
   s.curves=data.curve_points||{top:[],bottom:[]};s.needsCurveApply=false;
   s.base=null;s.dirty=false;
@@ -153,7 +187,9 @@ async function select(name,uid){
   $('petekV477Approve').disabled=data.status==='APPROVED';
   $('petekV477Save').disabled=data.status==='APPROVED';
   $('petekV477Revision').disabled=data.status!=='APPROVED';
-  $('petekV477Confirm').checked=false;
+  $('petekV477Confirm').checked=true;
+  $('petekV477Reviewer').value='Can';
+  listVisual();
   $('petekV477Mode').textContent='Mod: '+names[s.mode];
   fit();
   notice(data.status==='APPROVED'?'Onaylı SHA-kilitli maske yüklendi. Yalnız görüntüle.':
@@ -165,6 +201,7 @@ async function reload(preferUid){
  try{
   const data=await api('/api/petek/templates');
   const selectEl=$('petekV477Select'),previous=selectEl.value;
+  s.entries=data.items;
   selectEl.replaceChildren();
   for(const item of data.items){
     const option=document.createElement('option');
@@ -179,6 +216,7 @@ async function reload(preferUid){
   $('petekV477Count').textContent=data.items.length+' kayıt · '+scanned+' fotoğraf · '+
      verified+' eşleşen onaylı maske · '+historic+' eski onay kaydı'+
      (unmatched?' ('+unmatched+' fotoğrafla SHA eşleşmesi yok)':'');
+  listVisual();
   if(data.items.length){
     let preferred=preferUid
       ?Array.from(selectEl.options).find(o=>JSON.parse(o.value)[1]===preferUid)?.value
@@ -200,6 +238,40 @@ async function reload(preferUid){
   }
  }catch(e){notice(e.message,true);}
 }
+async function previewArtwork(){
+ if(!s.img||s.quad.length!==4||!s.mask){notice('Önce dört köşe ve baskı maskesi gerekli.',true);return;}
+ if(s.needsCurveApply){notice('Önce kavis maskesini güncelle.',true);return;}
+ const file=$('petekV477Artwork').files[0];
+ if(!file){notice('Önizleme için PNG, JPG veya WEBP tasarım dosyası seç.',true);return;}
+ if(!['image/png','image/jpeg','image/webp'].includes(file.type)||file.size>8_000_000){
+   notice('8 MB altında PNG/JPG/WEBP tasarım seç.',true);return;
+ }
+ const before={name:s.name,uid:s.uid,sha:s.sha};
+ const btn=$('petekV477Preview');btn.disabled=true;
+ try{
+  const object=URL.createObjectURL(file);
+  let design;
+  try{design=await imageOf(object);}finally{URL.revokeObjectURL(object);}
+  if(design.naturalWidth<100||design.naturalHeight<100)throw Error('Baskı tasarımı çok küçük.');
+  const largest=1600,ratio=Math.min(1,largest/Math.max(design.naturalWidth,design.naturalHeight));
+  const c=document.createElement('canvas');c.width=Math.round(design.naturalWidth*ratio);c.height=Math.round(design.naturalHeight*ratio);
+  c.getContext('2d').drawImage(design,0,0,c.width,c.height);
+  const data=await api('/api/petek/preview-artwork',{
+    ...content(),artwork_png:c.toDataURL('image/png')});
+  if(s.name!==before.name||s.uid!==before.uid||s.sha!==before.sha){
+   notice('Şablon değişti; farklı fotoğrafın önizlemesi gösterilmedi.',true);return;
+  }
+  s.preview=await imageOf(data.preview);s.previewMode=true;draw();
+  notice('GERÇEK BASKI ÖNİZLEMESİ — aynı PETEK V3 üretim motoruyla, fotoğrafa KAYDEDİLMEDİ. Görüntüyü yakınlaştırabilirsin.');
+ }catch(e){notice('Baskı önizlemesi oluşturulamadı: '+e.message,true);}
+ finally{btn.disabled=false;}
+}
+function backToOriginal(){s.previewMode=false;draw();notice('Orijinal fotoğraf ve maske görünümü.');}
+async function resetUncommitted(){
+ if(!s.img)return;
+ if(!confirm('Yalnız kaydedilmemiş PETEK düzenlemeleri atılacak; kaydedilmiş onaylı maskeler değişmez. Devam?'))return;
+ await select(s.name,s.uid);
+}
 async function autoCorners(){
  if(!editingAllowed()||!s.img)return;
  if((s.dirty||s.quad.length===4||s.curves.top.length||s.curves.bottom.length)&&
@@ -212,7 +284,7 @@ async function autoCorners(){
   if(s.name!==expectedName||s.sha!==expectedSha||s.uid!==expectedUid||s.status==='APPROVED'){
     notice('Başka şablon açıldı; eski otomatik köşe sonucu uygulanmadı.',true);return;
   }
-  s.quad=data.quad;s.mask=blank();s.base=null;s.curves={top:[],bottom:[]};
+  s.quad=data.quad;s.previewMode=false;s.preview=null;s.mask=blank();s.base=null;s.curves={top:[],bottom:[]};
   s.needsCurveApply=false;s.dirty=true;s.mode='corners';
   $('petekV477Mode').textContent='Mod: '+names[s.mode];
   draw();
@@ -227,7 +299,7 @@ async function autoMask(){
  if(!confirm('Yalnız açık TASLAK maske yeniden oluşturulacak. Mevcut taslak boyama sıfırlansın mı?'))return;
  try{
   const data=await api('/api/petek/auto-mask',{name:s.name,source_sha:s.sha,quad:s.quad});
-  s.mask=await decodeCanvas(data.mask);s.base=null;s.curves={top:[],bottom:[]};
+  s.mask=await decodeCanvas(data.mask);s.previewMode=false;s.preview=null;s.base=null;s.curves={top:[],bottom:[]};
   s.needsCurveApply=false;s.dirty=true;draw();
   notice('Otomatik TASLAK oluşturuldu. Dikey delikler, kavisler ve yanları gözle kontrol et.');
  }catch(e){notice(e.message,true);}
@@ -291,7 +363,13 @@ async function newRevision(){
  }catch(e){notice(e.message,true);}
 }
 function pointerDown(e){
- if(!s.img||!editingAllowed())return;
+ if(!s.img)return;
+ if(e.button===1||e.button===2||s.spaceHeld){
+   e.preventDefault();s.panning=true;s.panStart=[e.clientX,e.clientY];
+   s.scrollStart=[$('petekV477Drawing').scrollLeft,$('petekV477Drawing').scrollTop];return;
+ }
+ if(s.previewMode){notice('Önizlemeyi kapatarak maskeyi düzenle.',true);return;}
+ if(!editingAllowed())return;
  e.preventDefault();const p=point(e);
  if(s.mode==='corners'){
    if(s.quad.length>=4)return;
@@ -306,8 +384,14 @@ function pointerDown(e){
    draw();notice('Kavis noktası eklendi. Bitince «Kavisleri Uygula» seç.');
  }
 }
-function pointerMove(e){if(!s.painting)return;e.preventDefault();paintAt(e,false);}
-function pointerUp(){s.painting=false;s.lastPoint=null;}
+function pointerMove(e){
+ if(s.panning){e.preventDefault();const area=$('petekV477Drawing');
+   area.scrollLeft=s.scrollStart[0]-(e.clientX-s.panStart[0]);
+   area.scrollTop=s.scrollStart[1]-(e.clientY-s.panStart[1]);return;
+ }
+ if(!s.painting)return;e.preventDefault();paintAt(e,false);
+}
+function pointerUp(){s.panning=false;s.painting=false;s.lastPoint=null;}
 function start(){
  s.active=true;
  const normal=$('main'),pane=$('petekV477Editor');
@@ -326,7 +410,26 @@ function init(){
  const pane=$('petekV477Editor');if(!pane)return;
  $('petekV477Nav').addEventListener('click',start);
  $('petekV477Close').addEventListener('click',exit);
- $('petekV477Reload').addEventListener('click',reload);
+ $('petekV477Reload').addEventListener('click',()=>{
+   if(s.dirty&&!confirm('Kaydedilmemiş PETEK değişiklikleri atılsın ve liste yenilensin mi?'))return;
+   reload();
+ });
+ $('petekV477Search').addEventListener('input',listVisual);
+ $('petekV477Prev').addEventListener('click',()=>chooseRelative(-1));
+ $('petekV477Next').addEventListener('click',()=>chooseRelative(1));
+ $('petekV477ZoomIn').addEventListener('click',()=>setZoom(s.zoom+.2));
+ $('petekV477ZoomOut').addEventListener('click',()=>setZoom(s.zoom-.2));
+ $('petekV477ZoomFit').addEventListener('click',()=>setZoom(1));
+ $('petekV477Zoom').addEventListener('input',e=>setZoom(Number(e.target.value)/100));
+ $('petekV477Drawing').addEventListener('wheel',e=>{
+   if(!s.active||!s.img)return;e.preventDefault();setZoom(s.zoom+(e.deltaY<0?.2:-.2));
+ },{passive:false});
+ $('petekV477Canvas').addEventListener('contextmenu',e=>e.preventDefault());
+ document.addEventListener('keydown',e=>{if(e.code==='Space'&&!['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName))s.spaceHeld=true;});
+ document.addEventListener('keyup',e=>{if(e.code==='Space')s.spaceHeld=false;});
+ $('petekV477Preview').addEventListener('click',previewArtwork);
+ $('petekV477Original').addEventListener('click',backToOriginal);
+ $('petekV477Reset').addEventListener('click',resetUncommitted);
  $('petekV477Select').addEventListener('change',e=>{
     const [name,uid]=JSON.parse(e.target.value);
     select(name,uid);
