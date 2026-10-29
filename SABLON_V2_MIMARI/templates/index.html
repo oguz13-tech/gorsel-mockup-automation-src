@@ -279,7 +279,7 @@
       <input id="petekV477Artwork" type="file" accept="image/png,image/jpeg,image/webp">
       <button type="button" id="petekV477Preview" class="petek-v477-full">🎨 Gerçek Tasarımla Önizle</button>
       <button type="button" id="petekV477Original" class="petek-v477-full">📷 Ham Şablona / Maskeye Dön</button>
-      <div class="petek-v477-note">PETEK V3 gerçek baskı motoru kullanılır. Tasarım şablonun yalnız maskeli ön yüzüne basılır; delikler, yanlar, kavis boşluğu ve zemin korunur. Önizleme dosya veya maske kaydetmez.</div>
+      <div class="petek-v477-note">PETEK V3 gerçek baskı motoru kullanılır. Dikey ızgara yarıkları, üst-alt kavis boşlukları, yanlar ve zemin orijinalinden korunur. Magenta sahnelerde pembe çizgi bırakmayan kenar geçişi kullanılır. Önizleme dosya veya maske kaydetmez.</div>
       <h3>Şablon Araçları — Ortak</h3>
       <div class="petek-v477-actionrow"><button type="button" id="petekV477Undo">↶ Son İşlemi Geri Al (Ctrl+Z)</button></div>
       <div class="petek-v477-actionrow"><button type="button" id="petekV477Reset">↩ Kaydedilmemiş Değişiklikleri Geri Al</button></div>
@@ -316,8 +316,8 @@
       </div>
       <div class="petek-v477-note">Üst ve alt kavis birbirinden bağımsızdır; her kavis yan kenarlara ulaşmalı. Maske üzerinde yeşil olan kısım baskı yüzeyidir.</div>
       <h3>Kaydetme ve Onay</h3>
-      <label for="petekV477Aspect">Gerçek ön panel en/boy oranı</label>
-      <input id="petekV477Aspect" type="number" min="0.12" max="12" step="0.0001" value="1.1163">
+      <input id="petekV477Aspect" type="hidden" value="1.1163">
+      <div class="petek-v477-note">Ön panelin en/boy oranı tasarımın gerilmeden yerleşmesi için şablon profilinden otomatik kullanılır. Değiştirme gerektirmez.</div>
       <button type="button" id="petekV477Save" class="petek-v477-full">3. Düzenlediğim Maskeyi TASLAK Kaydet</button>
       <label for="petekV477Reviewer">İnceleyen kişi</label>
       <input id="petekV477Reviewer" type="text" maxlength="80" value="Can" placeholder="İnceleme adını gir">
@@ -333,9 +333,9 @@
 
 <link rel="stylesheet" href="/static/css/petek_editor_v477.css?v=482-sidebar">
 <script src="/static/js/petek_quad_drag_v481.js?v=482-sidebar"></script>
-<script src="/static/js/petek_editor_v477.js?v=482-sidebar"></script>
+<script src="/static/js/petek_editor_v477.js?v=483-grille"></script>
 <script src="/static/js/edge_angles_v46.js"></script>
-<script src="/static/js/main.js?v=482-sidebar"></script>
+<script src="/static/js/main.js?v=483-grille"></script>
 <script src="/static/js/review_v46.js"></script>
 
 </body>
