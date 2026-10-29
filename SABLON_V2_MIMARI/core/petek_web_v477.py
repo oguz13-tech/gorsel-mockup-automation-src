@@ -100,13 +100,24 @@ def _fail(exc):
 
 @petek_web.get('/api/petek/templates')
 def list_templates():
+    """Unified PETEK sidebar statuses; only reads working/backup/profile bytes.
+
+    Unlike legacy six-category UI, PETEK profiles are in an immutable V3
+    registry, so report actual values instead of inventing SQLite indicators.
+    """
     try:
         registry=Registry();items=[];warnings=[];seen=0
         folder=_working()
-        profiles={}
-        for row in registry.list():
-            profiles.setdefault(row['source_sha'],[]).append(row)
         history=registry.list()
+        profiles={}
+        for row in history:profiles.setdefault(row['source_sha'],[]).append(row)
+        # A missing original archive is reported, NEVER silently fabricated.
+        root=Path(current_app.config['PETEK_WORKSPACE_V477'])
+        try:
+            archive=petek_directory(root,'2_SABLON_HAVUZU_ORIJINAL_YEDEK')
+        except (OSError,ValueError) as exc:
+            archive=None
+            warnings.append({'file':'ORIGINAL_ARCHIVE','error':str(exc)[:200]})
         if folder.is_dir():
             for file in sorted(folder.iterdir(),key=lambda x:x.name.casefold()):
                 if file.is_symlink() or not file.is_file() or file.suffix.lower() not in SUFFIXES:
@@ -114,38 +125,53 @@ def list_templates():
                 seen+=1
                 try:
                     sha=engine.digest(file)
+                    backup='MISSING'
+                    if archive is not None and archive.is_dir():
+                        original=archive/file.name
+                        if original.is_symlink():
+                            backup='UNSAFE'
+                        elif original.is_file():
+                            backup='MATCH' if engine.digest(original)==sha else 'DIFFERENT'
                     matches=profiles.get(sha,[])
                     if matches:
                         for match in matches:
                             try:
-                                # Historic mask registry may still name an old LAB
-                                # source. The new working photo is read-only and
-                                # strictly revalidated before showing APPROVED.
                                 profile,_=registry.get(match['uid'],source_override=file)
-                                status=profile['status']
+                                status=profile['status'];mask_ok=True
                             except (ValueError,OSError,KeyError,engine.MaskError) as exc:
-                                status='REVIEW_REQUIRED'
+                                status='REVIEW_REQUIRED';mask_ok=False
                                 warnings.append({'file':file.name,'uid':match['uid'],
                                                  'error':str(exc)[:200]})
                             items.append({'name':file.name,'uid':match['uid'],
-                                          'source_sha':sha,'status':status})
+                                'source_sha':sha,'status':status,
+                                'working_ok':True,'backup_status':backup,
+                                'mask_verified':mask_ok,'approved':status=='APPROVED'})
                     else:
                         uid,_=_identity(registry,file)
                         items.append({'name':file.name,'uid':uid,
-                                      'source_sha':sha,'status':'NEW'})
+                            'source_sha':sha,'status':'NEW','working_ok':True,
+                            'backup_status':backup,'mask_verified':False,'approved':False})
                 except (ValueError,OSError,engine.MaskError) as exc:
-                    # A single unreadable/corrupt picture must not hide the
-                    # other PETEK templates from the operator.
+                    # A single corrupt item never hides the other PETEK photos.
                     warnings.append({'file':file.name,'error':str(exc)[:200]})
+        counts={key:sum(i['status']==key for i in items)
+                for key in ('APPROVED','DRAFT','NEW','REVIEW_REQUIRED')}
+        counts['backup_missing']=sum(i['backup_status']=='MISSING' for i in items)
+        counts['backup_different']=sum(i['backup_status'] in ('DIFFERENT','UNSAFE') for i in items)
         return jsonify({'success':True,'category':'06_Petek_Kapama','items':items,
                         'folder':'2_SABLON_HAVUZU/Petek_Dolabi',
-                        'working_path':str(folder),'runtime_root':str(current_app.config['PETEK_WORKSPACE_V477']),
-                        'scanned_photos':seen,'warnings':warnings,
+                        'working_path':str(folder),'runtime_root':str(root),
+                        'scanned_photos':seen,'counts':counts,'warnings':warnings,
                         'registry_profiles_total':len(history),
                         'registry_approved_total':sum(row['status']=='APPROVED' for row in history),
                         'matched_approved_records':sum(item['status']=='APPROVED' for item in items),
                         'unmatched_approved_records':sum(row['status']=='APPROVED' and
-                             not any(item['uid']==row['uid'] for item in items) for row in history)})
+                             not any(item['uid']==row['uid'] for item in items) for row in history),
+                        'bulk_capabilities':{
+                            'select':True,'status_filter':True,'read_only_audit':True,
+                            'magenta_corner_mask_proposals':True,
+                            'approval_requires_individual_review':True,
+                            'legacy_bulk_delete':False}})
     except (ValueError,OSError,engine.MaskError) as exc:return _fail(exc)
 
 @petek_web.get('/api/petek/photo/<path:name>')
