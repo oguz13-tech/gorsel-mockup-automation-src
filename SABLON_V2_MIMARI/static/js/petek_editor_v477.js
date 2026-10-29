@@ -52,7 +52,7 @@ function content(){return {name:s.name,uid:s.uid,source_sha:s.sha,quad:s.quad,
  physical_aspect:Number($('petekV477Aspect').value)};}
 function limited(){return s.status==='APPROVED';}
 function editingAllowed(){
- if(limited()){notice('Onaylı PETEK maskesi kilitli. Mevcut 45 başarılı şablon korunur.',true);return false;}
+ if(limited()){notice('Onaylı PETEK maskesi kilitli. Eski üretilmiş görseller ve onaylar korunur.',true);return false;}
  return true;
 }
 function fit(){
@@ -149,6 +149,7 @@ async function select(name,uid){
   s.base=data.base_mask?await decodeCanvas(data.base_mask):null;
   $('petekV477Aspect').value=String(data.physical_aspect);
   $('petekV477Name').textContent=name+' · '+data.status+' · '+s.uid;
+  $('petekV477AutoCorners').disabled=data.status==='APPROVED';
   $('petekV477Approve').disabled=data.status==='APPROVED';
   $('petekV477Save').disabled=data.status==='APPROVED';
   $('petekV477Revision').disabled=data.status!=='APPROVED';
@@ -172,7 +173,12 @@ async function reload(preferUid){
     selectEl.append(option);
   }
   const scanned=Number(data.scanned_photos||0);
-  $('petekV477Count').textContent=data.items.length+' kayıt · '+scanned+' PETEK fotoğrafı';
+  const verified=Number(data.matched_approved_records||0);
+  const historic=Number(data.registry_approved_total||0);
+  const unmatched=Number(data.unmatched_approved_records||0);
+  $('petekV477Count').textContent=data.items.length+' kayıt · '+scanned+' fotoğraf · '+
+     verified+' eşleşen onaylı maske · '+historic+' eski onay kaydı'+
+     (unmatched?' ('+unmatched+' fotoğrafla SHA eşleşmesi yok)':'');
   if(data.items.length){
     let preferred=preferUid
       ?Array.from(selectEl.options).find(o=>JSON.parse(o.value)[1]===preferUid)?.value
@@ -193,6 +199,27 @@ async function reload(preferUid){
                  ' · Fotoğrafların bu klasörde olduğunu doğrula.'),true);
   }
  }catch(e){notice(e.message,true);}
+}
+async function autoCorners(){
+ if(!editingAllowed()||!s.img)return;
+ if((s.dirty||s.quad.length===4||s.curves.top.length||s.curves.bottom.length)&&
+    !confirm('Bu PETEK TASLAĞINDAKİ kaydedilmemiş köşeler, maske ve kavisler sıfırlanarak magenta dört köşe önerisi yüklenecek. Onaylı kayıtlar değişmez. Devam?'))return;
+ const expectedName=s.name,expectedSha=s.sha,expectedUid=s.uid;
+ const button=$('petekV477AutoCorners');button.disabled=true;
+ try{
+  const data=await api('/api/petek/auto-corners',{
+    name:expectedName,uid:expectedUid,source_sha:expectedSha});
+  if(s.name!==expectedName||s.sha!==expectedSha||s.uid!==expectedUid||s.status==='APPROVED'){
+    notice('Başka şablon açıldı; eski otomatik köşe sonucu uygulanmadı.',true);return;
+  }
+  s.quad=data.quad;s.mask=blank();s.base=null;s.curves={top:[],bottom:[]};
+  s.needsCurveApply=false;s.dirty=true;s.mode='corners';
+  $('petekV477Mode').textContent='Mod: '+names[s.mode];
+  draw();
+  notice('MAGENTA 4 KÖŞE TASLAĞI ('+data.method+', kapsam '+Math.round(100*data.coverage)+
+         '%) kırmızı olarak gösterildi. Köşeleri tek tek kontrol et; ardından Otomatik Maske Taslağı. Kaydedilmedi.');
+ }catch(e){notice('MAGENTA KÖŞE ÖNERİSİ YOK: '+e.message+' · 4 köşeyi elle seç.',true);}
+ finally{button.disabled=false;}
 }
 async function autoMask(){
  if(!editingAllowed())return;
@@ -306,6 +333,7 @@ function init(){
  });
  for(const b of document.querySelectorAll('[data-petek-mode]'))
    b.addEventListener('click',()=>setMode(b.dataset.petekMode));
+ $('petekV477AutoCorners').addEventListener('click',autoCorners);
  $('petekV477Auto').addEventListener('click',autoMask);
  $('petekV477CurveApply').addEventListener('click',applyCurves);
  $('petekV477CurveUndo').addEventListener('click',undoCurve);
