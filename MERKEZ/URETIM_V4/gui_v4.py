@@ -57,7 +57,7 @@ class UnifiedV4BatchWindow:
 
         ttk.Label(
             area,
-            text="7 Kategori Ortak Seri Üretim Merkezi (V4.8.7 — Güvenli Devam, Mağazalar, Efektler, 4K, Excel)",
+            text="7 Kategori Ortak Seri Üretim Merkezi (V4.8.8 — Güvenli Devam, Mağazalar, Efektler, 4K, Excel)",
             font=("Segoe UI", 15, "bold"),
         ).pack(anchor="w", pady=(0, 6))
         ttk.Label(
