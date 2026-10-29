@@ -98,3 +98,31 @@
 #petekV477List .petek-v484-item-wrap.petek-v484-selected{outline:2px dashed #93c5fd;outline-offset:-3px;}
 #petekV477List .petek-v477-list-item.selected{outline:3px solid #60a5fa;outline-offset:-3px;}
 #petekV477List .petek-v484-item-wrap .petek-v477-list-item{background:transparent!important;border:0;min-height:48px;color:#fff!important;}
+
+/* V4.8.8: accessible 14px minimum PETEK control typography on desktop. */
+.petek-v477-editor{font-size:14px;line-height:1.5;}
+.petek-v477-note,.petek-v477-list-pane.in-sidebar #petekV477Count,
+.petek-v484-summary,.petek-v484-legend,.petek-v477-legend,
+#petekV477List .petek-v484-pictos,#petekV484BulkStatus{font-size:13px;line-height:1.5;}
+.petek-v477-list-pane.in-sidebar .petek-v477-list-item,
+#petekV477List .petek-v477-list-item{font-size:14px;line-height:1.35;
+  min-height:54px;padding:9px 8px;}
+.petek-v477-list-pane .petek-v484-name{font-weight:600;letter-spacing:.08px;}
+.petek-v477-list-pane button,.petek-v477-list-pane input{font-size:14px;line-height:1.4;}
+.petek-v484-bulk-row button{font-size:13px;padding:10px 6px;}
+#petekV484BulkDetect,#petekV484BulkSave,#petekV484BulkStop,
+#petekV484BulkReport,#petekV484BulkMode{font-size:14px;line-height:1.4;
+  min-height:43px;}
+.petek-v477-tools{width:360px;max-width:46vw;}
+.petek-v477-tools h3{font-size:16px;}
+.petek-v477-tools label,.petek-v477-tools a,
+.petek-v477-tools input[type=file],.petek-v477-viewport-bar button,
+.petek-v477-actionrow button,.petek-v477-confirm{font-size:14px!important;line-height:1.45;}
+.petek-v477-tools .petek-v477-note{font-size:14px;line-height:1.5;}
+.petek-v477-full{font-size:14px;min-height:44px;}
+#petekV477ZoomLabel,#petekV477Mode,#petekV477Name{font-size:14px;}
+.petek-v477-viewport-bar button{min-height:38px;}
+#petekV477List .petek-v484-line{gap:7px;}
+#petekV477List .petek-v484-item-wrap{padding:7px 6px;}
+#petekV477List .petek-v484-thumb{flex:0 0 54px;width:54px;height:54px;}
+@media(max-width:1050px){.petek-v477-tools{width:100%;max-width:none;}}
