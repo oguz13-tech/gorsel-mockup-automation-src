@@ -56,7 +56,7 @@ test('Missing category nav must preserve live PETEK list instead of deleting it'
 test('PETEK and main sidebar scripts are cache-busted together after bugfix',()=>{
  const html=fs.readFileSync(path.resolve(__dirname,'../../SABLON_V2_MIMARI/templates/index.html'),'utf8');
  for(const script of ['main.js','petek_editor_v477.js']){
-   assert.ok(html.includes(script+'?v=483-grille'),script+' must have current cache key');
+   assert.ok(html.includes(script+'?v=484-bulk'),script+' must have current cache key');
  }
  assert.ok(html.includes('petek_quad_drag_v481.js?v=482-sidebar'));
 });
