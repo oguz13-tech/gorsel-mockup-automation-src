@@ -114,8 +114,11 @@ def auto_mask_candidate(scene, quad):
         proposed[polygon==0] = 0
         if float(np.count_nonzero(proposed))/area < .12:
             raise MaskError('PETEK_MAGENTA_BASKI_YUZEYI_YETERSIZ')
+        from .grille_guard_v482 import refine_magenta_draft_mask
+        proposed,lip_qa=refine_magenta_draft_mask(scene,quad,proposed)
         return proposed, {'status':'TASLAK','mode':'MAGENTA_BASKI_YUZEYI',
             'area_ratio':round(float(np.count_nonzero(proposed))/area,4),
+            **lip_qa,
             'warning':'Magenta renkli ahsap secildi; siyah izgara, kavis ve golgeler otomatik boyanmaz. INSAN ONAYI GEREKLI.'}
     lab = cv2.cvtColor(scene, cv2.COLOR_BGR2LAB)
     lum = lab[:,:,0].astype(np.float32)
