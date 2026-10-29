@@ -178,6 +178,46 @@ def detail(name):
         return jsonify(row)
     except (ValueError,OSError,engine.MaskError) as exc:return _fail(exc)
 
+@petek_web.post('/api/petek/preview-artwork')
+def preview_artwork():
+    """Real PETEK V3 render, returned as a private unsaved PNG preview.
+
+    Upload bytes exist only in request memory; does not create a file, mask,
+    profile, approval, production artifact, or mutate the live workspace.
+    """
+    try:
+        body,file,scene=_request_scene()
+        if body.get('uid')!=_identity(Registry(),file,body.get('uid'))[0]:
+            raise ValueError('PETEK_PREVIEW_UID_CHANGED_RELOAD')
+        encoded=body.get('artwork_png')
+        if not isinstance(encoded,str) or not encoded.startswith('data:image/png;base64,'):
+            raise ValueError('PETEK_PREVIEW_PNG_REQUIRED')
+        encoded=encoded.partition(',')[2]
+        if len(encoded)>12_000_000:raise ValueError('PETEK_PREVIEW_ARTWORK_TOO_LARGE')
+        try:raw=base64.b64decode(encoded,validate=True)
+        except (ValueError,TypeError) as exc:raise ValueError('PETEK_PREVIEW_BAD_ARTWORK') from exc
+        if not 0<len(raw)<=8_000_000:raise ValueError('PETEK_PREVIEW_ARTWORK_TOO_LARGE')
+        art=cv2.imdecode(np.frombuffer(raw,dtype=np.uint8),cv2.IMREAD_COLOR)
+        if (art is None or art.ndim!=3 or min(art.shape[:2])<100 or
+                art.shape[0]*art.shape[1]>16_000_000):
+            raise ValueError('PETEK_PREVIEW_ARTWORK_INVALID')
+        quad=engine.validated_quad(body.get('quad'),scene.shape)
+        mask=_decode(body.get('mask'),scene.shape)
+        ratio=float(body.get('physical_aspect',1.1163))
+        result,qa=engine.render(scene,art,quad,mask,ratio,marketplace=False,
+                                 lighting='natural',placement='cover')
+        # The physical print protects all source pixels outside the mask.
+        if not np.array_equal(result[mask==0],scene[mask==0]):
+            raise ValueError('PETEK_PREVIEW_PROTECTED_PIXELS_CHANGED')
+        ok,png=cv2.imencode('.png',result,[cv2.IMWRITE_PNG_COMPRESSION,3])
+        if not ok:raise ValueError('PETEK_PREVIEW_ENCODING_FAILED')
+        return jsonify({'success':True,'preview':'data:image/png;base64,'+
+                        base64.b64encode(png.tobytes()).decode('ascii'),
+                        'source_sha':engine.digest(file),'uid':body['uid'],
+                        'unsaved':True,'protected_pixels_unchanged':True,
+                        'mask_qa':{'printable_fraction':qa['printable_fraction']}})
+    except (ValueError,OSError,TypeError,KeyError,OverflowError,engine.MaskError) as exc:return _fail(exc)
+
 @petek_web.post('/api/petek/auto-corners')
 def auto_corners():
     """Compute a source-SHA-bound PETEK MAGENTA four-corner suggestion only.
