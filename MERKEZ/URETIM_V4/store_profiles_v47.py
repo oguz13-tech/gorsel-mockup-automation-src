@@ -173,22 +173,15 @@ class StoreProfiles:
         for key in template_keys:
             if key in owned and owned[key]!=store:
                 raise ValueError('Şablon başka mağazaya atanmış: '+key)
-        # Old SHA-only profiles remain supported. For new UI assignment,
-        # compare every approved source via conservative perceptual similarity.
+        # User-approved production policy: NO perceptual similarity scans,
+        # no output hash comparison for cross-store uniqueness. The identity
+        # of the approved template/source SHA is sufficient to block assigning
+        # the EXACT SAME template or source file across store profiles. This
+        # check is performed by validate(), without decoding any picture.
         if all_approved is not None:
-            available={key_for(x):x for x in all_approved}
-            fingerprints={key:perceptual_fingerprint(item) for key,item in available.items()}
-            for key in template_keys:
-                fp=fingerprints.get(key)
-                if not fp:
-                    raise ValueError('BENZERLIK_KAYNAK_OKUNAMADI: '+key)
-                for other,owner in owned.items():
-                    if owner==store or other==key:continue
-                    other_fp=fingerprints.get(other)
-                    if other_fp is None:
-                        raise ValueError('BENZERLIK_ESKI_ATAMA_DOGRULANAMIYOR: '+other)
-                    if near_distance(fp,other_fp)<=4:
-                        raise ValueError('MAGAZALAR_ARASI_BENZER_MOCKUP: '+key+' / '+other)
+            available={key_for(x) for x in all_approved}
+            if any(key not in available for key in template_keys):
+                raise ValueError('STORE_ASSIGN_TEMPLATE_NOT_APPROVED')
         raw['stores'][store]['templates']=sorted(set(raw['stores'][store]['templates'])|set(template_keys))
         return self.save(raw)
 
