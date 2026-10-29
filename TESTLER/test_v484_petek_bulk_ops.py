@@ -125,3 +125,23 @@ def test_grouped_bulk_selection_controls_wired_with_stop_and_one_page(tmp_path):
     assert 'class="petek-v484-summary"' in html
     assert "petek-v484-pictos" in js
     assert '[hidden]{display:none!important;}' in css
+
+def test_petek_bulk_list_is_visible_with_lazy_thumbnails_and_semantic_statuses(tmp_path,monkeypatch):
+    from PIL import Image
+    import io
+    client,photo,registry,_=fixture(tmp_path,monkeypatch)
+    response=client.get('/api/petek/thumbnail/'+photo.name)
+    assert response.status_code==200,response.data[:3]==b'\\xff\\xd8\\xff'
+    with Image.open(io.BytesIO(response.data)) as img:
+        assert img.width<=136 and img.height<=136
+    html=(ROOT/'SABLON_V2_MIMARI/templates/index.html').read_text('utf-8')
+    css=(ROOT/'SABLON_V2_MIMARI/static/css/petek_editor_v477.css').read_text('utf-8')
+    js=(ROOT/'SABLON_V2_MIMARI/static/js/petek_editor_v477.js').read_text('utf-8')
+    assert html.index('id="petekV477List"') < html.index('id="petekV484BulkPanel"')
+    for name in ('approved','pending','error'):
+        assert 'petek-status-'+name in css
+    assert "thumbnail.loading='lazy'" in js
+    assert "'/api/petek/thumbnail/'" in js
+    assert 'min-height:220px' in css
+    assert "item.approved&&!item.mask_verified" in js
+    assert photo.is_file() and not list(registry.profiles.glob('*.json'))
