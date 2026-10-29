@@ -138,6 +138,78 @@ def test_existing_petek_approved_is_native_ui_read_only(tmp_path,monkeypatch):
     assert client.post('/api/petek/save-draft',json={**data,'uid':photo.stem}).status_code==409
 
 
+def test_legacy_missing_lab_source_is_read_only_rebound_by_exact_sha(tmp_path,monkeypatch):
+    """A matching working copy must not disappear just because its LAB source moved."""
+    client,photo,registry,workspace=fixture(tmp_path,monkeypatch)
+    old_lab=tmp_path/'old-lab'/'old_petekkaynak.png'
+    old_lab.parent.mkdir(parents=True)
+    photo.rename(old_lab)
+    data=params(old_lab)
+    original=registry.save(old_lab.stem,old_lab,data['quad'],valid_mask(),1.1163,
+                           approved=True,reviewer='Owner')
+    profile_path=registry.profiles/(old_lab.stem+'.json')
+    approved_bytes=profile_path.read_bytes()
+    mask_file=registry.masks/(original['mask_sha']+'.png')
+    mask_bytes=mask_file.read_bytes()
+    old_lab.rename(photo)  # Original path is gone; working photo has exact same bytes.
+    with pytest.raises(engine.MaskError):
+        registry.get(old_lab.stem,require_approved=True)
+    listing=client.get('/api/petek/templates')
+    assert listing.status_code==200,listing.get_json()
+    payload=listing.get_json()
+    assert payload['scanned_photos']==1
+    assert payload['working_path']==str(photo.parent)
+    assert payload['items']==[{'name':photo.name,'uid':old_lab.stem,
+                                'source_sha':engine.digest(photo),'status':'APPROVED'}]
+    detail=client.get('/api/petek/detail/'+photo.name+'?uid='+old_lab.stem)
+    assert detail.status_code==200,detail.get_json()
+    assert detail.get_json()['status']=='APPROVED'
+    assert detail.get_json()['mask'].startswith('data:image/png;base64,')
+    assert profile_path.read_bytes()==approved_bytes
+    assert mask_file.read_bytes()==mask_bytes
+    assert client.post('/api/petek/save-draft',json={**params(photo),'uid':old_lab.stem}).status_code==409
+
+
+def test_existing_changed_old_source_must_not_be_hidden_by_new_valid_copy(tmp_path,monkeypatch):
+    client,photo,registry,_=fixture(tmp_path,monkeypatch)
+    source=tmp_path/'old-lab'/'petek_historic.png'
+    source.parent.mkdir(parents=True)
+    source.write_bytes(photo.read_bytes())
+    data=params(source)
+    registry.save(source.stem,source,data['quad'],valid_mask(),1.1163,
+                  approved=True,reviewer='Human')
+    # Explicitly existing but altered source must not fallback silently.
+    source.write_bytes(source.read_bytes()+b'tampered')
+    result=client.get('/api/petek/templates')
+    assert result.status_code==200
+    payload=result.get_json()
+    assert payload['scanned_photos']==1
+    assert payload['items'][0]['status']=='REVIEW_REQUIRED'
+    assert payload['warnings']
+    assert client.get('/api/petek/detail/'+photo.name+'?uid='+source.stem).status_code==409
+
+
+def test_bad_legacy_profile_does_not_hide_new_petek_photo(tmp_path,monkeypatch):
+    client,photo,registry,_=fixture(tmp_path,monkeypatch)
+    other=photo.parent/'Petek_Dolabi_002.png'
+    different=np.full((300,400,3),210,dtype=np.uint8)
+    assert cv2.imwrite(str(other),different)
+    registry.save(photo.stem,photo,params(photo)['quad'],valid_mask(),1.1163,
+                  approved=True,reviewer='Human')
+    profile_path=registry.profiles/(photo.stem+'.json')
+    doc=json.loads(profile_path.read_text('utf-8'))
+    doc['source']='/missing/old/lab/path.png'
+    doc['mask_sha']='0'*64  # Broken legacy mask must be flagged, not hide other photo.
+    profile_path.write_text(json.dumps(doc),encoding='utf-8')
+    result=client.get('/api/petek/templates')
+    assert result.status_code==200,result.get_json()
+    data=result.get_json()
+    assert data['scanned_photos']==2
+    assert data['items'][0]['status']=='REVIEW_REQUIRED'
+    assert any(p['name']==other.name and p['status']=='NEW' for p in data['items'])
+    assert data['warnings']
+
+
 def test_ui_category_is_inside_existing_page_with_native_operations():
     html=(ROOT/'SABLON_V2_MIMARI'/'templates'/'index.html').read_text('utf-8')
     js=(ROOT/'SABLON_V2_MIMARI'/'static'/'js'/'petek_editor_v477.js').read_text('utf-8')
