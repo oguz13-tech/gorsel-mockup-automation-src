@@ -53,6 +53,12 @@ test('Missing category nav must preserve live PETEK list instead of deleting it'
   try{codeUnderTest()(doc,categories,()=>{});}finally{console.error=old;}
   assert.deepEqual(categories.children,[list]);
 });
+test('PETEK and main sidebar scripts are cache-busted together after bugfix',()=>{
+ const html=fs.readFileSync(path.resolve(__dirname,'../../SABLON_V2_MIMARI/templates/index.html'),'utf8');
+ for(const script of ['main.js','petek_editor_v477.js','petek_quad_drag_v481.js']){
+   assert.ok(html.includes(script+'?v=482-sidebar'),script+' must have current cache key');
+ }
+});
 test('Editor caches detached host and guards missing list at start; no null classList crash',()=>{
   assert.match(petek,/listHost:\s*null/);
   assert.match(petek,/s\.listHost=\$\('petekV477ListPane'\)/);
