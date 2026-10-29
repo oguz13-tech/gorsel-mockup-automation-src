@@ -1662,7 +1662,15 @@ window.onerror = function(msg, url, line, col, error) {
         // Keep the real PETEK seventh category node (and its event handlers)
         // when legacy categories are refreshed after approvals/health scans.
         const petekSeventhCategory = document.getElementById('petekV477Nav');
-        catDiv.innerHTML = '';
+        // PETEK can have an ACTIVE searchable list mounted immediately after
+        // its nav button INSIDE #categories. Clearing the six-category list
+        // must not destroy that live editor node or its event handlers.
+        const petekListPane = document.getElementById('petekV477ListPane');
+        const petekListWasInCategories = Boolean(
+            petekListPane && catDiv.contains(petekListPane)
+        );
+        if (petekListWasInCategories) petekListPane.remove();
+        catDiv.replaceChildren();
         allTemplates = [];
         for (const cat in ayarlar.kategoriler) {
             const div = document.createElement('div');
@@ -1891,6 +1899,13 @@ window.onerror = function(msg, url, line, col, error) {
         }
         if (petekSeventhCategory) {
             catDiv.appendChild(petekSeventhCategory);
+            if (petekListWasInCategories && petekListPane) {
+                petekSeventhCategory.after(petekListPane);
+            }
+        } else if (petekListWasInCategories && petekListPane) {
+            // A mismatched or broken HTML/JS bundle must not discard the list.
+            catDiv.appendChild(petekListPane);
+            console.error('PETEK kategori düğmesi bulunamadı; liste korundu.');
         }
         applyBulkSelectionUi();
     }
