@@ -98,25 +98,45 @@ def _fail(exc):
 @petek_web.get('/api/petek/templates')
 def list_templates():
     try:
-        registry=Registry();items=[]
+        registry=Registry();items=[];warnings=[];seen=0
         folder=_working()
+        profiles={}
+        for row in registry.list():
+            profiles.setdefault(row['source_sha'],[]).append(row)
         if folder.is_dir():
             for file in sorted(folder.iterdir(),key=lambda x:x.name.casefold()):
                 if file.is_symlink() or not file.is_file() or file.suffix.lower() not in SUFFIXES:
                     continue
-                sha=engine.digest(file)
-                matches=[row for row in registry.list() if row['source_sha']==sha]
-                if matches:
-                    for match in matches:
-                        profile,_=registry.get(match['uid'])
-                        items.append({'name':file.name,'uid':match['uid'],
-                                      'source_sha':sha,'status':profile['status']})
-                else:
-                    uid,_=_identity(registry,file)
-                    items.append({'name':file.name,'uid':uid,
-                                  'source_sha':sha,'status':'NEW'})
+                seen+=1
+                try:
+                    sha=engine.digest(file)
+                    matches=profiles.get(sha,[])
+                    if matches:
+                        for match in matches:
+                            try:
+                                # Historic mask registry may still name an old LAB
+                                # source. The new working photo is read-only and
+                                # strictly revalidated before showing APPROVED.
+                                profile,_=registry.get(match['uid'],source_override=file)
+                                status=profile['status']
+                            except (ValueError,OSError,KeyError,engine.MaskError) as exc:
+                                status='REVIEW_REQUIRED'
+                                warnings.append({'file':file.name,'uid':match['uid'],
+                                                 'error':str(exc)[:200]})
+                            items.append({'name':file.name,'uid':match['uid'],
+                                          'source_sha':sha,'status':status})
+                    else:
+                        uid,_=_identity(registry,file)
+                        items.append({'name':file.name,'uid':uid,
+                                      'source_sha':sha,'status':'NEW'})
+                except (ValueError,OSError,engine.MaskError) as exc:
+                    # A single unreadable/corrupt picture must not hide the
+                    # other PETEK templates from the operator.
+                    warnings.append({'file':file.name,'error':str(exc)[:200]})
         return jsonify({'success':True,'category':'06_Petek_Kapama','items':items,
-                        'folder':'2_SABLON_HAVUZU/Petek_Dolabi'})
+                        'folder':'2_SABLON_HAVUZU/Petek_Dolabi',
+                        'working_path':str(folder),'runtime_root':str(current_app.config['PETEK_WORKSPACE_V477']),
+                        'scanned_photos':seen,'warnings':warnings})
     except (ValueError,OSError,engine.MaskError) as exc:return _fail(exc)
 
 @petek_web.get('/api/petek/photo/<path:name>')
@@ -138,7 +158,7 @@ def detail(name):
              'status':'NEW','quad':[],'mask':None,'base_mask':None,
              'curve_points':{'top':[],'bottom':[]},'physical_aspect':1.1163}
         if (r.profiles/(uid+'.json')).is_file():
-            profile,mask=r.get(uid)
+            profile,mask=r.get(uid,source_override=file)
             row.update({'status':profile['status'],'quad':profile['quad'],
                 'mask':_png_data(mask),'physical_aspect':profile['physical_aspect'],
                 'curve_points':profile.get('curve_points') or {'top':[],'bottom':[]}})
@@ -179,7 +199,7 @@ def save_draft():
         r=Registry();uid,sha=_identity(r,file,body.get('uid'))
         if uid!=body.get('uid'):raise ValueError('PETEK_UID_CHANGED_RELOAD')
         if (r.profiles/(uid+'.json')).is_file():
-            previous,_=r.get(uid)
+            previous,_=r.get(uid,source_override=file)
             if previous['status']=='APPROVED':
                 raise ValueError('APPROVED_PETEK_IMMUTABLE')
         quad=engine.validated_quad(body.get('quad'),scene.shape)
@@ -222,7 +242,7 @@ def new_revision():
         body,file,scene=_request_scene()
         r=Registry()
         uid,sha=_identity(r,file,body.get('uid'))
-        old,mask=r.get(uid,require_approved=True)
+        old,mask=r.get(uid,require_approved=True,source_override=file)
         if body.get('confirmed_sha')!=sha:
             raise ValueError('PETEK_SOURCE_SHA_CONFIRM_REQUIRED')
         next_uid=''
