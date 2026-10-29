@@ -17,7 +17,7 @@ sys.path.insert(0,str(ROOT/'MERKEZ'))
 sys.path.insert(0,str(ROOT/'TESTLER'))
 from PETEK_V3 import engine as petek_engine
 from PETEK_V3.geometry_qa_v47 import inspect_print_safety
-from URETIM_V4.store_profiles_v47 import StoreProfiles,perceptual_fingerprint,near_distance
+from URETIM_V4.store_profiles_v47 import StoreProfiles
 from URETIM_V4.cloud_excel_v43 import CloudExcel,_valid_https_image_url
 from URETIM_V4.upscale4k_v44 import process
 from URETIM_V4.finish_material_v46 import GLASS,DAYLIGHT,apply_material_finish
@@ -51,21 +51,19 @@ def test_loopback_host_origin_csrf():
     assert page.index('loopback_csrf_v47.js')<page.index('main.js')
 
 
-def test_store_near_duplicate_png_jpeg_sha_different(tmp_path):
+def test_store_assignment_no_perceptual_scan_and_exact_source_isolation(tmp_path):
+    # User policy: different approved source templates may be placed in
+    # different stores without slow pHash decoding / near-duplicate checks.
     sp=StoreProfiles(tmp_path/'state')
     sp.add_store('Magaza_01');sp.add_store('Magaza_02')
-    y,x=np.mgrid[0:96,0:128]
-    img=np.stack([np.uint8(x*2),np.uint8(y*2),np.uint8((x+y)%256)],axis=2)
-    png=_write_png(tmp_path/'one.png',img)
-    jpg=tmp_path/'two.jpg'
-    jpg.write_bytes(cv2.imencode('.jpg',img,[cv2.IMWRITE_JPEG_QUALITY,98])[1].tobytes())
-    a={'category':'03_Ahsap_Tablo','uid':'one','source_sha':petek_engine.digest(png),'source':str(png)}
-    b={'category':'03_Ahsap_Tablo','uid':'two','source_sha':petek_engine.digest(jpg),'source':str(jpg)}
-    assert a['source_sha']!=b['source_sha']
-    assert near_distance(perceptual_fingerprint(a),perceptual_fingerprint(b))<=4
+    a={'category':'03_Ahsap_Tablo','uid':'one','source_sha':'a'*64,
+       'source':str(tmp_path/'not_even_opened.png')}
+    b={'category':'03_Ahsap_Tablo','uid':'two','source_sha':'b'*64,
+       'source':str(tmp_path/'not_even_opened2.jpg')}
     sp.assign('Magaza_01',[a],all_approved=[a,b])
-    with pytest.raises(ValueError,match='BENZER_MOCKUP'):
-        sp.assign('Magaza_02',[b],all_approved=[a,b])
+    sp.assign('Magaza_02',[b],all_approved=[a,b])
+    with pytest.raises(ValueError,match='başka|REUSED_ACROSS_STORES'):
+        sp.assign('Magaza_02',[a],all_approved=[a,b])
 
 
 def test_cloud_sha_local_only_and_idempotent(tmp_path,monkeypatch):
