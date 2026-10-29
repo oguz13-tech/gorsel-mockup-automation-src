@@ -8,7 +8,7 @@ ROOT=Path(__file__).resolve().parents[1]
 DIRS={'MERKEZ','SABLON_V2_MIMARI','99_SISTEM_MOTORLARI_VE_KODLAR','BAGIMSIZ_ARACLAR',
       'AI_Kalite_Artirici','scripts','TESTLER','tests','LEGACY_REFERANS_KOD'}
 EXT={'.py','.js','.cjs','.html','.css','.bat','.ps1','.txt','.md'}
-TOP={'BAKIM_V472_MAGENTA_KLASOR_DENETIM_WINDOWS.bat','BASLAT_V47_WINDOWS.bat','BASLAT_V46_WINDOWS.bat','TOPLU_URETIM_KABUL_WINDOWS.bat','KUR_REAL_ESRGAN_4K_WINDOWS.bat','KUR_REAL_ESRGAN_4K_WINDOWS.ps1'}
+TOP={'BAKIM_V472_MAGENTA_KLASOR_DENETIM_WINDOWS.bat','BASLAT_V47_WINDOWS.bat','BASLAT_V46_WINDOWS.bat','TOPLU_URETIM_KABUL_WINDOWS.bat','MAGENTA_TOPLU_GUVENLI_DEGISTIR_WINDOWS.bat','KUR_REAL_ESRGAN_4K_WINDOWS.bat','KUR_REAL_ESRGAN_4K_WINDOWS.ps1'}
 DOCS={'docs/V477_PETEK_7_CATEGORY_NATIVE.md','docs/V476_EDITOR_PORT_AND_PETEK_LAYOUT.md','docs/V475_FINAL_CODE_DELIVERY.md','docs/V473_FINAL_SAFE_HANDOFF.md','docs/V472_MAGENTA_AND_EXTERNAL_INVENTORY.md','docs/V47_P1_P2_QA_RUNBOOK.md','docs/V46_CANDIDATE_RUNBOOK.md','docs/V46_ACCEPTANCE_CURRENT.md','docs/V46_LIVE_CHECKPOINTS.md'}
 
 PINNED_PUBLIC_DATA={'MERKEZ/GUNLUK/INSTALLED_NUMBER_SPEC.json'}
@@ -52,6 +52,8 @@ def build(destination,source=ROOT):
     for required in ['BASLAT_V47_WINDOWS.bat','BASLAT_V46_WINDOWS.bat',
                      'MERKEZ/GUNLUK/INSTALLED_NUMBER_SPEC.json','MERKEZ/system_integrity_v475.py',
                      'MERKEZ/merkez.py','MERKEZ/uretim_toplu_kabul_v479.py',
+                     'MERKEZ/chroma_replace_ui_v486.py','MERKEZ/magenta_reconcile_v472.py',
+                     'MAGENTA_TOPLU_GUVENLI_DEGISTIR_WINDOWS.bat',
                      'MERKEZ/PETEK_V3/magenta_quad_v479.py','TOPLU_URETIM_KABUL_WINDOWS.bat',
                      'SABLON_V2_MIMARI/core/petek_web_v477.py',
                      'SABLON_V2_MIMARI/static/js/petek_editor_v477.js',
