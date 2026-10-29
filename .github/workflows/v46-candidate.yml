@@ -28,6 +28,8 @@ jobs:
         run: node --test tests/js/test_edge_angles_v46.cjs
       - name: PETEK auto-corner manual drag and zoom regressions
         run: node --test tests/js/test_petek_quad_drag_v481.cjs
+      - name: PETEK category refresh DOM survival regression
+        run: node --test tests/js/test_petek_sidebar_refresh_v482.cjs
       - name: PETEK browser editor JavaScript syntax
         run: node --check SABLON_V2_MIMARI/static/js/petek_editor_v477.js && node --check SABLON_V2_MIMARI/static/js/petek_quad_drag_v481.js
       - name: Build clean tracked-source ZIP
