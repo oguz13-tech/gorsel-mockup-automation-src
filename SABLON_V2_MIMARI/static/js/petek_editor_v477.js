@@ -289,7 +289,10 @@ async function previewArtwork(){
    notice('Şablon değişti; farklı fotoğrafın önizlemesi gösterilmedi.',true);return;
   }
   s.preview=await imageOf(data.preview);s.previewMode=true;draw();
-  notice('GERÇEK BASKI ÖNİZLEMESİ — aynı PETEK V3 üretim motoruyla, fotoğrafa KAYDEDİLMEDİ. Görüntüyü yakınlaştırabilirsin.');
+  const residual=Number(data.mask_qa?.protected_magenta_pixels||0);
+  notice('GERÇEK BASKI ÖNİZLEMESİ — PETEK V3 kes-yapıştır motoru; ızgara/kavis/zemin korundu. '+
+     (residual?'Maskenin DIŞINDA '+residual+' pembe kaynak pikseli korunuyor: tasarım öncesi maskeyi incele. ':'Magenta kenarlarda pembe geçiş karışımı kapalı. ')+
+     'Önizleme kaydedilmedi. 3:4 üretim tuvali ve seçili üretim efektleri son çıktıyı değiştirebilir.',residual>30);
  }catch(e){notice('Baskı önizlemesi oluşturulamadı: '+e.message,true);}
  finally{btn.disabled=false;}
 }
