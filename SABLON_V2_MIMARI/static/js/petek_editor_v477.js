@@ -192,6 +192,14 @@ async function runBulkPetek(save){
   refreshBulkCount();
  }
 }
+function petekHealth(item){
+ // Never claim approval from badge colour alone: both SHA-bound mask and
+ // registry human approval are necessary.
+ if(item.status==='REVIEW_REQUIRED'||item.backup_status==='UNSAFE'||
+    item.backup_status==='DIFFERENT'||(item.approved&&!item.mask_verified))return 'error';
+ if(item.status==='APPROVED'&&item.approved&&item.mask_verified)return 'approved';
+ return 'pending';
+}
 function listVisual(){
  const panel=$('petekV477List')||s.listHost?.querySelector('#petekV477List');
  if(!panel){notice('PETEK şablon listesi bulunamadı: HTML ve JS sürümlerini eşitle.',true);return;}
@@ -207,7 +215,8 @@ function listVisual(){
    ' yeni · ⚠️ '+summaries.REVIEW_REQUIRED+' kayıt sorunu · 🗄️ '+summaries.backup+' ham kontrol';
  for(const item of visiblePetekItems()){
    const wrap=document.createElement('div');
-   wrap.className='petek-v484-item-wrap';
+   wrap.className='petek-v484-item-wrap petek-status-'+petekHealth(item);
+   wrap.setAttribute('aria-label',item.name+' — '+(petekHealth(item)==='approved'?'Onaylı':petekHealth(item)==='error'?'Ciddi sorun, kontrol gerekli':'İnceleme bekliyor'));
    const line=document.createElement('div');
    line.className='petek-v484-line';
    const key=bulkKey(item);
@@ -221,6 +230,13 @@ function listVisual(){
      });
      line.append(input);
    }
+   const thumbnail=document.createElement('img');
+   thumbnail.className='petek-v484-thumb';thumbnail.loading='lazy';
+   thumbnail.decoding='async';thumbnail.alt=item.name+' küçük önizleme';
+   thumbnail.width=52;thumbnail.height=52;
+   thumbnail.src='/api/petek/thumbnail/'+encodeURIComponent(item.name);
+   thumbnail.addEventListener('error',()=>{thumbnail.alt='Önizleme açılamadı';thumbnail.classList.add('petek-v484-thumb-error');});
+   line.append(thumbnail);
    const button=document.createElement('button');button.type='button';button.className='petek-v477-list-item petek-v484-name';
    button.setAttribute('role','option');
    button.setAttribute('aria-selected',String(s.uid===item.uid&&s.name===item.name));
@@ -245,7 +261,7 @@ function listVisual(){
       ' / Onay: '+(item.approved?'insan onaylı':'yok');
    wrap.append(line,pictos);
    if(s.bulkSelected.has(key))wrap.classList.add('petek-v484-selected');
-   if(item.status==='REVIEW_REQUIRED'||item.backup_status==='UNSAFE')wrap.classList.add('petek-v484-warning');
+   if(petekHealth(item)==='error')wrap.classList.add('petek-v484-warning');
    panel.append(wrap);
  }
  refreshBulkCount();
