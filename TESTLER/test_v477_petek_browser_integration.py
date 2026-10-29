@@ -210,6 +210,33 @@ def test_bad_legacy_profile_does_not_hide_new_petek_photo(tmp_path,monkeypatch):
     assert data['warnings']
 
 
+def test_unified_discovery_reuses_approved_mask_with_verified_working_photo(tmp_path,monkeypatch):
+    from MERKEZ.URETIM_V4.unlimited_selection import discover_all_approved_seven_categories
+    client,photo,registry,workspace=fixture(tmp_path,monkeypatch)
+    old_lab=tmp_path/'old-lab'/'approved_petekkaynak.png'
+    old_lab.parent.mkdir(parents=True)
+    photo.rename(old_lab)
+    data=params(old_lab)
+    approved=registry.save(old_lab.stem,old_lab,data['quad'],valid_mask(),1.1163,
+                           approved=True,reviewer='Owner')
+    stored_bytes=(registry.profiles/(old_lab.stem+'.json')).read_bytes()
+    old_lab.rename(photo)
+    selected,audit=discover_all_approved_seven_categories(
+        workspace,petek_registry=registry,categories=['06_Petek_Kapama'])
+    assert len(selected)==1,audit
+    assert selected[0]['source']==str(photo.resolve())
+    assert selected[0]['mask_sha']==approved['mask_sha']
+    assert selected[0]['uid']==old_lab.stem
+    assert (registry.profiles/(old_lab.stem+'.json')).read_bytes()==stored_bytes
+    # If two working files share the SHA, do NOT choose one arbitrarily.
+    duplicate=photo.parent/'second_approved.jpg'
+    duplicate.write_bytes(photo.read_bytes())
+    selected,audit=discover_all_approved_seven_categories(
+        workspace,petek_registry=registry,categories=['06_Petek_Kapama'])
+    assert not selected
+    assert 'PETEK_ESKI_KAYNAK_ESLESMESI_GUVENSIZ' in audit['skipped'][0]['reason']
+
+
 def test_ui_category_is_inside_existing_page_with_native_operations():
     html=(ROOT/'SABLON_V2_MIMARI'/'templates'/'index.html').read_text('utf-8')
     js=(ROOT/'SABLON_V2_MIMARI'/'static'/'js'/'petek_editor_v477.js').read_text('utf-8')
