@@ -392,8 +392,8 @@ class UnifiedV4BatchWindow:
             design_count = sum(1 for _ in iter_designs(Path(design_folder)))
             if design_count == 0:
                 raise ValueError("Seçili klasörde desteklenen baskı tasarımı yok.")
-        except OSError as exc:
-            messagebox.showwarning("Tasarım Klasörü", str(exc), parent=self.window)
+        except (OSError, ValueError) as exc:
+            messagebox.showwarning("Tasarım Klasörü / Ham Numara Çakışması", str(exc), parent=self.window)
             return
         if selected_stores:
             try:
