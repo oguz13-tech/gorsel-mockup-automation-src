@@ -60,6 +60,7 @@ from .finish_v42 import GLASS, projected_rounded_alpha
 from .finish_material_v46 import apply_material_finish, DAYLIGHT, RECIPE as MATERIAL_RECIPE
 from PETEK_V3.geometry_qa_v47 import inspect_print_safety
 from .store_profiles_v47 import StoreProfiles, key_for
+from .store_identity_v485 import store_codes, design_number, filename as store_filename
 from .resume_checkpoint_v47 import (read_checkpoint, write_checkpoint,
                                     snapshot_inputs, same_inputs, SCHEMA as RESUME_SCHEMA)
 import random
@@ -673,9 +674,9 @@ class UnifiedV4Batch:
                                 lighting=lighting,
                                 corner_radius=active_corner_radius,
                                 glass_effect=glass_effect if cat in (GLASS | DAYLIGHT) else "not_applicable",
-                                recipe=(V4_RECIPE + "+" + MATERIAL_RECIPE)
+                                recipe=((V4_RECIPE + "+" + MATERIAL_RECIPE)
                                     if cat in (GLASS | DAYLIGHT) and glass_effect == "on" and lighting != "off"
-                                    else V4_RECIPE,
+                                    else V4_RECIPE) + ('+STORE_CODES_V485' if selected_stores else ''),
                             )
                         except (petek_engine.MaskError, cv2.error, OSError, ValueError, KeyError, TypeError) as exc:
                             stats["rejected"] += 1
@@ -686,8 +687,19 @@ class UnifiedV4Batch:
                             notify(f"İNCELEME GEREKİYOR [{cat}] {uid} / {art.name}: {exc}")
                             continue
                         key = full_key[:24]
-                        sku = f"{prefix}-{group}-{full_key[:18].upper()}"
-                        output = self.output / group / cat / f"{sku}_{key}.png"
+                        if selected_stores:
+                            # The filename and business identifiers are derived
+                            # from the SHARED original artwork number, never from
+                            # output hashes. Different stores use separately
+                            # assigned approved templates and unique filenames.
+                            design_id=design_number(original_art)
+                            identifiers=store_codes(design_id,group,cat)
+                            sku=identifiers['sku']
+                            output_name=store_filename(design_id,group,cat,uid)
+                        else:
+                            sku=f"{prefix}-{group}-{full_key[:18].upper()}"
+                            output_name=f"{sku}_{key}.png"
+                        output=self.output / group / cat / output_name
 
                         fields = {
                             "key": key,
