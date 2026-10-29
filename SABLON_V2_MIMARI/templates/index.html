@@ -253,6 +253,24 @@
       <input type="search" id="petekV477Search" placeholder="Şablon adına göre ara..." aria-label="PETEK şablonlarda ara">
       <button type="button" id="petekV477Reload">Listeyi Yenile</button>
       <div id="petekV477Count">—</div>
+      <div id="petekV484Summary" class="petek-v484-summary" aria-live="polite">Şablon durumları yükleniyor...</div>
+      <div class="petek-v484-legend">📁 Çalışma · 🗄️ Ham · 🎭 Maske · ✅ Onay · 📝 Taslak · ⚠️ Kontrol</div>
+      <button type="button" id="petekV484BulkMode">☑️ PETEK Toplu Seçim</button>
+      <div id="petekV484BulkPanel" class="petek-v484-bulk" hidden>
+        <div id="petekV484BulkCount">0 şablon seçildi</div>
+        <div class="petek-v484-bulk-row">
+          <button type="button" id="petekV484BulkAll">Görünenleri Seç</button>
+          <button type="button" id="petekV484BulkNew">Yalnız Yenileri Seç</button>
+          <button type="button" id="petekV484BulkDraft">Taslakları Seç</button>
+          <button type="button" id="petekV484BulkApproved">Onaylıları Seç</button>
+          <button type="button" id="petekV484BulkClear">Seçimi Temizle</button>
+        </div>
+        <button type="button" id="petekV484BulkDetect" class="petek-v484-primary">🧭 Seçilenlerde TOPLU OTOMATİK 4 KÖŞE TESPİT ET (Önizleme, kaydetmez)</button>
+        <button type="button" id="petekV484BulkSave">📝 Seçilen YENİ PETEK'lere Toplu Köşe + Maske TASLAĞI Kaydet (Onaylamaz)</button>
+        <button type="button" id="petekV484BulkStop">⏹ Taramayı Durdur (Mevcut 8 bitince)</button>
+        <button type="button" id="petekV484BulkReport">📋 Toplu İşlem Sonuçlarını Kopyala</button>
+        <pre id="petekV484BulkStatus" aria-live="polite">Hazır. En fazla 8 fotoğraf / istek, büyük seçimlerde otomatik gruplar hâlinde devam eder.</pre>
+      </div>
       <select id="petekV477Select" aria-label="PETEK mevcut şablon seçimi" hidden></select>
       <div id="petekV477List" role="listbox" aria-label="PETEK şablon listesi"></div>
     </aside>
@@ -333,9 +351,9 @@
 
 <link rel="stylesheet" href="/static/css/petek_editor_v477.css?v=482-sidebar">
 <script src="/static/js/petek_quad_drag_v481.js?v=482-sidebar"></script>
-<script src="/static/js/petek_editor_v477.js?v=483-grille"></script>
+<script src="/static/js/petek_editor_v477.js?v=484-bulk"></script>
 <script src="/static/js/edge_angles_v46.js"></script>
-<script src="/static/js/main.js?v=483-grille"></script>
+<script src="/static/js/main.js?v=484-bulk"></script>
 <script src="/static/js/review_v46.js"></script>
 
 </body>
