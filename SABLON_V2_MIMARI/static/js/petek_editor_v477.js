@@ -171,7 +171,8 @@ async function reload(preferUid){
     option.textContent=item.name+' · '+item.uid+' — '+item.status;
     selectEl.append(option);
   }
-  $('petekV477Count').textContent=data.items.length+' PETEK profil/sablon kaydı';
+  const scanned=Number(data.scanned_photos||0);
+  $('petekV477Count').textContent=data.items.length+' kayıt · '+scanned+' PETEK fotoğrafı';
   if(data.items.length){
     let preferred=preferUid
       ?Array.from(selectEl.options).find(o=>JSON.parse(o.value)[1]===preferUid)?.value
@@ -183,9 +184,13 @@ async function reload(preferUid){
     const pair=JSON.parse(selectEl.value);
     await select(pair[0],pair[1]);
   }else{
-    $('petekV477Name').textContent='Çalışma havuzunda PETEK şablonu yok.';
-    notice('Yeni görseli YENI-BOS MOCKUP SABLON HAVUZU/Petek_Dolabi klasörüne ekle. '
-          +'Ana merkezden gelenleri çalışma havuzuna al ve listeyi yenile.');
+    $('petekV477Name').textContent='PETEK kaydı görüntülenemedi.';
+    const path=String(data.working_path||'2_SABLON_HAVUZU/Petek_Dolabi');
+    const warning=(data.warnings||[]).map(w=>w.file+': '+w.error).slice(0,2).join(' | ');
+    notice(scanned?('PETEK fotoğrafları bulundu ama kayıtlar yüklenemedi: '+warning+
+                 ' · Okunan klasör: '+path):
+                 ('Bu sunucunun okuduğu PETEK klasörü boş: '+path+
+                 ' · Fotoğrafların bu klasörde olduğunu doğrula.'),true);
   }
  }catch(e){notice(e.message,true);}
 }
