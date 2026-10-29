@@ -1,4 +1,4 @@
-name: V4.7.7 Seven-category native PETEK browser editor Windows candidate
+name: V4.8.5 PETEK bulk multi-store Excel Windows candidate
 on:
   push:
     branches: [feature/v46-safe-consolidation-20261024]
