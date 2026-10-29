@@ -10,6 +10,15 @@ from review_port_owner_v478 import (
     ensure_canonical_8080,PortOwnerError,_validated_owner,_terminate_exact,
 )
 
+def test_windows_commandline_parser_works_for_quoted_and_unquoted_package_paths():
+    from review_port_owner_v478 import _SCRIPT_PATH
+    quoted='"C:\\\\Code Files\\\\python.exe" -B "C:\\\\Code Files\\\\GORSEL_V46_CANDIDATE\\\\SABLON_V2_MIMARI\\\\app.py"'
+    plain='C:\\\\Python311\\\\python.exe -B C:\\\\MOCKUP_V47\\\\SABLON_V2_MIMARI\\\\app.py'
+    assert _SCRIPT_PATH.search(quoted).group('quoted').endswith('\\\\SABLON_V2_MIMARI\\\\app.py')
+    assert _SCRIPT_PATH.search(plain).group('plain').endswith('\\\\SABLON_V2_MIMARI\\\\app.py')
+    assert _SCRIPT_PATH.search('C:\\\\Windows\\\\python.exe -m http.server 8080') is None
+
+
 def test_port_8080_free_never_queries_or_kills_anything():
     calls=[]
     r=ensure_canonical_8080(occupied=lambda:False,
