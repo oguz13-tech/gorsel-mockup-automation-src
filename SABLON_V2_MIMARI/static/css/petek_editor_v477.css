@@ -14,12 +14,27 @@
 .petek-v477-selectrow select{flex:1;min-width:180px;background:#141d29;color:white;border:1px solid #5b6678;
   padding:10px;border-radius:6px;}
 .petek-v477-workspace{display:flex;flex:1;min-height:0;overflow:hidden;}
+.petek-v477-list-pane{width:238px;flex:none;min-width:175px;background:#232c3a;border-right:1px solid #596778;display:flex;flex-direction:column;gap:9px;padding:12px;box-sizing:border-box;min-height:0;}
+.petek-v477-list-pane strong{font-size:14px;}
+.petek-v477-list-pane input{padding:8px;background:#111c2a;color:#f1f5f9;border:1px solid #64748b;border-radius:5px;width:100%;box-sizing:border-box;}
+.petek-v477-list-pane button{white-space:normal;}
+#petekV477Count{color:#bcd0e2;font-size:11px;line-height:1.4;overflow-wrap:anywhere;}
+#petekV477List{flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;display:flex;flex-direction:column;gap:4px;}
+#petekV477List .petek-v477-list-item{width:100%;text-align:left;overflow-wrap:anywhere;cursor:pointer;min-height:40px;padding:9px 8px;background:#3b4657;border:1px solid #4f6177;color:#eaf1fa;font-size:12px;border-radius:4px;}
+#petekV477List .petek-v477-list-item.selected{background:#13628b;border-color:#50c0ec;}
+.petek-v477-viewport-bar{display:flex;align-items:center;gap:5px;padding:6px 9px;background:#263446;flex-wrap:wrap;}
+.petek-v477-viewport-bar button{font-size:12px;padding:7px;}
+.petek-v477-viewport-bar input{width:85px;max-width:18vw;}
+#petekV477ZoomLabel{font-size:12px;white-space:nowrap;}
+.petek-v477-tools input[type=file]{color:#e4eefb;max-width:100%;font-size:12px;}
+.petek-v477-tools a{color:#9cdeff;font-size:12px;line-height:1.5;}
+
 .petek-v477-stage{flex:1;min-width:230px;display:flex;flex-direction:column;overflow:hidden;}
 #petekV477Name{padding:12px 16px;color:#f1f8ff;font-weight:650;overflow-wrap:anywhere;}
-#petekV477Drawing{display:flex;align-items:center;justify-content:center;flex:1;min-height:140px;
-  overflow:hidden;background:#0c1016;position:relative;}
+#petekV477Drawing{display:flex;align-items:safe center;justify-content:safe center;flex:1;min-height:140px;
+  overflow:auto;background:#0c1016;position:relative;}
 #petekV477Canvas{position:relative!important;top:auto!important;left:auto!important;
-  border:1px solid #526179;cursor:crosshair;touch-action:none;max-width:calc(100% - 30px);max-height:calc(100% - 25px);}
+  border:1px solid #526179;cursor:crosshair;touch-action:none;flex:none;margin:auto;max-width:none;max-height:none;}
 .petek-v477-notice{padding:12px 16px;background:#18253a;border-top:1px solid #3d526f;
   min-height:38px;font-size:13px;line-height:1.45;overflow-wrap:anywhere;}
 .petek-v477-legend{padding:8px 16px;font-size:12px;color:#9bc8b7;}
@@ -41,6 +56,7 @@
 .petek-v477-tools button:disabled{opacity:.45;cursor:not-allowed;}
 @media(max-width:1050px){
   .petek-v477-workspace{flex-direction:column;overflow:auto;}
+  .petek-v477-list-pane{width:100%;min-width:0;max-height:26vh;border-right:0;border-bottom:1px solid #536176;}
   .petek-v477-stage{min-height:380px;flex:0 0 52vh;}
   .petek-v477-tools{width:100%;max-width:none;flex:1;overflow:visible;border-left:none;
     border-top:1px solid #536176;}
