@@ -185,6 +185,12 @@ class HamDesignVault:
                 if _sha(original)!=row['sha']:
                     alerts.append({'type':'HAM_REGISTERED_BYTES_CHANGED',
                                    'file':str(original),'number':row['number']})
+                else:
+                    # Last-write timestamp may change without changing pixels;
+                    # keep authoritative SHA and refresh stat to avoid rehashing.
+                    st=original.stat()
+                    db.execute('UPDATE history SET size=?,mtime_ns=? WHERE number=?',
+                               (st.st_size,st.st_mtime_ns,row['number']))
         return alerts
 
     def _next_number(self, db, occupied: set[int]) -> int:
@@ -248,16 +254,55 @@ class HamDesignVault:
             with self._connection() as db:
                 result['warnings']+=self._recover(db)
                 all_files=list(self._files())
+                for current,dirs,files in os.walk(self.folder,followlinks=False):
+                    here=Path(current)
+                    for name in dirs+files:
+                        candidate=here/name
+                        if candidate.is_symlink():
+                            result['warnings'].append(
+                                {'type':'HAM_SYMLINK_BLOCKED','file':str(candidate)})
+                    for name in files:
+                        candidate=here/name
+                        if candidate.suffix.lower() in SUSPECT:
+                            result['warnings'].append(
+                                {'type':'HAM_UNSUPPORTED_IMAGE_FORMAT',
+                                 'file':str(candidate)})
                 result['warnings']+=self._check_existing(all_files,db)
-                if result['warnings']:
+                # Deleted source is a permanent tombstone, not a global pause:
+                # keep the number reserved and warn while other imports proceed.
+                blocking={'HAM_NUMBER_EXTENSION_COLLISION',
+                          'HAM_REGISTERED_BYTES_CHANGED',
+                          'HAM_INTERRUPTED_DUPLICATE_REVIEW',
+                          'HAM_INTERRUPTED_MISSING_SOURCE'}
+                if any(w['type'] in blocking for w in result['warnings']):
                     result['high']=db.execute('SELECT high FROM meta WHERE id=1').fetchone()[0]
-                    return result # No bulk modification amid ambiguous records.
+                    return result # Existing identity ambiguity needs human review.
                 tracked={x['path'] for x in db.execute("SELECT path FROM history WHERE status='ACTIVE'")}
                 occupied={n for f in all_files if (n:=_number(f)) is not None}
                 old_sha={x['sha'] for x in db.execute("SELECT sha FROM history WHERE status='ACTIVE'")}
+                # Same apparent raw name with different codec must not silently
+                # become two independent HAM IDs, even across nested folders.
+                import unicodedata
+                fresh=[f for f in all_files
+                       if str(f.relative_to(self.folder)) not in tracked]
+                by_stem={}
+                for f in fresh:
+                    key=unicodedata.normalize('NFC',f.stem).casefold()
+                    by_stem.setdefault(key,[]).append(f)
+                ambiguous={f for group in by_stem.values()
+                           if len({q.suffix.lower() for q in group})>1
+                           for f in group}
+                for duplicate in sorted(ambiguous):
+                    result['warnings'].append({
+                      'type':'HAM_SAME_NAME_DIFFERENT_EXTENSION',
+                      'file':str(duplicate),
+                      'others':[str(q) for q in by_stem[
+                          unicodedata.normalize('NFC',duplicate.stem).casefold()]
+                          if q!=duplicate]})
                 for file in all_files:
                     rel=str(file.relative_to(self.folder))
                     if rel in tracked:continue
+                    if file in ambiguous:continue
                     if not _safe_path(file,self.folder):
                         result['warnings'].append({'type':'HAM_UNSAFE_INPUT','file':str(file)})
                         continue
