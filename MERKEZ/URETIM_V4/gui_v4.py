@@ -99,7 +99,8 @@ class UnifiedV4BatchWindow:
 
         row = ttk.Frame(area)
         row.pack(fill="x", pady=8)
-        self.design_folder = tk.StringVar()
+        default_ham=(self.runtime_root/'HAM BASKI TASARIMLARI') if self.runtime_root else None
+        self.design_folder = tk.StringVar(value=str(default_ham) if default_ham and default_ham.is_dir() else '')
         ttk.Entry(row, textvariable=self.design_folder).pack(side="left", fill="x", expand=True)
         ttk.Button(row, text="2. Baskı Tasarımları Klasörünü Seç", command=self.browse).pack(side="left", padx=6)
 
@@ -382,6 +383,11 @@ class UnifiedV4BatchWindow:
             return
 
         try:
+            if self.runtime_root:
+                ham_root=(self.runtime_root/'HAM BASKI TASARIMLARI').resolve(strict=False)
+                if Path(design_folder).resolve()==ham_root:
+                    from ..ham_designs_v487 import HamDesignVault
+                    HamDesignVault(self.runtime_root).validate_for_production()
             design_count = sum(1 for _ in iter_designs(Path(design_folder)))
             if design_count == 0:
                 raise ValueError("Seçili klasörde desteklenen baskı tasarımı yok.")
