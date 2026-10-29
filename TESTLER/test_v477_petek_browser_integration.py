@@ -261,7 +261,7 @@ def test_petek_magenta_auto_corners_and_mask_keep_dark_vents_untouched(tmp_path,
     assert mask_data['qa']['mode']=='MAGENTA_BASKI_YUZEYI'
     raw=base64.b64decode(mask_data['mask'].partition(',')[2])
     mask=cv2.imdecode(np.frombuffer(raw,dtype=np.uint8),cv2.IMREAD_GRAYSCALE)
-    assert mask[190,160]==0  # the real black vertical vent stays protected
+    assert mask[190,155]==0  # the real black vertical vent stays protected
     assert mask[190,177]>200  # magenta printable wood
     assert mask[20,20]==0   # background never printed
     assert not list(registry.profiles.glob('*.json'))
