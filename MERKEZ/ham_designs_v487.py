@@ -356,15 +356,20 @@ class HamDesignVault:
 
     def validate_for_production(self):
         report=self.audit()
-        if report['issues'] or report['unregistered']:
+        # Deleted identities are deliberate permanent tombstones; don't block
+        # the other designs from production, but NEVER recycle their numbers.
+        severe=[issue for issue in report['issues']
+                if issue['type']!='HAM_REGISTERED_FILE_MISSING']
+        if severe or report['unregistered']:
             raise ValueError('HAM_BASKI_TASARIMLARI_ONCE_KONTROL: '+
-                json.dumps({'issues':report['issues'][:4],
+                json.dumps({'issues':severe[:4],
                             'unregistered':report['unregistered'][:4]},ensure_ascii=False))
         # Validate active bytes before a production snapshot; no expensive
         # visual hash/pHash scan and no output image comparison.
         with self._connection() as db:
             for row in db.execute("SELECT path,sha FROM history WHERE status='ACTIVE'"):
                 file=self.folder/row['path']
+                if not file.exists():continue # historical reserved, never reused
                 if _sha(file)!=row['sha']:
                     raise ValueError('HAM_DESIGN_SHA_MISMATCH: '+row['path'])
         return report
