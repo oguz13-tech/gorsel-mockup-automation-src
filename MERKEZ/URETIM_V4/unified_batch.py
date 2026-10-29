@@ -741,8 +741,18 @@ class UnifiedV4Batch:
                                 raise petek_engine.MaskError("Orijinal şablon üretim öncesi değiştirildi.")
 
                             if item["engine_type"] == "PETEK_V3_CUTOUT":
+                                # Match the REAL preview settings. A 1.4px
+                                # inner feather blends the original MAGENTA
+                                # source back into every thin vent lip and
+                                # leaves pink streaks in the final artwork.
+                                # Only high-confidence magenta source scenes
+                                # use a hard edge. Vent/core/floor pixels
+                                # remain untouched by the immutable mask.
+                                from PETEK_V3.grille_guard_v482 import recommended_edge_feather
+                                source_scene=petek_engine.read_bgr(source_path)
+                                grille_edge_px=recommended_edge_feather(source_scene,item["quad"])
                                 picture, _, _ = render_with_cutout_paste(
-                                    source_path,
+                                    source_scene,
                                     render_art,
                                     item["quad"],
                                     mask,
@@ -750,6 +760,7 @@ class UnifiedV4Batch:
                                     marketplace=False,
                                     placement=placement,
                                     lighting=lighting,
+                                    edge_feather_px=grille_edge_px,
                                 )
                                 if lighting != "off" and glass_effect == "on":
                                     raw_scene = petek_engine.read_bgr(source_path)
