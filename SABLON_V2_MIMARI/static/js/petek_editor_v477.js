@@ -11,7 +11,8 @@ const s={
   width:0,height:0,scale:1,quad:[],curves:{top:[],bottom:[]},
   img:null,mask:null,base:null,mode:'corners',painting:false,
   dragCorner:-1,dragChanged:false,dirty:false,needsCurveApply:false,
-  fitScale:1,zoom:1,preview:null,previewMode:false,entries:[],spaceHeld:false,panning:false,undoStack:[],listHost:null
+  fitScale:1,zoom:1,preview:null,previewMode:false,entries:[],spaceHeld:false,panning:false,undoStack:[],listHost:null,
+  bulkMode:false,bulkSelected:new Set(),bulkActive:false,bulkStop:false,bulkRows:[],bulkReport:[]
 };
 const names={corners:'Dört köşe',wood:'Baskı ahşabını boya',protect:'Delik / yan yüzü koru',top:'Üst kavis',bottom:'Alt kavis'};
 function notice(message,bad=false){
@@ -96,26 +97,160 @@ function chooseRelative(delta){
  if(s.dirty&&!confirm('Kaydedilmemiş PETEK taslağını bırakıp sonraki şablona geçilsin mi?'))return;
  select(target.name,target.uid);
 }
+function bulkKey(item){return JSON.stringify([item.name,item.uid,item.source_sha]);}
+function visiblePetekItems(){
+ const q=$('petekV477Search').value.trim().toLocaleLowerCase('tr');
+ return s.entries.filter(x=>!q||x.name.toLocaleLowerCase('tr').includes(q)||x.uid.toLocaleLowerCase('tr').includes(q));
+}
+function refreshBulkCount(){
+ $('petekV484BulkCount').textContent=s.bulkSelected.size+' PETEK şablonu seçildi';
+ const selectedCount=s.bulkSelected.size;
+ $('petekV484BulkDetect').disabled=!selectedCount||s.bulkActive;
+ $('petekV484BulkSave').disabled=!selectedCount||s.bulkActive;
+ $('petekV484BulkStop').disabled=!s.bulkActive;
+ $('petekV484BulkMode').disabled=s.bulkActive;
+}
+function showBulkReport(){
+ const full=s.bulkReport.join('\n');
+ if(!full){notice('Önce PETEK toplu işlem çalıştır.',true);return;}
+ if(navigator.clipboard?.writeText){
+    navigator.clipboard.writeText(full).then(()=>notice('PETEK toplu işlem raporu kopyalandı.'),
+      ()=>prompt('PETEK raporunu kopyala:',full));
+ }else prompt('PETEK raporunu kopyala:',full);
+}
+function selectBulk(filter){
+ if(s.bulkActive)return;
+ const list=visiblePetekItems();
+ if(filter==='clear')s.bulkSelected.clear();
+ else for(const item of list){
+   if(filter==='visible'||(filter==='new'&&item.status==='NEW')||
+      (filter==='draft'&&item.status==='DRAFT')||
+      (filter==='approved'&&item.status==='APPROVED'))s.bulkSelected.add(bulkKey(item));
+ }
+ listVisual();
+}
+async function runBulkPetek(save){
+ if(s.bulkActive)return;
+ const selected=s.entries.filter(item=>s.bulkSelected.has(bulkKey(item))&&
+                       (save?item.status==='NEW':item.status!=='APPROVED'));
+ const excluded=s.bulkSelected.size-selected.length;
+ if(!selected.length){notice('İşlenecek PETEK yok. Taslak tarama: NEW/DRAFT; taslak kaydetme: yalnız NEW.',true);return;}
+ if(s.dirty){notice('Açık PETEK üzerinde kaydedilmemiş değişiklikler var; önce kaydet veya geri al.',true);return;}
+ if(save&&!confirm(selected.length+' YENİ PETEK için yalnız KÖŞE+MASKE TASLAĞI kaydedilecek. İnsan onayı VERİLMEYECEK. Eski onaylı maskeler korunacak. Devam?'))return;
+ s.bulkActive=true;s.bulkStop=false;s.bulkRows=[];s.bulkReport=[
+   'PETEK TOPLU '+(save?'YENİ TASLAK KAYDETME':'OTOMATİK 4 KÖŞE TESPİT')+
+   ' | '+new Date().toLocaleString('tr-TR'),
+   'Seçilen: '+selected.length+', işlem dışı onaylı/mevcut: '+excluded];
+ const status=$('petekV484BulkStatus');
+ let done=0,ok=0,fail=0;
+ refreshBulkCount();
+ try{
+  // Eight per request: UI stays responsive and operator can STOP after a
+  // complete chunk. Large 127-photo batches never fill browser with images.
+  for(let i=0;i<selected.length;i+=8){
+   if(s.bulkStop)break;
+   const chunk=selected.slice(i,i+8).map(item=>({
+      name:item.name,uid:item.uid,source_sha:item.source_sha}));
+   status.textContent='PETEK Toplu '+(save?'taslak kaydı':'4 köşe tespiti')+
+        '\nİşlenen: '+done+'/'+selected.length+' | Başarılı: '+ok+' | Kontrol: '+fail+
+        '\nSekizli grup: '+(Math.floor(i/8)+1);
+   const path=save?'/api/petek/bulk-save-new-drafts':'/api/petek/bulk-propose';
+   try{
+    const payload=await api(path,{items:chunk,...(save?{confirm:'CREATE_NEW_DRAFTS_ONLY_NO_APPROVAL'}:{})});
+    for(const result of (save?payload.drafts:payload.proposals)||[]){
+      ok++;s.bulkRows.push({...result,ok:true});
+      s.bulkReport.push('OK | '+result.name+' | '+result.uid+
+        ' | 4 köşe '+(result.method||'AUTO')+
+        ' | kapsama '+result.coverage+' | '+(save?'DRAFT':'ÖNERİ, KAYDEDİLMEDİ'));
+    }
+    for(const problem of payload.failed||[]){
+      fail++;s.bulkRows.push({...problem,ok:false});
+      s.bulkReport.push('KONTROL | '+problem.name+' | '+problem.uid+' | '+problem.error);
+    }
+   }catch(error){
+    for(const item of chunk){
+      fail++;s.bulkRows.push({name:item.name,uid:item.uid,error:error.message,ok:false});
+      s.bulkReport.push('KONTROL | '+item.name+' | '+item.uid+' | '+error.message);
+    }
+   }
+   done+=chunk.length;
+  }
+  const final='PETEK Toplu işlem '+(s.bulkStop?'OPERATÖR DURDURDU':'BİTTİ')+
+      ' · '+done+'/'+selected.length+' incelendi · '+ok+' başarılı · '+fail+' kontrol gerekiyor'+
+      (excluded?' · '+excluded+' korunan/kapsam dışı':'')+
+      '\n'+(save?'Oluşturulanlar DRAFT; insan onayı verilmedi.':'Yalnız öneri; hiçbir maske veya köşe kaydedilmedi.')+
+      '\nİlk sorunlar: '+s.bulkRows.filter(x=>!x.ok).slice(0,6).map(x=>x.name+' — '+x.error).join(' | ');
+  status.textContent=final;
+  s.bulkReport.push(final);
+  if(save){
+    s.bulkSelected.clear();
+    await reload(s.uid); // Source SHA and onay counts rechecked after writes.
+  }else listVisual();
+  notice(final,fail>0);
+ }finally{
+  s.bulkActive=false;
+  refreshBulkCount();
+ }
+}
 function listVisual(){
  const panel=$('petekV477List')||s.listHost?.querySelector('#petekV477List');
  if(!panel){notice('PETEK şablon listesi bulunamadı: HTML ve JS sürümlerini eşitle.',true);return;}
  panel.replaceChildren();
- const word=$('petekV477Search').value.trim().toLocaleLowerCase('tr');
- for(const item of s.entries){
-  if(word&&!item.name.toLocaleLowerCase('tr').includes(word)&&!item.uid.toLocaleLowerCase('tr').includes(word))continue;
-  const b=document.createElement('button');b.type='button';b.className='petek-v477-list-item';
-  b.setAttribute('role','option');b.setAttribute('aria-selected',String(s.uid===item.uid&&s.name===item.name));
-  b.textContent=item.name+' — '+item.status;
-  b.title=item.name+' · '+item.uid+' · '+item.status;
-  if(s.name===item.name&&s.uid===item.uid)b.classList.add('selected');
-  b.addEventListener('click',()=>{
-   if(s.name===item.name&&s.uid===item.uid)return;
-   if(s.dirty&&!confirm('Kaydedilmemiş değişiklikleri bırakarak farklı PETEK şablonu açılsın mı?'))return;
-   select(item.name,item.uid);
-  });
-  panel.append(b);
+ const summaries=s.entries.reduce((acc,item)=>{
+   acc[item.status]=(acc[item.status]||0)+1;
+   if(item.backup_status!=='MATCH')acc.backup++;
+   if(item.status==='REVIEW_REQUIRED')acc.problem++;
+   return acc;
+ },{NEW:0,DRAFT:0,APPROVED:0,REVIEW_REQUIRED:0,backup:0,problem:0});
+ $('petekV484Summary').textContent='✅ '+summaries.APPROVED+
+   ' onaylı · 📝 '+summaries.DRAFT+' taslak · '+summaries.NEW+
+   ' yeni · ⚠️ '+summaries.REVIEW_REQUIRED+' kayıt sorunu · 🗄️ '+summaries.backup+' ham kontrol';
+ for(const item of visiblePetekItems()){
+   const wrap=document.createElement('div');
+   wrap.className='petek-v484-item-wrap';
+   const line=document.createElement('div');
+   line.className='petek-v484-line';
+   const key=bulkKey(item);
+   if(s.bulkMode){
+     const input=document.createElement('input');input.type='checkbox';input.className='petek-v484-check';
+     input.checked=s.bulkSelected.has(key);
+     input.setAttribute('aria-label','Toplu PETEK seç: '+item.name);
+     input.addEventListener('change',()=>{if(s.bulkActive){input.checked=!input.checked;return;}
+       if(input.checked)s.bulkSelected.add(key);else s.bulkSelected.delete(key);
+       refreshBulkCount();
+     });
+     line.append(input);
+   }
+   const button=document.createElement('button');button.type='button';button.className='petek-v477-list-item petek-v484-name';
+   button.setAttribute('role','option');
+   button.setAttribute('aria-selected',String(s.uid===item.uid&&s.name===item.name));
+   button.textContent=item.name+' — '+item.status;
+   button.title=item.name+' · '+item.uid+' · '+item.status;
+   if(s.name===item.name&&s.uid===item.uid)button.classList.add('selected');
+   button.addEventListener('click',()=>{
+     if(s.bulkActive){notice('PETEK toplu tarama sürüyor; bitince şablon değiştir.',true);return;}
+     if(s.name===item.name&&s.uid===item.uid)return;
+     if(s.dirty&&!confirm('Kaydedilmemiş değişiklikleri bırakarak farklı PETEK şablonu açılsın mı?'))return;
+     select(item.name,item.uid);
+   });
+   line.append(button);
+   const pictos=document.createElement('span');pictos.className='petek-v484-pictos';
+   pictos.textContent='📁'+(item.working_ok?'✅':'⚠️')+
+      ' 🗄️'+(item.backup_status==='MATCH'?'✅':'⚠️')+
+      ' 🎭'+(item.mask_verified?'✅':'📝')+
+      ' ✅'+(item.approved?'✅':'–');
+   pictos.title='Çalışma: '+(item.working_ok?'OK':'KONTROL')+
+      ' / Ham: '+String(item.backup_status||'BİLİNMİYOR')+
+      ' / Maske: '+(item.mask_verified?'doğrulandı':'yeni/taslak veya kontrol')+
+      ' / Onay: '+(item.approved?'insan onaylı':'yok');
+   wrap.append(line,pictos);
+   if(s.bulkSelected.has(key))wrap.classList.add('petek-v484-selected');
+   if(item.status==='REVIEW_REQUIRED'||item.backup_status==='UNSAFE')wrap.classList.add('petek-v484-warning');
+   panel.append(wrap);
  }
+ refreshBulkCount();
 }
+
 function draw(){
  const canvas=$('petekV477Canvas');if(!canvas||!s.img)return;
  let ctx=canvas.getContext('2d'),w=canvas.width,h=canvas.height,k=s.scale;
@@ -473,6 +608,7 @@ function start(){
 }
 function exit(){
  if(!s.active)return;
+ if(s.bulkActive){notice('PETEK toplu tarama sürüyor. Önce taramayı durdur.',true);return;}
  if(s.dirty&&!confirm('Kaydedilmemiş PETEK taslağın var. Kaydetmeden çıkılsın mı?'))return;
  s.active=false;
  restoreListHost();
@@ -489,6 +625,24 @@ function init(){
    reload();
  });
  $('petekV477Search').addEventListener('input',listVisual);
+ $('petekV484BulkMode').addEventListener('click',()=>{
+   if(s.bulkActive)return;
+   s.bulkMode=!s.bulkMode;
+   $('petekV484BulkPanel').hidden=!s.bulkMode;
+   $('petekV484BulkMode').textContent=s.bulkMode?'✅ PETEK Toplu Seçim Açık':'☑️ PETEK Toplu Seçim';
+   if(!s.bulkMode)s.bulkSelected.clear();
+   listVisual();
+ });
+ for(const [id,filter] of [['petekV484BulkAll','visible'],['petekV484BulkNew','new'],
+   ['petekV484BulkDraft','draft'],['petekV484BulkApproved','approved'],
+   ['petekV484BulkClear','clear']]){
+   $(id).addEventListener('click',()=>selectBulk(filter));
+ }
+ $('petekV484BulkDetect').addEventListener('click',()=>runBulkPetek(false));
+ $('petekV484BulkSave').addEventListener('click',()=>runBulkPetek(true));
+ $('petekV484BulkStop').addEventListener('click',()=>{s.bulkStop=true;
+   $('petekV484BulkStatus').textContent='Durdurma istendi. İçinde bulunulan sekizli grup bitecek.';});
+ $('petekV484BulkReport').addEventListener('click',showBulkReport);
  $('petekV477Prev').addEventListener('click',()=>chooseRelative(-1));
  $('petekV477Next').addEventListener('click',()=>chooseRelative(1));
  $('petekV477ZoomIn').addEventListener('click',()=>setZoom(s.zoom+.2));
@@ -533,6 +687,8 @@ function init(){
    // Reclicking PETEK itself must not trigger discard/close/reopen.
    if(event.target.closest('#petekV477Nav')||event.target.closest('#petekV477ListPane'))return;
    if(!s.active)return;
+   if(s.bulkActive){notice('PETEK toplu tarama sürüyor. Önce durdur.',true);
+      event.preventDefault();event.stopPropagation();return;}
    if(s.dirty&&!confirm('PETEK taslağında kaydedilmemiş değişiklikler var. Altı kategoriye dönüp bunları kaybetmek istiyor musun?')){
      event.preventDefault();event.stopPropagation();return;
    }
