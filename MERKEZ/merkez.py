@@ -250,10 +250,10 @@ class Center:
         """Keep rarely used maintenance actions available without crowding the UI."""
         if self.advanced_panel.winfo_manager():
             self.advanced_panel.pack_forget()
-            self.advanced_toggle.configure(text='▶ GELİŞMİŞ ARAÇLAR / DENETİM / KURTARMA')
+            self.advanced_toggle.configure(text='▶ Diğer Araçlar ve Kurtarma')
         else:
             self.advanced_panel.pack(fill='x',pady=(2,8),after=self.advanced_toggle)
-            self.advanced_toggle.configure(text='▼ GELİŞMİŞ ARAÇLAR / DENETİM / KURTARMA')
+            self.advanced_toggle.configure(text='▼ Diğer Araçlar ve Kurtarma')
 
     def show_ham_design_audit(self):
         try:
@@ -290,6 +290,9 @@ class Center:
                 self.runtime,notify=lambda message:self.messages.put(('log',message)),interval=3.0)
             self.ham_design_watcher.start()
             report=self.ham_design_watcher.vault.audit()
+            if hasattr(self,'ham_home_status'):
+                self.ham_home_status.set('Otomatik izleme aktif · Son numara: '+str(report['high'])+
+                    ' · Kontrol: '+str(len(report['issues'])+len(report['unregistered'])))
             self._log('HAM BASKI TASARIMLARI otomatik takip aktif. Son numara: '+
                       str(report['high'])+'; klasör: '+report['path'])
             for issue in report['issues'][:6]:
