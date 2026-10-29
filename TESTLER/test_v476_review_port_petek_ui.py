@@ -65,13 +65,17 @@ def test_authenticated_editor_identity_is_strictly_bound_to_selected_port(tmp_pa
     assert blocked['reason']=='IDENTITY_TOKEN_MISMATCH'
 
 
-def test_center_never_force_kills_unknown_8080_listener():
+def test_center_canonical_8080_uses_verified_reclaim_and_correct_browser_url():
     source=inspect.getsource(merkez.Center._open_legacy)
-    assert 'choose_review_port' in source
+    poll=inspect.getsource(merkez.Center.poll)
+    assert 'ensure_canonical_8080' in source
+    assert 'editor_port=8080' in source
     assert 'MOCKUP_PORT' in source
     assert 'port=editor_port' in source
-    assert 'stop_old_server_if_same' not in source
+    assert 'choose_review_port()' not in source
     assert 'taskkill' not in source
+    assert "webbrowser.open(f'http://127.0.0.1:{self.editor_port}'+value)" in poll
+    assert "webbrowser.open('http://127.0.0.1:8080'+value)" not in poll
 
 
 def test_user_petek_friendly_inbox_is_separate_from_working_and_archive(tmp_path):
