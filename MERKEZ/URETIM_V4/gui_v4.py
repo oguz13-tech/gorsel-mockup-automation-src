@@ -203,7 +203,7 @@ class UnifiedV4BatchWindow:
         self.cloud_button = ttk.Button(remote, text="☁ Mevcut Çıktıları HTTPS Linke Çevir + Excel'e Yaz",
                                        command=self.start_cloud_links)
         self.cloud_button.pack(side="left", padx=3)
-        ttk.Button(remote, text="Pazaryeri Excel Şablonuna Aktar", command=self.export_marketplace_template).pack(side="left", padx=5)
+        ttk.Button(remote, text="Mağaza Bazlı Trendyol Excel Oluştur", command=self.export_marketplace_template).pack(side="left", padx=5)
         ttk.Label(remote, text="Ayrı onay ister; ImgBB/FreeImage'a internetten erişilebilen görseller yükler. Pazaryerine ilan yüklemez.",
                   wraplength=570).pack(side="left", padx=7)
         ttk.Label(area, text=(
@@ -671,28 +671,60 @@ class UnifiedV4BatchWindow:
             messagebox.showerror("Özet Hatası", str(exc), parent=self.window)
 
     def export_marketplace_template(self) -> None:
+        """One existing marketplace template -> distinct store-specific workbooks."""
         if self.worker and self.worker.is_alive():
-            messagebox.showwarning("Çalışan İş Var", "Üretim/bağlantı işlemi bitmeden Excel şablonu aktarılmaz.", parent=self.window)
+            messagebox.showwarning("Çalışan İş Var","Önce üretim/linkleme bitsin.",parent=self.window)
             return
-        template = filedialog.askopenfilename(parent=self.window, title="Pazaryerinden alınmış BOŞ XLSX ürün şablonunu seçin",
-                                              filetypes=[("Excel XLSX", "*.xlsx")])
-        if not template:
-            return
-        if not messagebox.askyesno("Yeni Excel Oluştur", "Boş şablonun orijinali korunacak. Yalnız SHA doğrulanmış ve "
-                                    "HTTPS bağlantısı hazır ürünlerin SKU/Görsel 1 alanları aktarılacak. "
-                                    "Barkod, SEO ve pazaryeri zorunlu alanları uydurulmayacak. Devam edilsin mi?",
-                                    parent=self.window):
-            return
+        template=filedialog.askopenfilename(parent=self.window,
+            title="BOŞ Trendyol XLSX ürün yükleme şablonunu seç",
+            filetypes=[("Excel XLSX","*.xlsx")])
+        if not template:return
         try:
-            from .marketplace_excel_v45 import export_from_template
-            result = export_from_template(Path(template), self.batch_engine.root,
-                                          self.batch_engine.ledger.successful(),
-                                          report_root=self.batch_engine.reports)
-            messagebox.showinfo("Pazaryeri Excel Hazır", f"{result['rows']} ürün: {result['output']}\n"
-                               "Barkod, kategori ve diğer zorunlu alanları yüklemeden önce kontrol edin.", parent=self.window)
-            self._log("Pazaryeri şablon kopyası: " + result['output'])
-        except (ValueError, OSError, RuntimeError) as exc:
-            messagebox.showerror("Pazaryeri Excel Aktarım Hatası", str(exc), parent=self.window)
+            profiles=StoreProfiles(self.batch_engine.root).load()["stores"]
+            selected=[self.store_mapping[int(i)] for i in self.store_list.curselection()
+                      if int(i)<len(self.store_mapping)]
+            if not selected and profiles:
+                if not messagebox.askyesno("Mağaza Excel Seçimi",
+                    "Mağaza seçilmedi. Tanımlı tüm mağazalar için ayrı Excel denensin mi?",
+                    parent=self.window):return
+                selected=sorted(profiles)
+            if selected:
+                if not messagebox.askyesno("MAĞAZA EXCEL",
+                    "Seçilen her mağaza için ayrı ürün yükleme dosyası oluşturulacak.\n"
+                    "Stok/barkod: 18472-WifiKutusu-M5; model: 18472-M5-WifiKutusu.\n"
+                    "Görsel bağlantıları aynı ürünün ilgili görsel sütunlarında olacak.\n"
+                    "Eski Excel korunacak. Yalnız doğrulanmış HTTPS linkleri kullanılacak. Devam?",
+                    parent=self.window):return
+                from .store_excel_v485 import export_store_upload
+                done=[];failed=[]
+                for name in selected:
+                    try:
+                        x=export_store_upload(Path(template),self.batch_engine.root,
+                                              store_id=name,report_root=self.batch_engine.reports)
+                        done.append(x)
+                        self._log("MAĞAZA XLSX: "+str(x["output"]))
+                    except (ValueError,OSError,RuntimeError) as exc:
+                        failed.append(name+": "+str(exc))
+                msg="\n".join(x["store"]+": "+str(x["rows"])+" ürün, "+
+                               str(x["images"])+" görsel\n"+x["output"] for x in done)
+                if failed:msg+="\n\nKontrol gereken mağazalar:\n"+"\n".join(failed)
+                if done:
+                    messagebox.showinfo("Mağaza Excel Hazır",
+                        msg+"\n\nFiyat, ürün açıklaması, GTIN ve diğer pazar yeri alanlarını kontrol edin.",
+                        parent=self.window)
+                else:
+                    messagebox.showwarning("Excel Henüz Hazır Değil",
+                        msg or "Önce doğrulanmış mağaza HTTPS linkleri gerekiyor.",parent=self.window)
+            else:
+                if not messagebox.askyesno("Eski LOCAL Excel",
+                    "Mağaza profili yok. Önceki LOCAL şablon aktarımı kullanılsın mı?",
+                    parent=self.window):return
+                from .marketplace_excel_v45 import export_from_template
+                result=export_from_template(Path(template),self.batch_engine.root,
+                    self.batch_engine.ledger.successful(),report_root=self.batch_engine.reports)
+                messagebox.showinfo("LOCAL Excel",str(result["output"]),parent=self.window)
+        except (ValueError,OSError,RuntimeError) as exc:
+            messagebox.showerror("Pazaryeri Excel Hatası",str(exc),parent=self.window)
 
     def stop(self) -> None:
         if self.worker and self.worker.is_alive() and self._worker_kind == 'render':
