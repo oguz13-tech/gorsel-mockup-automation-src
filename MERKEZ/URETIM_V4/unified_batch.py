@@ -653,7 +653,8 @@ class UnifiedV4Batch:
                         # are verified; preserve the failure in batch QA instead.
                         try:
                             if item["engine_type"] == "PETEK_V3_CUTOUT":
-                                profile, mask = self.petek_registry.get(uid, require_approved=True)
+                                profile, mask = self.petek_registry.get(
+                                    uid, require_approved=True, source_override=source_path)
                                 mask_sha = profile["mask_sha"]
                             else:
                                 scene_for_mask = petek_engine.read_bgr(source_path)
