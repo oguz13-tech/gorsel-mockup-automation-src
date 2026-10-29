@@ -26,8 +26,10 @@ jobs:
         run: python -m pytest -q TESTLER/test_v46_workspace_identity.py TESTLER/test_v46_inbox_identity.py TESTLER/test_v46_petek_folders_and_user_deleted.py TESTLER/test_v47_material_store_random.py TESTLER/test_v47_pause_stop_resume.py TESTLER/test_v47_audit_integrity.py TESTLER/test_v47_p1_p2_acceptance.py TESTLER/test_v472_magenta_external_reconciliation.py TESTLER/test_v473_runtime_relocation.py TESTLER/test_v474_deleted_receipts.py TESTLER/test_v475_system_integrity.py TESTLER/test_v475_package_completeness.py TESTLER/test_v476_review_port_petek_ui.py TESTLER/test_v477_petek_browser_integration.py TESTLER/test_v478_port_owner.py TESTLER/test_v479_grouped_windows_acceptance.py TESTLER/test_v480_petek_workspace_tools.py TESTLER/test_v46_review_layout.py TESTLER/test_v46_chroma_detector.py TESTLER/test_v46_chroma_batch.py TESTLER/test_v46_chroma_render.py TESTLER/test_v46_optional_4k.py TESTLER/test_v46_package.py TESTLER/test_v40_unified_seven_category.py TESTLER/test_v45_final_closure.py --junitxml=test-results.xml
       - name: Canvas angle regression
         run: node --test tests/js/test_edge_angles_v46.cjs
+      - name: PETEK auto-corner manual drag and zoom regressions
+        run: node --test tests/js/test_petek_quad_drag_v481.cjs
       - name: PETEK browser editor JavaScript syntax
-        run: node --check SABLON_V2_MIMARI/static/js/petek_editor_v477.js
+        run: node --check SABLON_V2_MIMARI/static/js/petek_editor_v477.js && node --check SABLON_V2_MIMARI/static/js/petek_quad_drag_v481.js
       - name: Build clean tracked-source ZIP
         run: python scripts/build_v46_candidate.py --output dist
       - name: Extract candidate into independent directory
