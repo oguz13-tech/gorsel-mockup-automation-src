@@ -114,6 +114,8 @@ class Center:
         mt=ttk.Frame(self.advanced_panel);mt.pack(fill='x',pady=3)
         ttk.Button(mt,text='Magenta / Eski Sürüm Güvenli Dosya Denetimi',
                    command=self.open_consolidation).pack(side='left',fill='x',expand=True,padx=3)
+        ttk.Button(mt,text='MAGENTA LAB → Eşleştir / Güvenli Değiştir / Yeniden Onay',
+                   command=self.open_magenta_replace_v486).pack(side='left',fill='x',expand=True,padx=3)
         r7=ttk.Frame(self.advanced_panel);r7.pack(fill='x',pady=3)
         ttk.Button(r7,text='G3 Salt-Okunur Veri / SHA Denetimi',command=self.g3_audit).pack(side='left',fill='x',expand=True,padx=3)
         ttk.Button(r7,text='G3 Onaylı İki DB Yedeği + Geri Yükleme Provası',command=self.g3_backup).pack(side='left',fill='x',expand=True,padx=3)
@@ -132,6 +134,18 @@ class Center:
         ttk.Label(p,text='Koruma: kaynak görüntüler, orijinal yedek ve onaylı profiller kendiliğinden değiştirilmez.\n'
                     'Tek güncel seri üretim yolu 7 Kategoridir; şablonlar üretim öncesi onay ve SHA kontrolünden geçer.',
                   foreground=MUTED,wraplength=920).pack(anchor='w',pady=(7,0))
+
+    def open_magenta_replace_v486(self):
+        """Separate preview-first tool; NEVER apply photos without typed consent."""
+        try:
+            tool=ROOT/'MAGENTA_TOPLU_GUVENLI_DEGISTIR_WINDOWS.bat'
+            if os.name!='nt' or not tool.is_file():
+                raise RuntimeError('MAGENTA_WINDOWS_TOOL_NOT_FOUND')
+            os.startfile(str(tool))
+            self._log('Magenta LAB ayrı güvenli aktarım aracı başlatıldı. '+
+                      'Rapor ve yan yana önizlemeyi görmeden dosyalar değişmez.')
+        except (OSError,RuntimeError) as exc:
+            messagebox.showerror('Magenta aracı açılamadı',str(exc),parent=self.root)
 
     def open_consolidation(self):
         """Independent utility; editor or batch must be stopped before APPLY."""
