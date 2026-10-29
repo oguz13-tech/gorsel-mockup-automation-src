@@ -70,7 +70,8 @@ def test_petek_sidebar_zoom_preview_review_defaults_are_in_same_editor():
     assert "'/api/petek/preview-artwork'" in js
     assert "previewMode" in js and "function setZoom(" in js
     assert "listVisual" in js and "petekV477List" in js
-    assert "petekV477Nav').after(list)" in js
+    assert "nav.after(list)" in js
+    assert "const list=$('petekV477ListPane')||s.listHost" in js
     assert "function restoreListHost()" in js
     assert 'id="petekV477ListPane"' in html
     assert 'id="petekV477Undo"' in html
