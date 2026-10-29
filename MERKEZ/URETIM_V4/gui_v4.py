@@ -386,7 +386,7 @@ class UnifiedV4BatchWindow:
             if self.runtime_root:
                 ham_root=(self.runtime_root/'HAM BASKI TASARIMLARI').resolve(strict=False)
                 if Path(design_folder).resolve()==ham_root:
-                    from ..ham_designs_v487 import HamDesignVault
+                    from ham_designs_v487 import HamDesignVault
                     HamDesignVault(self.runtime_root).validate_for_production()
             design_count = sum(1 for _ in iter_designs(Path(design_folder)))
             if design_count == 0:
