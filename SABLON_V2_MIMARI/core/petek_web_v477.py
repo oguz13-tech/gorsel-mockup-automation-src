@@ -11,6 +11,7 @@ import cv2
 import numpy as np
 from flask import Blueprint,current_app,jsonify,request,send_file
 from MERKEZ.PETEK_V3 import engine,curves
+from MERKEZ.PETEK_V3.magenta_quad_v479 import detect_magenta_quad
 from MERKEZ.PETEK_V3.registry import Registry
 from MERKEZ.petek_folders_v46 import petek_directory
 
@@ -103,6 +104,7 @@ def list_templates():
         profiles={}
         for row in registry.list():
             profiles.setdefault(row['source_sha'],[]).append(row)
+        history=registry.list()
         if folder.is_dir():
             for file in sorted(folder.iterdir(),key=lambda x:x.name.casefold()):
                 if file.is_symlink() or not file.is_file() or file.suffix.lower() not in SUFFIXES:
@@ -136,7 +138,12 @@ def list_templates():
         return jsonify({'success':True,'category':'06_Petek_Kapama','items':items,
                         'folder':'2_SABLON_HAVUZU/Petek_Dolabi',
                         'working_path':str(folder),'runtime_root':str(current_app.config['PETEK_WORKSPACE_V477']),
-                        'scanned_photos':seen,'warnings':warnings})
+                        'scanned_photos':seen,'warnings':warnings,
+                        'registry_profiles_total':len(history),
+                        'registry_approved_total':sum(row['status']=='APPROVED' for row in history),
+                        'matched_approved_records':sum(item['status']=='APPROVED' for item in items),
+                        'unmatched_approved_records':sum(row['status']=='APPROVED' and
+                             not any(item['uid']==row['uid'] for item in items) for row in history)})
     except (ValueError,OSError,engine.MaskError) as exc:return _fail(exc)
 
 @petek_web.get('/api/petek/photo/<path:name>')
@@ -170,6 +177,26 @@ def detail(name):
                 row['base_mask']=_png_data(base)
         return jsonify(row)
     except (ValueError,OSError,engine.MaskError) as exc:return _fail(exc)
+
+@petek_web.post('/api/petek/auto-corners')
+def auto_corners():
+    """Compute a source-SHA-bound PETEK MAGENTA four-corner suggestion only.
+
+    Never write geometry or mask and never edit an APPROVED profile.
+    """
+    try:
+        body,file,scene=_request_scene()
+        uid,sha=_identity(Registry(),file,body.get('uid'))
+        if uid!=body.get('uid'):
+            raise ValueError('PETEK_UID_CHANGED_RELOAD')
+        registered=Registry()
+        if (registered.profiles/(uid+'.json')).is_file():
+            previous,_=registered.get(uid,source_override=file)
+            if previous['status']=='APPROVED':
+                raise ValueError('APPROVED_PETEK_IMMUTABLE')
+        proposal=detect_magenta_quad(scene)
+        return jsonify({'success':True,'uid':uid,'source_sha':sha,**proposal})
+    except (ValueError,OSError,TypeError,KeyError,engine.MaskError) as exc:return _fail(exc)
 
 @petek_web.post('/api/petek/auto-mask')
 def auto_mask():
