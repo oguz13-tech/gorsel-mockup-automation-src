@@ -256,7 +256,8 @@ def server_identity_diagnostic(runtime, code, pid, token, opener=None, *, timeou
                         'actual_path': str(Path(actual).resolve())}
         return {'ready': True, 'reason': ('MATCHED_WIN_VENV_REDIRECTOR'
                                            if redirector_child_match and not direct_pid_match
-                                           else 'MATCHED')}
+                                           else 'MATCHED'),
+                'actual_pid': observed_pid, 'actual_parent_pid': parent_pid}
     except Exception as exc:
         # Distinguish transient timeout/connect failures from bad identities.
         import urllib.error
