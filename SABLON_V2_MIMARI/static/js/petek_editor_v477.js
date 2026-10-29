@@ -10,7 +10,7 @@ const s={
   active:false,photo:null,name:'',uid:'',sha:'',status:'NEW',
   width:0,height:0,scale:1,quad:[],curves:{top:[],bottom:[]},
   img:null,mask:null,base:null,mode:'corners',painting:false,
-  dragCorner:-1,dirty:false,needsCurveApply:false,
+  dragCorner:-1,dragChanged:false,dirty:false,needsCurveApply:false,
   fitScale:1,zoom:1,preview:null,previewMode:false,entries:[],spaceHeld:false,panning:false,undoStack:[]
 };
 const names={corners:'Dört köşe',wood:'Baskı ahşabını boya',protect:'Delik / yan yüzü koru',top:'Üst kavis',bottom:'Alt kavis'};
@@ -174,16 +174,22 @@ function paintAt(event,first){
  if(s.base){s.needsCurveApply=true;notice('Temel maske değişti. Kaydetmeden önce «Kavisleri Uygula» seç.');}
  draw();
 }
+function resetCorners(){
+ if(!editingAllowed()||!s.img)return;
+ if(!confirm('PETEK TASLAĞINDAKİ 4 köşe, maske ve kavisler temizlenecek. Önceki kayıtlı/onaylı maskeler korunur. Baştan seçilsin mi?'))return;
+ snapshot();s.quad=[];s.curves={top:[],bottom:[]};s.base=null;s.mask=blank();
+ s.previewMode=false;s.preview=null;s.dirty=true;s.needsCurveApply=false;
+ s.mode='corners';$('petekV477Mode').textContent='Mod: '+names[s.mode];
+ draw();notice('4 köşeyi sol üstten başlayıp yeniden işaretle. Ctrl+Z ile geri alabilirsin.');
+}
 function setMode(mode){
  if(!editingAllowed())return;
  if(!s.img){notice('Önce PETEK şablonu seç.',true);return;}
- if(mode==='corners'&&s.quad.length===4){
-    if(!confirm('4 köşe yeniden işaretlenecek. Bu TASLAĞIN maskesi ve kavisleri sıfırlanacak. Onaylı kayıtlar değişmeyecek.'))return;
-    snapshot();s.quad=[];s.curves={top:[],bottom:[]};s.base=null;s.mask=blank();s.dirty=true;
- }
+ // Switching to corner mode must NEVER discard an auto-detected quad.
+ // Drag a red handle; use explicit Reset only when starting from scratch.
  s.mode=mode;
  $('petekV477Mode').textContent='Mod: '+names[mode];
- notice(mode==='corners'?'Köşeleri sol üst, sağ üst, sağ alt, sol alt sırasıyla işaretle.':
+ notice(mode==='corners'?(s.quad.length===4?'Dört köşe hazır. Kırmızı noktayı fareyle sürükle; zoom + Ctrl+Z kullanılabilir.':'Köşeleri sol üst, sağ üst, sağ alt, sol alt sırasıyla işaretle.'):
        mode==='wood'?'Yeşil boyanacak ön ahşabı boya. Dikey yarıklara ve zemine taşırma.':
        mode==='protect'?'Siyah koruma fırçası: delikler, gölgeler, üst/alt kavis ve yan yüz.':
        'Kavis uçları yan kenarlara ulaşmalı. Noktaları soldan sağa işaretle.');
@@ -391,9 +397,16 @@ function pointerDown(e){
  if(!editingAllowed())return;
  e.preventDefault();const p=point(e);
  if(s.mode==='corners'){
-   if(s.quad.length>=4)return;
+   if(s.quad.length===4){
+     const idx=window.PetekQuadDragV481.closest(s.quad,p,s.scale);
+     if(idx<0){notice('Kırmızı köşe noktasını tutup sürükle veya yakınlaştır. Dört köşe korunuyor.',true);return;}
+     s.dragCorner=idx;s.dragChanged=false;
+     try{$('petekV477Canvas').setPointerCapture(e.pointerId);}catch(_ignored){}
+     notice('Köşe '+(idx+1)+' seçildi; hassas düzeltme için sürükle.');
+     return;
+   }
    snapshot();s.quad.push(p);s.dirty=true;draw();
-   notice('Köşeler: '+s.quad.length+'/4'+(s.quad.length===4?' · Şimdi Taslak Maske oluştur.':''));
+   notice('Köşeler: '+s.quad.length+'/4'+(s.quad.length===4?' · Noktaları şimdi sürükleyerek düzeltebilirsin.':''));
  }else if(s.mode==='wood'||s.mode==='protect'){
    if(s.quad.length!==4){notice('Önce dört köşe gerekir.',true);return;}
    s.painting=true;paintAt(e,true);
@@ -408,9 +421,30 @@ function pointerMove(e){
    area.scrollLeft=s.scrollStart[0]-(e.clientX-s.panStart[0]);
    area.scrollTop=s.scrollStart[1]-(e.clientY-s.panStart[1]);return;
  }
+ if(s.dragCorner>=0){
+   e.preventDefault();
+   if(s.status==='APPROVED')return;
+   const candidate=window.PetekQuadDragV481.moved(s.quad,s.dragCorner,point(e),s.width,s.height);
+   if(!candidate){notice('Köşe taşınmadı: dört köşe dışbükey ve fotoğraf sınırları içinde kalmalı.',true);return;}
+   const idx=s.dragCorner;
+   if(Math.hypot(candidate[idx][0]-s.quad[idx][0],candidate[idx][1]-s.quad[idx][1])<.2)return;
+   if(!s.dragChanged){
+     snapshot();
+     // The existing draft mask belongs to the OLD quad. Never reuse a mask
+     // after a geometry edit; request a fresh preview before approval.
+     s.mask=blank();s.base=null;s.curves={top:[],bottom:[]};s.needsCurveApply=false;
+     s.preview=null;s.previewMode=false;s.dragChanged=true;
+   }
+   s.quad=candidate;s.dirty=true;draw();
+   notice('Köşe '+(idx+1)+' elle düzeltildi. Maske/kavis taslağı temizlendi; Otomatik Maske Taslağı ile yenile. Ctrl+Z geri alır.');
+   return;
+ }
  if(!s.painting)return;e.preventDefault();paintAt(e,false);
 }
-function pointerUp(){s.panning=false;s.painting=false;s.lastPoint=null;}
+function pointerUp(e){
+ if(s.dragCorner>=0&&e){try{$('petekV477Canvas').releasePointerCapture(e.pointerId);}catch(_ignored){}}
+ s.dragCorner=-1;s.dragChanged=false;s.panning=false;s.painting=false;s.lastPoint=null;
+}
 function restoreListHost(){
  const list=$('petekV477ListPane'),workspace=$('petekV477Workspace');
  if(list&&workspace&&list.parentElement!==workspace)workspace.prepend(list);
@@ -458,6 +492,7 @@ function init(){
  $('petekV477Preview').addEventListener('click',previewArtwork);
  $('petekV477Original').addEventListener('click',backToOriginal);
  $('petekV477Reset').addEventListener('click',resetUncommitted);
+ $('petekV477ResetCorners').addEventListener('click',resetCorners);
  $('petekV477Undo').addEventListener('click',undoLast);
  document.addEventListener('keydown',e=>{
    if(!s.active||!e.ctrlKey||e.key.toLowerCase()!=='z')return;
@@ -481,6 +516,7 @@ function init(){
  $('petekV477Canvas').addEventListener('pointermove',pointerMove);
  $('petekV477Canvas').addEventListener('pointerup',pointerUp);
  $('petekV477Canvas').addEventListener('pointercancel',pointerUp);
+ $('petekV477Canvas').addEventListener('lostpointercapture',pointerUp);
  document.querySelector('#categories').addEventListener('click',event=>{
    // Reclicking PETEK itself must not trigger discard/close/reopen.
    if(event.target.closest('#petekV477Nav')||event.target.closest('#petekV477ListPane'))return;
