@@ -9,6 +9,7 @@ accidentally imported duplicate source files and verifies atomic copy.
 """
 from __future__ import annotations
 from collections import Counter
+from contextlib import contextmanager
 import hashlib
 import json
 import os
@@ -100,12 +101,22 @@ class HamDesignVault:
         self.lock=threading.RLock()
         self._init_db()
 
+    @contextmanager
     def _connection(self):
+        # sqlite3.Connection.__exit__ commits but DOES NOT close Windows file
+        # handles. Explicit close prevents locked DBs and OneDrive interlocks.
         conn=sqlite3.connect(self.db,timeout=20)
-        conn.row_factory=sqlite3.Row
-        conn.execute('PRAGMA busy_timeout=20000')
-        conn.execute('PRAGMA synchronous=FULL')
-        return conn
+        try:
+            conn.row_factory=sqlite3.Row
+            conn.execute('PRAGMA busy_timeout=20000')
+            conn.execute('PRAGMA synchronous=FULL')
+            yield conn
+            conn.commit()
+        except BaseException:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
 
     def _files(self):
         # Path.rglob silently follows some junctions; avoid via os.walk and
