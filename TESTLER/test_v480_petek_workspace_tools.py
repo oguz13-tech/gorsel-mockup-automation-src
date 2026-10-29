@@ -70,6 +70,9 @@ def test_petek_sidebar_zoom_preview_review_defaults_are_in_same_editor():
     assert "'/api/petek/preview-artwork'" in js
     assert "previewMode" in js and "function setZoom(" in js
     assert "listVisual" in js and "petekV477List" in js
+    assert 'id="petekV477Undo"' in html
+    assert 'function snapshot()' in js and 'async function undoLast()' in js
+    assert "addEventListener('click',undoLast)" in js
     assert "overflow:auto;" in css
 
 
