@@ -205,3 +205,17 @@ def test_all_seven_category_product_engine_refuses_duplicate_extensions(tmp_path
         assert_unique_print_names(list(iter_designs(tmp_path)))
     b.rename(b.with_name('Ham302.png'))
     assert_unique_print_names(list(iter_designs(tmp_path)))
+
+def test_same_source_stem_other_extension_later_is_warned_not_second_number(tmp_path):
+    root,v=vault(tmp_path);ham=root/FOLDER
+    pic(ham/'Koleksiyon'/'summer.jpg','red')
+    stable(v)
+    assert (ham/'Koleksiyon'/'Ham1.jpg').is_file()
+    # Image was already renamed; its historical source name remains recorded.
+    pic(ham/'Different'/'summer.png','green')
+    result=stable(v)
+    assert any(x['type']=='HAM_HISTORIC_NAME_OTHER_EXTENSION'
+               for x in result['warnings'])
+    assert not result['renamed']
+    assert (ham/'Different'/'summer.png').exists()
+    assert result['high']==1
