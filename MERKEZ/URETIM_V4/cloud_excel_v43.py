@@ -22,6 +22,7 @@ from urllib.parse import urlparse
 import requests
 from openpyxl import Workbook, load_workbook
 from PETEK_V3 import engine as petek_engine
+from .store_identity_v485 import store_codes,design_number
 
 REMOTE_HEADERS = [
     "Stok Kodu", "Barkod", "Model Kodu", "Kategori", "Ham Baskı Dosyası",
@@ -184,12 +185,30 @@ class CloudExcel:
                 counters["uploaded"] += 1
                 notify(f"HTTPS link oluşturuldu: {row['sku']}")
             csv_out, xlsx_out, count = self.export(successful_rows)
-            return {**counters, "linked": count, "xlsx": str(xlsx_out), "csv": str(csv_out),
+            return {**counters, "linked": count,
+                    "xlsx": str(xlsx_out) if xlsx_out else "",
+                    "csv": str(csv_out) if csv_out else "",
                     "status": "PARTIAL" if counters["failed"] else ("STOPPED" if stop and stop.is_set() else "LINKS_READY")}
         finally:
             lock.unlink(missing_ok=True)
 
     def export(self, rows):
+        # Store-coded pictures are destined for each store's real marketplace
+        # product-upload template, not an EXTRA generic CSV/XLSX report.
+        # Keep legacy LOCAL export behavior unchanged for historical users.
+        legacy=[];store_linked=0
+        for row in rows:
+            try:
+                parts=Path(row['output']).resolve().relative_to((self.root/'uretilen_gorseller').resolve()).parts
+                store=parts[0] if len(parts)>=3 else 'LOCAL'
+                expected=store_codes(design_number(row['art_name']),store,row['category'])['sku'] if store!='LOCAL' else None
+            except (ValueError,KeyError,IndexError,TypeError):expected=None
+            if expected and expected==row.get('sku'):
+                if self._url_for(row):store_linked+=1
+            else:legacy.append(row)
+        if not legacy:
+            return None,None,store_linked
+        rows=legacy
         selected = []
         for row in rows:
             url = self._url_for(row)
