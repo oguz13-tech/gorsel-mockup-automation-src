@@ -12,6 +12,8 @@ import numpy as np
 from flask import Blueprint,current_app,jsonify,request,send_file
 from MERKEZ.PETEK_V3 import engine,curves
 from MERKEZ.PETEK_V3.magenta_quad_v479 import detect_magenta_quad
+from MERKEZ.PETEK_V3.cutout_paste import render_with_cutout_paste
+from MERKEZ.PETEK_V3.grille_guard_v482 import recommended_edge_feather,magenta_residue_report
 from MERKEZ.PETEK_V3.registry import Registry
 from MERKEZ.petek_folders_v46 import petek_directory
 
@@ -204,8 +206,14 @@ def preview_artwork():
         quad=engine.validated_quad(body.get('quad'),scene.shape)
         mask=_decode(body.get('mask'),scene.shape)
         ratio=float(body.get('physical_aspect',1.1163))
-        result,qa=engine.render(scene,art,quad,mask,ratio,marketplace=False,
-                                 lighting='natural',placement='cover')
+        # Use the EXACT same PETEK cutout renderer and edge rule as new batch
+        # production. The web preview is source-resolution; marketplace may
+        # later place it on a 1200x1600 canvas or enable optical finish.
+        edge_px=recommended_edge_feather(scene,quad)
+        result,_,qa=render_with_cutout_paste(scene,art,quad,mask,ratio,
+            marketplace=False,lighting='natural',placement='cover',
+            edge_feather_px=edge_px)
+        fringe=magenta_residue_report(scene,quad,mask)
         # The physical print protects all source pixels outside the mask.
         if not np.array_equal(result[mask==0],scene[mask==0]):
             raise ValueError('PETEK_PREVIEW_PROTECTED_PIXELS_CHANGED')
@@ -215,7 +223,10 @@ def preview_artwork():
                         base64.b64encode(png.tobytes()).decode('ascii'),
                         'source_sha':engine.digest(file),'uid':body['uid'],
                         'unsaved':True,'protected_pixels_unchanged':True,
-                        'mask_qa':{'printable_fraction':qa['printable_fraction']}})
+                        'mask_qa':{'printable_fraction':qa['printable_fraction'],
+                            'edge_feather_px':edge_px,
+                            'protected_magenta_pixels':fringe['protected_magenta_pixels'],
+                            'vent_and_curve_pixels_untouched':True}})
     except (ValueError,OSError,TypeError,KeyError,OverflowError,engine.MaskError) as exc:return _fail(exc)
 
 @petek_web.post('/api/petek/auto-corners')
