@@ -35,6 +35,10 @@ class Center:
         self.build()
         from help_v42 import bind_help
         bind_help(self.root)
+        # PETEK is a first-class physical category in the selected runtime.
+        # Create-only bootstrap precedes the auto-inbox watcher; no images,
+        # masks, approvals or SQLite records are migrated by this step.
+        self.root.after(0,self.ensure_petek_workspace)
         self.root.after(400,self.start_auto_inbox)
         self.root.protocol('WM_DELETE_WINDOW',self.close)
         self.root.after(180,self.poll)
@@ -217,8 +221,10 @@ class Center:
         try:
             self.runtime=store_runtime_choice(Path(chosen))
             self.runtime_text.set(str(self.runtime))
+            petek_ready = self.ensure_petek_workspace()
             self.start_auto_inbox()
-            self.status.set('Ana çalışma klasörü seçildi, yeni görseller otomatik izleniyor.')
+            self.status.set('Ana çalışma klasörü seçildi; PETEK klasörleri '+
+                            ('doğrulandı.' if petek_ready else 'engeli için işlem günlüğünü kontrol edin.'))
         except Exception as exc:messagebox.showerror('Klasör geçerli değil',str(exc),parent=self.root)
 
     def open_runtime(self):
@@ -348,6 +354,29 @@ class Center:
                  '7 kategori şablon/maske inceleme arayüzü yukarıdan ayrıca açılabilir.',parent=self.root)
             return
         self.start([sys.executable,'-B',str(HERE/'GUNLUK'/'run.py')],'Altı kategori günlük V2')
+
+    def ensure_petek_workspace(self):
+        """Safe, idempotent PETEK folder bootstrap in the selected data root.
+
+        Creates only missing directories in the three existing work sections.
+        Old approved photos, DB, masks and registry stay untouched. A populated
+        legacy alias is reported, never silently renamed, merged or deleted.
+        """
+        try:
+            from petek_folders_v46 import prepare_petek_folders
+            prepared = prepare_petek_folders(self.runtime)
+            if prepared['created']:
+                self._log('PETEK kategori klasörleri güvenle oluşturuldu (yalnız boş klasör):\\n'+
+                          '\\n'.join(prepared['created']))
+            aliases = [p for p in prepared['paths'].values()
+                       if Path(p).name != 'Petek_Dolabi']
+            if aliases:
+                self._log('PETEK ESKİ KLASÖR ADI KULLANIMDA; dosya taşınmadı: '+
+                          '; '.join(aliases))
+            return prepared
+        except (OSError, ValueError) as exc:
+            self._log('PETEK KLASÖRÜ OTOMATİK HAZIRLANAMADI (eski veriler korunuyor): '+str(exc))
+            return None
 
     def prepare_petek_folders(self):
         try:
