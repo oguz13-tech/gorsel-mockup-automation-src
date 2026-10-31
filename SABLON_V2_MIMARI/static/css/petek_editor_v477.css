@@ -159,3 +159,16 @@
 .petek-v498-review-actions{display:flex;gap:15px;flex-wrap:wrap;align-items:center;margin-top:12px}
 .petek-v498-review-actions input{background:#0a1224;color:#fff;border:1px solid #7979aa;padding:7px}
 #petekV498ReviewStatus{white-space:pre-wrap;max-height:170px;overflow:auto;color:#a3f4ce}
+
+/* PETEK VNext: visible actual brush diameter, unaffected by canvas zoom/scroll. */
+#petekV477BrushCursor{
+ position:fixed;pointer-events:none;z-index:2147481000;
+ border:2px solid #ffffff;box-sizing:border-box;
+ border-radius:50%;transform:translate(-50%,-50%);
+ outline:1px solid #111827;box-shadow:0 0 0 2px rgba(8,15,31,.65),inset 0 0 0 1px rgba(0,0,0,.5);
+ background:rgba(255,255,255,.10);
+}
+#petekV477BrushCursor[hidden]{display:none!important;}
+#petekV477BrushCursor:after{content:'';position:absolute;left:50%;top:50%;width:3px;height:3px;
+ transform:translate(-50%,-50%);border-radius:50%;background:#121212;box-shadow:0 0 0 1px white;}
+#petekV477BrushSize{font-size:12px;color:#e5e7eb;margin-top:3px;display:inline-block;}
