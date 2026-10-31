@@ -13,10 +13,26 @@ import tkinter as tk
 from tkinter import ttk, messagebox, filedialog, scrolledtext
 
 DB_NAME = 'personel_merkez_v493.sqlite3'
-CURRENT_VERSION = 'V4.10.1'
+CURRENT_VERSION = 'V4.10.2'
 
 # Stable IDs: adding a new release never re-opens a completed item unless ID changes.
 ACCEPTANCE = [
+('V4102-PETEK-APPROVAL-LATENCY','PETEK maske onayı: tam liste taraması olmadan hızlı geri bildirim','Kritik',
+ '1. PETEK açıkken yüzlerce şablon içinden TASLAK maskeli bir örnek seç.\n'
+ '2. Son maske kontrolünden sonra onay kutusu ve “Maskeyi İnsan Onayıyla Kilitle” düğmesine bas.\n'
+ '3. Tek şablonun onayı bitince aynı fotoğraf ve maske ekranda kalmalı, tüm 127+ fotoğraf tekrar yüklenmemeli.\n'
+ '4. Ekranda saniye bilgisi ve ONAYLI durumu görülmeli; Listeyi Yenile düğmesine basınca kaynak/maske SHA tekrar doğrulanmalı.\n'
+ '5. Başka fotoğrafın UID veya kaynak SHA değişikliğiyle onay yapılamadığını doğrula.',
+ 'Onaydan sonra yalnızca ilgili şablonun durumu güncellenir; SHA/maske güvenlik kapıları korunur. İşlem süresi canlı Windows üzerinde ölçülür.',
+ 'Onaydan önce ve sonra ekran görüntüsü, geçen süre, varsa hata ve üretim dosyalarının sağlamlığını paylaş.'),
+('V4102-MODERN-ANTHRACITE-UI','Şablon İnceleme / Araçlar: modern antrasit kart, hover ve okunurluk','Arayüz',
+ '1. Şablon İnceleme ve Profesyonel Araçlar ekranlarını aç.\n'
+ '2. Sol menü, sekmeler, kartlar, PETEK kompakt ve fotoğraflı listeyi kontrol et.\n'
+ '3. Yeni mavi, Onaylı yeşil, Taslak sarı, Hatalı kırmızı renkleri bozulmamalı.\n'
+ '4. Fare ile hover, devre dışı kontrol ve klavye TAB odağı okunabilir olmalı.\n'
+ '5. Başka kategorilerdeki dört köşe ve toplu seçim işlevleri eskisi gibi çalışmalı.',
+ 'Arayüzde kontrastlı antrasit renk ve tutarlı butonlar görünür; veri veya maskeye yan etki yok.',
+ 'Ekran görüntüleri, düşük çözünürlük sorunları ve bozuk metinleri paylaş.'),
 ('V4101-PETEK-BULK-VISIBLE-NAMES','PETEK toplu seçimde adlar, kompakt liste ve tiksiz tek onay','Kritik',
  '1. PETEK listesini aç ve Toplu Seçim modunu etkinleştir.\n2. Sarı taslak, yeşil onaylı, mavi yeni ve kırmızı hatalı dosya adlarını doğrula.\n3. Her bir dosya adının yanında seçim kutusu normal boyutta kalmalı.\n4. Hiçbir satıra tik koymadan tüm uygun taslakları TEK ONAYLA.\n5. Eski 8-li tekrar onay penceresi açılmamalı.',
  'Dosya adları kaybolmaz; bir onay tüm görünür uygun maskeleri güvenli olarak sunucuda doğrular; yanlışlar taslak kalır.',

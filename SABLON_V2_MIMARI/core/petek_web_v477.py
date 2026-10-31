@@ -8,6 +8,7 @@ import base64
 import re
 from pathlib import Path
 from functools import lru_cache
+from time import perf_counter
 import cv2
 import numpy as np
 from flask import Blueprint,current_app,jsonify,request,send_file
@@ -485,11 +486,22 @@ def save_draft():
 
 @petek_web.post('/api/petek/approve')
 def approve():
+    started=perf_counter()
     try:
-        body,file,scene=_request_scene()
-        r=Registry();uid,sha=_identity(r,file,body.get('uid'))
-        if uid!=body.get('uid') or sha!=body.get('confirmed_sha'):
+        # Fast identity preflight: approval never uses source pixels to paint,
+        # so do not decode the same large photo before Registry.approve.
+        body=request.get_json(silent=True)
+        if not isinstance(body,dict):raise ValueError('PETEK_JSON_REQUIRED')
+        file=_photo(body.get('name'))
+        uid=body.get('uid')
+        if not isinstance(uid,str) or not re.fullmatch('[A-Za-z0-9_-]{1,96}',uid):
+            raise ValueError('PETEK_SELECTED_UID_INVALID')
+        sha=engine.digest(file)
+        if sha!=body.get('source_sha') or sha!=body.get('confirmed_sha'):
             raise ValueError('PETEK_UID_OR_SHA_CHANGED_RELOAD')
+        r=Registry()
+        # This rechecks the real photo and SHA-bound immutable mask under the
+        # exact UID. No profile-list shortcut can approve a wrong source.
         p=r.approve(uid,str(body.get('reviewer') or ''),str(body.get('confirm') or ''),source_override=file)
         changed=None
         if body.get('activate_revision') is True:
@@ -497,8 +509,11 @@ def approve():
             if not parent:raise ValueError('PETEK_REVISION_PARENT_REQUIRED')
             changed=r.activate_revision(parent,uid,
                   str(body.get('activate_confirm') or ''),source_override=file)
+        duration_ms=round((perf_counter()-started)*1000,1)
+        current_app.logger.info('PETEK_MASK_APPROVED uid=%s server_ms=%s',uid,duration_ms)
         return jsonify({'success':True,'uid':uid,'status':p['status'],
-                        'mask_sha':p['mask_sha'],'active_revision':changed})
+                        'mask_sha':p['mask_sha'],'active_revision':changed,
+                        'approval_server_ms':duration_ms})
     except (ValueError,OSError,TypeError,KeyError,engine.MaskError) as exc:return _fail(exc)
 
 # V4.9.8: manually inspected eight-at-a-time draft approval.
