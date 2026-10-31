@@ -142,51 +142,44 @@ def _trace_one(center: float, contrast: np.ndarray, rect_mask: np.ndarray,
     visible=(contrast_line>threshold) if has_source else np.zeros(h,bool)
     # Direct source evidence controls the physical ends whenever observable.
     # The approved mask is a fallback, not a reason to extend a source slot.
+    # Trust the original photo for visible physical endpoints. Its 1-D
+    # black-hat support is preferred when continuous; use approved mask only
+    # when source contrast is insufficient. The reviewed mask may include
+    # broad top/bottom recesses beyond the real narrow opening.
     present=visible if np.count_nonzero(visible)>h*.15 else mask_lines
     present[:int(h*.085)]=False
     present[int(h*.93):]=False
     span=_longest_run(present)
     if span is None or span[1]-span[0]<h*.22:return None
     y0,y1=span
-    # Fitting is local, never move a vent across its measured neighbour.
-    track=[];widths=[]
+    # Physical radiator vents are STRAIGHT in the rectified product plane.
+    # Previous polyline fitting tracked scenery texture and created visibly
+    # bent/torn strokes. Never follow arbitrary per-row black-hat maxima.
+    # The x-coordinate is the source/mask *measured* center; y endpoints and
+    # median width are constrained to actual dark-opening evidence.
+    widths=[]
     for y in range(y0,y1+1,14):
-        xx0=max(0,x-11);xx1=min(w,x+12)
-        source_patch=contrast[max(0,y-3):min(h,y+4),xx0:xx1]
-        local=source_patch.mean(axis=0)
-        src_ok=bool(has_source and local.size and local.max()>max(7.,threshold*.80))
-        if src_ok:
-            peak_x=xx0+int(np.argmax(local))
-            peak=float(local.max())
-            area=np.flatnonzero(local>=max(7.,peak*.40))
-            near=area[np.abs(area-(peak_x-xx0))<=7]
-            width=float(max(3,len(near))) if len(near) else 6.
-        else:
-            region=(rect_mask[y,xx0:xx1]<128)
-            good=np.flatnonzero(region)
-            if len(good):
-                mid=int(good[np.argmin(np.abs(good-(x-xx0)))])
-                left=mid;right=mid
-                while left>0 and region[left-1]:left-=1
-                while right<len(region)-1 and region[right+1]:right+=1
-                peak_x=xx0+round((left+right)*.5)
-                width=float(right-left+1)
-            else:
-                peak_x=x;width=7.
-        track.append((float(peak_x),float(y)))
-        widths.append(width)
-    if track[-1][1]<y1:
-        track.append((track[-1][0],float(y1)))
-    # Remove 1-row texture outliers, keep realistic subtle perspective drift.
-    vals=np.asarray([p[0] for p in track],float)
-    if len(vals)>=5:
-        smooth=vals.copy()
-        for k in range(1,len(vals)-1):smooth[k]=np.median(vals[max(0,k-2):min(len(vals),k+3)])
-        vals=smooth
-    track=[(round(float(v),2),p[1]) for v,p in zip(vals,track)]
-    width=float(np.clip(np.median(widths),3.,min(25.,w*.028)))
+        xa2=max(0,x-12);xb2=min(w,x+13)
+        if mask_lines[y]:
+            row=(rect_mask[y,xa2:xb2]<128)
+            hits=np.flatnonzero(row)
+            # Limit to the physical recess around the measured center.
+            near=hits[np.abs(hits-(x-xa2))<=9]
+            if near.size:
+                widths.append(float(max(3,min(20,near[-1]-near[0]+1))))
+                continue
+        if has_source:
+            row=contrast[y,xa2:xb2]
+            nearby=row[max(0,x-xa2-9):min(len(row),x-xa2+10)]
+            if nearby.size and nearby.max()>threshold:
+                widths.append(float(max(3,min(20,int(np.count_nonzero(nearby>=nearby.max()*.50))))))
+    width=float(np.clip(np.median(widths) if widths else 7.,3.,min(20.,w*.024)))
+    # Projected camera perspective will change the apparent slant naturally.
+    # Only TWO endpoints; no artificial wiggle, spline or freehand trace.
     return {'center':round(float(center),3),'y0':y0,'y1':y1,
-            'width':round(width,2),'path':track}
+            'width':round(width,2),
+            'path':[(round(float(center),2),float(y0)),
+                    (round(float(center),2),float(y1))]}
 
 
 def measure_real_vents(source: np.ndarray, mask: np.ndarray, quad):
@@ -230,6 +223,22 @@ def measure_real_vents(source: np.ndarray, mask: np.ndarray, quad):
             # *measured* tracks, not a fixed full-height artificial stripe.
             raise engine.MaskError('PETEK_YARIK_BOYLARI_INCELEME_GEREKLI')
         slots.append(slot)
+    # Endpoints are expected to be near-parallel on the rectified product.
+    # The source sometimes has additional dark artwork above/below a hole:
+    # never extend that anomaly beyond the other measured physical vents.
+    starts=np.asarray([r['y0'] for r in slots],float)
+    ends=np.asarray([r['y1'] for r in slots],float)
+    median_start=float(np.median(starts));median_end=float(np.median(ends))
+    median_length=max(1.,median_end-median_start)
+    # Use a generous 8% tolerance; no blind lengthening of real short vents.
+    tolerance=max(14.,float(RECT_H)*.033)
+    for r in slots:
+        y0=max(int(r['y0']),int(round(median_start-tolerance)))
+        y1=min(int(r['y1']),int(round(median_end+tolerance)))
+        if y1-y0 < median_length*.82:
+            raise engine.MaskError('PETEK_IZGARA_BOY_TUTARSIZ: bu fotoğraftaki delik başlangıç/bitişlerini maske ekranında inceleyin.')
+        r['y0'],r['y1']=y0,y1
+        r['path']=[(r['center'],float(y0)),(r['center'],float(y1))]
     spacings=np.diff(measured)
     mask_offset=None
     if len(masked_centers)==len(measured):
