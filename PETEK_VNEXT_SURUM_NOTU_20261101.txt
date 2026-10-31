@@ -1,0 +1,9 @@
+PETEK DİNAMİK 13–16 GERÇEK IZGARA + KAVİS VE FIRÇA ADAYI — 01.11.2026
+
+1. Gerçek kaynak fotoğrafta 13 yarık varsa 13, 14 varsa 14, 15 varsa 15, 16 varsa 16 koyu efekt oluşturulur. Eksik yarıklar yapay olarak eklenmez. Orijinal fotoğraf ölçülür; onaylı maske yalnız düşük güven durumunda doğrulanmış ikinci kaynaktır. Geometrisi güvensiz kayıt otomatik onaylanmaz.
+2. Ahşabı Boya, tanımlanmış ÜST ve ALT KAVİS segmentlerinin dışına taşamaz. Düz yan bölgeler ve diğer çalışma alanı eskisi gibi kalır. Fırça çapı ve merkezi imlecin üzerinde anlık görünür; zoom ve slider ile eşleşir.
+3. Taslak/onay sonrası aynı şablonda kalma ve UID sabitleme önceki PETEK VNext düzeltmesinden korunmuştur.
+4. Onaylı orijinal fotoğraflar, maskeler, quad, veritabanı, üretim defteri, mağaza atamaları bu ZIP paketinin içinde gerçek kullanıcı verisi olarak yer almaz ve otomatik değiştirilmez.
+5. TEST: 90 PASS / 1 SKIP / 1 DESELECT (Linux Xvfb, Chromium DOM); Flask HTTP testi ortamda Flask bulunmadığından çalıştırılmadı. WINDOWS_NOT_VERIFIED. 13/14/15/16 fiziksel yarık testleri, kaynak ölçümü, maskeden geri dönüş, sentetik kavis boyama ve zoom fırça halkası PASS.
+6. Eski çalışan V4.10.2/PETEK_FIX sürümünü SİLMEYİN. ZIP'i ayrı boş klasöre açıp PETEK_VNEXT_DOGRULA_WINDOWS.bat ve ardından PETEK_VNEXT_BASLAT_WINDOWS.bat dosyalarını başlatın. Gerçek onaylı veriyi değiştirmeden test klasöründeki şablonlarla deneyin.
+7. 12/17+ gibi dışarıdaki olağandışı yarık sayıları veya yeterli fotoğraf/maske verisi bulunmayan görüntüler için yerel inceleme gerekir. Bunlar 15'e uydurulmaz.

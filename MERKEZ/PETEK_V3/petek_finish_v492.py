@@ -152,90 +152,51 @@ def despill_lower_left(source, mask, quad, *, enabled=False):
 
 # V4.9.3 controlled geometry-first option. This does NOT modify or reapprove a
 # stored V3 mask; it adds visible, photo-perspective vents to a print output.
-# 15 is a product invariant, not a count estimated from arbitrary dark artwork.
-FIFTEEN_RECIPE = 'petek-15-slot-perspective-v493-1'
+# Count is measured from original source (13..16), NEVER fabricated to 15.
+FIFTEEN_RECIPE = 'petek-real-count-photo-measured-perspective-vnext-2'
+
 
 def draw_fifteen_slots(source, rendered, mask, quad, *, mode='orta', geometry=None):
-    """Render 15 visually recessed vents in the 4-corner print projection.
+    """Align every observed real recess with its photographic opening.
 
-    For a valid quadrilateral EXACTLY 15 positions are constructed, even if
-    pixel recognition of existing vents fails. Protected physical holes, the
-    white side wall, curves, floor and all out-of-quad pixels are byte-identical.
-    Perceptual success on a real user's image still requires visual review.
+    No equal-spaced fabricated layout or fixed-length slot strokes. The new
+    geometry is measured independently in the *original photo* and in the
+    immutable print mask, then rasterized at each opening's real x/y/width.
+    The approved mask/source/quad are read-only; all changes are temporary
+    pixels INSIDE the approved printable face, as before.
     """
     q=_validate(source,rendered,mask,quad)
-    if mode not in STRENGTH:raise ValueError('Invalid 15-slot mode')
+    if mode not in STRENGTH:raise ValueError('Invalid PETEK vent mode')
     if mode=='off':return rendered.copy(),{'status':'KAPALI','count':0,'changed_pixels':0}
-    # Rectified canonical face, mapped back with the same quad used by renderer.
-    gw,gh=900,690
-    src=np.float32([[0,0],[gw-1,0],[gw-1,gh-1],[0,gh-1]])
-    H=cv2.getPerspectiveTransform(src,np.float32(q))
-    outer=np.zeros((gh,gw),dtype=np.uint8)
+    from .petek_slot_geometry_vnext import measure_real_vents, RECT_W, RECT_H
+    slots, measured=measure_real_vents(source,mask,q)
+    if not (13 <= len(slots) <= 16):
+        raise engine.MaskError('PETEK_IZGARA_GERCEK_SAYI_OLCULEMEDI')
+    outer=np.zeros((RECT_H,RECT_W),np.uint8)
     inner=np.zeros_like(outer)
     rim=np.zeros_like(outer)
-    # Restrict to central face: keep shallow top vent arch and lower cut-out.
-    slot_y0=int(gh*.15);slot_y1=int(gh*.82)
-    slot_w=max(5,round(gw*.011))
-    # 15 slots with constant rhythm. No external object detection needed.
-    # Prefer source-authored physical openings: in approved masks protected
-    # vent pixels are 0. Rectify the mask, inspect vertical center-region
-    # occupancy, and align to 15 genuine openings instead of doubling them.
-    inv=cv2.getPerspectiveTransform(np.float32(q),src)
-    rect=cv2.warpPerspective(mask,inv,(gw,gh),flags=cv2.INTER_NEAREST,borderValue=255)
-    vent_band=rect[int(gh*.27):int(gh*.71),:]
-    occupancy=(vent_band<128).mean(axis=0)
-    run_mask=occupancy>.33
-    evidence=[]
-    starts=np.flatnonzero(run_mask & ~np.r_[False,run_mask[:-1]])
-    ends=np.flatnonzero(run_mask & ~np.r_[run_mask[1:],False])
-    for a,b in zip(starts,ends):
-        if gw*.025<=a<=gw*.967 and 2<=b-a+1<=gw*.05:
-            evidence.append(float(a+b)/2)
-    evidence=np.array(evidence,dtype=float)
-    centers=np.linspace(gw*.078,gw*.922,15)
-    alignment='PANEL_PERSPECTIVE'
-    if len(evidence)==15 and 2 < np.median(np.diff(evidence)) and \
-            np.std(np.diff(evidence))/np.mean(np.diff(evidence))<.36:
-        centers=evidence
-        alignment='EXISTING_MASK_15'
-    elif 8<=len(evidence)<15:
-        gaps=np.diff(evidence)
-        good=gaps[(gaps>gw*.025)&(gaps<gw*.12)]
-        if len(good)>3:
-            pitch=float(np.median(good[good<=np.percentile(good,65)]))
-            best=None
-            for step in np.linspace(pitch*.92,pitch*1.08,11):
-                for match in evidence:
-                    for index in range(15):
-                        first=float(match-index*step)
-                        if first<gw*.025 or first+step*14>gw*.975:continue
-                        grid=first+np.arange(15)*step
-                        delta=np.min(np.abs(evidence[:,None]-grid[None,:]),axis=1)
-                        if np.any(delta>step*.35):continue
-                        # Prefer alignment of real slots, then similar overall
-                        # panel margins; never invent a hole count from artwork.
-                        score=float(np.sum(delta*delta)+.001*(first-gw*.078)**2)
-                        if best is None or score<best[0]:best=(score,grid)
-            if best is not None:
-                centers=best[1]
-                alignment='PARTIAL_MASK_15_FIT'
-    for cx in centers:
-        x=int(round(cx));r=max(3,int(slot_w//2))
-        # Soft cast shadow, rounded physical opening, gentle lip highlight.
-        cv2.rectangle(outer,(x-r-3,slot_y0-4),(x+r+3,slot_y1+4),255,-1)
-        cv2.circle(outer,(x,slot_y0-4),r+3,255,-1)
-        cv2.circle(outer,(x,slot_y1+4),r+3,255,-1)
-        cv2.rectangle(inner,(x-r,slot_y0),(x+r,slot_y1),255,-1)
-        cv2.circle(inner,(x,slot_y0),r,255,-1)
-        cv2.circle(inner,(x,slot_y1),r,255,-1)
-        cv2.line(rim,(x-r-1,slot_y0),(x-r-1,slot_y1),170,2)
-    # A single warp keeps the original perspective. Never stretch source art.
+    for slot in slots:
+        path=np.int32(np.round(slot['path'])).reshape(-1,1,2)
+        width=max(3,int(round(slot['width'])))
+        # Local top, bottom and subtle curvature are measured from the source.
+        # A rounded stroke means real openings are never visibly extended.
+        cv2.polylines(outer,[path],False,255,width+6,cv2.LINE_AA)
+        cv2.polylines(inner,[path],False,255,width,cv2.LINE_AA)
+        rim_path=path.copy()
+        rim_path[:,:,0]-=max(1,width//2+1)
+        cv2.polylines(rim,[rim_path],False,170,2,cv2.LINE_AA)
+        cv2.circle(outer,tuple(path[0,0]),max(2,(width+6)//2),255,-1,cv2.LINE_AA)
+        cv2.circle(outer,tuple(path[-1,0]),max(2,(width+6)//2),255,-1,cv2.LINE_AA)
+        cv2.circle(inner,tuple(path[0,0]),max(1,width//2),255,-1,cv2.LINE_AA)
+        cv2.circle(inner,tuple(path[-1,0]),max(1,width//2),255,-1,cv2.LINE_AA)
+    H=measured['homography']
     w,h=source.shape[1],source.shape[0]
     outskirts=cv2.warpPerspective(outer,H,(w,h),flags=cv2.INTER_LINEAR)
     cores=cv2.warpPerspective(inner,H,(w,h),flags=cv2.INTER_LINEAR)
     left_lip=cv2.warpPerspective(rim,H,(w,h),flags=cv2.INTER_LINEAR)
     panel=engine.polygon_mask(source.shape,q)>0
-    # Only printable pixels can change. Dark REAL holes remain real image data.
+    # The source and originally approved mask remain untouched. Original 0-mask
+    # real physical holes and all corners/curves/white sides are sacrosanct.
     allowed=(mask>0)&panel
     intensity=STRENGTH[mode]
     alpha=(outskirts.astype(np.float32)/255*.18 +
@@ -245,24 +206,29 @@ def draw_fifteen_slots(source, rendered, mask, quad, *, mode='orta', geometry=No
     out=rendered.copy()
     active=alpha>.002
     if np.any(active):
-        # Slightly warm dark volume instead of artificial pure-black stripes.
         target=np.array([20,22,25],dtype=np.float32)
-        blended=out[active].astype(np.float32)*(1-alpha[active,None])+target[None,:]*alpha[active,None]
-        out[active]=np.clip(np.round(blended),0,255).astype(np.uint8)
-        # Very narrow sidewall rim, dimmed by painted artwork; stays within panel.
-        highlight=np.minimum(left_lip.astype(np.float32)/255*.13, .13)*intensity/.60
+        out[active]=np.uint8(np.clip(np.round(
+            out[active].astype(np.float32)*(1-alpha[active,None])+
+            target[None,:]*alpha[active,None]),0,255))
+        highlight=np.minimum(left_lip.astype(np.float32)/255*.13,.13)*intensity/.60
         highlight[~allowed]=0
-        active_lip=highlight>.001
-        out[active_lip]=np.uint8(np.clip(out[active_lip].astype(np.float32)* (1-highlight[active_lip,None])+
-                                         np.array([104,103,102])[None,:]*highlight[active_lip,None],0,255))
+        lit=highlight>.001
+        if np.any(lit):
+            out[lit]=np.uint8(np.clip(np.round(
+                out[lit].astype(np.float32)*(1-highlight[lit,None])+
+                np.array([104,103,102])[None,:]*highlight[lit,None]),0,255))
     if not np.array_equal(out[~allowed],rendered[~allowed]):
         raise engine.MaskError('PETEK_15_SLOT_OUTSIDE_PANEL_CHANGED')
-    return out, {'status':'15_IZGARA_UYGULANDI', 'count':15,
+    report={key:value for key,value in measured.items() if key!='homography'}
+    # The old enum remains supported only for old tests/records; the measured
+    # status distinguishes new source measurements from trusted mask evidence.
+    if report['alignment'].startswith('APPROVED_MASK_'):
+        report['alignment']=report['alignment'].replace('APPROVED_MASK_','EXISTING_MASK_',1)
+    count=len(slots)
+    return out, {**report,'status':f'{count}_IZGARA_UYGULANDI','count':count,
                  'changed_pixels':int(np.count_nonzero(np.any(out!=rendered,axis=2))),
                  'recipe':FIFTEEN_RECIPE,'mode':mode,
-                 'alignment':alignment,'mask_evidence_count':len(evidence),
-                 'centers_rectified_900':[round(float(cx),3) for cx in centers],
-                 'note':'Perspektif geometrisi: 15 slot. Gerçek fotoğrafı insan incelemeli.'}
+                 'note':f'Gercek fotograf kaynakli {count} izgara: merkez, aralik, aciklik boyu ve genislik perspektifle olculdu.'}
 
 
 def despill_lower_left_geometry_v493(source, mask, quad, *, enabled=False):
