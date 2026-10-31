@@ -15,6 +15,8 @@ from MERKEZ.PETEK_V3 import engine,curves
 from MERKEZ.PETEK_V3.magenta_quad_v479 import detect_magenta_quad
 from MERKEZ.PETEK_V3.cutout_paste import render_with_cutout_paste
 from MERKEZ.PETEK_V3.grille_guard_v482 import recommended_edge_feather,magenta_residue_report
+from MERKEZ.PETEK_V3.petek_finish_v492 import draw_fifteen_slots, despill_lower_left_geometry_v493
+from MERKEZ.PETEK_V3.final_cleanup_v495 import cleanup_petek_magenta
 from MERKEZ.PETEK_V3.registry import Registry
 from MERKEZ.petek_folders_v46 import petek_directory
 
@@ -185,6 +187,7 @@ def list_templates():
                             'select':True,'status_filter':True,'read_only_audit':True,
                             'magenta_corner_mask_proposals':True,
                             'approval_requires_individual_review':True,
+                            'reviewed_batch_approval':True,
                             'legacy_bulk_delete':False}})
     except (ValueError,OSError,engine.MaskError) as exc:return _fail(exc)
 
@@ -325,8 +328,10 @@ def detail(name):
         if (r.profiles/(uid+'.json')).is_file():
             profile,mask=r.get(uid,source_override=file)
             row.update({'status':profile['status'],'quad':profile['quad'],
-                'mask':_png_data(mask),'physical_aspect':profile['physical_aspect'],
-                'curve_points':profile.get('curve_points') or {'top':[],'bottom':[]}})
+                'mask':_png_data(mask),'mask_sha':profile['mask_sha'],'physical_aspect':profile['physical_aspect'],
+                'curve_points':profile.get('curve_points') or {'top':[],'bottom':[]},
+                'revises_uid':profile.get('revises_uid'),'base_uid':profile.get('base_uid'),
+                'is_current':r.is_current(uid)})
             sha_base=profile.get('base_mask_sha')
             if sha_base:
                 base=engine.decode_mask(r.masks/(sha_base+'.png'))
@@ -370,7 +375,32 @@ def preview_artwork():
             marketplace=False,lighting='natural',placement='cover',
             edge_feather_px=edge_px)
         fringe=magenta_residue_report(scene,quad,mask)
-        # The physical print protects all source pixels outside the mask.
+        # Read-only A/B is opt-in. Before and after use identical image/quad/mask.
+        # No files are saved, no approved geometry/registry can change.
+        preview_extra={}
+        if bool(body.get('fifteen_slot_ab',False)):
+            mode=body.get('fifteen_slot_strength','orta')
+            if mode not in ('hafif','orta','guclu'):
+                raise ValueError('PETEK_15_INVALID_MODE')
+            cleanup=body.get('pink_cleanup',False)
+            if not isinstance(cleanup,bool):raise ValueError('PETEK_PINK_CLEANUP_BOOLEAN_REQUIRED')
+            fixed_scene,pink_qa=despill_lower_left_geometry_v493(scene,mask,quad,enabled=cleanup)
+            new_render,_,_=render_with_cutout_paste(fixed_scene,art,quad,mask,ratio,
+                marketplace=False,lighting='natural',placement='cover',edge_feather_px=edge_px)
+            after,slot_qa=draw_fifteen_slots(fixed_scene,new_render,mask,quad,mode=mode)
+            if not np.array_equal(after[mask==0],fixed_scene[mask==0]):
+                raise ValueError('PETEK_15_PROTECTED_PIXELS_CHANGED')
+            # Source safety first; then an explicit in-memory narrow magenta
+            # restoration on all four borders and protected vent lips.
+            after,final_qa=cleanup_petek_magenta(
+                after,mask,quad,enabled=cleanup,
+                slot_centers=slot_qa.get('centers_rectified_900'))
+            after_ok,after_png=cv2.imencode('.png',after,[cv2.IMWRITE_PNG_COMPRESSION,3])
+            if not after_ok:raise ValueError('PETEK_15_PREVIEW_ENCODING_FAILED')
+            preview_extra={'after':'data:image/png;base64,'+
+                base64.b64encode(after_png.tobytes()).decode('ascii'),
+                'slot_qa':slot_qa,'pink_qa':final_qa,'pre_render_pink_qa':pink_qa,'read_only':True}
+        # Baseline must never change protected source pixels.
         if not np.array_equal(result[mask==0],scene[mask==0]):
             raise ValueError('PETEK_PREVIEW_PROTECTED_PIXELS_CHANGED')
         ok,png=cv2.imencode('.png',result,[cv2.IMWRITE_PNG_COMPRESSION,3])
@@ -382,7 +412,7 @@ def preview_artwork():
                         'mask_qa':{'printable_fraction':qa['printable_fraction'],
                             'edge_feather_px':edge_px,
                             'protected_magenta_pixels':fringe['protected_magenta_pixels'],
-                            'vent_and_curve_pixels_untouched':True}})
+                            'vent_and_curve_pixels_untouched':True},**preview_extra})
     except (ValueError,OSError,TypeError,KeyError,OverflowError,engine.MaskError) as exc:return _fail(exc)
 
 @petek_web.post('/api/petek/auto-corners')
@@ -460,9 +490,132 @@ def approve():
         r=Registry();uid,sha=_identity(r,file,body.get('uid'))
         if uid!=body.get('uid') or sha!=body.get('confirmed_sha'):
             raise ValueError('PETEK_UID_OR_SHA_CHANGED_RELOAD')
-        p=r.approve(uid,str(body.get('reviewer') or ''),str(body.get('confirm') or ''))
+        p=r.approve(uid,str(body.get('reviewer') or ''),str(body.get('confirm') or ''),source_override=file)
+        changed=None
+        if body.get('activate_revision') is True:
+            parent=p.get('revises_uid')
+            if not parent:raise ValueError('PETEK_REVISION_PARENT_REQUIRED')
+            changed=r.activate_revision(parent,uid,
+                  str(body.get('activate_confirm') or ''),source_override=file)
         return jsonify({'success':True,'uid':uid,'status':p['status'],
-                        'mask_sha':p['mask_sha']})
+                        'mask_sha':p['mask_sha'],'active_revision':changed})
+    except (ValueError,OSError,TypeError,KeyError,engine.MaskError) as exc:return _fail(exc)
+
+# V4.9.8: manually inspected eight-at-a-time draft approval.
+# A reviewer must positively acknowledge each independently previewed draft.
+# A backend SHA / UID / mask lock is repeated immediately before every approval.
+from threading import RLock
+_PETEK_APPROVAL_LOCK=RLock()
+
+def _approve_reviewed_draft(registry,item,reviewer):
+    if item.get('reviewed') is not True:
+        raise ValueError('PETEK_TOPLU_ONAY_GORSEL_INCELENMEDI')
+    mask_sha=item.get('mask_sha')
+    if not isinstance(mask_sha,str) or not re.fullmatch(r'[a-f0-9]{64}',mask_sha):
+        raise ValueError('PETEK_TOPLU_ONAY_MASK_SHA_GEREKLI')
+    file=_photo(item.get('name'))
+    expected_sha=item.get('source_sha')
+    if not isinstance(expected_sha,str) or engine.digest(file)!=expected_sha:
+        raise ValueError('PETEK_TOPLU_ONAY_KAYNAK_DEGISTI')
+    uid,sha=_identity(registry,file,item.get('uid'))
+    if uid!=item.get('uid'):
+        raise ValueError('PETEK_TOPLU_ONAY_UID_DEGISTI')
+    # get() validates physical quad, mask SHA, source sha, and mask QA.
+    profile,_=registry.get(uid,source_override=file)
+    if profile['status']!='DRAFT':
+        raise ValueError('PETEK_TOPLU_ONAY_YALNIZ_TASLAK')
+    if profile['mask_sha']!=mask_sha:
+        raise ValueError('PETEK_TOPLU_ONAY_MASK_DEGISTI_TEKRAR_INCELEYIN')
+    if profile.get('source_sha')!=sha:
+        raise ValueError('PETEK_TOPLU_ONAY_KAYNAK_DEGISTI')
+    # Registry.approve cannot approve NEW/APPROVED. It rechecks the mask and
+    # writes an atomic approved revision, never mutating source or mask bytes.
+    approved=registry.approve(uid,reviewer,
+          'I_VISUALLY_CHECKED_VENTS_ARCHES_FLOOR',source_override=file)
+    return {'name':file.name,'uid':uid,'status':approved['status'],
+            'mask_sha':approved['mask_sha']}
+
+@petek_web.post('/api/petek/bulk-approve-reviewed')
+def bulk_approve_reviewed():
+    try:
+        body,selected=_bulk_selected() # 1..8; reject dupes
+        reviewer=str(body.get('reviewer') or '').strip()
+        if not 1<=len(reviewer)<=80:
+            raise ValueError('PETEK_TOPLU_ONAY_INCELEYEN_ADI_GEREKLI')
+        if body.get('confirm')!='I_REVIEWED_EACH_PETEK_MASK_IN_THIS_BATCH':
+            raise ValueError('PETEK_TOPLU_ONAY_INSAN_TEYIDI_GEREKLI')
+        successes=[];failed=[]
+        with _PETEK_APPROVAL_LOCK:
+            registry=Registry()
+            for item in selected:
+                try:
+                    successes.append(_approve_reviewed_draft(registry,item,reviewer))
+                except (ValueError,OSError,KeyError,TypeError,engine.MaskError,cv2.error) as exc:
+                    failed.append({'name':str(item.get('name') or '')[:180],
+                        'uid':str(item.get('uid') or '')[:96], 'error':str(exc)[:200]})
+        return jsonify({'success':True,'approved':successes,'failed':failed,
+              'human_review_required':True,'auto_approve':False})
+    except (ValueError,OSError,KeyError,TypeError,engine.MaskError) as exc:
+        return _fail(exc)
+
+@petek_web.post('/api/petek/bulk-approve-confirmed')
+def bulk_approve_confirmed():
+    """One user confirmation for the entire selection, processed in chunks.
+
+    Server validates each DRAFT's source SHA, UID, mask SHA and physical mask;
+    success/failure is per record and no existing APPROVED mask is overwritten.
+    No checkbox or visual-review-flag from a client is trusted.
+    """
+    try:
+        body,selected=_bulk_selected()  # internal 1..8 chunk, not user interaction
+        reviewer=str(body.get('reviewer') or '').strip()
+        if not 1<=len(reviewer)<=80:
+            raise ValueError('PETEK_TOPLU_ONAY_INCELEYEN_ADI_GEREKLI')
+        if body.get('confirm')!='I_APPROVE_ALL_VALID_PETEK_DRAFTS_IN_THIS_SELECTION':
+            raise ValueError('PETEK_TOPLU_ONAY_TEK_INSAN_TEYIDI_GEREKLI')
+        successes=[];failed=[]
+        with _PETEK_APPROVAL_LOCK:
+            registry=Registry()
+            for item in selected:
+                try:
+                    file=_photo(item.get('name'))
+                    if item.get('source_sha')!=engine.digest(file):
+                        raise ValueError('PETEK_TOPLU_ONAY_KAYNAK_DEGISTI')
+                    uid,sha=_identity(registry,file,item.get('uid'))
+                    if uid!=item.get('uid'):
+                        raise ValueError('PETEK_TOPLU_ONAY_UID_DEGISTI')
+                    profile,_=registry.get(uid,source_override=file)
+                    if profile.get('revises_uid'):
+                        raise ValueError('Revizyon taslağı: tekil Güncel Onaylı Yap akışını kullanın')
+                    if profile.get('status')!='DRAFT' or profile.get('source_sha')!=sha:
+                        raise ValueError('PETEK_TOPLU_ONAY_YALNIZ_GECERLI_TASLAK')
+                    successes.append(_approve_reviewed_draft(registry,{
+                        'name':file.name,'uid':uid,'source_sha':sha,
+                        'mask_sha':profile['mask_sha'],'reviewed':True},reviewer))
+                except (ValueError,OSError,KeyError,TypeError,engine.MaskError,cv2.error) as exc:
+                    failed.append({'name':str(item.get('name') or '')[:180],
+                      'uid':str(item.get('uid') or '')[:96],'error':str(exc)[:200]})
+        return jsonify({'success':True,'approved':successes,'failed':failed,
+                        'total':len(selected),'user_bulk_confirmation':True})
+    except (ValueError,OSError,KeyError,TypeError,engine.MaskError) as exc:
+        return _fail(exc)
+
+@petek_web.post('/api/petek/activate-approved-revision')
+def activate_approved_revision():
+    try:
+        body,file,_=_request_scene()
+        r=Registry();result=r.activate_revision(body.get('previous_uid'),body.get('uid'),
+                       body.get('confirm'),source_override=file)
+        return jsonify({'success':True,**result})
+    except (ValueError,OSError,TypeError,KeyError,engine.MaskError) as exc:return _fail(exc)
+
+@petek_web.post('/api/petek/restore-approved-revision')
+def restore_approved_revision():
+    try:
+        body,file,_=_request_scene()
+        r=Registry();result=r.restore_revision(body.get('base_uid'),body.get('uid'),
+                 body.get('confirm'),source_override=file)
+        return jsonify({'success':True,**result})
     except (ValueError,OSError,TypeError,KeyError,engine.MaskError) as exc:return _fail(exc)
 
 @petek_web.post('/api/petek/new-revision')
@@ -493,6 +646,7 @@ def new_revision():
                 raise ValueError('PETEK_BASE_MASK_SHA_INVALID')
         cloned=r.save(next_uid,file,old['quad'],mask,old['physical_aspect'],
                       approved=False,curve_points=old.get('curve_points'),base_mask=base)
+        r.link_draft_revision(uid,next_uid,source_override=file)
         return jsonify({'success':True,'uid':next_uid,'status':'DRAFT',
                         'original_approved_uid':uid,'source_sha':sha,
                         'mask_sha':cloned['mask_sha']})
