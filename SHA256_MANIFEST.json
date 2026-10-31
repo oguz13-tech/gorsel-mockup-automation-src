@@ -1333,8 +1333,8 @@
     },
     {
       "path": "SABLON_V2_MIMARI/static/css/v4102_ui_system.css",
-      "bytes": 3803,
-      "sha256": "eac4888632a0aef859bb9417817e46e5a4ca7af9269fc5236c4b0af9c825b78c"
+      "bytes": 3801,
+      "sha256": "cdbfeb23ff6e3d29ed51d6b076ac0c2b3db8f9aab1df7a30d210d6cae9539132"
     },
     {
       "path": "SABLON_V2_MIMARI/static/css/v499_anthracite.css",
@@ -1698,8 +1698,8 @@
     },
     {
       "path": "TESTLER/test_v488_home_readability.py",
-      "bytes": 3665,
-      "sha256": "da3b35edbdb6a61ae09d8b0c33338668aaef578b7afbc8f68d2fd57c874c1df6"
+      "bytes": 4156,
+      "sha256": "b007ea4739738b5be6234cc2a657e961041e4ed6a364d667a310c63e4738cdd3"
     },
     {
       "path": "TESTLER/test_v490_premium_ui.py",
