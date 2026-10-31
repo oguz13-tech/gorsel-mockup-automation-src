@@ -644,6 +644,38 @@ async function save(){
   await reload();
  }catch(e){notice(e.message,true);}
 }
+// V4.10.2: The HTTP approval itself is authoritative. Never follow a
+// successful approval by an eager /api/petek/templates scan of the entire
+// 100+ photo pool and a full-resolution /detail + /photo reload.
+function applyApprovedInPlace(name,uid,maskSha){
+ const current=s.name===name&&s.uid===uid;
+ for(const item of s.entries){
+   if(item.name===name&&item.uid===uid){
+     item.status='APPROVED';item.approved=true;item.mask_verified=true;
+     if(maskSha)item.mask_sha=maskSha;
+   }
+ }
+ const options=$('petekV477Select');
+ if(options){for(const opt of options.options){
+    try{const pair=JSON.parse(opt.value);
+      if(pair[0]===name&&pair[1]===uid)opt.textContent=name+' · '+uid+' — APPROVED';
+    }catch(_ignored){}
+ }}
+ if(current){
+   s.status='APPROVED';s.dirty=false;s.isCurrent=true;
+   $('petekV477Name').textContent=name+' · APPROVED · '+uid;
+   $('petekV477AutoCorners').disabled=true;
+   $('petekV477Approve').disabled=true;
+   $('petekV477Save').disabled=true;
+   $('petekV477Revision').disabled=false;
+   $('petekV499Restore').disabled=!s.revisesUid;
+   $('petekV499Activate').disabled=true;
+ }
+ // DOM-only refresh. The explicit "Listeyi Yenile" control still performs a
+ // full authoritative SHA/mask verification when the user requests it.
+ const pane=$('petekV477List');const oldScroll=pane?pane.scrollTop:0;
+ listVisual();if(pane)pane.scrollTop=oldScroll;
+}
 async function approve(){
  if(!s.img||s.status!=='DRAFT'){notice('Önce TASLAK kaydet, sonra onayla.',true);return;}
  if(s.dirty||s.needsCurveApply){notice('Değişiklik var. Önce taslağı kaydet.',true);return;}
@@ -655,15 +687,27 @@ async function approve(){
  if(!confirm(s.revisesUid
    ? 'DÜZENLENMİŞ MASKENİN KAYDINI ONAYLA VE GÜNCEL YAP: eski onaylı maske dosyası korunacak; sonraki üretimlerde yeni maske kullanılacak. Devam?'
    : 'Bu PETEK maskesini insan onaylı, SHA-kilitli üretim şablonu yapıyorsun. Onaylıyor musun?'))return;
+ const identity={name:s.name,uid:s.uid,sha:s.sha};
+ const approveButton=$('petekV477Approve');
+ approveButton.disabled=true;
+ const started=performance.now();
+ notice('Maske güvenle onaylanıyor... SHA, kaynak ve maske denetimi yapılıyor.');
  try{
-  await api('/api/petek/approve',{name:s.name,uid:s.uid,source_sha:s.sha,confirmed_sha:s.sha,
+  const result=await api('/api/petek/approve',{name:identity.name,uid:identity.uid,
+    source_sha:identity.sha,confirmed_sha:identity.sha,
     reviewer,confirm:'I_VISUALLY_CHECKED_VENTS_ARCHES_FLOOR',
     activate_revision:!!s.revisesUid,
     activate_confirm:s.revisesUid?'ACTIVATE_REVISED_PETEK_AND_KEEP_OLD':null});
-  await reload(s.uid);notice(s.revisesUid
-    ? 'YENİ ONAYLI MASKE GÜNCEL SÜRÜM OLDU. Eski onaylı maske yedek/geri dönüş için korunuyor.'
-    : 'PETEK MASKESİ ONAYLANDI. Ortak 7 kategori üretiminde kullanılabilir.');
- }catch(e){notice(e.message,true);}
+  applyApprovedInPlace(identity.name,identity.uid,result.mask_sha);
+  const seconds=((performance.now()-started)/1000).toFixed(1);
+  notice((s.revisesUid
+    ? 'YENİ ONAYLI MASKE GÜNCEL SÜRÜM OLDU. Eski sürüm korunuyor.'
+    : 'PETEK MASKESİ ONAYLANDI. Üretimde kullanılabilir.')+
+    ' · Onay '+seconds+' saniyede tamamlandı. Liste yeniden taranmadı.');
+ }catch(e){
+  if(s.name===identity.name&&s.uid===identity.uid&&s.status==='DRAFT')approveButton.disabled=false;
+  notice('Maske onaylanamadı: '+e.message,true);
+ }
 }
 async function newRevision(){
  if(!s.img||s.status!=='APPROVED')return;
