@@ -23,7 +23,7 @@ def _magenta_pixels(bgr):
 
 
 def cleanup_petek_magenta(rendered, mask, quad, *, slot_centers=None, enabled=True):
-    """Correct narrow magenta along all 4 edges/corners and 15 vent lips.
+    """Correct narrow magenta along all 4 edges/corners and real vent lips.
 
     ``slot_centers`` is the 900px rectified geometry returned from the SAME
     draw_fifteen_slots call; this avoids fabricating a second vent row.
@@ -48,8 +48,8 @@ def cleanup_petek_magenta(rendered, mask, quad, *, slot_centers=None, enabled=Tr
     vent_corridor = np.zeros((h, w), dtype=np.uint8)
     if slot_centers is not None:
         positions = [float(c) for c in slot_centers]
-        if len(positions) != 15 or not np.isfinite(positions).all():
-            raise engine.MaskError('PETEK_15_SLOT_GEOMETRY_NOT_15')
+        if not (13 <= len(positions) <= 16) or not np.isfinite(positions).all():
+            raise engine.MaskError('PETEK_REAL_SLOT_GEOMETRY_INVALID')
         gw, gh = 900, 690
         rect = np.float32([[0, 0], [gw-1, 0], [gw-1, gh-1], [0, gh-1]])
         matrix = cv2.getPerspectiveTransform(rect, q)
