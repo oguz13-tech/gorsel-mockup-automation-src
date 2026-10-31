@@ -1,5 +1,5 @@
 {
-  "version": "PETEK_DYNAMIC_PREVIEW_ACCEPT_REAL_13_16_20261101",
+  "version": "STORE_P0_ISSUE79_20261101",
   "files": [
     {
       "path": "99_SISTEM_MOTORLARI_VE_KODLAR/SISTEM_MOTORU/check_shifts.py",
@@ -727,6 +727,36 @@
       "sha256": "344192f78fb6ca4b06aee5d0d6bbe74bae51cd0d037ea333a4f05fe1f020f322"
     },
     {
+      "path": "MAGAZA_P0_BASLAT_WINDOWS.bat",
+      "bytes": 177,
+      "sha256": "23d1096b73ef779b11ffaca911924513303ddfde7b6cfc5c1344902c29c3b916"
+    },
+    {
+      "path": "MAGAZA_P0_DOGRULA_WINDOWS.bat",
+      "bytes": 355,
+      "sha256": "40e7af584df0f55ea2b537b1d0fb26097b568aebaca8e662136a97841727deaf"
+    },
+    {
+      "path": "MAGAZA_P0_ILK_OKU_WINDOWS.txt",
+      "bytes": 1153,
+      "sha256": "300afb4af4c291c9a9b1136c08c900642ceae6e0e1c91d2271d648b7048bd77e"
+    },
+    {
+      "path": "MAGAZA_TESHIS_BASLAT_WINDOWS.bat",
+      "bytes": 164,
+      "sha256": "bdfc0da3c5eaeedaa4c3d38ecebac3a84523ee209a42a136caae9694f0065041"
+    },
+    {
+      "path": "MAGAZA_TESHIS_DOGRULA_WINDOWS.bat",
+      "bytes": 335,
+      "sha256": "0534e8c114171e6c2820b60e200be4eeeea7fd4d881278a97a977a8facfb995d"
+    },
+    {
+      "path": "MAGAZA_TESHIS_ILK_OKU.txt",
+      "bytes": 1283,
+      "sha256": "cf5f9210e5445ea1c0b288b074c02aef59240c7c035bb239d22b20bf82afe667"
+    },
+    {
       "path": "MAGENTA_TOPLU_GUVENLI_DEGISTIR_WINDOWS.bat",
       "bytes": 633,
       "sha256": "6c5e32065ca96615f82e008bb014d9f4f959e2d988f574d7369d7c71af7d6806"
@@ -958,8 +988,8 @@
     },
     {
       "path": "MERKEZ/URETIM_V4/gui_v4.py",
-      "bytes": 70371,
-      "sha256": "35a42b09f9dfa5b1e3d2ed8c96bd80b2b150f9fff5f221ecb8c97a437ccc76f6"
+      "bytes": 83021,
+      "sha256": "275e079d5733e0e631fc7fbd693d626a8abd26a135a17e99c9ae74a213e509be"
     },
     {
       "path": "MERKEZ/URETIM_V4/manual_geometry.py",
@@ -998,8 +1028,8 @@
     },
     {
       "path": "MERKEZ/URETIM_V4/store_assignment_ui_v410.py",
-      "bytes": 30172,
-      "sha256": "762b7f2cf7234622ed78742cde9a4fd536fe4dc96747596f4947d9d373a11562"
+      "bytes": 32752,
+      "sha256": "2136eda8e697ce7d8db142b873b5f4e8198d63acae2aed33974a21e53a76a536"
     },
     {
       "path": "MERKEZ/URETIM_V4/store_assignment_v410.py",
@@ -1018,8 +1048,13 @@
     },
     {
       "path": "MERKEZ/URETIM_V4/store_profiles_v47.py",
-      "bytes": 11321,
-      "sha256": "cee8d1c5e629a712882f7179f8ac6d4152e25ed2ffbad19e719f044f8b95afd5"
+      "bytes": 11673,
+      "sha256": "40409bf032b5b917150156216148abdeb2fbc39c608966e84922adb48d82a277"
+    },
+    {
+      "path": "MERKEZ/URETIM_V4/store_selection_diagnostic_vnext.py",
+      "bytes": 9747,
+      "sha256": "f0963187d7d2f35226928be6cbd42a9fe686c15d21ab253332cc868fb4c927a5"
     },
     {
       "path": "MERKEZ/URETIM_V4/template_filter_v492.py",
@@ -2032,6 +2067,21 @@
       "sha256": "996c2f60f015a1938bf5d856f4aea511919131bb2b5fba20765aafbce0bc4e3a"
     },
     {
+      "path": "docs/VNEXT_MAGAZA_P0_KIMLIK_ISSUE79_20261101.md",
+      "bytes": 5442,
+      "sha256": "04912c8dfbaed5273724f5d3e71d4487daba8d8aa265c55ffb590c6a7e2796f9"
+    },
+    {
+      "path": "docs/VNEXT_MAGAZA_P0_TEST_VE_WINDOWS_KABUL_20261101.md",
+      "bytes": 2978,
+      "sha256": "cc42deb162fa7cf5f7904b8ba546d76c900628ad028099a92f4ef0217e8a6acc"
+    },
+    {
+      "path": "docs/VNEXT_MAGAZA_URETIM_ESLESME_TESHISI_20261101.md",
+      "bytes": 3468,
+      "sha256": "0ec73505e2e3f5cf66584f5049048c1f3fa68f55b62013d944704fa629d55562"
+    },
+    {
       "path": "docs/VNEXT_MOR_56_UX_STATUS.md",
       "bytes": 8393,
       "sha256": "88581c285a01057a1763fe1c9b0bc3304c4a6c379a1c0c48f46526fcbba2f1b7"
@@ -2188,8 +2238,8 @@
     },
     {
       "path": "scripts/v4102_verify_package.py",
-      "bytes": 1494,
-      "sha256": "0fbe2799a4ac8ba46eedab8b2d9788cacba9809927a66ed2f90268a2576357a3"
+      "bytes": 1568,
+      "sha256": "bf69f3c99e6f1475465797fb6802dada6d1bbbe1d94a3890cde726dad02148fa"
     },
     {
       "path": "scripts/v46_all_category_geometry_benchmark.py",
@@ -2585,6 +2635,16 @@
       "path": "tests/test_vnext_store_bulk_unassign.py",
       "bytes": 7315,
       "sha256": "f5ed2fa959daba3abd4a79958f370867134840960ea9762ecc5f1fd696017f4c"
+    },
+    {
+      "path": "tests/test_vnext_store_preflight_p0.py",
+      "bytes": 12836,
+      "sha256": "54377624b12388c80b6bd007d98c66dc979099a1fc21380a1b46520b07518a21"
+    },
+    {
+      "path": "tests/test_vnext_store_selection_diagnosis.py",
+      "bytes": 5177,
+      "sha256": "6a1e674010e775d71ac91bab49f32d7041009cc675389b7c271561a886f95ebc"
     },
     {
       "path": "tests/test_watcher_safety.py",

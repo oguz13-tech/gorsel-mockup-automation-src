@@ -1,0 +1,14 @@
+MAĞAZA–ÜRETİM KİMLİK EŞLEŞMESİ P0 (Issue #79) / WINDOWS_NOT_VERIFIED
+
+1. ZIP'i çalışan sistemin üstüne değil C:\AI_WORK\MAGAZA_P0_TEST gibi BOŞ bir klasöre açın.
+2. MAGAZA_P0_DOGRULA_WINDOWS.bat dosyasını çalıştırıp 0 hata / PASS sonucunu görün.
+3. MAGAZA_P0_BASLAT_WINDOWS.bat dosyasını çalıştırın.
+4. Gerçek mağaza profilinin ve çalışma klasörünün yolu doğru mu kontrol edin. Önce test profiliyle çalışın.
+5. Seri Üretim -> Mağazalar -> wudie -> Mağaza – Üretim Eşleşmesini Denetle (Salt Okunur).
+6. Raporda okunan profil yolu+SHA, seçilen mağaza, motor UID, görünür UID, atanan kategori:UID@SHA karşılaştırılır.
+7. "Bu Mağazanın Mockuplarını Göster" YALNIZ listeyi filtreler. Önceki seçimi SİLMEZ.
+8. "Mağazaya Atananları Üretime Seç" ancak sizin düğmeye basmanızla üretim seçimini değiştirir; mağaza kaydını değiştirmez.
+9. Başka mağazaya ait şablon atanamaz. Kaynak SHA değiştiyse otomatik düzeltme YOK.
+10. Önceki 3 atamayı KALDIRMAYIN. Gerçek Windows kabulü WINDOWS_NOT_VERIFIED.
+
+Teknik rapor: docs\VNEXT_MAGAZA_P0_KIMLIK_ISSUE79_20261101.md

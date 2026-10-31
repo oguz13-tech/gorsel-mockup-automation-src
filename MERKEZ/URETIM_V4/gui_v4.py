@@ -22,6 +22,9 @@ from .unlimited_selection import CATEGORY_LABELS_TR
 from PETEK_V3.petek_finish_v492 import darken_slot_lips, despill_lower_left, draw_fifteen_slots, despill_lower_left_geometry_v493
 from PETEK_V3.final_cleanup_v495 import cleanup_petek_magenta
 from .store_profiles_v47 import StoreProfiles
+from .store_profiles_v47 import key_for
+from .store_selection_diagnostic_vnext import (compare_store_selection, format_store_diagnostic,
+                                                     read_profile_identity)
 from .cloud_excel_v43 import CloudExcel
 from .design_proxy_v43 import prepare_render_artwork
 from .upscale4k_v44 import preflight as upscale_preflight, UpscaleError
@@ -130,6 +133,7 @@ class UnifiedV4BatchWindow:
         self.selected_uids = set()
         self.mapping: list[str] = []
         self._filter_redrawing = False
+        self.store_only_view = False
         filter_bar = ttk.Frame(templates_panel)
         filter_bar.pack(fill="x", pady=(3, 4))
         ttk.Label(filter_bar, text="Kategori:").pack(side="left")
@@ -186,6 +190,7 @@ class UnifiedV4BatchWindow:
                                     width=35,exportselection=False,
                                     bg=PANEL,fg=FG,selectbackground=ACCENT)
         self.store_list.pack(side="left",padx=8)
+        self.store_list.bind('<<ListboxSelect>>', self._store_changed, add='+')
         self.store_mapping=[]
         ttk.Button(profile_panel,text="Mağaza Profilleri / Şablon Atama",
                    command=self.open_store_manager).pack(side="left",padx=3)
@@ -197,6 +202,20 @@ class UnifiedV4BatchWindow:
                        "Aynı turda aynı SHA/tasarım/şablon/mağaza ikilisi yinelenmez.",
                   wraplength=1120).pack(anchor="w",pady=2)
         self.reload_stores()
+        diagnostic_row = ttk.Frame(designs_panel)
+        diagnostic_row.pack(fill='x', pady=(2,5))
+        ttk.Button(diagnostic_row,
+                   text='Mağaza – Üretim Eşleşmesini Denetle (Salt Okunur)',
+                   command=self.diagnose_store_selection).pack(side='left', padx=(0,8))
+        ttk.Button(diagnostic_row, text='Bu Mağazanın Mockuplarını Göster',
+                   command=self.show_store_templates).pack(side='left', padx=(0,8))
+        ttk.Button(diagnostic_row, text='Bütün Mockupları Göster',
+                   command=self.show_all_templates).pack(side='left', padx=(0,8))
+        ttk.Button(diagnostic_row, text='Mağazaya Atananları Üretime Seç',
+                   command=self.select_store_assigned_templates).pack(side='left')
+        self.store_filter_label=tk.StringVar(value='Mağazaya özel görünüm KAPALI. Seçimler değişmeden kalır.')
+        ttk.Label(designs_panel,textvariable=self.store_filter_label,
+                  foreground='#d9c3ff',wraplength=1050).pack(anchor='w',pady=(2,3))
 
         quality_panel=ttk.LabelFrame(area,text='03  KALİTE  ·  4K / PETEK / Efekt / Bulut',style='Premium.TLabelframe',padding=(15,13))
         quality_panel.pack(fill='x',pady=(7,10))
@@ -352,27 +371,215 @@ class UnifiedV4BatchWindow:
                 self._editable_sections[key].pack(fill='x',pady=(7,10),before=self._progress_widget)
         self.main_canvas.yview_moveto(0)
 
+    def _chosen_stores(self):
+        return [self.store_mapping[int(i)] for i in self.store_list.curselection()
+                if int(i) < len(self.store_mapping)]
+
+    def _store_changed(self, _event=None):
+        if self.store_only_view:
+            self.apply_filters()
+        else:
+            self._update_store_filter_info()
+
     def reload_stores(self):
+        """Re-read the same store_profiles path as UnifiedV4Batch.run()."""
         try:
-            cfg=StoreProfiles(self.batch_engine.root).load()
-            keep={self.store_mapping[i] for i in self.store_list.curselection()
-                  if i<len(self.store_mapping)}
-            self.store_list.delete(0,"end")
-            self.store_mapping=list(sorted(cfg["stores"]))
+            mgr=StoreProfiles(self.batch_engine.root)
+            cfg=mgr.load()  # re-read disk; never a cached profile copy
+            keep=set(self._chosen_stores()) if hasattr(self,'store_mapping') else set()
+            self.store_list.delete(0,'end')
+            self.store_mapping=list(sorted(cfg['stores']))
             for i,name in enumerate(self.store_mapping):
-                count=len(cfg["stores"][name]["templates"])
-                self.store_list.insert("end",f"{name} ({count} şablon)")
+                count=len(cfg['stores'][name]['templates'])
+                self.store_list.insert('end',f'{name} ({count} şablon)')
                 if name in keep:self.store_list.selection_set(i)
+            if self.store_only_view:
+                self.apply_filters()
+            else:
+                self._update_store_filter_info()
         except Exception as exc:
-            helpful_error("Mağaza profilleri okunamadı",str(exc),parent=self.window)
+            helpful_error('Mağaza profilleri okunamadı',str(exc),parent=self.window)
+
+    def _store_assignment_keys(self):
+        """On-disk, current store membership keys. Never mutate selection."""
+        names=self._chosen_stores()
+        if not names:
+            return set()
+        config=StoreProfiles(self.batch_engine.root).load()
+        return {key for name in names
+                for key in config.get('stores', {}).get(name, {}).get('templates', [])}
+
+    def _update_store_filter_info(self):
+        if not hasattr(self,'store_filter_label'):
+            return
+        try:
+            names=self._chosen_stores()
+            if not names:
+                msg='Mağaza seçilmedi. Üretim için seçim değişmedi.'
+            else:
+                keys=self._store_assignment_keys()
+                valid={str(item['uid']) for item in self.all_templates if key_for(item) in keys}
+                unrelated=len(set(self.selected_uids)-valid)
+                msg=(f'Mağaza: {", ".join(names)} | güncel atanmış mockup: {len(valid)} | '
+                     f'üretimde seçilmiş ama mağazaya ait olmayan: {unrelated}. '
+                     'Seçimler kendiliğinden değiştirilmez.')
+            if self.store_only_view:
+                msg='MAĞAZA FİLTRESİ AÇIK · '+msg
+            self.store_filter_label.set(msg)
+        except (OSError,ValueError,KeyError) as exc:
+            self.store_filter_label.set('MAĞAZA PROFİLİ OKUNAMADI: '+str(exc))
+
+    def show_store_templates(self):
+        """Explicit list FILTER ONLY; never silently select/unselect any UID."""
+        if not self._chosen_stores():
+            messagebox.showwarning('Mağaza seçin',
+                'Önce Mağazalar alanından bir mağaza seçin.',parent=self.window)
+            return
+        self._capture_visible()
+        self.store_only_view=True
+        self.apply_filters(capture=False)
+
+    def show_all_templates(self):
+        self._capture_visible()
+        self.store_only_view=False
+        self.apply_filters(capture=False)
+
+    def _store_selection_snapshot(self, *, selected=None, stores=None):
+        """Same UID+store arguments as start() -> StoreProfiles.plan()."""
+        names=list(self._chosen_stores() if stores is None else stores)
+        manager=StoreProfiles(self.batch_engine.root)
+        config=manager.load()
+        chosen=list(self.chosen_uids() if selected is None else selected)
+        report=compare_store_selection(names,chosen,list(self.all_templates),config)
+        return report,read_profile_identity(manager)
+
+    def _store_report_text(self, report, identity):
+        visible=[self.mapping[int(i)] for i in self.listbox.curselection()
+                 if int(i)<len(self.mapping)]
+        return format_store_diagnostic(
+            report,profile_identity=identity,
+            visible_selected_uids=visible,
+            internal_selected_uids=sorted(self.selected_uids))
+
+    def _show_store_diagnostic(self, report, identity, *, reason=None):
+        content=self._store_report_text(report,identity)
+        if reason:
+            content='ÜRETİM ÖN KONTROLÜ: '+str(reason)+'\n\n'+content
+        pop=tk.Toplevel(self.window)
+        pop.title('Mağaza / Üretim Kimlik Karşılaştırması — Salt Okunur')
+        pop.geometry('940x650')
+        area=ttk.Frame(pop,padding=12)
+        area.pack(fill='both',expand=True)
+        view=scrolledtext.ScrolledText(area,wrap='word',font=('Consolas',10),height=24)
+        view.pack(fill='both',expand=True)
+        view.insert('1.0',content)
+        view.configure(state='disabled')
+        footer=ttk.Frame(area)
+        footer.pack(fill='x',pady=(8,0))
+        def copy_report():
+            pop.clipboard_clear();pop.clipboard_append(content)
+        ttk.Button(footer,text='Raporu Kopyala',command=copy_report).pack(side='left')
+        ttk.Button(footer,text='Bu Mağazanın Mockuplarını Göster',
+                   command=lambda:(pop.destroy(),self.show_store_templates())).pack(side='left',padx=6)
+        ttk.Button(footer,text='Kapat',command=pop.destroy).pack(side='right')
+        return pop
+
+    def diagnose_store_selection(self):
+        try:
+            report,identity=self._store_selection_snapshot()
+            self._show_store_diagnostic(report,identity)
+        except (OSError,ValueError,KeyError) as exc:
+            helpful_error('Mağaza eşleşmesi teşhis edilemedi',str(exc),parent=self.window)
+
+    def select_store_assigned_templates(self):
+        """Only an EXPLICIT click may replace old production selection."""
+        try:
+            report,identity=self._store_selection_snapshot()
+            if not report['requested']:
+                raise ValueError('Önce Mağazalar listesinden bir mağaza seçin.')
+            invalid=[item for item in report['details'] if item['status'] in
+                     ('STORE_NOT_FOUND','NO_ASSIGNMENT','STALE_APPROVAL_OR_SHA')]
+            if report['duplicate_keys'] or report['duplicate_uids'] or invalid:
+                self._show_store_diagnostic(report,identity)
+                return
+            if not report['union_uids']:
+                raise ValueError('Atanmış ve güncel onaylı şablon bulunamadı.')
+            previous=len(self.chosen_uids())
+            self.category_filter.set('Tümü')
+            self.search_filter.set('')
+            # Filter traces may recapture the OLD list; replace afterwards.
+            self.selected_uids=set(report['union_uids'])
+            self.apply_filters(capture=False)
+            messagebox.showinfo('Mağaza şablonları seçildi',
+                f'{previous} eski üretim seçimi yerine açık komutunuzla '
+                f'{len(self.selected_uids)} atanmış onaylı şablon seçildi.\n'
+                'Mağaza profilinde ve üretim verilerinde değişiklik yapılmadı.',
+                parent=self.window)
+        except (OSError,ValueError,KeyError) as exc:
+            messagebox.showwarning('Mağaza seçimi eşleştirilemedi',str(exc),parent=self.window)
 
     def open_store_manager(self):
-        """Explicit store -> category -> visual mockup assignment; never reuse production selection."""
+        """Existing navigation stays independent of production selection."""
+        return self._open_store_manager_context()
+
+    def _open_store_manager_context(self, *, prefill_store=None,
+                                    prefill_category=None, prefill_uid=None):
+        """Open target safely; user must confirm a new store membership."""
         from .store_assignment_ui_v410 import StoreAssignmentWindow
-        StoreAssignmentWindow(self.window,
-                              state_root=self.batch_engine.root,
-                              get_approved=lambda: list(self.all_templates),
-                              on_change=self.reload_stores)
+        return StoreAssignmentWindow(self.window,
+                                     state_root=self.batch_engine.root,
+                                     get_approved=lambda: list(self.all_templates),
+                                     on_change=self.reload_stores,
+                                     prefill_store=prefill_store,
+                                     prefill_category=prefill_category,
+                                     prefill_uid=prefill_uid)
+
+    def _store_preflight_error(self, reason, report, identity):
+        """Actionable UX, no auto-reassignment and no loss of selected UID."""
+        details=[]
+        for row in report['selected_details']:
+            if not row['selected_store_member']:
+                details.append(f"{row['filename']} | {row['category']} | UID: {row['uid']} | "
+                               f"Sahibi: {row['owner'] or '(atanmamış)'}")
+        text=('SEÇİLİ MAĞAZA: '+(', '.join(report['requested']) or '(yok)')+'\n'
+              f'Mağazaya ait güncel atama: {len(report["union_uids"])}\n'
+              'Uyuşmayan üretim seçimi: '+str(len(report['outside_uids']))+'\n'
+              'NEDEN: '+str(reason)+'\n\n'
+              +('\n'.join(details[:12]) if details else 'Mağaza grubundaki geçerli UID seçimi kontrol edilmeli.'))
+        dialog=tk.Toplevel(self.window)
+        dialog.title('Mağaza İzolasyonu — eşleşme düzeltilmeli')
+        dialog.geometry('770x510')
+        dialog.minsize(600,410)
+        pane=ttk.Frame(dialog,padding=15)
+        pane.pack(fill='both',expand=True)
+        ttk.Label(pane,text='Üretim güvenli biçimde engellendi',
+                  font=('Segoe UI',15,'bold')).pack(anchor='w',pady=(0,7))
+        text_area=scrolledtext.ScrolledText(pane,wrap='word',height=14,font=('Segoe UI',10))
+        text_area.pack(fill='both',expand=True)
+        text_area.insert('1.0',text)
+        text_area.configure(state='disabled')
+        buttons=ttk.Frame(pane)
+        buttons.pack(fill='x',pady=(10,0))
+        def do(action):
+            dialog.destroy()
+            action()
+        ttk.Button(buttons,text='Bu Mağazanın Mockuplarını Göster',
+                   command=lambda:do(self.show_store_templates)).pack(side='left',padx=(0,6))
+        ttk.Button(buttons,text='Detaylı Salt Okunur Rapor',
+                   command=lambda:do(lambda:self._show_store_diagnostic(report,identity,reason=reason))).pack(side='left',padx=(0,6))
+        # Only an unowned, approved template in a SINGLE active store may be
+        # proposed for a manual assignment. The user must still confirm it.
+        proposed=[item for item in report['selected_details']
+                  if not item['selected_store_member'] and not item['owner'] and item['source_sha']]
+        if len(report['requested'])==1 and len(proposed)==1 and not report['duplicate_uids']:
+            item=proposed[0]
+            store=report['requested'][0]
+            ttk.Button(buttons,text='Bu Mockupı Mağazaya Ata…',
+                       command=lambda:do(lambda:self._open_store_manager_context(
+                           prefill_store=store,prefill_category=item['category'],
+                           prefill_uid=item['uid']))).pack(side='left',padx=(0,6))
+        ttk.Button(buttons,text='Kapat',command=dialog.destroy).pack(side='right')
+        return dialog
 
     def _log(self, text: str) -> None:
         self.messages.put(("log", str(text)))
@@ -411,6 +618,7 @@ class UnifiedV4BatchWindow:
     def _on_selection_change(self, _event=None):
         self._capture_visible()
         self._refresh_filter_count()
+        self._update_store_filter_info()
 
     def _refresh_filter_count(self):
         if hasattr(self,'filter_count'):
@@ -428,6 +636,13 @@ class UnifiedV4BatchWindow:
         try:
             visible=filtered_templates(self.all_templates,self.category_filter.get(),
                                        self.search_filter.get(),self.sort_filter.get())
+            if self.store_only_view:
+                try:
+                    assigned=self._store_assignment_keys()
+                    visible=[item for item in visible if key_for(item) in assigned]
+                except (OSError, ValueError, KeyError) as exc:
+                    visible=[]   # fail closed: never expose unrelated mockups
+                    self.store_filter_label.set('Mağaza profili okunamadı: '+str(exc))
             self.listbox.delete(0,'end');self.mapping=[]
             for item in visible:
                 uid=item['uid']
@@ -439,6 +654,7 @@ class UnifiedV4BatchWindow:
         finally:
             self._filter_redrawing=False
         self._preview_selected()
+        self._update_store_filter_info()
 
     def reload(self) -> None:
         """Fast first paint: scan approved templates on a worker, update Tk on UI."""
@@ -619,7 +835,7 @@ class UnifiedV4BatchWindow:
         if self.worker and self.worker.is_alive():
             return
         selected = self.chosen_uids()
-        selected_stores=[self.store_mapping[int(i)] for i in self.store_list.curselection()]
+        selected_stores=self._chosen_stores()
         if not selected:
             messagebox.showinfo("Şablon Seç", "En az bir onaylı şablon seçin.", parent=self.window)
             return
@@ -675,10 +891,25 @@ class UnifiedV4BatchWindow:
         if selected_stores:
             try:
                 approved=list(self.template_items.values())
-                plan=StoreProfiles(self.batch_engine.root).plan(selected_stores,approved,selected_uids=selected)
+                # The SAME exact snapshot is used for diagnosis and plan;
+                # unchecked out-of-store UIDs may not be silently ignored.
+                diagnostic,identity=self._store_selection_snapshot(
+                    selected=selected,stores=selected_stores)
+                if not diagnostic['ready']:
+                    raise ValueError('Seçilen şablon(lar) ile mağaza üyeliği uyuşmuyor.')
+                plan=StoreProfiles(self.batch_engine.root).plan(
+                    selected_stores,approved,selected_uids=selected)
                 pair_count=sum(len(store_templates) for _,store_templates in plan)
             except (ValueError,KeyError,OSError) as exc:
-                messagebox.showwarning("Mağaza İzolasyonu",str(exc),parent=self.window)
+                try:
+                    diagnostic,identity=self._store_selection_snapshot(
+                        selected=selected,stores=selected_stores)
+                    self._log('MAĞAZA ÖN KONTROLÜ: '+
+                              self._store_report_text(diagnostic,identity))
+                    self._store_preflight_error(exc,diagnostic,identity)
+                except Exception as detail_exc:
+                    messagebox.showwarning('Mağaza İzolasyonu',
+                        str(exc)+'\nTeşhis ayrıntısı: '+str(detail_exc),parent=self.window)
                 return
         else:
             pair_count=len(selected)

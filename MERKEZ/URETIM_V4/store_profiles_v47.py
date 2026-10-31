@@ -221,6 +221,7 @@ class StoreProfiles:
             raise ValueError('APPROVED_TEMPLATE_KEY_COLLISION')
         filter_uids=set(selected_uids) if selected_uids is not None else None
         groups=[]
+        matched_uids=set()
         for name in selected:
             if name not in raw['stores']:
                 raise ValueError('Mağaza profili bulunamadı: '+name)
@@ -234,5 +235,14 @@ class StoreProfiles:
                     (filter_uids is None or approved_by_key[k]['uid'] in filter_uids)]
             if not subset:
                 raise ValueError('Seçili şablonlar mağazanın özel grubunda yok: '+name)
+            matched_uids.update(str(item['uid']) for item in subset)
             groups.append((name,subset))
+        # Legacy plan silently dropped extra selected templates when at least
+        # one UID belonged to a selected store. Never present those to users as
+        # production selections and then skip them without explanation.
+        if filter_uids is not None:
+            outside={str(uid) for uid in filter_uids}-matched_uids
+            if outside:
+                raise ValueError('STORE_SELECTED_UID_NOT_ASSIGNED: '
+                                 + ', '.join(sorted(outside)[:20]))
         return groups
