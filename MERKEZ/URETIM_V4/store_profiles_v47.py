@@ -185,13 +185,31 @@ class StoreProfiles:
         raw['stores'][store]['templates']=sorted(set(raw['stores'][store]['templates'])|set(template_keys))
         return self.save(raw)
 
-    def unassign(self, store, items: list[dict]):
+    def unassign_keys(self, store: str, keys, *, expected_current_keys=None) -> int:
+        """Explicit bulk *membership* removal; never delete templates or outputs.
+
+        The optional snapshot fails closed when the store's membership was
+        changed after the user opened the confirmation dialog. This uses the
+        existing atomic, backup-producing config writer, not production data.
+        """
+        chosen=list(keys)
+        if not chosen or len(chosen)!=len(set(chosen)):
+            raise ValueError('Kaldırılacak benzersiz mağaza atamalarını seçin.')
         raw=self.load()
         if store not in raw['stores']:
-            raise ValueError('Mağaza bulunamadı.')
-        removed={key_for(x) for x in items}
-        raw['stores'][store]['templates']=[x for x in raw['stores'][store]['templates'] if x not in removed]
-        return self.save(raw)
+            raise ValueError('Mağaza bulunamadı. Listeyi yenileyin.')
+        before=list(raw['stores'][store]['templates'])
+        if expected_current_keys is not None and before!=list(expected_current_keys):
+            raise ValueError('Mağaza atamaları onay sırasında değişti. Listeyi yenileyin.')
+        if not set(chosen).issubset(set(before)):
+            raise ValueError('Seçilen atamalardan biri artık mağazada değil. Listeyi yenileyin.')
+        raw['stores'][store]['templates']=[key for key in before if key not in set(chosen)]
+        self.save(raw)
+        return len(chosen)
+
+    def unassign(self, store, items: list[dict]):
+        """Backwards-compatible item-based removal through the safe path."""
+        return self.unassign_keys(store,[key_for(item) for item in items])
 
     def plan(self, selected: list[str], approved: list[dict], *, selected_uids: list[str] | None=None):
         """Snapshot a fail-closed plan. Empty store selection = legacy path."""
