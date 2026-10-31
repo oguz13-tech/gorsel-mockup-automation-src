@@ -1,0 +1,121 @@
+/* MOR PREMIUM review design system: only presentation, no mask or production math.
+   Loaded after V4.10.2 so the older anthracite rules are not silently changed.
+   All user overrides are validated in the UI-only preferences backend.
+*/
+:root {
+  --mor-background: #111827;
+  --mor-side: #0E1424;
+  --mor-panel: #1D2638;
+  --mor-raised: #29344B;
+  --mor-border: #384466;
+  --mor-accent: #7A4DFA;
+  --mor-text: #F4F6FF;
+  --mor-muted: #C7D3E8;
+  --mor-blue: #60A5FA;
+  --mor-green: #34D399;
+  --mor-yellow: #F3C05B;
+  --mor-red: #F87171;
+  --mor-gap: 10px;
+  --mor-radius: 12px;
+  color-scheme: dark;
+}
+body, body #main, body #petekV477Editor {
+  background: var(--mor-background) !important;
+  color: var(--mor-text) !important;
+  font-family: 'Segoe UI Variable','Segoe UI',system-ui,sans-serif !important;
+}
+body #sidebar, body .petek-v477-list-pane.in-sidebar {
+  background: var(--mor-side) !important;
+  border-color: var(--mor-border) !important;
+}
+body #toolbar, body .petek-v477-head, body .petek-v477-selectrow {
+  background: var(--mor-panel) !important;
+  border-color: var(--mor-border) !important;
+}
+body #right-toolbar, body .petek-v477-tools, body .v499-status-filter,
+body .petek-v484-bulk, body #bulk-select-panel {
+  background: var(--mor-panel) !important;
+  border-color: var(--mor-border) !important;
+  color: var(--mor-text) !important;
+}
+body .category-title.selected, body #petekV477Nav.selected,
+body #petekV477Nav[aria-current=page] {
+  background: #453086 !important;
+  border-color: var(--mor-accent) !important;
+  color: var(--mor-text) !important;
+}
+body button:not(:disabled):not(.ui-layout-launcher):not(.ui-card-drag):not(.ui-layout-action):hover,
+body #petekV477List button:hover {border-color: var(--mor-accent);}
+body .category-title:hover {background: var(--mor-raised) !important;border-color:var(--mor-accent)!important;}
+body #categories .template-item,body #petekV477List .petek-v484-item-wrap {
+  border-radius: var(--mor-radius) !important;
+  font-size: 14px !important;
+  min-height: 40px;
+}
+body #petekV477List button.petek-v477-list-item.petek-v484-name,
+body #categories .template-item-label {font-size: 14px !important; color: var(--mor-text) !important;}
+body button:focus-visible,body input:focus-visible,
+body [role=tab]:focus-visible,body .ui-card-drag:focus-visible {
+  outline: 2px solid #B99CFF !important;outline-offset:2px!important;
+}
+body .petek-v477-tools {max-width: 48vw !important;box-sizing:border-box;}
+body .ui-review-card-container {display:flex;flex-direction:column;gap:var(--mor-gap);}
+body .petek-v477-tools.ui-review-card-container {display:flex!important;flex-direction:column!important;}
+body .ui-review-card {flex:0 0 auto;min-width:0;max-width:100%;box-sizing:border-box;
+  background:var(--mor-panel);border:1px solid var(--mor-border);
+  border-radius:var(--mor-radius);padding:var(--mor-gap);}
+body .ui-review-card[hidden] {display:none!important;}
+body .ui-review-tabs {position:sticky;top:0;z-index:18;display:flex;flex-wrap:wrap;gap:5px;
+  padding:5px;background:var(--mor-panel);border-bottom:1px solid var(--mor-border);order:-1000;}
+body .ui-review-tab {background:var(--mor-raised);border:1px solid var(--mor-border);
+  min-height:34px;color:var(--mor-text);border-radius:8px;padding:5px 10px;font-size:13px;}
+body .ui-review-tab.selected {background:var(--mor-accent);color:#fff;border-color:var(--mor-accent);}
+body .ui-card-edit-header {display:none;align-items:center;gap:8px;min-width:0;
+  padding:5px 1px 9px;border-bottom:1px dashed var(--mor-accent);margin-bottom:10px;}
+body.ui-layout-editing .ui-card-edit-header {display:flex;}
+body .ui-card-drag {min-height:36px;flex:1;min-width:0;border-radius:7px;
+  background:var(--mor-accent);color:#fff;font-size:14px;text-align:left;cursor:grab;}
+body .ui-card-tab-select {max-width:110px;min-width:80px;font-size:13px;min-height:36px;
+  background:var(--mor-background);color:var(--mor-text);}
+body.ui-layout-editing #sidebar,body.ui-layout-editing #main,
+body.ui-layout-editing #petekV477Editor {outline:2px dashed #A26BFF;outline-offset:-2px;}
+body.ui-layout-editing #right-toolbar,body.ui-layout-editing .petek-v477-tools{
+  box-shadow:inset 0 0 0 2px var(--mor-accent) !important;}
+body .ui-layout-launcher {position:fixed;right:20px;top:10px;z-index:2147483600;
+  padding:9px 12px;min-height:39px;background:#6334CF!important;color:#fff;
+  border:1px solid #BCA4FF;border-radius:10px;font:700 14px 'Segoe UI',sans-serif;
+  box-shadow:0 4px 15px #0B09284A;}
+body .ui-layout-launcher:hover {background:#7842E8!important;}
+body .ui-layout-shell {position:fixed;right:12px;top:60px;bottom:12px;width:min(370px,94vw);
+  overflow-y:auto;z-index:2147483590;border:1px solid #8165C9;
+  box-shadow:0 10px 50px rgba(0,0,0,.60);border-radius:14px;
+  background:#172033;color:#F4F6FF;padding:14px;box-sizing:border-box;}
+body .ui-layout-shell[hidden] {display:none!important;}
+body .ui-layout-controls h2 {font-size:19px;margin:2px 0 10px;color:#F4F6FF;}
+body .ui-layout-controls h3 {font-size:15px;margin:16px 0 8px;color:#D5C4FF;}
+body .ui-layout-sub {color:#CDD6E8;line-height:1.5;font-size:13px;}
+body .ui-layout-field {display:flex;align-items:center;justify-content:space-between;gap:8px;
+  margin:8px 0;min-height:36px;font-size:14px;color:#F4F6FF;}
+body .ui-layout-input {max-width:180px;min-width:75px;min-height:32px;}
+body .ui-layout-actions {display:flex;flex-wrap:wrap;gap:7px;margin:9px 0;}
+body .ui-layout-action {flex:1 1 100px;background:#3A2A70!important;color:#fff;
+  border:1px solid #7652DE;border-radius:9px;padding:8px;min-height:38px;}
+body .ui-layout-action:hover {background:#5B36BD!important;}
+body .ui-layout-notice {font-size:13px;line-height:1.5;min-height:25px;color:#BCFFDF;}
+body .ui-layout-resize-handle {display:none;position:fixed;z-index:2147483585;
+  width:18px;height:62px;background:#7440EA;color:#FFF;border:1px solid #AC8AFF;
+  border-radius:12px;font:bold 19px/58px sans-serif;text-align:center;touch-action:none;
+  cursor:ew-resize;user-select:none;}
+body.ui-layout-editing .ui-layout-resize-handle {display:block;}
+body[data-ui-density=compact] {--mor-gap:7px;--mor-radius:9px;}
+body[data-ui-density=spacious] {--mor-gap:15px;--mor-radius:14px;}
+body[data-ui-effect=off] .ui-review-card {box-shadow:none!important;transition:none!important;}
+body[data-ui-effect=soft] .ui-review-card {box-shadow:0 6px 20px #080C1B70;}
+body[data-ui-effect=subtle] .ui-review-card {box-shadow:0 2px 8px #080C1B40;}
+@media(max-width:1100px) {
+  body .ui-review-card-container {gap:6px;}
+  body .ui-layout-shell {width:min(345px,96vw);}
+}
+@media(prefers-reduced-motion:reduce) {
+  body .ui-review-card,body .ui-layout-launcher,body .ui-review-tab {transition:none!important;animation:none!important;}
+}
