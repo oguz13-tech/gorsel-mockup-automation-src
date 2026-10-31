@@ -8,14 +8,14 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk, scrolledtext, messagebox
 from datetime import datetime
-from dark_theme_v42 import BG, FG, MUTED
+from dark_theme_v42 import BG, FG, MUTED, UI_MOR_THEME
 from ui_layout_v498 import load as load_visual_layout, save as save_visual_layout, LayoutEditor
 
-SIDE = '#222831'
-PANEL = '#343c46'
-PANEL_ALT = '#3d4652'
-OUTLINE = '#58616d'
-ACCENT = '#995df4'
+SIDE = UI_MOR_THEME['sidebar']
+PANEL = UI_MOR_THEME['panel']
+PANEL_ALT = UI_MOR_THEME['raised']
+OUTLINE = UI_MOR_THEME['border']
+ACCENT = UI_MOR_THEME['accent']
 MAGENTA = '#ec4ca0'
 ORANGE = '#f8a552'
 BLUE = '#4c9df9'
