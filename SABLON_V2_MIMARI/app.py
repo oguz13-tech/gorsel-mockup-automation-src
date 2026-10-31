@@ -7,6 +7,7 @@ import base64
 import time
 import shutil
 import subprocess
+import tempfile
 import cv2
 import numpy as np
 from pathlib import Path
@@ -279,7 +280,14 @@ def _require_migrated_database():
             if not inspect_startup_schema(test_db)["ready"]:
                 _db_for_testing.init_db()
             return None
-    if request.path.startswith("/api/") and not DB_STARTUP_AUDIT["ready"]:
+    # Independent utilities remain available when a legacy factory DB still
+    # requires explicit owner-approved migration. Loopback and CSRF still apply.
+    independent_endpoints = (
+        request.path == "/api/session/csrf"
+        or request.path.startswith("/api/tools/launch/")
+        or request.path.startswith("/api/tools/status/")
+    )
+    if request.path.startswith("/api/") and not independent_endpoints and not DB_STARTUP_AUDIT["ready"]:
         return jsonify({
             "success": False, "code": "DB_STARTUP_BLOCKED",
             "error": DB_STARTUP_AUDIT["reason"],
@@ -310,54 +318,81 @@ _ALLOWED_USER_TOOLS = {
     "portrait_3x4",
     "review_folder",
     "golden_audit",
+    "orientation_sort",
 }
+
+
+# Launch receipt is not proof a GUI exists. A temporary readiness marker is
+# written only after the child successfully creates its Tk root.
+_TOOL_LAUNCHES = {}
+_TOOL_LAUNCH_LOCK = threading.Lock()
+
+
+def _tool_launch_status(launch_id):
+    with _TOOL_LAUNCH_LOCK:
+        record = _TOOL_LAUNCHES.get(launch_id)
+        if record is None:
+            return None
+        process, marker, created_at = record
+    rc = process.poll()
+    if rc is not None and rc != 0:
+        return {"success": False, "status": "FAILED", "error":
+                f"Araç başlamadan/çalışırken hata koduyla kapandı: {rc}"}
+    if marker.is_file() and time.time() - marker.stat().st_mtime < 6:
+        return {"success": True, "status": "READY", "message":
+                "Araç penceresi açıldı ve çalışıyor. Seçim ekranından devam edebilirsiniz."}
+    if rc is not None:
+        if not marker.exists():
+            return {"success": False, "status": "NOT_READY", "error":
+                    "Araç hazır bildirimi göndermeden kapandı."}
+        return {"success": True, "status": "CLOSED", "message": "Araç penceresi kapatıldı."}
+    if time.monotonic() - created_at > 30:
+        return {"success": False, "status": "TIMEOUT", "error":
+                "Araç 30 saniyede açılış onayı vermedi. Açık konsolu ve hata kaydını kontrol edin."}
+    return {"success": True, "status": "STARTING", "message":
+            "Araç başlatılıyor; henüz açıldığı doğrulanmadı."}
+
+
+@app.route('/api/tools/status/<launch_id>')
+def api_tool_launch_status(launch_id):
+    result = _tool_launch_status(launch_id)
+    if result is None:
+        return jsonify({"success": False, "error": "Başlatma kaydı bulunamadı."}), 404
+    return jsonify(result), (200 if result["success"] else 500)
 
 
 @app.route('/api/tools/launch/<tool_name>', methods=['POST'])
 def api_launch_user_tool(tool_name):
-    """Launch one independent desktop tool without coupling it to the factory."""
+    """Start a tool; only status=READY proves its Tk window initialized."""
     tool_name = str(tool_name or "").strip()
     if tool_name not in _ALLOWED_USER_TOOLS:
-        return jsonify({
-            "success": False,
-            "error": "Bilinmeyen araç.",
-        }), 404
-
+        return jsonify({"success": False, "error": "Bilinmeyen araç."}), 404
     runner = Path(SOURCE_ROOT) / "SABLON_V2_MIMARI" / "tools_runner.py"
     if not runner.is_file():
-        return jsonify({
-            "success": False,
-            "error": "Araç çalıştırıcısı bulunamadı.",
-        }), 500
-
+        return jsonify({"success": False, "error": "Araç çalıştırıcısı bulunamadı."}), 500
+    launch_id = uuid.uuid4().hex
+    marker_dir = Path(tempfile.mkdtemp(prefix="mockup_tool_launch_"))
+    marker = marker_dir / "ready.txt"
     env = os.environ.copy()
     env["MOCKUP_RUNTIME_WORKSPACE"] = BASE_DIR
-    kwargs = {
-        "cwd": SOURCE_ROOT,
-        "env": env,
-    }
+    env["MOCKUP_TOOL_READY_FILE"] = str(marker)
+    kwargs = {"cwd": SOURCE_ROOT, "env": env}
     if os.name == "nt":
         kwargs["creationflags"] = subprocess.CREATE_NEW_CONSOLE
-
     try:
-        process = subprocess.Popen(
-            [sys.executable, str(runner), tool_name],
-            **kwargs,
-        )
-        return jsonify({
-            "success": True,
-            "pid": int(process.pid),
-            "message": (
-                "Araç ayrı pencerede açıldı. Açılan seçim penceresinden "
-                "işlem yapmak istediğiniz görselleri seçin."
-            ),
-        })
+        process = subprocess.Popen([sys.executable, str(runner), tool_name], **kwargs)
+        with _TOOL_LAUNCH_LOCK:
+            _TOOL_LAUNCHES[launch_id] = (process, marker, time.monotonic())
+        return jsonify({"success": True, "status": "STARTING", "launch_id": launch_id,
+                        "pid": int(process.pid), "message":
+                        "Başlatma isteği alındı. Pencere henüz doğrulanmadı."}), 202
     except Exception as exc:
+        try:
+            marker_dir.rmdir()
+        except OSError:
+            pass
         logger.exception("Bağımsız araç başlatılamadı")
-        return jsonify({
-            "success": False,
-            "error": str(exc),
-        }), 500
+        return jsonify({"success": False, "error": str(exc)}), 500
 
 @app.route('/api/ayarlar', methods=['GET', 'POST'])
 def api_ayarlar():
