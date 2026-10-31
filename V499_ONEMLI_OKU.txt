@@ -1,0 +1,12 @@
+GÖRSEL ÜRETİM MERKEZİ V4.9.9 — ADAY PAKET
+
+1) Eski çalışan uygulamayı/şablonları SİLMEYİN.
+2) ZIP'i masaüstündeki eski ana çalışma klasörünün ÜZERİNE açmayın.
+3) ZIP'i OneDrive DIŞINDA yeni boş klasöre çıkarın.
+4) GORSEL_V46_CANDIDATE\V499_DOGRULA_WINDOWS.bat ile manifesti kontrol edin.
+5) GORSEL_V46_CANDIDATE\V499_BASLAT_WINDOWS.bat ile başlatın.
+6) Ana Çalışma Klasörü eski gerçek dizine bağlı kalmalı; maskeler, 4 köşeler, numara defterleri oradadır.
+7) PETEK tek toplu onay: PETEK Toplu Seçim -> GÖRÜNEN TÜM TASLAKLARI TEK ONAYLA. Tik zorunluluğu yok.
+8) Onaylı maske revizyonunda önce yeni taslak oluşturulur. Kaydet + açık onay sonucu yeni revizyon aktifleşir; eski kayıt geri dönüş için korunur.
+9) PETEK liste / renk / ok tuşları / silgi / antrasit; Test Merkezi'nde birebir kabul edin.
+10) Gerçek Windows ve Flask HTTP e2e doğrulaması yapılmadan ticari FINAL/GO ilan etmeyin.

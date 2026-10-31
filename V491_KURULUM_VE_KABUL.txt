@@ -1,0 +1,20 @@
+GÖRSEL ÜRETİM MERKEZİ V4.9.1 — GÜVENLİ ADAY / WINDOWS GERÇEK KABUL BEKLİYOR
+
+1. Eski V4.8.8 programını ve canlı veri klasörünü silmeyin / taşımayın.
+2. ZIP dosyasını eski uygulama ve OneDrive canlı veri klasörü dışındaki YENİ boş klasöre çıkartın.
+3. V491_DOGRULA_WINDOWS.bat ile manifest kontrolü yapın.
+4. BASLAT_V47_WINDOWS.bat ile başlatın (Windows Python 3.11 gerekir; ilk kurulumda internet gerekebilir).
+5. Ana çalışma klasörü olarak SADECE eski, doğru klasör seçili mi kontrol edin.
+6. Önce kaynak verilerden ayrı DENEME klasöründe yatay/dikey/kare seçiciyi KOPYALA modunda test edin.
+7. MAGENTA LAB uygulaması asla kendiliğinden gerçekleşmez: önce eşleştirme raporu ve kullanıcı onayı.
+8. İlk kullanımdan önce kritik çalışma alanı, SQLite (WAL dosyaları dahil), orijinaller ve PETEK maskelerinin yedeğini alın.
+9. Şablonları, maskeleri, kayıtlı onayları ve üretim arşivlerini taşıma/silme/yeniden adlandırma.
+10. İhtiyaç halinde ESKI_GORUNUME_DON_WINDOWS.bat ile önceki menüye dönün; daha ileri geri dönüş için korunmuş V4.8.8'i açın.
+
+BU SÜRÜMÜN GARANTİ ETTİĞİ: kod düzeltmeleri ve aşağıda belirtilen testlerin başarı durumu.
+GARANTİ EDEMEDİĞİ: kullanıcının gerçek Windows/OneDrive/Trendyol/ImgBB/GPU ortamında bütün fonksiyonların uçtan uca çalışması.
+
+GitHub'a otomatik commit yapılmadı. Test ve sınırlamalar V491_TEST_VE_KABUL_RAPORU.md dosyasındadır.
+
+
+Ayrintili rapor: V491_TEST_VE_KABUL_RAPORU.md

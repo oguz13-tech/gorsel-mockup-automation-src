@@ -1,0 +1,11 @@
+GÖRSEL ÜRETİM MERKEZİ V4.10.1 — WINDOWS KABUL ADAYI
+
+1. Bu ZIP'i ayrı, temiz bir klasöre çıkar. Eski V4.10.0 sürümünü ve çalışma/veritabanı/yedek dosyalarını SİLME.
+2. V4101_DOGRULA_WINDOWS.bat çalıştır; doğrulama PASS değilse başlatma.
+3. V4101_BASLAT_WINDOWS.bat çalıştır.
+4. Şablon İnceleme > PETEK > Toplu Seçim'de dosya isimlerini ve bir defalık toplu onayı doğrula.
+5. Test Merkezi'nde V4101 kartlarını yalnız gerçek test sonrası onayla.
+6. docs/V4101_*.md dosyaları mimari, kaynak dosya haritası, değişiklik ve açık riskleri içerir.
+
+WINDOWS_NOT_VERIFIED: gerçek Windows/Flask/GPU/mağaza canlı kabulü bu paket derleme ortamında yapılmadı.
+Çalışan PETEK 15 ızgara, Orta yoğunluk, pembe temizliği, hızlı açılış ve kapatma korunmalı.

@@ -90,7 +90,10 @@ def test_independent_renamer_uses_packaged_python_and_visible_category_selector(
     batch=(ROOT/'BAGIMSIZ_ARACLAR/01_GORSEL_ISIMLENDIRICI.bat').read_text('utf-8')
     tool=(ROOT/'SABLON_V2_MIMARI/tools_runner.py').read_text('utf-8')
     assert r'MERKEZ\.venv\Scripts\python.exe' in batch
-    assert 'py -3.11 -B' in batch
+    bootstrap=(ROOT/'KUR_ORTAM_V491_WINDOWS.bat').read_text('utf-8')
+    assert 'KUR_ORTAM_V491_WINDOWS.bat' in batch
+    assert 'py -3.11 -m venv' in bootstrap
+    assert 'v46_dependency_check.py' in bootstrap
     assert 'pause' in batch
     assert 'dialog.transient(root)' not in inspect.getsource(
         __import__('SABLON_V2_MIMARI.tools_runner',fromlist=['choose_rename_category']).choose_rename_category)

@@ -1,0 +1,29 @@
+GÖRSEL ÜRETİM MERKEZİ — V4.9.8 KABUL ADAYI
+
+KURULUM:
+1) V4.9.5 ve ana veri klasörünün ÜZERİNE ZIP açmayın.
+2) ZIP'i boş, OneDrive dışı bir klasöre çıkarın.
+3) GORSEL_V46_CANDIDATE/V498_DOGRULA_WINDOWS.bat dosyasını çalıştırın.
+4) GORSEL_V46_CANDIDATE/V498_BASLAT_WINDOWS.bat ile başlatın.
+5) Ana veri klasörü olarak önceki kayıtların bulunduğu klasör seçili kalsın.
+
+YENİ:
+- PETEK: taslakları 8'li, insan tarafından her görselin maskesi incelenen gruplarla toplu onay.
+- PETEK: kompakt/fotoğraflı liste geçişi.
+- PETEK: 4 köşe var ancak otomatik maske taslağı yoksa açıklamalı adım uyarısı.
+- Ana ekran: kişiselleştirilebilir sekmeler, kart sıralama, renk ve efekt düzeyi.
+- Seri Üretim: kart sekmesi, görünüm düzenleyici, 4K Kurulumunu Kontrol Et.
+- Windows ttk onay kutusu renk/hover düzeni.
+- V4.9.5 PETEK 15 ızgara ve pembe kaçak motoru KORUNDU.
+
+ÖNEMLİ GÜVENLİK:
+PETEK toplu onay tamamen otomatik DEĞİLDİR. Her maske yeşil overlay ile
+insan tarafından kontrol edilir; yalnız onaylanan DRAFT'lar APPROVED olur.
+Onaylı geçmiş PETEK maskeleri otomatik değişmez.
+Yeni sekme/renk JSON'u yalnız kullanıcıya özel yerel klasörde saklanır.
+Tekil başarısızlıklar rapora yazılır, kayıt kendiliğinden onaylanmaz.
+
+GERÇEK WINDOWS_NOT_VERIFIED:
+Bu ortam Flask modülü sağlamadığı için PETEK HTTP endpoint'i ve Windows
+canlı şablon/4K/GPU akışı bu paketten gerçek kullanıcı verisiyle doğrulanmadı.
+Uygulamayı gerçek veriler üzerinde canlı üretime ALMADAN ÖNCE kullanıcı kabulü gerekir.

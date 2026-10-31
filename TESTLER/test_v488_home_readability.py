@@ -14,7 +14,7 @@ import merkez
 def test_center_has_two_clear_primary_workflows_and_no_duplicate_petek_on_home():
     tree=ast.parse((ROOT/'MERKEZ/merkez.py').read_text('utf-8'))
     center=next(x for x in tree.body if isinstance(x,ast.ClassDef) and x.name=='Center')
-    build=next(x for x in center.body if isinstance(x,ast.FunctionDef) and x.name=='build')
+    build=next(x for x in center.body if isinstance(x,ast.FunctionDef) and x.name in ('build_legacy','build') and (x.name == 'build_legacy' or not any(isinstance(y,ast.FunctionDef) and y.name=='build_legacy' for y in center.body)))
     source=ast.get_source_segment((ROOT/'MERKEZ/merkez.py').read_text('utf-8'),build)
     assert "Şablonları İncele ve Onayla" in source
     assert "Seri Mockup Üretimi" in source
@@ -54,12 +54,17 @@ def test_main_working_root_never_auto_migrates_and_versions_are_in_sync():
     src=(ROOT/'MERKEZ/merkez.py').read_text('utf-8')
     version=(ROOT/'MERKEZ/version_v47.py').read_text('utf-8')
     gui=(ROOT/'MERKEZ/URETIM_V4/gui_v4.py').read_text('utf-8')
-    assert 'VERSION = "V4.8.8"' in version
-    assert 'V4.8.8 —' in gui
+    # Avoid an obsolete hard-coded V4.8.8 gate: require a real canonical
+    # version and the SAME version shown by production UI.
+    import re
+    match=re.search(r'^VERSION = "(V\d+\.\d+\.\d+)"$', version, re.MULTILINE)
+    assert match, 'Canonical semantic version missing'
+    assert match.group(1) in gui, 'Production UI version drift' 
     assert "self.runtime=preferred_runtime()" in src
     assert 'store_runtime_choice(Path(chosen))' in src
     assert 'self.root.after(150,self.start_auto_ham_designs)' in src
-    assert 'self.ham_design_watcher.vault.audit()' in src
+    assert 'watcher.vault.audit()' in src
+    assert "name='ham-vault-audit'" in src  # audit runs off the UI thread
     assert 'self.root.after(400,self.start_auto_inbox)' in src
     # Old/source folders must be untouched without explicit operator action.
     assert "def build(self):" in src
