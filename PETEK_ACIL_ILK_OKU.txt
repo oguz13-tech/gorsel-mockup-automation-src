@@ -1,0 +1,28 @@
+PETEK / ACIL ONIZLEME HATA DUZELTMESI (01 Kasim 2026)
+
+KOK NEDEN: Onizleme tarayici kodu sunucunun 13/14/16 gercek yarik sayisiyla donen
+basarili cevabini `count !== 15` kontrolu nedeniyle reddediyordu.
+
+DUZELTILENLER:
+- 13, 14, 15 veya 16 gercek yarik varsa onizleme kabul edilir.
+- 15'e ulasmak icin ek sahte yarik olusturulmaz; kaynak fotoograf geometri motoru korunur.
+- Onizleme uyarisi ve duzeltme notu gercek sayiyi gosterir.
+- Tarayicinin onceki JS kodunu tekrar kullanmamasi icin script URL surumu degisti.
+- Onceki 13-16 geometri, kavis boyama siniri, gorunur firca, UID secim sabitleme,
+  mor inceleme arayuzu ve magaza toplu atama kaldirma dosyalari korunmustur.
+
+KURULUM:
+1) Eski calisan sisteminizi silmeyin.
+2) ZIP'i C:\AI_WORK\PETEK_ACIL_TEST gibi BOS, AYRI bir klasore cikarin.
+3) GORSEL_V4102_WINDOWS\GORSEL_V46_CANDIDATE altindaki
+   PETEK_ACIL_DOGRULA_WINDOWS.bat dosyasina cift tiklayin.
+4) PASS olursa PETEK_ACIL_BASLAT_WINDOWS.bat dosyasini baslatin.
+5) PETEK ekranini acip Ctrl+F5 ile yenileyin; gercek tasarim yukleyip
+   "Gercek Izgara A/B Testi"ne basin.
+6) Hata devam ederse tum mesaj ve terminal kaydini alin. Basarili onizleme,
+   onayli kaydin otomatik onaylanmasi anlamina gelmez.
+
+TEST: Linux/Xvfb/Chromium izole regresyon: 95 PASS, 1 SKIP, 1 DESELECT.
+Gercek Flask HTTP + Windows veri havuzu testsiz: WINDOWS_NOT_VERIFIED.
+Kullanici maskeleri, onay kayitlari, veri tabanlari ve asil sablon fotograflari
+ZIP'e dahil degildir; kaynak veri yolu otomatik degistirilmez.
