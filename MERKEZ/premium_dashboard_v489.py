@@ -122,7 +122,7 @@ def build_dashboard(app):
     _button(topbar, '⏻  Programı Kapat', app.close, color='#64243d', size=11).pack(side='right', padx=(6,20), pady=8)
     _button(topbar, '✥  Arayüzü Düzenle', lambda: LayoutEditor(root,'dashboard',on_save=app._refresh_visual_cards),color='#30345a',size=10).pack(side='right',padx=3,pady=8)
     _button(topbar, '↕ Kartları Taşı', lambda:(drag_mode.set(not drag_mode.get()),app._refresh_visual_cards()),color='#303f54',size=10).pack(side='right',padx=3,pady=8)
-    _label(topbar, '●  Çalışma alanı korumalı  ·  V4.10.1', 10,
+    _label(topbar, '●  Çalışma alanı korumalı  ·  V4.10.2', 10,
            GREEN, bg='#2b323c').pack(side='right', padx=10)
 
     scroll_host = _frame(workspace)
