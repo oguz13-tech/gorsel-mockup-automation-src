@@ -153,7 +153,7 @@ def despill_lower_left(source, mask, quad, *, enabled=False):
 # V4.9.3 controlled geometry-first option. This does NOT modify or reapprove a
 # stored V3 mask; it adds visible, photo-perspective vents to a print output.
 # Count is measured from original source (13..16), NEVER fabricated to 15.
-FIFTEEN_RECIPE = 'petek-real-count-straight-clipped-vnext-3'
+FIFTEEN_RECIPE = 'petek-real-count-straight-clipped-vnext-4'
 
 
 def draw_fifteen_slots(source, rendered, mask, quad, *, mode='orta', geometry=None):
