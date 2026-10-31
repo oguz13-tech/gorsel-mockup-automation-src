@@ -116,7 +116,10 @@ function setZoom(value){
 }
 function chooseRelative(delta){
  const list=visiblePetekItems(),idx=list.findIndex(x=>x.uid===s.uid&&x.name===s.name);
- const target=list[idx+delta] || (idx<0?list[0]:null);if(!target)return;
+ // A just-saved/approved record can disappear under the active status filter.
+ // Never interpret a filtered-out selection as 'jump to the first template'.
+ if(idx<0){notice('Seçili PETEK bu filtrede gizli. Aynı görselde kalındı; gezinmek için ilgili durum filtresini aç.',true);return;}
+ const target=list[idx+delta];if(!target)return;
  if(s.dirty&&!confirm('Kaydedilmemiş PETEK taslağını bırakıp sonraki şablona geçilsin mi?'))return;
  select(target.name,target.uid);
 }
@@ -440,6 +443,16 @@ async function select(name,uid){
  try{
   const data=await api(detailUrl(name,uid));
   s.name=name;s.uid=data.uid;s.sha=data.source_sha;s.status=data.status;
+  // The visible list click and hidden native selection MUST have one UID.
+  // Otherwise the next reload or arrow navigation silently jumps elsewhere.
+  const nativeSelect=$('petekV477Select');
+  if(nativeSelect){
+    const matching=Array.from(nativeSelect.options).find(opt=>{
+      try{const pair=JSON.parse(opt.value);return pair[0]===name&&pair[1]===data.uid;}
+      catch(_ignored){return false;}
+    });
+    if(matching)nativeSelect.value=matching.value;
+  }
   s.revisesUid=data.revises_uid||null;s.baseUid=data.base_uid||null;
   s.isCurrent=data.is_current!==false;
   s.preview=null;s.previewMode=false;s.zoom=1;s.undoStack=[];
@@ -557,9 +570,17 @@ async function previewArtwork(isFifteen=false){
     s.previewBefore=previewBefore;s.previewAfter=previewAfter;
     s.preview=previewAfter;
     $('petekV493Before').disabled=false;$('petekV493After').disabled=false;
-    $('petekV493Result').textContent='15 / 15 ızgara konumu oluşturuldu • Değişen piksel: '+
-      data.slot_qa.changed_pixels+' • Dört kenar / ızgara temizliği: '+data.pink_qa.status+
-      ' · Kalan yüksek doygunluklu pembe: '+(data.pink_qa.remaining_pixels||0)+'. ÖNCE / SONRA ile kontrol et; gerçek dosyalar değişmedi.';
+    const qa=data.slot_qa;
+    const gaps=qa.spacings_rectified_900||[];
+    const spacing=gaps.length?' • Kaynakta ölçülen 14 aralık: '+
+      Math.min(...gaps).toFixed(1)+'–'+Math.max(...gaps).toFixed(1)+' px (perspektifi düzeltilmiş)':'';
+    const source=qa.alignment==='SOURCE_PHOTO_15'?'orijinal fotoğraftan ölçüldü':
+      qa.alignment==='EXISTING_MASK_15'?'onaylı maske geometrisinden ölçüldü':'kaynak geometrisi kontrol edildi';
+    $('petekV493Result').textContent='15 / 15 gerçek yarık '+source+spacing+
+      ' • Değişen piksel: '+qa.changed_pixels+
+      ' • Dört kenar / ızgara temizliği: '+data.pink_qa.status+
+      ' · Kalan yüksek doygunluklu pembe: '+(data.pink_qa.remaining_pixels||0)+
+      '. ÖNCE / SONRA ile kontrol et; kaynak veya onaylı maske değişmedi.';
   }else{
     s.previewBefore=null;s.previewAfter=null;s.preview=previewBefore;
     $('petekV493Before').disabled=true;$('petekV493After').disabled=true;
@@ -632,16 +653,40 @@ function undoCurve(){
  snapshot();arr.pop();s.needsCurveApply=true;s.dirty=true;draw();
  notice('Son kavis noktası çıkarıldı. Kavisleri yeniden uygula.');
 }
+// Update only the current draft's UI record. Save-draft keeps the same UID;
+// a complete pool reload can change selection, scroll position and focus.
+function applyDraftInPlace(name,uid,maskSha){
+ const pane=$('petekV477List');const oldScroll=pane?pane.scrollTop:0;
+ for(const item of s.entries){
+   if(item.name===name&&item.uid===uid){
+     item.status='DRAFT';item.approved=false;item.mask_verified=true;
+     if(maskSha)item.mask_sha=maskSha;
+   }
+ }
+ const options=$('petekV477Select');
+ if(options){for(const opt of options.options){
+   try{const pair=JSON.parse(opt.value);
+     if(pair[0]===name&&pair[1]===uid)opt.textContent=name+' · '+uid+' — DRAFT';
+   }catch(_ignored){}
+ }}
+ if(s.name===name&&s.uid===uid){
+   s.status='DRAFT';s.dirty=false;
+   // Deliberately do not change s.name, s.uid, image canvas, focus or zoom.
+   $('petekV477Name').textContent=name+' · DRAFT · '+uid;
+ }
+ listVisual();if(pane)pane.scrollTop=oldScroll;
+}
 async function save(){
  if(!editingAllowed()||!s.img)return;
  if(s.quad.length!==4){notice('Dört köşe tamamlanmadan taslak kaydedilemez.',true);return;}
  if(s.needsCurveApply){notice('Kavis noktalarını/maskesini değiştirdin; önce Kavisleri Uygula.',true);return;}
  if(!confirm('Yalnız PETEK TASLAĞI kaydedilecek. Orijinal ve onaylı maskeler korunacak. Devam?'))return;
+ const identity={name:s.name,uid:s.uid,sha:s.sha};
  try{
   const data=await api('/api/petek/save-draft',content());
-  s.status=data.status;s.dirty=false;
-  notice('PETEK taslağı kaydedildi. İncelemeyi tamamladıktan sonra ayrı onayla.');
-  await reload();
+  if(data.uid!==identity.uid||data.status!=='DRAFT')throw Error('PETEK_TASLAK_UID_STATUS_UYUSMUYOR_YENILE');
+  applyDraftInPlace(identity.name,identity.uid,data.mask_sha);
+  notice('PETEK taslağı kaydedildi. Aynı görselde kalındı; son insan onayı ayrıca verilebilir.');
  }catch(e){notice(e.message,true);}
 }
 // V4.10.2: The HTTP approval itself is authoritative. Never follow a
