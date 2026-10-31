@@ -630,7 +630,14 @@ async function previewArtwork(isFifteen=false){
   }
   const previewBefore=await imageOf(data.preview);
   if(isFifteen){
-    if(!data.after||data.slot_qa?.count!==15)throw Error('Tam 15 ızgara önizlemesi üretilemedi.');
+    // The real photo/approved-mask geometry reports 13, 14, 15 or 16 vents.
+    // Never reject an otherwise valid preview just because it is not 15.
+    const detectedCount=Number(data.slot_qa?.count);
+    if(!data.after || !Number.isInteger(detectedCount) ||
+       detectedCount<13 || detectedCount>16){
+      throw Error('Gerçek ızgara önizlemesi doğrulanamadı (13–16 yarık). '+
+        'Dört köşeyi ve delik maskesini kontrol edin; olmayan yarık eklenmez.');
+    }
     const previewAfter=await imageOf(data.after);
     s.previewBefore=previewBefore;s.previewAfter=previewAfter;
     s.preview=previewAfter;
@@ -652,7 +659,7 @@ async function previewArtwork(isFifteen=false){
   }
   s.previewMode=true;draw();
   const residual=Number(data.mask_qa?.protected_magenta_pixels||0);
-  notice((isFifteen?'15 IZGARA A/B ÖNİZLEMESİ — ':'GERÇEK BASKI ÖNİZLEMESİ — ')+ 'PETEK V3 motoru. '+
+  notice((isFifteen?Number(data.slot_qa.count)+' GERÇEK IZGARA A/B ÖNİZLEMESİ — ':'GERÇEK BASKI ÖNİZLEMESİ — ')+ 'PETEK V3 motoru. '+
      (residual?'Maskenin DIŞINDA '+residual+' pembe kaynak pikseli korunuyor: tasarım öncesi maskeyi incele. ':'Magenta kenarlarda pembe geçiş karışımı kapalı. ')+
      'Önizleme kaydedilmedi. 3:4 üretim tuvali ve seçili üretim efektleri son çıktıyı değiştirebilir.',
      residual>30||!!(data.pink_qa&&data.pink_qa.remaining_pixels>0));
