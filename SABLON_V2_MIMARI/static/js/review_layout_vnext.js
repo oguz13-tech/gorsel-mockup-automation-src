@@ -310,7 +310,10 @@
     handleLeft=node('div','ui-layout-resize-handle','⋮');handleRight=node('div','ui-layout-resize-handle','⋮');
     for(const handle of [handleLeft,handleRight]){handle.dataset.uiEditControl='1';handle.title='Panel genişliğini sürükle';}
     dragSize(handleLeft,'left',1);dragSize(handleRight,'right',-1);
-    document.body.append(button,shell,handleLeft,handleRight);
+    // The sidebar persists for all seven categories: no overlap with PETEK
+    // close/approval buttons in the top toolbars.
+    $('sidebar').prepend(button);
+    document.body.append(shell,handleLeft,handleRight);
   }
   function blockEngineEvent(event){
     if(!editing)return;
