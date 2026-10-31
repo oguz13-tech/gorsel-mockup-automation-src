@@ -123,3 +123,40 @@ def test_bulk_remove_full_confirmation_is_scrollable(tmp_path):
         view.pop.destroy()
     finally:
         root.destroy()
+
+
+@pytest.mark.parametrize('size',[(970,600),(1280,720),(1366,768)])
+def test_bulk_remove_controls_reachable_on_short_windows(tmp_path,size):
+    import tkinter as tk
+    from tkinter import ttk
+    from URETIM_V4.store_assignment_ui_v410 import StoreAssignmentWindow
+    try:
+        root=tk.Tk();root.withdraw()
+    except tk.TclError:
+        pytest.skip('Requires a graphical display')
+    try:
+        mgr=StoreProfiles(tmp_path/'state');mgr.add_store('M1')
+        view=StoreAssignmentWindow(root,state_root=tmp_path/'state',
+                                   get_approved=lambda:[],on_change=lambda:None)
+        width,height=size
+        view.pop.geometry(f'{width}x{height}+0+0')
+        root.update();root.update()
+        buttons=[]
+        def walk(widget):
+            for child in widget.winfo_children():
+                if isinstance(child,ttk.Button):buttons.append(child)
+                walk(child)
+        walk(view.pop)
+        actions=['Tüm Atamaları Seç','Bu Kategoriyi Seç','Seçimi Temizle',
+                 'SEÇİLİ ATAMALARI TOPLU KALDIR']
+        for label in actions:
+            candidates=[b for b in buttons if b.cget('text')==label]
+            assert candidates
+            # The left pool also has a 'Seçimi Temizle'; at least one right control must fit.
+            assert any(b.winfo_width()>55 and b.winfo_height()>=36 and
+                       b.winfo_rootx()+b.winfo_width() <= view.pop.winfo_rootx()+width and
+                       b.winfo_rooty()+b.winfo_height() <= view.pop.winfo_rooty()+height
+                       for b in candidates),f'{label} clipped at {size}'
+        view.pop.destroy()
+    finally:
+        root.destroy()
