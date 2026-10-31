@@ -1,0 +1,15 @@
+GÖRSEL ÜRETİM MERKEZİ V4.10.2 — WINDOWS ADAY
+
+1. V4.10.1 calisan surumu silme; paketi AYRI KLASORE cikar.
+2. Asla OneDrive uzerindeki üretim sahasi / orijinal yedekler üzerine ZIP acma.
+3. V4102_DOGRULA_WINDOWS.bat calistir (Python 3.11 gerekir).
+4. V4102_BASLAT_WINDOWS.bat ile programi ac.
+5. Sablon Inceleme > PETEK'te TASLAK > Maske Onayla. SHA dogrulama ardindan
+   tek kaydin durumu ONAYLI olmalı; tüm PETEK havuzu yeniden taranmaz.
+6. Test Merkezi'ndeki V4102-PETEK-APPROVAL-LATENCY ve UI görevlerini kontrol et.
+
+YENI: SHA bagli insan maskesi onayi sonrasinda JavaScript tam liste yeniden
+          taramasini kaldirir. Sunucu her gercek onayda yeniden SHA/mask QA yapar.
+      Kaynak ve onayli maskeler salt korunur.
+
+Not: Bu paket Windows kabul adayi, canlı işletim sistemi/GPU/HTTP testleri bekliyor.
