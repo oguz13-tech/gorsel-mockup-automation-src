@@ -117,7 +117,8 @@ def validate(payload: object) -> dict:
                 raise ValueError('UI_PINNED_ACTION_CANNOT_MOVE:' + key)
         out['assignments'][mode] = dict(ass)
         order = orders.get(mode, list(ids))
-        if not isinstance(order, list) or len(order) != len(ids) or set(order) != set(ids):
+        if (not isinstance(order, list) or len(order) != len(ids) or
+                any(not isinstance(item, str) for item in order) or set(order) != set(ids)):
             raise ValueError('UI_CARD_ORDER_INVALID:' + mode)
         out['order'][mode] = order[:]
     return out
