@@ -1,23 +1,31 @@
 """V4.0 Tkinter Windows UI for 7-Category Unlimited Batch Production & Crash Recovery."""
 from __future__ import annotations
+from error_advisor_v498 import showerror as helpful_error
 
 import os
+import subprocess
 from pathlib import Path
 import queue
 import threading
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, scrolledtext
 from PIL import Image, ImageTk
-from dark_theme_v42 import BG, PANEL, FG
+from dark_theme_v42 import BG, PANEL, FG, ACCENT
+from ui_layout_v498 import LayoutEditor, load as load_visual_layout
 from help_v42 import bind_help
-from version_v45 import TITLE as VERSION_TEXT
+from version_v45 import TITLE as VERSION_TEXT, VERSION as APP_VERSION
 
 from PETEK_V3.registry import Registry as PetekRegistry
 from .unified_batch import UnifiedV4Batch, iter_designs
+from .template_filter_v492 import filtered_templates
+from .unlimited_selection import CATEGORY_LABELS_TR
+from PETEK_V3.petek_finish_v492 import darken_slot_lips, despill_lower_left, draw_fifteen_slots, despill_lower_left_geometry_v493
+from PETEK_V3.final_cleanup_v495 import cleanup_petek_magenta
 from .store_profiles_v47 import StoreProfiles
 from .cloud_excel_v43 import CloudExcel
 from .design_proxy_v43 import prepare_render_artwork
 from .upscale4k_v44 import preflight as upscale_preflight, UpscaleError
+from .on_demand_4k_v495 import OnDemand4K, user_state_path
 from .unified_batch import _render_legacy_six_cover, _build_legacy_category_mask
 from .finish_material_v46 import DAYLIGHT, apply_material_finish
 from .optical_qa_v47 import measure_effect
@@ -37,10 +45,11 @@ def _lighting_code(value: str) -> str:
 class UnifiedV4BatchWindow:
     """7-category unlimited human-approved batch production and crash recovery window."""
 
-    def __init__(self, parent, *, runtime_root: Path | None = None, petek_registry: PetekRegistry | None = None, v4_root: Path | None = None):
+    def __init__(self, parent, *, runtime_root: Path | None = None, petek_registry: PetekRegistry | None = None,
+                 v4_root: Path | None = None, prebuilt_engine=None):
         self.runtime_root = Path(runtime_root).resolve() if runtime_root else None
         self.petek_registry = petek_registry or PetekRegistry()
-        self.batch_engine = UnifiedV4Batch(
+        self.batch_engine = prebuilt_engine if prebuilt_engine is not None else UnifiedV4Batch(
             v4_root,
             runtime_root=self.runtime_root,
             petek_registry=self.petek_registry,
@@ -49,16 +58,40 @@ class UnifiedV4BatchWindow:
         self._render_stop_requested = False
         self.window = tk.Toplevel(parent)
         self.window.title(VERSION_TEXT + " — 7 Kategori Üretim / Bulut Excel / İsteğe Bağlı 4K")
-        self.window.geometry("1190x920")
-        self.window.transient(parent)
+        self.window.geometry("1360x880")
+        self.window.minsize(1040,650)
+        self.window.configure(background=BG)
+        # Production is a MODELLESS tool window. No grab_set/wait_window or
+        # transient owner restriction: dashboard + browser review stay usable.
+        # Users can move between all three while respecting immutable approvals.
+        self.window.wm_group(self.window) if False else None
 
-        area = ttk.Frame(self.window, padding=18)
-        area.pack(fill="both", expand=True)
+        # Whole production form scrolls on small Windows displays. Every button
+        # remains reachable even with 125-150% DPI scaling and new filters.
+        host=ttk.Frame(self.window)
+        host.pack(fill='both',expand=True)
+        self.main_canvas=tk.Canvas(host,bg=BG,highlightthickness=0,borderwidth=0)
+        main_scroll=ttk.Scrollbar(host,orient='vertical',command=self.main_canvas.yview)
+        self.main_canvas.configure(yscrollcommand=main_scroll.set)
+        main_scroll.pack(side='right',fill='y')
+        self.main_canvas.pack(side='left',fill='both',expand=True)
+        area=ttk.Frame(self.main_canvas,padding=18)
+        area_id=self.main_canvas.create_window((0,0),window=area,anchor='nw')
+        area.bind('<Configure>',lambda _ev:self.main_canvas.configure(scrollregion=self.main_canvas.bbox('all')))
+        self.main_canvas.bind('<Configure>',lambda ev:self.main_canvas.itemconfigure(area_id,width=ev.width))
+        def scroll_form(event):
+            if event.widget is self.listbox or isinstance(event.widget,(tk.Listbox,tk.Text)):
+                return
+            if event.delta:
+                self.main_canvas.yview_scroll(-1 if event.delta>0 else 1,'units')
+        self.window.bind('<MouseWheel>',scroll_form)
 
+        hero=ttk.Frame(area,padding=(15,12))
+        hero.pack(fill='x',pady=(0,10))
         ttk.Label(
-            area,
-            text="7 Kategori Ortak Seri Üretim Merkezi (V4.8.8 — Güvenli Devam, Mağazalar, Efektler, 4K, Excel)",
-            font=("Segoe UI", 15, "bold"),
+            hero,
+            text=f"SERİ MOCKUP ÜRETİM MERKEZİ   •   7 KATEGORİ   •   {APP_VERSION}",
+            font=("Segoe UI", 19, "bold"),
         ).pack(anchor="w", pady=(0, 6))
         ttk.Label(
             area,
@@ -67,15 +100,19 @@ class UnifiedV4BatchWindow:
             wraplength=800,
         ).pack(anchor="w", pady=(0, 8))
 
+        self._prod_tabbar=ttk.Frame(area,padding=(4,8))
+        self._prod_tabbar.pack(fill='x',pady=(0,7))
+        templates_panel=ttk.LabelFrame(area,text='01  ŞABLONLAR  ·  Filtrele / seç / önizle',style='Premium.TLabelframe',padding=(15,13))
+        templates_panel.pack(fill='x',pady=(7,10))
         ttk.Label(
-            area,
+            templates_panel,
             text="1. Üretime Hazır Onaylı (APPROVED) Şablonlar (7 Kategori — Çoklu Seçim):",
             font=("Segoe UI", 10, "bold"),
         ).pack(anchor="w")
-        preview_frame = ttk.Frame(area)
+        preview_frame = ttk.Frame(templates_panel)
         preview_frame.pack(fill="x", pady=4)
         self.listbox = tk.Listbox(preview_frame, selectmode="extended", height=9, exportselection=False,
-                                  bg=PANEL, fg=FG, selectbackground='#2563eb', selectforeground='#fff')
+                                  bg=PANEL, fg=FG, selectbackground=ACCENT, selectforeground='#fff')
         self.listbox.pack(side="left", fill="both", expand=True)
         self.listbox.bind('<<ListboxSelect>>', self._preview_selected)
         photo_column = ttk.Frame(preview_frame, width=228)
@@ -88,23 +125,52 @@ class UnifiedV4BatchWindow:
         self.photo_ref = None
         self.template_sources = {}
         self.template_items = {}
+        self.all_templates = []
+        self._first_template_load = True
+        self.selected_uids = set()
         self.mapping: list[str] = []
+        self._filter_redrawing = False
+        filter_bar = ttk.Frame(templates_panel)
+        filter_bar.pack(fill="x", pady=(3, 4))
+        ttk.Label(filter_bar, text="Kategori:").pack(side="left")
+        self.category_filter = tk.StringVar(value="Tümü")
+        self.category_options = ["Tümü"] + list(CATEGORY_LABELS_TR)
+        category_combo = ttk.Combobox(filter_bar, textvariable=self.category_filter, width=23,
+            values=self.category_options, state="readonly")
+        category_combo.pack(side="left", padx=(4, 10))
+        ttk.Label(filter_bar, text="Şablon ara:").pack(side="left")
+        self.search_filter = tk.StringVar()
+        ttk.Entry(filter_bar, textvariable=self.search_filter, width=25).pack(side="left", padx=(4, 10), fill="x", expand=True)
+        ttk.Label(filter_bar, text="Sırala:").pack(side="left")
+        self.sort_filter = tk.StringVar(value="Kategori / Ad")
+        sort_combo=ttk.Combobox(filter_bar,textvariable=self.sort_filter,width=15,state="readonly",
+                                values=("Kategori / Ad","Ad (A-Z)","Ad (Z-A)"))
+        sort_combo.pack(side="left",padx=(4,0))
+        self.filter_count = tk.StringVar(value="Liste yükleniyor...")
+        ttk.Label(templates_panel,textvariable=self.filter_count,font=("Segoe UI",10,"bold")).pack(anchor="w",pady=(1,2))
+        for var in (self.category_filter, self.search_filter, self.sort_filter):
+            var.trace_add('write', lambda *_: self.apply_filters())
+        self.listbox.bind('<<ListboxSelect>>', self._on_selection_change, add='+')
 
-        btn_row = ttk.Frame(area)
+        btn_row = ttk.Frame(templates_panel)
         btn_row.pack(fill="x", pady=3)
         ttk.Button(btn_row, text="Tüm Onaylı Şablonları Yenile", command=self.reload).pack(side="left")
         ttk.Button(btn_row, text="Tüm Şablonları Seç", command=self.select_all).pack(side="left", padx=6)
+        ttk.Button(btn_row, text="Filtreleneni Seç", command=self.select_filtered).pack(side="left",padx=5)
+        ttk.Button(btn_row, text="Seçimi Temizle", command=self.clear_selection).pack(side="left",padx=5)
         ttk.Button(btn_row, text="Kategori Efekti A/B (Cam / Ahşap / PETEK)", command=self.start_ab_preview).pack(side="left", padx=6)
         ttk.Button(btn_row, text="Yarım İş / Kilit Kurtarma (Onaylı)", command=self.open_recovery).pack(side="left", padx=6)
 
-        row = ttk.Frame(area)
+        designs_panel=ttk.LabelFrame(area,text='02  TASARIMLAR VE MAĞAZALAR',style='Premium.TLabelframe',padding=(15,13))
+        designs_panel.pack(fill='x',pady=(7,10))
+        row = ttk.Frame(designs_panel)
         row.pack(fill="x", pady=8)
         default_ham=(self.runtime_root/'HAM BASKI TASARIMLARI') if self.runtime_root else None
         self.design_folder = tk.StringVar(value=str(default_ham) if default_ham and default_ham.is_dir() else '')
         ttk.Entry(row, textvariable=self.design_folder).pack(side="left", fill="x", expand=True)
         ttk.Button(row, text="2. Baskı Tasarımları Klasörünü Seç", command=self.browse).pack(side="left", padx=6)
 
-        opts = ttk.Frame(area)
+        opts = ttk.Frame(designs_panel)
         opts.pack(fill="x", pady=5)
         ttk.Label(opts, text="Mağaza Grubu:").pack(side="left")
         self.group = tk.StringVar(value="LOCAL")
@@ -113,12 +179,12 @@ class UnifiedV4BatchWindow:
 
         # Store membership lives in private local state, NOT in the historic
         # approved template directory. Empty store selection = legacy behavior.
-        profile_panel = ttk.Frame(area)
+        profile_panel = ttk.Frame(designs_panel)
         profile_panel.pack(fill="x", pady=(2, 5))
         ttk.Label(profile_panel, text="Mağazalar (Ctrl ile çoklu seç; boş = eski LOCAL):").pack(side="left")
         self.store_list = tk.Listbox(profile_panel, selectmode="extended",height=3,
                                     width=35,exportselection=False,
-                                    bg=PANEL,fg=FG,selectbackground='#2563eb')
+                                    bg=PANEL,fg=FG,selectbackground=ACCENT)
         self.store_list.pack(side="left",padx=8)
         self.store_mapping=[]
         ttk.Button(profile_panel,text="Mağaza Profilleri / Şablon Atama",
@@ -127,12 +193,14 @@ class UnifiedV4BatchWindow:
                    command=self.reload_stores).pack(side="left",padx=3)
         ttk.Label(profile_panel,text="Her mağaza yalnız kendisine atanmış onaylı şablonları kullanır.",
                   wraplength=315).pack(side="left",padx=8)
-        ttk.Label(area,text="Sıra rastgele: tasarımlar + şablonlar + mağazalar her turda karışır. "
+        ttk.Label(designs_panel,text="Sıra rastgele: tasarımlar + şablonlar + mağazalar her turda karışır. "
                        "Aynı turda aynı SHA/tasarım/şablon/mağaza ikilisi yinelenmez.",
                   wraplength=1120).pack(anchor="w",pady=2)
         self.reload_stores()
 
-        fit_row = ttk.Frame(area)
+        quality_panel=ttk.LabelFrame(area,text='03  KALİTE  ·  4K / PETEK / Efekt / Bulut',style='Premium.TLabelframe',padding=(15,13))
+        quality_panel.pack(fill='x',pady=(7,10))
+        fit_row = ttk.Frame(quality_panel)
         fit_row.pack(fill="x", pady=4)
         ttk.Label(fit_row, text="Tasarım Yerleşimi:").pack(side="left")
         self.placement = tk.StringVar(value="Tam Doldur (Sıfır Blur / Kırpılabilir)")
@@ -147,7 +215,7 @@ class UnifiedV4BatchWindow:
         self.lighting = tk.StringVar(value=LIGHT_LABELS[0])
         ttk.Combobox(fit_row, textvariable=self.lighting, state="readonly", values=LIGHT_LABELS, width=36).pack(side="left")
 
-        ttk.Label(area, text=(
+        ttk.Label(quality_panel, text=(
             "AÇIK: Cam tablolara pencere/çıta, cam doğramaya spot, ocak arkasına ortam yansıması; "
             "Ahşap ve PETEK'e mat, yumuşak diyagonal günışığı. Wi-Fi'de değişiklik yok. "
             "KAPALI: yeni malzeme efekti uygulanmaz.\n"
@@ -156,30 +224,52 @@ class UnifiedV4BatchWindow:
 
         # Normal render is always preserved. 4K is a separate opt-in job, and
         # cannot silently fall back to non-AI resizing if the binary is absent.
-        upscale_row = ttk.Frame(area)
+        upscale_row = ttk.Frame(quality_panel)
         upscale_row.pack(fill="x", pady=(5, 3))
         self.upscale_4k = tk.BooleanVar(value=False)
         self.upscale_model = tk.StringVar(value="Fotoğraf — Real-ESRGAN x4plus")
+        self._4k_checker=OnDemand4K()
+        self._4k_installing=False
+        self._4k_state=tk.StringVar(value="4K kapalı · seçildiğinde otomatik doğrulanır")
         ttk.Checkbutton(upscale_row, text="Üretimden sonra isteğe bağlı AI 4K (2880×3840)",
                         variable=self.upscale_4k).pack(side="left")
         ttk.Combobox(upscale_row, textvariable=self.upscale_model, state="readonly", width=33,
                      values=("Fotoğraf — Real-ESRGAN x4plus", "Hızlı — Real-ESRGAN general x4v3")) \
             .pack(side="left", padx=(12, 4))
-        ttk.Label(area, text=("Varsayılan KAPALI; orijinal 1200×1600 çıktı korunur. 4K ayrı klasöre + SHA makbuzuna yazılır. "
-                              "Bilgisayarda resmi Real-ESRGAN programı ve model dosyaları bulunmalıdır; yoksa üretimden önce uyarılır."),
+        ttk.Button(upscale_row,text='4K Kurulumunu Kontrol Et',
+                   command=self._verify_4k_status).pack(side='left',padx=7)
+        ttk.Label(upscale_row,textvariable=self._4k_state,wraplength=285).pack(side="left",padx=(8,0))
+        self.upscale_4k.trace_add('write', lambda *_: self.window.after(10,self._on_4k_selected))
+        self.upscale_model.trace_add('write',lambda *_: self.window.after(10,self._on_4k_selected))
+        ttk.Label(quality_panel, text=("Varsayılan KAPALI; orijinal 1200×1600 çıktı korunur. 4K ayrı klasöre + SHA makbuzuna yazılır. "
+                              "4K seçildiğinde mevcut kurulum hızlı doğrulanır, eksikse güvenli kurucu otomatik başlar; açılışta tarama yapılmaz."),
                   wraplength=1120).pack(anchor="w", pady=(0, 4))
 
         # Link + Excel is a separate opt-in post-render task, directly below 4K.
         # Checkbox alone NEVER authorizes a public upload: the existing explicit
         # online-sharing confirmation is required after the render completes.
+        petek_row=ttk.Frame(quality_panel);petek_row.pack(fill='x',pady=(5,3))
+        ttk.Label(petek_row,text="PETEK 15 Izgara Kilidi:").pack(side='left')
+        self.petek_slot_mode=tk.StringVar(value='orta')
+        ttk.Combobox(petek_row,textvariable=self.petek_slot_mode,width=11,state='readonly',
+                     values=('off','hafif','orta','guclu')).pack(side='left',padx=7)
+        self.petek_pink_cleanup=tk.BooleanVar(value=True)
+        self._petek_preview_ok = None
+        self.petek_slot_mode.trace_add('write',lambda *_:setattr(self,'_petek_preview_ok',None))
+        self.petek_pink_cleanup.trace_add('write',lambda *_:setattr(self,'_petek_preview_ok',None))
+        ttk.Checkbutton(petek_row,text="PETEK dört kenar / köşe / ızgara pembe temizlik",
+                        variable=self.petek_pink_cleanup).pack(side='left',padx=6)
+        ttk.Button(petek_row,text="15 Izgara / Pembe Önce-Sonra Test",command=self.start_petek_ab_preview).pack(side='left',padx=8)
+        ttk.Label(quality_panel,text="PETEK 15 ızgara varsayılan ORTA; gerçek üretime yalnız Önce/Sonra insan onayından sonra uygulanır. "
+                  "Orijinal dosyalar ve onaylı maskeler asla güncellenmez.",wraplength=1120).pack(anchor='w',pady=(0,4))
         self.auto_cloud_link = tk.BooleanVar(value=False)
         ttk.Checkbutton(
-            area,
+            quality_panel,
             text="Üretimden sonra isteğe bağlı HTTPS Linke Çevir + Excel'e Yaz",
             variable=self.auto_cloud_link,
         ).pack(anchor="w", pady=(4, 2))
         ttk.Label(
-            area,
+            quality_panel,
             text="Varsayılan KAPALI. İşaretlenirse üretim bitince ayrıca bulut yükleme onayı sorulur; "
                  "onay verilmezse hiçbir görsel internete gönderilmez.",
             wraplength=1100,
@@ -187,9 +277,12 @@ class UnifiedV4BatchWindow:
         self._auto_cloud_pending = False
         self._auto_cloud_keys = []
 
-        actions = ttk.Frame(area)
+        actions_panel=ttk.LabelFrame(area,text='04  SERİ ÜRETİM  ·  Başlat / Durdur / Rapor',style='Premium.TLabelframe',padding=(15,13))
+        actions_panel.pack(fill='x',pady=(7,10))
+        actions = ttk.Frame(actions_panel)
         actions.pack(fill="x", pady=8)
-        self.start_button = ttk.Button(actions, text="▶ 7 Kategori Seri Üretimi Başlat", command=self.start)
+        self.start_button = ttk.Button(actions, text="▶ 7 Kategori Seri Üretimi Başlat", command=self.start,
+                                       style='Premium.Primary.TButton')
         self.start_button.pack(side="left", padx=3)
         ttk.Button(actions, text="⏸ Duraklat", command=self.pause_batch).pack(side="left", padx=3)
         ttk.Button(actions, text="▶ Devam Et / Güvenli Durdurmadan Sürdür",
@@ -199,7 +292,7 @@ class UnifiedV4BatchWindow:
         ttk.Button(actions, text="SHA Kayıtlarını Doğrula (Salt Okunur)", command=self.run_audit).pack(side="left", padx=3)
         ttk.Button(actions, text="Operasyon Özeti", command=self.show_operations).pack(side="left", padx=3)
 
-        remote = ttk.Frame(area)
+        remote = ttk.Frame(actions_panel)
         remote.pack(fill="x", pady=5)
         self.cloud_button = ttk.Button(remote, text="☁ Mevcut Çıktıları HTTPS Linke Çevir + Excel'e Yaz",
                                        command=self.start_cloud_links)
@@ -207,7 +300,7 @@ class UnifiedV4BatchWindow:
         ttk.Button(remote, text="Mağaza Bazlı Trendyol Excel Oluştur", command=self.export_marketplace_template).pack(side="left", padx=5)
         ttk.Label(remote, text="Ayrı onay ister; ImgBB/FreeImage'a internetten erişilebilen görseller yükler. Pazaryerine ilan yüklemez.",
                   wraplength=570).pack(side="left", padx=7)
-        ttk.Label(area, text=(
+        ttk.Label(actions_panel, text=(
             "YENİLE: onaylı şablon listesini yeniden okur | TÜMÜNÜ SEÇ: listedeki hepsini seçer (başlatmaz). "
             "MAĞAZA GRUBU: SKU ayırır; otomatik mağazaya yüklemez.\n"
             "DURAKLAT: aktif dosya tamamlandıktan sonra yeni işe geçmez; DEVAM: aynı kuyruktan sürdürür. "
@@ -217,17 +310,47 @@ class UnifiedV4BatchWindow:
             "PAZARYERİ EXCEL ŞABLONU: yalnız HTTPS linki hazır satırları senin boş XLSX başlıklarına eşler; "
             "asıl şablonu korur, barkod ve SEO uydurmaz."
         ), wraplength=1120).pack(anchor="w", pady=(3, 5))
+        self._editable_sections={'templates':templates_panel,'designs':designs_panel,
+                                 'quality':quality_panel,'actions':actions_panel}
         self.progress = tk.StringVar(value="Hazır. Onaylı şablonlar yüklendi.")
-        ttk.Label(area, textvariable=self.progress, wraplength=800).pack(anchor="w", pady=4)
+        self._progress_widget=ttk.Label(area,textvariable=self.progress,wraplength=800)
+        self._progress_widget.pack(anchor="w",pady=4)
+        self._build_production_tabs()
         self.log = scrolledtext.ScrolledText(area, height=13, state="disabled", font=("Consolas", 9), bg=PANEL, fg=FG, insertbackground=FG)
         self.log.pack(fill="both", expand=True)
 
         self.messages: queue.Queue = queue.Queue()
         self.worker: threading.Thread | None = None
+        self._load_seq=0
         self.reload()
         bind_help(self.window)
         self.window.after(200, self.poll)
         self.window.protocol("WM_DELETE_WINDOW", self.safe_close)
+
+    def _build_production_tabs(self, _prefs=None):
+        """Always keep Tümü, so hiding a filter tab never hides core commands."""
+        prefs=_prefs or load_visual_layout()['production']
+        self._production_tabs=prefs['tabs']
+        for child in self._prod_tabbar.winfo_children():child.destroy()
+        accent=prefs.get('accent','#995df4')
+        tk.Label(self._prod_tabbar,text='Çalışma Panelleri:',bg=BG,fg=FG,
+                 font=('Segoe UI',11,'bold')).pack(side='left',padx=(2,10))
+        for name in prefs['tabs']:
+            tk.Button(self._prod_tabbar,text=name,command=lambda n=name:self._apply_production_tab(n),
+                      bg='#332948',fg=FG,activebackground=accent,activeforeground='#ffffff',
+                      relief='flat',padx=13,pady=8).pack(side='left',padx=3)
+        ttk.Button(self._prod_tabbar,text='✥ Arayüzü Düzenle',
+                   command=lambda:LayoutEditor(self.window,'production',
+                     on_save=self._build_production_tabs)).pack(side='right',padx=5)
+        self._apply_production_tab('Tümü')
+
+    def _apply_production_tab(self, name):
+        order=self._production_tabs.get(name) or list(self._editable_sections)
+        for panel in self._editable_sections.values():panel.pack_forget()
+        for key in order:
+            if key in self._editable_sections:
+                self._editable_sections[key].pack(fill='x',pady=(7,10),before=self._progress_widget)
+        self.main_canvas.yview_moveto(0)
 
     def reload_stores(self):
         try:
@@ -241,51 +364,15 @@ class UnifiedV4BatchWindow:
                 self.store_list.insert("end",f"{name} ({count} şablon)")
                 if name in keep:self.store_list.selection_set(i)
         except Exception as exc:
-            messagebox.showerror("Mağaza profilleri okunamadı",str(exc),parent=self.window)
+            helpful_error("Mağaza profilleri okunamadı",str(exc),parent=self.window)
 
     def open_store_manager(self):
-        pop=tk.Toplevel(self.window);pop.title("Mağaza Profilleri — Onaylı Şablon Atama")
-        pop.geometry("660x400");pop.transient(self.window)
-        root=ttk.Frame(pop,padding=16);root.pack(fill="both",expand=True)
-        ttk.Label(root,text="Yeni mağaza kodu (örn: Magaza_01):").pack(anchor="w")
-        name=tk.StringVar()
-        ttk.Entry(root,textvariable=name,width=30).pack(anchor="w",pady=5)
-        ttk.Label(root,text="Şablon atamak için ana üretim listesinden onaylı şablonları seç. "
-                   "Buradan kaydedilen eşleşmeler başka mağazayla paylaşılmaz.",
-                  wraplength=590).pack(anchor="w",pady=6)
-        listing=tk.Listbox(root,height=10,exportselection=False,bg=PANEL,fg=FG)
-        listing.pack(fill="both",expand=True,pady=5)
-        names=[]
-        def refresh():
-            selected=names[listing.curselection()[0]] if listing.curselection() else None
-            cfg=StoreProfiles(self.batch_engine.root).load()
-            listing.delete(0,"end")
-            names.clear();names.extend(sorted(cfg["stores"]))
-            for i,k in enumerate(names):
-                listing.insert("end",f"{k} — {len(cfg['stores'][k]['templates'])} onaylı şablon")
-                if k==selected:listing.selection_set(i)
-            self.reload_stores()
-        def run(action):
-            try:
-                mgr=StoreProfiles(self.batch_engine.root)
-                if action=="add":mgr.add_store(name.get().strip())
-                else:
-                    sel=listing.curselection()
-                    if len(sel)!=1:raise ValueError("Önce bu pencerede tek mağaza seçin.")
-                    store=names[sel[0]]
-                    templates=[self.template_items[self.mapping[int(i)]]
-                               for i in self.listbox.curselection()]
-                    if action=="assign":mgr.assign(store,templates,all_approved=list(self.template_items.values()))
-                    else:mgr.unassign(store,templates)
-                refresh()
-            except (ValueError,KeyError,OSError) as exc:
-                messagebox.showerror("Mağaza eşleştirmesi",str(exc),parent=pop)
-        bar=ttk.Frame(root);bar.pack(fill="x",pady=6)
-        ttk.Button(bar,text="Mağaza Ekle",command=lambda:run("add")).pack(side="left",padx=3)
-        ttk.Button(bar,text="Seçili Şablonları Ata",command=lambda:run("assign")).pack(side="left",padx=3)
-        ttk.Button(bar,text="Atamayı Kaldır",command=lambda:run("unassign")).pack(side="left",padx=3)
-        ttk.Button(bar,text="Kapat",command=pop.destroy).pack(side="right",padx=3)
-        refresh()
+        """Explicit store -> category -> visual mockup assignment; never reuse production selection."""
+        from .store_assignment_ui_v410 import StoreAssignmentWindow
+        StoreAssignmentWindow(self.window,
+                              state_root=self.batch_engine.root,
+                              get_approved=lambda: list(self.all_templates),
+                              on_change=self.reload_stores)
 
     def _log(self, text: str) -> None:
         self.messages.put(("log", str(text)))
@@ -314,32 +401,211 @@ class UnifiedV4BatchWindow:
             self.photo_label.configure(image='', text='Fotoğraf açılamadı')
             self.photo_text.set('HATA: ' + str(exc))
 
-    def reload(self) -> None:
-        self.listbox.delete(0, "end")
-        self.mapping = []
-        self.template_sources = {}
-        self.template_items = {}
+    def _capture_visible(self):
+        if self._filter_redrawing:return
+        visible=set(self.mapping)
+        selected={self.mapping[int(i)] for i in self.listbox.curselection()}
+        self.selected_uids.difference_update(visible)
+        self.selected_uids.update(selected)
+
+    def _on_selection_change(self, _event=None):
+        self._capture_visible()
+        self._refresh_filter_count()
+
+    def _refresh_filter_count(self):
+        if hasattr(self,'filter_count'):
+            self.filter_count.set(f"Gösterilen: {len(self.mapping)} / {len(self.all_templates)} | "
+                                  f"Üretim için seçili: {len(self.selected_uids)}")
+
+    def chosen_uids(self):
+        self._capture_visible()
+        return sorted(self.selected_uids & set(self.template_items))
+
+    def apply_filters(self, capture=True):
+        if not hasattr(self,'all_templates') or not hasattr(self,'listbox'):return
+        if capture: self._capture_visible()
+        self._filter_redrawing=True
         try:
-            templates, audit = self.batch_engine.discover_templates(per_category_limit=None)
-            for item in templates:
-                label = f"[{item['category']}] {item['uid']} ({item['orientation']})"
-                self.mapping.append(item["uid"])
-                self.template_sources[item["uid"]] = Path(item["source"])
-                self.template_items[item["uid"]] = item
-                self.listbox.insert("end", label)
-            if self.mapping:
-                self.listbox.selection_set(0, len(self.mapping) - 1)
-                self._preview_selected()
-            self.progress.set(
-                f"Toplam {len(self.mapping)} insan onaylı şablon hazır (10 şablon sınırı yok). "
-                f"Atlanan: {len(audit['skipped'])}."
-            )
-        except Exception as exc:
-            self.progress.set("Şablon tarama uyarısı: " + str(exc))
+            visible=filtered_templates(self.all_templates,self.category_filter.get(),
+                                       self.search_filter.get(),self.sort_filter.get())
+            self.listbox.delete(0,'end');self.mapping=[]
+            for item in visible:
+                uid=item['uid']
+                self.mapping.append(uid)
+                self.listbox.insert('end',f"[{item['category']}] {uid} ({item['orientation']})")
+                if uid in self.selected_uids:
+                    self.listbox.selection_set('end')
+            self._refresh_filter_count()
+        finally:
+            self._filter_redrawing=False
+        self._preview_selected()
+
+    def reload(self) -> None:
+        """Fast first paint: scan approved templates on a worker, update Tk on UI."""
+        self._capture_visible()
+        keep=set(self.selected_uids)
+        initial=self._first_template_load
+        self._load_seq += 1
+        token=self._load_seq
+        self.progress.set('Şablon listesi okunuyor… Ana pencereyi kullanmaya devam edebilirsin.')
+        self.filter_count.set('Onaylı şablonlar arka planda taranıyor…')
+        self.start_button.configure(state='disabled')
+        def work():
+            try:
+                templates,audit=self.batch_engine.discover_templates(per_category_limit=None)
+                self.messages.put(('templates_loaded',(token,templates,audit,keep,initial)))
+            except Exception as exc:
+                self.messages.put(('templates_load_fail',(token,str(exc))))
+        threading.Thread(target=work,daemon=True,name='approved-template-index').start()
+
+    def _apply_loaded_templates(self, result):
+        token,templates,audit,keep,initial=result
+        if token!=self._load_seq or not self.window.winfo_exists():return
+        self.all_templates=list(templates)
+        self.template_sources={t['uid']:Path(t['source']) for t in templates}
+        self.template_items={t['uid']:t for t in templates}
+        self.selected_uids=set() if initial else (keep & set(self.template_items))
+        self._first_template_load=False
+        self.apply_filters(capture=False)
+        self.progress.set(f"Toplam {len(self.all_templates)} insan onaylı şablon hazır. "
+                          f"Atlanan: {len(audit['skipped'])}. Arama ve seçime hazır.")
+        self.start_button.configure(state='normal')
 
     def select_all(self) -> None:
-        if self.mapping:
-            self.listbox.selection_set(0, len(self.mapping) - 1)
+        self.selected_uids=set(self.template_items)
+        self.apply_filters(capture=False)
+
+    def select_filtered(self) -> None:
+        self.selected_uids.update(self.mapping)
+        self.apply_filters(capture=False)
+
+    def clear_selection(self) -> None:
+        self.selected_uids.clear()
+        self._filter_redrawing=True
+        try:self.listbox.selection_clear(0,'end')
+        finally:self._filter_redrawing=False
+        self._refresh_filter_count()
+
+    def _verify_4k_status(self):
+        """Manual only: never silently starts installation or enables public upload."""
+        if self._4k_installing:
+            messagebox.showinfo('4K durumu','Kurulum devam ediyor. Normal üretim korunuyor.',parent=self.window)
+            return
+        self._4k_state.set('4K kurulumu kontrol ediliyor...')
+        model=self._4k_model_code()
+        def worker():
+            try:
+                found,kind=self._4k_checker.verify(model)
+                report='Real-ESRGAN motoru hazır.\nModel: '+model+'\nKonum: '+str(found)+'\nDurum: '+kind
+                self.messages.put(('4k_manual_status',(report,True)))
+            except (OSError,UpscaleError) as exc:
+                msg='4K henüz hazır değil.\n'+str(exc)+'\nÇözüm: 4K kutusunu açınca güvenli kurulum başlatılır.'
+                self.messages.put(('4k_manual_status',(msg,False)))
+        threading.Thread(target=worker,daemon=True,name='4K-manual-check').start()
+
+    def _show_4k_status(self,message,ready):
+        if not self.window.winfo_exists():return
+        self._4k_state.set('4K hazır ✓' if ready else '4K eksik — kurulumu 4K seçimi başlatır')
+        if ready:messagebox.showinfo('4K Kontrol',message,parent=self.window)
+        else:messagebox.showwarning('4K Kontrol',message,parent=self.window)
+
+    def _4k_model_code(self):
+        return 'fast' if self.upscale_model.get().startswith('Hızlı') else 'photo'
+
+    def _on_4k_selected(self):
+        """Never probe on program start, only when enabled or selected model changes."""
+        if not self.window.winfo_exists() or not self.upscale_4k.get():
+            if not self._4k_installing:self._4k_state.set('4K kapalı · seçimde kontrol edilir')
+            return
+        if self._4k_installing:
+            self._4k_state.set('Resmî 4K kurulum devam ediyor...')
+            return
+        try:
+            found,kind=self._4k_checker.verify(self._4k_model_code())
+            self._4k_state.set('4K hazır ✓  (önbellek)' if kind=='ONBELLEK_HAZIR'
+                               else '4K hazır ✓  (doğrulandı)')
+        except (OSError,UpscaleError) as exc:
+            self._4k_state.set('4K eksik · güvenli otomatik kurulum başlatılıyor')
+            self._start_4k_installer(str(exc))
+
+    def _start_4k_installer(self, reason):
+        if self._4k_installing:return
+        script=Path(__file__).resolve().parents[2]/'KUR_REAL_ESRGAN_4K_WINDOWS.ps1'
+        if os.name!='nt' or not script.is_file():
+            self._4k_state.set('4K kurulumu bu ortamda kullanılamıyor')
+            messagebox.showwarning('4K otomatik kurulum',reason+'\nWindows kurulum dosyası bulunamadı.',parent=self.window)
+            self.upscale_4k.set(False)
+            return
+        # Selecting 4K is the operator's explicit opt-in. Official SHA256
+        # verification/no-overwrite protection remains in the PowerShell script.
+        self._4k_installing=True
+        self._4k_state.set('4K motoru kuruluyor · temel üretim korunuyor')
+        def worker():
+            try:
+                cmd=['powershell.exe','-NoProfile','-ExecutionPolicy','Bypass','-File',str(script)]
+                completed=subprocess.run(cmd,cwd=str(script.parent),capture_output=True,
+                                         text=True,errors='replace',timeout=1200,check=False)
+                lines=(completed.stdout or '')+'\n'+(completed.stderr or '')
+                # Preserve a user-inspectable diagnostic without exposing secrets.
+                dest=user_state_path().parent/'4k_kurulum_kaydi.txt'
+                dest.parent.mkdir(parents=True,exist_ok=True)
+                dest.write_text(lines[-25000:],encoding='utf-8')
+                self.messages.put(('4k_install_done',(completed.returncode,str(dest))))
+            except (OSError,subprocess.TimeoutExpired) as exc:
+                self.messages.put(('4k_install_done',(-1,str(exc))))
+        threading.Thread(target=worker,daemon=True,name='4K-install').start()
+
+    def setup_4k(self):
+        """Compatibility action for existing search/menu references."""
+        if not self.upscale_4k.get():self.upscale_4k.set(True)
+        else:self._on_4k_selected()
+
+    def start_petek_ab_preview(self):
+        if self.worker and self.worker.is_alive():
+            messagebox.showinfo('PETEK Test','Devam eden işlem varken önizleme çalışmaz.',parent=self.window);return
+        chosen=self.chosen_uids()
+        item=next((self.template_items[uid] for uid in chosen
+                   if self.template_items[uid]['category']=='06_Petek_Kapama'),None)
+        if item is None:
+            messagebox.showinfo('PETEK Test','Önce PETEK kategorisinden onaylı şablon seç.',parent=self.window);return
+        folder=Path(self.design_folder.get().strip())
+        if not folder.is_dir():
+            messagebox.showwarning('Baskı','Önce tasarım klasörü seç.',parent=self.window);return
+        art=next(iter(iter_designs(folder)),None)
+        if art is None:
+            messagebox.showwarning('Baskı','Tasarım bulunamadı.',parent=self.window);return
+        mode=self.petek_slot_mode.get();cleanup=bool(self.petek_pink_cleanup.get())
+        if mode=='off' and not cleanup:
+            messagebox.showinfo('PETEK Test','Önce koyu ızgara seviyesi veya köşe temizliği seç.',parent=self.window);return
+        placement='cover' if self.placement.get().startswith('Tam Doldur') else 'contain'
+        self.progress.set('PETEK önce/sonra deneme görselleri hazırlanıyor...')
+        def work():
+            try:
+                profile,mask=self.petek_registry.get(item['uid'],require_approved=True,
+                                                      source_override=Path(item['source']))
+                scene=petek_engine.read_bgr(Path(item['source']))
+                proxy,_=prepare_render_artwork(art,self.batch_engine.root/'working_art_proxies')
+                from PETEK_V3.grille_guard_v482 import recommended_edge_feather
+                kwargs=dict(placement=placement,lighting='natural',marketplace=False,
+                            edge_feather_px=recommended_edge_feather(scene,item['quad']))
+                before,_,_=render_with_cutout_paste(scene,proxy,item['quad'],mask,
+                                                   item['physical_aspect'],**kwargs)
+                updated,clean_info=despill_lower_left_geometry_v493(scene,mask,item['quad'],enabled=cleanup)
+                after,_,_=render_with_cutout_paste(updated,proxy,item['quad'],mask,
+                                                  item['physical_aspect'],**kwargs)
+                after,slot_info=draw_fifteen_slots(updated,after,mask,item['quad'],mode=mode)
+                after,final_info=cleanup_petek_magenta(
+                    after,mask,item['quad'],enabled=cleanup,
+                    slot_centers=slot_info.get('centers_rectified_900'))
+                self.messages.put(('ab_done',(
+                    petek_engine.canvas_3x4(before),petek_engine.canvas_3x4(after),
+                    item['uid'],art.name,{'status':f"PETEK {slot_info['status']} / pembe {final_info['status']}",
+                    'protected_pixel_changes':clean_info['repaired_pixels']+final_info.get('repaired_pixels',0),
+                    'mean_inside_delta':slot_info.get('changed_pixels',0),
+                    'detail_edge_delta':'İnsan kontrolü zorunlu'})))
+            except Exception as exc:
+                self.messages.put(('ab_fail',str(exc)))
+        self._worker_kind='preview';self.worker=threading.Thread(target=work,daemon=False);self.worker.start()
 
     def browse(self) -> None:
         path = filedialog.askdirectory(
@@ -352,7 +618,7 @@ class UnifiedV4BatchWindow:
     def start(self) -> None:
         if self.worker and self.worker.is_alive():
             return
-        selected = [self.mapping[int(i)] for i in self.listbox.curselection()]
+        selected = self.chosen_uids()
         selected_stores=[self.store_mapping[int(i)] for i in self.store_list.curselection()]
         if not selected:
             messagebox.showinfo("Şablon Seç", "En az bir onaylı şablon seçin.", parent=self.window)
@@ -376,7 +642,18 @@ class UnifiedV4BatchWindow:
             upscale_4k = bool(self.upscale_4k.get())
             auto_cloud_after_render = bool(self.auto_cloud_link.get())
             upscale_model = "fast" if self.upscale_model.get().startswith("Hızlı") else "photo"
+            petek_slot_mode=self.petek_slot_mode.get()
+            petek_pink_cleanup=bool(self.petek_pink_cleanup.get())
+            petek_selected=any(self.template_items.get(uid,{}).get('category')=='06_Petek_Kapama' for uid in selected)
+            if (petek_slot_mode!='off' or petek_pink_cleanup) and petek_selected:
+                approved=self._petek_preview_ok
+                if not approved or approved[:2]!=(petek_slot_mode,petek_pink_cleanup) or approved[2] not in selected:
+                    raise ValueError('PETEK yeni görünümü önce "PETEK Önce / Sonra Test" ile görüntüleyip '
+                                     'açılan ekranda onaylamadan seri üretim başlatılamaz.')
             if upscale_4k:
+                if self._4k_installing:
+                    raise UpscaleError('4K kurulumu sürüyor. Normal üretim için 4K seçimini kapatın.')
+                self._4k_checker.verify(upscale_model)
                 upscale_preflight(enabled=True, model=upscale_model)
         except (ValueError, KeyError, UpscaleError) as exc:
             messagebox.showwarning("Üretim Ayarları", str(exc), parent=self.window)
@@ -397,7 +674,7 @@ class UnifiedV4BatchWindow:
             return
         if selected_stores:
             try:
-                approved=[self.template_items[uid] for uid in self.mapping]
+                approved=list(self.template_items.values())
                 plan=StoreProfiles(self.batch_engine.root).plan(selected_stores,approved,selected_uids=selected)
                 pair_count=sum(len(store_templates) for _,store_templates in plan)
             except (ValueError,KeyError,OSError) as exc:
@@ -433,6 +710,8 @@ class UnifiedV4BatchWindow:
                     glass_effect=glass_effect,
                     upscale_4k=upscale_4k,
                     upscale_model=upscale_model,
+                    petek_slot_mode=petek_slot_mode,
+                    petek_pink_cleanup=petek_pink_cleanup,
                 )
                 self.messages.put(("done", res))
             except Exception as exc:
@@ -447,7 +726,7 @@ class UnifiedV4BatchWindow:
         if self.worker and self.worker.is_alive():
             messagebox.showinfo("Önizleme", "İşlem devam ederken yeni önizleme çalışmaz.", parent=self.window)
             return
-        selected = [self.mapping[int(i)] for i in self.listbox.curselection()]
+        selected = self.chosen_uids()
         item = next((self.template_items.get(uid) for uid in selected
                      if self.template_items.get(uid, {}).get('category') in (GLASS | DAYLIGHT)), None)
         if not item:
@@ -499,15 +778,17 @@ class UnifiedV4BatchWindow:
     def show_ab(self, before, after, uid, artname, qa):
         # Tk widgets must be constructed on the UI thread.
         popup=tk.Toplevel(self.window)
-        popup.title('Malzeme Efekti A/B — Gerçek Baskı Önizlemesi')
-        popup.geometry('870x680')
+        petek_demo=str(qa.get('status','')).startswith('PETEK')
+        popup.title('PETEK Izgara / Köşe Önce-Sonra Denemesi' if petek_demo else 'Malzeme Efekti A/B — Gerçek Baskı Önizlemesi')
+        popup.geometry('870x720')
         images=[]
-        for title,frame in [('Efekt KAPALI',before),('Efekt AÇIK',after)]:
+        captions=('MEVCUT ÇIKTI','DENEME SONUCU') if petek_demo else ('Efekt KAPALI','Efekt AÇIK')
+        for title,frame in zip(captions,(before,after)):
             pil=Image.fromarray(cv2.cvtColor(frame,cv2.COLOR_BGR2RGB))
             pil.thumbnail((395,555),Image.Resampling.LANCZOS)
             images.append(ImageTk.PhotoImage(pil,master=popup))
         slots=ttk.Frame(popup,padding=10); slots.pack(fill='both',expand=True)
-        for j,title in enumerate(('Efekt KAPALI','Efekt AÇIK')):
+        for j,title in enumerate(captions):
             frame=ttk.Frame(slots);frame.pack(side='left',fill='both',expand=True)
             ttk.Label(frame,text=title,font=('Segoe UI',11,'bold')).pack()
             ttk.Label(frame,image=images[j]).pack(pady=8)
@@ -523,6 +804,22 @@ class UnifiedV4BatchWindow:
         popup._keep_image_refs=images
         ttk.Label(popup,text=f'{uid} / {artname} — yalnız geçici önizleme; kaynakları ve onaylı dört köşeleri değiştirmez.',
                   wraplength=820).pack(pady=8)
+        if petek_demo and not (int(qa.get('mean_inside_delta') or 0) or
+                               int(qa.get('protected_pixel_changes') or 0)):
+            ttk.Label(popup,text='Tahmin güveni yetersiz: resim değişmedi. Bu ayar onaylanamaz.',
+                      wraplength=780).pack(pady=(0,9))
+        if petek_demo and (int(qa.get('mean_inside_delta') or 0) or
+                           int(qa.get('protected_pixel_changes') or 0)):
+            # The operator must inspect the rendered preview and explicitly
+            # approve a trial recipe. All actual outputs still require the
+            # existing separate batch size confirmation.
+            recipe=(self.petek_slot_mode.get(),bool(self.petek_pink_cleanup.get()),uid)
+            def accept_preview():
+                self._petek_preview_ok=recipe
+                popup.destroy()
+                self.progress.set(f'PETEK deneme ayarı onaylandı: {uid}; yalnız yeni çıktılara uygulanacak.')
+            ttk.Button(popup,text='Bu PETEK denemesini onayla (yalnız yeni çıktılar)',
+                       command=accept_preview).pack(pady=(0,9))
 
     def _maybe_start_auto_cloud(self) -> None:
         """UI-thread follow-up; never run during an active rendering thread."""
@@ -540,7 +837,7 @@ class UnifiedV4BatchWindow:
             return
         cloud = CloudExcel(self.batch_engine.root, self.batch_engine.reports, self.runtime_root)
         if not cloud.available():
-            messagebox.showerror("Bulut Anahtarı Yok",
+            helpful_error("Bulut Anahtarı Yok",
                 "Eski ayarlar.json > bulut_ayarlari > imgbb_keys veya freeimage_key bulunamadı.\n"
                 "HTTPS linki yerine yerel file:/// adresini bulut bağlantısı olarak YAZMAYACAĞIZ.",
                 parent=self.window)
@@ -643,7 +940,7 @@ class UnifiedV4BatchWindow:
                     parent=self.window):
                 return
         except (OSError,ValueError,KeyError,TypeError) as exc:
-            messagebox.showerror('Devam Kontrolü Hatası',str(exc),parent=self.window)
+            helpful_error('Devam Kontrolü Hatası',str(exc),parent=self.window)
             return
 
         self._auto_cloud_pending = False  # Do not implicitly upload on replay.
@@ -675,7 +972,7 @@ class UnifiedV4BatchWindow:
                    "Durumlar:\n" + "\n".join(rows) + "\n\nKategoriler:\n" + "\n".join(cats))
             messagebox.showinfo("Operasyon Özeti — Salt Okunur", msg, parent=self.window)
         except (OSError, ValueError, RuntimeError) as exc:
-            messagebox.showerror("Özet Hatası", str(exc), parent=self.window)
+            helpful_error("Özet Hatası", str(exc), parent=self.window)
 
     def export_marketplace_template(self) -> None:
         """One existing marketplace template -> distinct store-specific workbooks."""
@@ -731,7 +1028,7 @@ class UnifiedV4BatchWindow:
                     self.batch_engine.ledger.successful(),report_root=self.batch_engine.reports)
                 messagebox.showinfo("LOCAL Excel",str(result["output"]),parent=self.window)
         except (ValueError,OSError,RuntimeError) as exc:
-            messagebox.showerror("Pazaryeri Excel Hatası",str(exc),parent=self.window)
+            helpful_error("Pazaryeri Excel Hatası",str(exc),parent=self.window)
 
     def stop(self) -> None:
         if self.worker and self.worker.is_alive() and self._worker_kind == 'render':
@@ -761,7 +1058,7 @@ class UnifiedV4BatchWindow:
             self.progress.set(msg)
             self._log(msg)
         except Exception as exc:
-            messagebox.showerror("Denetim Hatası", str(exc), parent=self.window)
+            helpful_error("Denetim Hatası", str(exc), parent=self.window)
 
     def open_recovery(self) -> None:
         try:
@@ -800,9 +1097,13 @@ class UnifiedV4BatchWindow:
                     f"{receipt['preserved_rendered_verified_count']} sağlam çıktı korundu."
                 )
         except Exception as exc:
-            messagebox.showerror("Kesinti Kurtarma Hatası", str(exc), parent=self.window)
+            helpful_error("Kesinti Kurtarma Hatası", str(exc), parent=self.window)
 
     def safe_close(self) -> None:
+        if self._4k_installing:
+            messagebox.showinfo('4K kurulumu sürüyor',
+                'Kurulum kaydı tamamlanınca pencereyi kapatın.',parent=self.window)
+            return
         if self.worker and self.worker.is_alive():
             messagebox.showinfo(
                 "Üretim Devam Ediyor",
@@ -816,7 +1117,17 @@ class UnifiedV4BatchWindow:
         try:
             while True:
                 kind, value = self.messages.get_nowait()
-                if kind == "log":
+                if kind == '4k_manual_status':
+                    self._show_4k_status(*value)
+                elif kind == 'templates_loaded':
+                    self._apply_loaded_templates(value)
+                elif kind == 'templates_load_fail':
+                    token,error=value
+                    if token==self._load_seq:
+                        self.progress.set('Şablon tarama başarısız: '+error)
+                        self.filter_count.set('Şablon listesi yüklenemedi; Yenile ile yeniden dene.')
+                        self.start_button.configure(state='disabled')
+                elif kind == "log":
                     self.log.configure(state="normal")
                     self.log.insert("end", value + "\n")
                     self.log.see("end")
@@ -848,6 +1159,20 @@ class UnifiedV4BatchWindow:
                                 f"4K Excel: {quality.get('report', '(çıktı yok)')}")
                         self._log(info)
                         self.progress.set(self.progress.get() + " | " + info)
+                elif kind == '4k_install_done':
+                    self._4k_installing=False
+                    code,logfile=value
+                    if code == 0:
+                        try:
+                            self._4k_checker.verify(self._4k_model_code())
+                            self._4k_state.set('4K hazır ✓  · başarıyla kuruldu')
+                        except (OSError,UpscaleError) as exc:
+                            self._4k_state.set('4K modeli doğrulanamadı')
+                            messagebox.showwarning('4K kontrol',str(exc)+'\nRapor: '+logfile,parent=self.window)
+                    else:
+                        self._4k_state.set('4K kurulumu başarısız · raporu incele')
+                        if self.upscale_4k.get():self.upscale_4k.set(False)
+                        helpful_error('4K kurulum hatası','Normal üretim korunuyor.\nRapor: '+logfile,parent=self.window)
                 elif kind == "ab_done":
                     self._worker_kind = None
                     self.show_ab(*value)
@@ -877,10 +1202,11 @@ class UnifiedV4BatchWindow:
             self.window.after(200, self.poll)
 
 
-def open_unified_v4_window(parent, *, runtime_root=None, petek_registry=None, v4_root=None):
+def open_unified_v4_window(parent, *, runtime_root=None, petek_registry=None, v4_root=None, prebuilt_engine=None):
     return UnifiedV4BatchWindow(
         parent,
         runtime_root=runtime_root,
         petek_registry=petek_registry,
         v4_root=v4_root,
+        prebuilt_engine=prebuilt_engine,
     )
