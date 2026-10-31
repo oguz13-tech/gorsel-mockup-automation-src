@@ -5,6 +5,7 @@ actual user's original runtime workspace. No data migration/approval happens
 in this GUI: on explicit editor start we first create an external SQLite backup.
 """
 from __future__ import annotations
+from error_advisor_v498 import install_global_error_advisor
 import os
 import queue
 from pathlib import Path
@@ -23,11 +24,12 @@ from version_v46 import TITLE as VERSION
 class Center:
     def __init__(self):
         self.root=tk.Tk()
+        install_global_error_advisor()
         from dark_theme_v42 import apply_dark_theme
         apply_dark_theme(self.root)
         self.root.title('Görsel Üretim Merkezi '+VERSION+' — 7 Kategori / Tüm Araçlar')
         self.root.geometry('1020x760');self.root.minsize(800,570)
-        self.running=False;self.messages=queue.Queue();self.proc=None
+        self.running=False;self.messages=queue.Queue();self.proc=None;self._closing=False
         self.batch_windows=[];self.editor_proc=None;self.editor_log=None;self.editor_port=8080
         from legacy_manager import preferred_runtime
         self.runtime=preferred_runtime()
@@ -39,14 +41,21 @@ class Center:
         # PETEK is a first-class physical category in the selected runtime.
         # Create-only bootstrap precedes the auto-inbox watcher; no images,
         # masks, approvals or SQLite records are migrated by this step.
-        self.root.after(0,self.ensure_petek_workspace)
+        self.root.after(0,self._bootstrap_petek_async)
         self.root.after(150,self.start_auto_ham_designs)
         self.root.after(400,self.start_auto_inbox)
         self.root.protocol('WM_DELETE_WINDOW',self.close)
         self.root.after(180,self.poll)
 
     def build(self):
-        """Single-purpose home: two everyday actions, the rest under Advanced."""
+        """Presentation-only v4.9 dashboard; set GORSEL_UI_LEGACY=1 to roll back."""
+        if os.environ.get('GORSEL_UI_LEGACY', '').strip() == '1':
+            return self.build_legacy()
+        from premium_dashboard_v489 import build_dashboard
+        return build_dashboard(self)
+
+    def build_legacy(self):
+        """Retained V4.8.8 desktop layout for an instant presentation rollback."""
         from dark_theme_v42 import BG, PANEL, FG, MUTED
         style=ttk.Style(self.root)
         for name,background,font,size in (
@@ -148,6 +157,9 @@ class Center:
         ttk.Label(p,textvariable=self.status,style='Center.Status.TLabel',
                   wraplength=950).pack(fill='x',pady=(0,12))
 
+        ttk.Button(p,text='⏻  PROGRAMI GÜVENLE KAPAT',command=self.close,
+                   style='Center.Secondary.TButton').pack(fill='x',pady=(0,10))
+
         self.advanced_toggle=ttk.Button(p,text='▶ Diğer Araçlar ve Kurtarma',
             style='Center.Secondary.TButton',command=self.toggle_advanced)
         self.advanced_toggle.pack(fill='x',pady=(0,7))
@@ -190,17 +202,111 @@ class Center:
                   'Program sürümü ayrı, ana çalışma klasörün ayrıdır.',
                   foreground=MUTED,wraplength=960).pack(anchor='w',pady=(4,10))
 
-    def open_magenta_replace_v486(self):
-        """Separate preview-first tool; NEVER apply photos without typed consent."""
+    def open_notes_v493(self):
         try:
-            tool=ROOT/'MAGENTA_TOPLU_GUVENLI_DEGISTIR_WINDOWS.bat'
-            if os.name!='nt' or not tool.is_file():
-                raise RuntimeError('MAGENTA_WINDOWS_TOOL_NOT_FOUND')
+            from personal_hub_v493 import open_personal
+            open_personal(self.root)
+        except Exception as exc:
+            messagebox.showerror('Kişisel merkez açılamadı',str(exc),parent=self.root)
+
+    def open_tests_v493(self):
+        try:
+            from personal_hub_v493 import open_acceptance
+            open_acceptance(self.root,launch_magenta=self.open_magenta_replace_v486)
+        except Exception as exc:
+            messagebox.showerror('Test Merkezi açılamadı',str(exc),parent=self.root)
+
+    def open_tool_search_v493(self):
+        try:
+            from personal_hub_v493 import open_tool_search
+            open_tool_search(self)
+        except Exception as exc:
+            messagebox.showerror('Özellik Arama açılamadı',str(exc),parent=self.root)
+
+    def open_independent_tool_v493(self, key):
+        """Whitelisted Windows standalone utility launch; never arbitrary paths."""
+        scripts={
+            'orientation':'10_YATAY_DİKEY_GORSEL_SECICI.bat',
+            'rename':'01_GORSEL_ISIMLENDIRICI.bat',
+            'convert':'02_FORMAT_CEVIRICI_PNG_JPG.bat',
+            'watermark':'03_OTOMATIK_FILIGRAN.bat',
+            '4k':'04_AI_4K_KALITE_ARTIRICI.bat',
+            'links':'05_GORSEL_LINK_EXCEL.bat',
+            'seo_title':'06_SEO_URUN_ADI_URETICI.bat',
+            'seo_desc':'07_SEO_ACIKLAMA_URETICI.bat',
+            'recursive':'08_RECURSIVE_PNG_DONUSTURUCU.bat',
+        }
+        try:
+            if key not in scripts:raise ValueError('Araç anahtarı tanımlı değil')
+            launcher=ROOT/'BAGIMSIZ_ARACLAR'/scripts[key]
+            if os.name!='nt' or not launcher.is_file():
+                raise RuntimeError('Bağımsız araç Windows başlatıcısı kullanır: '+str(launcher))
+            os.startfile(str(launcher))
+            self._log('Bağımsız araç başlatma isteği gönderildi: '+key)
+        except Exception as exc:messagebox.showerror('Araç açılamadı',str(exc),parent=self.root)
+
+    def open_orientation_v493(self):self.open_independent_tool_v493('orientation')
+    def open_rename_v493(self):self.open_independent_tool_v493('rename')
+    def open_format_v493(self):self.open_independent_tool_v493('convert')
+    def open_watermark_v493(self):self.open_independent_tool_v493('watermark')
+    def open_quality_v493(self):self.open_independent_tool_v493('4k')
+    def open_links_v493(self):self.open_independent_tool_v493('links')
+    def open_seo_title_v493(self):self.open_independent_tool_v493('seo_title')
+    def open_seo_desc_v493(self):self.open_independent_tool_v493('seo_desc')
+    def open_recursive_v493(self):self.open_independent_tool_v493('recursive')
+
+    def open_safe_stage_v493(self):
+        """Uses existing checked staging utility; never touches approved originals."""
+        try:
+            launcher=ROOT/'BAGIMSIZ_ARACLAR'/'09_GUVENLI_YENI_SABLON_EKLE.bat'
+            if os.name!='nt' or not launcher.is_file():
+                raise RuntimeError('Bu işlev Windows üzerinde kurulu başlatıcıyla açılır.')
+            os.startfile(str(launcher))
+            self._log('Yeni şablon içe alma aracı başlatma isteği gönderildi.')
+        except Exception as exc: messagebox.showerror('Yeni Şablon Ekle',str(exc),parent=self.root)
+
+    def open_4k_setup_v493(self):
+        try:
+            tool=ROOT/'KUR_REAL_ESRGAN_4K_WINDOWS.bat'
+            if os.name!='nt' or not tool.is_file():raise RuntimeError('Windows 4K kurucusu bulunamadı.')
             os.startfile(str(tool))
-            self._log('Magenta LAB ayrı güvenli aktarım aracı başlatıldı. '+
-                      'Rapor ve yan yana önizlemeyi görmeden dosyalar değişmez.')
+        except Exception as exc:messagebox.showerror('4K Kurulum',str(exc),parent=self.root)
+
+    def open_magenta_replace_v486(self):
+        """One-time utility. Never kill unknown processes or bypass preflight.
+
+        If the *authenticated* editor this process started is still serving,
+        the operator must explicitly approve closing it before the utility.
+        """
+        try:
+            import socket
+            occupied=[]
+            for port in range(8080,8091):
+                try:
+                    with socket.create_connection(('127.0.0.1',port),timeout=.08):
+                        occupied.append(port)
+                except OSError: pass
+            if occupied and self.editor_proc is not None and self.editor_proc.poll() is None:
+                if messagebox.askyesno('Magenta ön kontrol',
+                    'Önce kaydettiğin dört köşeler ve maskeler tamam mı?\n\n'
+                    'Magenta güvenli değiştirme için bu merkezin kimliği doğrulanmış '
+                    'inceleme servisini kapatmak gerekiyor. Başlatmadan önce kapatalım mı?',parent=self.root):
+                    self.stop_legacy_editor()  # internal identity checks + its own confirmation
+                    occupied=[]
+                    for port in range(8080,8091):
+                        try:
+                            with socket.create_connection(('127.0.0.1',port),timeout=.08): occupied.append(port)
+                        except OSError: pass
+            if occupied:
+                raise RuntimeError('STOP_4_KOSE_FLASK_8080_8090_FIRST — Aktif sunucular: '+
+                    ', '.join(map(str,occupied))+'\nŞablon incelemeyi güvenle durdur. '
+                    'Bu araç hiçbir tanınmayan işlemi otomatik kapatmaz.')
+            tool=ROOT/'MAGENTA_TOPLU_GUVENLI_DEGISTIR_WINDOWS.bat'
+            if os.name!='nt' or not tool.is_file():raise RuntimeError('MAGENTA_WINDOWS_TOOL_NOT_FOUND')
+            os.startfile(str(tool))
+            self._log('Tek seferlik Magenta aktarım aracı başlatıldı. Yedek + rapor zorunludur.')
         except (OSError,RuntimeError) as exc:
-            messagebox.showerror('Magenta aracı açılamadı',str(exc),parent=self.root)
+            messagebox.showerror('Magenta aracı güvenlik nedeniyle durduruldu',str(exc),parent=self.root)
 
     def open_consolidation(self):
         """Independent utility; editor or batch must be stopped before APPLY."""
@@ -275,30 +381,36 @@ class Center:
         except (OSError,ValueError,RuntimeError) as exc:
             messagebox.showerror('HAM tasarım denetimi',str(exc),parent=self.root)
 
-    def start_auto_ham_designs(self):
-        """Separate automatic HAM design watcher, never an old template watcher.
+    def _bootstrap_petek_async(self):
+        """Create missing category directories without blocking first paint."""
+        runtime=self.runtime
+        def work():
+            try:
+                from petek_folders_v46 import prepare_petek_folders
+                result=prepare_petek_folders(runtime)
+                self.messages.put(('petek_bootstrap_done',(runtime,result)))
+            except Exception as exc:
+                self.messages.put(('petek_bootstrap_fail',str(exc)))
+        threading.Thread(target=work,daemon=True,name='petek-directory-check').start()
 
-        The numbered design pool starts as soon as the main center opens and
-        remains usable even when the classic six-category intake is declined.
-        """
-        try:
-            if self.ham_design_watcher is not None:
-                self.ham_design_watcher.stop()
-                self.ham_design_watcher=None
-            from ham_designs_v487 import HamDesignWatcher
-            self.ham_design_watcher=HamDesignWatcher(
-                self.runtime,notify=lambda message:self.messages.put(('log',message)),interval=3.0)
-            self.ham_design_watcher.start()
-            report=self.ham_design_watcher.vault.audit()
-            if hasattr(self,'ham_home_status'):
-                self.ham_home_status.set('Otomatik izleme aktif · Son numara: '+str(report['high'])+
-                    ' · Kontrol: '+str(len(report['issues'])+len(report['unregistered'])))
-            self._log('HAM BASKI TASARIMLARI otomatik takip aktif. Son numara: '+
-                      str(report['high'])+'; klasör: '+report['path'])
-            for issue in report['issues'][:6]:
-                self._log('HAM TASARIM KONTROL: '+str(issue))
-        except (OSError,ValueError,RuntimeError) as exc:
-            self.messages.put(('log','⚠️ HAM TASARIM IZLEME AÇILAMADI: '+str(exc)))
+    def start_auto_ham_designs(self):
+        """Background-only HAM scan; Tk never hashes hundreds of files."""
+        if getattr(self,'_ham_watcher_pending',False):return
+        self._ham_watcher_pending=True
+        runtime=self.runtime
+        old=self.ham_design_watcher
+        def work():
+            try:
+                if old is not None:old.stop()
+                from ham_designs_v487 import HamDesignWatcher
+                watcher=HamDesignWatcher(runtime,
+                    notify=lambda msg:self.messages.put(('log',msg)),interval=3.0)
+                watcher.start()
+                report=watcher.vault.audit()
+                self.messages.put(('ham_watcher_ready',(runtime,watcher,report)))
+            except Exception as exc:
+                self.messages.put(('ham_watcher_failed',str(exc)))
+        threading.Thread(target=work,daemon=True,name='ham-vault-audit').start()
 
     def open_ham_design_folder(self):
         try:
@@ -317,25 +429,48 @@ class Center:
             messagebox.showerror('HAM TASARIM KLASÖRÜ',str(exc),parent=self.root)
 
     def start_auto_inbox(self):
-        """New-image intake runs automatically while the unified center is open."""
-        try:
-            from legacy_manager import inspect,backup_database
-            state=inspect(self.runtime)
-            if not state['ready']:
-                self._log('Yeni görsel izleme kapalı: '+ '; '.join(state['problems']))
-                return
-            if not messagebox.askyesno('Yeni görsel alımını etkinleştir',
-                    'Seçili çalışma klasörünün SQLite yedeği alınacak ve ayrı kopyada geri yükleme provası yapılacak. Ardından yalnız yeni görseller güvenli alıma açılacak. Mevcut onaylar değiştirilmez. Devam?',parent=self.root):
-                return
-            backup_database(self.runtime)
-            if self.inbox_watcher is not None:self.inbox_watcher.stop()
-            from inbox_auto_v42 import AutoInboxWatcher
-            self.inbox_watcher=AutoInboxWatcher(
-                self.runtime,notify=lambda message:self.messages.put(('log',message)),interval=3.0
-            )
-            self.inbox_watcher.start()
-        except Exception as exc:
-            self.messages.put(('log','Otomatik yeni görsel izleme başlatılamadı: '+str(exc)))
+        """Inspect and back up on workers, but request consent on Tk thread."""
+        if getattr(self,'_inbox_watcher_pending',False):return
+        self._inbox_watcher_pending=True
+        runtime=self.runtime
+        def work():
+            try:
+                from legacy_manager import inspect
+                status=inspect(runtime)
+                self.messages.put(('inbox_preflight_done',(runtime,status)))
+            except Exception as exc:
+                self.messages.put(('inbox_failed',str(exc)))
+        threading.Thread(target=work,daemon=True,name='inbox-preflight').start()
+
+    def _inbox_finish_preflight(self,payload):
+        runtime,status=payload
+        if runtime != self.runtime:
+            self._inbox_watcher_pending=False
+            return
+        if not status['ready']:
+            self._inbox_watcher_pending=False
+            self._log('Yeni görsel izleme kapalı: '+'; '.join(status['problems']))
+            return
+        if not messagebox.askyesno('Yeni görsel alımını etkinleştir',
+                'Seçili SQLite verisi yedeklenecek ve ayrı kopyada geri yükleme provası yapılacak. '
+                'Yalnız yeni görseller güvenli alıma açılır; mevcut onaylar değiştirilmez. Devam?',
+                parent=self.root):
+            self._inbox_watcher_pending=False
+            return
+        old=self.inbox_watcher
+        def work():
+            try:
+                from legacy_manager import backup_database
+                backup_database(runtime)
+                if old is not None:old.stop()
+                from inbox_auto_v42 import AutoInboxWatcher
+                watcher=AutoInboxWatcher(runtime,
+                    notify=lambda msg:self.messages.put(('log',msg)),interval=3.0)
+                watcher.start()
+                self.messages.put(('inbox_ready',(runtime,watcher)))
+            except Exception as exc:
+                self.messages.put(('inbox_failed',str(exc)))
+        threading.Thread(target=work,daemon=True,name='inbox-safe-backup').start()
 
     def _log(self,value):
         self.log.configure(state='normal');self.log.insert('end',value.rstrip()+'\n')
@@ -397,84 +532,121 @@ class Center:
             webbrowser.open(f'http://127.0.0.1:{self.editor_port}'+route)
             self.status.set('Dört köşe inceleme merkezi açık.')
             return
-        # One canonical URL: never run a second 8081-8090 editor in parallel.
-        editor_port=8080
-        s=inspect(self.runtime)
-        if not s['ready']:
-            messagebox.showerror('7 kategori inceleme başlatılamadı',
-                '\n'.join(s['problems'])+'\n\nAna çalışma klasörünü kontrol edin.',parent=self.root)
+        # The 7-category preflight and external SQLite backup may take 13+ s
+        # on OneDrive. Never run filesystem work on the Tk event thread.
+        if getattr(self,'_review_loading',False):
+            self.status.set('Şablon inceleme zaten hazırlanıyor; ana ekran kullanılabilir.')
             return
-        if s['warnings']:
-            result=messagebox.askokcancel('Eski veritabanı uyarısı',
-                '\n'.join(s['warnings'])+'\n\nBaşlatmadan önce bir yedek oluşturulacak. '
-                'Eksik şema varsa bazı işlemler açılamayabilir; otomatik migration yapılmaz. Devam?',parent=self.root)
-            if not result:return
-        if not messagebox.askyesno('İncelemeyi aç', 'Seçili veritabanının yedeği ve izole geri yükleme provası tamamlandıktan sonra editör açılacak. Kaydetme yalnız sizin işlemlerinizle yapılır. Devam?',parent=self.root):
+        if not messagebox.askyesno('Güvenli şablon inceleme',
+                'Seçili çalışma klasörü denetlenecek, eski SQLite için\n'
+                'yedek ve geri yükleme provası yapılacak.\n\n'
+                'Şablonlar/maskeler kendiliğinden onaylanmaz veya değiştirilmez.\n'
+                'İnceleme servisi hazırlansın mı?',parent=self.root):
             return
-        try:
-            backup=backup_database(self.runtime)
+        self._review_loading=True
+        self.review_button.configure(state='disabled')
+        self.tools_button.configure(state='disabled')
+        self.status.set('İnceleme güvenlik ön denetimi çalışıyor… Ana ekranı kullanabilirsin.')
+        runtime=self.runtime
+        def preflight_worker():
             try:
-                reclaimed=ensure_canonical_8080(occupied=lambda:port_occupied(port=8080))
-            except PortOwnerError as exc:
-                self._log('8080 KORUMA: '+str(exc))
-                messagebox.showerror('8080 kullanımda — güvenli devir engeli',
-                    '8080 kullanan süreç bize ait güvenli eski inceleme sunucusu olarak doğrulanamadı '
-                    'veya üzerinde aktif bir analiz var. Hiçbir program kapatılmadı.\\n\\n'
-                    +str(exc)+'\\n\\nEski şablon inceleme penceresini güvenli durdurup tekrar deneyin.',
-                    parent=self.root)
+                from legacy_manager import inspect
+                summary=inspect(runtime)
+                self.messages.put(('review_preflight_done',(route,summary,runtime)))
+            except Exception as exc:
+                self.messages.put(('review_start_error',str(exc)))
+        threading.Thread(target=preflight_worker,daemon=True,name='review-inspect').start()
+
+    def _review_finish_preflight(self,payload):
+        route,summary,runtime=payload
+        if not summary['ready']:
+            self._review_show_error('7 kategori inceleme başlatılamadı',
+                '\n'.join(summary['problems'])+'\n\nAna çalışma klasörünü kontrol et.')
+            return
+        if summary['warnings']:
+            if not messagebox.askokcancel('Eski veritabanı uyarısı',
+                    '\n'.join(summary['warnings'])+'\n\n'
+                    'Otomatik migration yapılmaz; güvenli yedekleme ardından devam edilsin mi?',
+                    parent=self.root):
+                self._review_loading=False
+                self.review_button.configure(state='normal')
+                self.tools_button.configure(state='normal')
                 return
-            if reclaimed['reclaimed']:
-                self._log('8080 onaylı eski inceleme sunucusundan devralındı; eski PID: '+
-                          str(reclaimed['pid']))
-            command,env,cwd=launch_spec(self.runtime)
-            env['MOCKUP_CENTER_TOKEN']=os.urandom(32).hex()
-            env['MOCKUP_PORT']=str(editor_port)
-            self.editor_identity=(self.runtime,cwd,env['MOCKUP_CENTER_TOKEN'])
-            logs=local_state_dir()/'LOG';logs.mkdir(parents=True,exist_ok=True)
-            output=logs/('inceleme_'+str(int(time.time()))+'_'+os.urandom(3).hex()+'.log')
-            log=output.open('x',encoding='utf-8')
+        self.status.set('SQLite yedeği, port güvenliği ve inceleme servisi arka planda hazırlanıyor…')
+        def launch_worker():
             try:
-                options={'cwd':cwd,'env':env,'stdout':log,'stderr':subprocess.STDOUT}
-                if os.name=='nt':options['creationflags']=getattr(subprocess,'CREATE_NO_WINDOW',0)
-                child=subprocess.Popen(command,**options)
-            finally:log.close()
-            self.editor_proc=child;self.editor_log=output;self.editor_port=editor_port
-            self.review_button.configure(state='disabled');self.tools_button.configure(state='disabled')
-            self.status.set(f'7 kategori şablon/maske incelemesi açılıyor: 127.0.0.1:{editor_port}')
-            self._log('SQLite güvenlik yedeği: '+str(backup))
-            self._log('Altı kategori kodu: '+str(cwd))
-            self._log('Sunucu logu: '+str(output))
-            def wait_server():
-                from legacy_manager import server_identity_diagnostic
-                last={'ready':False,'reason':'NOT_CHECKED'}
-                # A slow Windows/OneDrive machine can need extra startup time.
-                # A 200 response alone is NOT proof this process belongs to us.
-                for _ in range(50):
-                    if child.poll() is not None:
-                        last={'ready':False,'reason':'EDITOR_PROCESS_EXITED',
-                              'exit_code':child.returncode}
-                        break
-                    last=server_identity_diagnostic(
-                        self.runtime,cwd,child.pid,env['MOCKUP_CENTER_TOKEN'],
-                        port=editor_port)
-                    if last['ready']:
-                        self.messages.put(('legacy_started',route));return
-                    time.sleep(.25)
-                self.messages.put(('legacy_error',(str(output),last)))
-            threading.Thread(target=wait_server,daemon=True).start()
-        except Exception as exc:
-            messagebox.showerror('İnceleme başlatılamadı',str(exc),parent=self.root)
-            self._log('İNCELEME HATASI: '+repr(exc))
+                from legacy_manager import backup_database,launch_spec,local_state_dir,port_occupied
+                from review_port_owner_v478 import ensure_canonical_8080
+                backup=backup_database(runtime)
+                reclaimed=ensure_canonical_8080(occupied=lambda:port_occupied(port=8080))
+                command,env,cwd=launch_spec(runtime)
+                env['MOCKUP_CENTER_TOKEN']=os.urandom(32).hex()
+                env['MOCKUP_PORT']='8080'
+                logs=local_state_dir()/'LOG'
+                logs.mkdir(parents=True,exist_ok=True)
+                output=logs/('inceleme_'+str(int(time.time()))+'_'+os.urandom(3).hex()+'.log')
+                log=output.open('x',encoding='utf-8')
+                try:
+                    options={'cwd':cwd,'env':env,'stdout':log,'stderr':subprocess.STDOUT}
+                    if os.name=='nt':options['creationflags']=getattr(subprocess,'CREATE_NO_WINDOW',0)
+                    child=subprocess.Popen(command,**options)
+                finally:log.close()
+                self.messages.put(('review_spawned',(
+                    route,runtime,cwd,env['MOCKUP_CENTER_TOKEN'],child,output,backup,reclaimed)))
+            except Exception as exc:
+                self.messages.put(('review_start_error',str(exc)))
+        threading.Thread(target=launch_worker,daemon=True,name='review-safe-launch').start()
+
+    def _review_finish_spawn(self,payload):
+        route,runtime,cwd,token,child,output,backup,reclaimed=payload
+        self.editor_proc=child
+        self.editor_identity=(runtime,cwd,token)
+        self.editor_log=output
+        self.editor_port=8080
+        self._log('SQLite güvenlik yedeği: '+str(backup))
+        self._log('İnceleme sunucu günlüğü: '+str(output))
+        if reclaimed.get('reclaimed'):
+            self._log('Kimliği doğrulanmış eski sunucu güvenle kapatıldı: '+str(reclaimed.get('pid')))
+        def wait_server():
+            from legacy_manager import server_identity_diagnostic
+            last={'ready':False,'reason':'NOT_CHECKED'}
+            for _ in range(55):
+                if child.poll() is not None:
+                    last={'ready':False,'reason':'EDITOR_PROCESS_EXITED',
+                          'exit_code':child.returncode}
+                    break
+                last=server_identity_diagnostic(runtime,cwd,child.pid,token,port=8080)
+                if last['ready']:
+                    self.messages.put(('legacy_started',route));return
+                time.sleep(.22)
+            self.messages.put(('legacy_error',(str(output),last)))
+        threading.Thread(target=wait_server,daemon=True,name='review-identity').start()
+
+    def _review_show_error(self,title,error):
+        self._review_loading=False
+        self.review_button.configure(state='normal')
+        self.tools_button.configure(state='normal')
+        self.status.set('İnceleme başlatılamadı: '+title)
+        messagebox.showerror(title,str(error),parent=self.root)
 
     def open_legacy_review(self):self._open_legacy('/')
     def open_legacy_tools(self):self._open_legacy('/tools')
 
-    def stop_legacy_editor(self):
+    def stop_legacy_editor(self, *, confirmed=False):
+        """Stop ONLY this center's authenticated Flask child.
+
+        Return True only after a confirmed stop. Never terminate unknown owners,
+        nor silently bypass unsaved review data confirmations.
+        """
         if self.editor_proc is None or self.editor_proc.poll() is not None:
-            messagebox.showinfo('Eski inceleme','Bu merkez tarafından başlatılmış çalışan sunucu yok.',parent=self.root);return
-        if not messagebox.askyesno('İnceleme sunucusunu durdur',
-                                  'Dört köşe/şablon kaydını tamamladın mı?\n'
-                                  'Devam eden analiz işleriniz varsa sunucuyu durdurmayın.',parent=self.root):return
+            if not confirmed:
+                messagebox.showinfo('İnceleme sunucusu',
+                    'Bu merkez tarafından başlatılmış çalışan sunucu yok.',parent=self.root)
+            return True
+        if not confirmed and not messagebox.askyesno('İnceleme sunucusunu durdur',
+                'Dört köşe ve maske kayıtlarını tamamladın mı?\n'
+                'Devam eden analiz varsa sunucuyu durdurmayın.',parent=self.root):
+            return False
         try:
             from legacy_manager import server_identity_diagnostic
             runtime,code,token=self.editor_identity
@@ -485,9 +657,8 @@ class Center:
                                    str(check.get('reason')))
             actual_pid=check['actual_pid']
             if os.name=='nt' and actual_pid!=self.editor_proc.pid:
-                # A Windows venv launcher is a redirector; terminating it alone
-                # leaves Flask listening on 8080. Stop only the authenticated
-                # child PID with the matching secret and both directory roots.
+                # The venv launcher may redirect to another PID; only stop an
+                # authenticated child with matching secret + workspace paths.
                 finished=subprocess.run(['taskkill.exe','/PID',str(actual_pid),'/F'],
                     capture_output=True,text=True,timeout=6,
                     creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
@@ -496,10 +667,19 @@ class Center:
                 self.editor_proc.wait(timeout=6)
             else:
                 self.editor_proc.terminate();self.editor_proc.wait(timeout=5)
-            self._log('Doğrulanan inceleme sunucusu kullanıcı isteğiyle tamamen kapatıldı.')
+            self._log('Doğrulanan inceleme sunucusu kullanıcı isteğiyle kapatıldı.')
             self.status.set('8080 inceleme servisi kapatıldı. Onaylı veriler korunuyor.')
-        except Exception as exc:self._log('İnceleme kapatma uyarısı: '+str(exc))
-        finally:self.review_button.configure(state='normal');self.tools_button.configure(state='normal')
+            self.editor_proc=None
+            self.review_button.configure(state='normal')
+            self.tools_button.configure(state='normal')
+            return True
+        except Exception as exc:
+            self._log('İnceleme kapatma uyarısı: '+str(exc))
+            messagebox.showerror('Güvenli kapatma tamamlanmadı',
+                'İnceleme sunucusunun kimliği veya kapanışı doğrulanamadı. '
+                'Program açık bırakıldı; bilinmeyen işleme dokunulmadı.\n\n'+str(exc),
+                parent=self.root)
+            return False
 
     def open_daily(self):
         from merkez_saglik import report
@@ -594,10 +774,37 @@ class Center:
         except Exception as exc:messagebox.showerror('PETEK seri üretim açılmadı',str(exc),parent=self.root)
 
     def open_unified_v4(self):
-        try:
-            from URETIM_V4.gui_v4 import open_unified_v4_window
-            self.batch_windows.append(open_unified_v4_window(self.root, runtime_root=self.runtime))
-        except Exception as exc:messagebox.showerror('V4 7 Kategori seri üretim açılmadı',str(exc),parent=self.root)
+        """Return focus immediately; prepare 7-category ledger on a worker."""
+        for window in self.batch_windows:
+            if window.window.winfo_exists():
+                window.window.deiconify();window.window.lift()
+                return
+        if getattr(self,'_production_loading',False):
+            loader=getattr(self,'_production_loader',None)
+            if loader and loader.winfo_exists():loader.lift()
+            return
+        self._production_loading=True
+        loader=tk.Toplevel(self.root)
+        loader.title('Seri Üretim · Hazırlanıyor')
+        loader.geometry('485x130')
+        loader.configure(bg='#151927')
+        tk.Label(loader,text='Seri üretim hazırlanıyor…',bg='#151927',fg='#f3efff',
+                 font=('Segoe UI',16,'bold')).pack(anchor='w',padx=22,pady=(17,8))
+        tk.Label(loader,text='Ana ekran ve şablon inceleme kullanılabilir kalır.',
+                 bg='#151927',fg='#afb8d0',font=('Segoe UI',10)).pack(anchor='w',padx=22)
+        loader.protocol('WM_DELETE_WINDOW',lambda:None)
+        self._production_loader=loader
+        runtime=self.runtime
+        def work():
+            try:
+                from URETIM_V4.unified_batch import UnifiedV4Batch
+                from PETEK_V3.registry import Registry
+                registry=Registry()
+                engine=UnifiedV4Batch(runtime_root=runtime,petek_registry=registry)
+                self.messages.put(('production_ready',(engine,registry)))
+            except Exception as exc:
+                self.messages.put(('production_error',str(exc)))
+        threading.Thread(target=work,daemon=True,name='production-bootstrap').start()
 
     def open_unified_audit(self):
         """Perform a read-only SHA receipt scan from the advanced menu."""
@@ -651,13 +858,70 @@ class Center:
                 elif kind=='done':
                     route,code=value;self.running=False;self.proc=None
                     self.status.set(route+' işlemi sonlandı: '+str(code))
+                elif kind=='petek_bootstrap_done':
+                    runtime,result=value
+                    if runtime==self.runtime:
+                        if result.get('created'):
+                            self._log('Yeni boş PETEK kategori dizinleri oluşturuldu: '+str(result['created']))
+                elif kind=='petek_bootstrap_fail':
+                    self._log('PETEK klasör denetimi: '+str(value))
+                elif kind=='ham_watcher_ready':
+                    runtime,watcher,report=value
+                    self._ham_watcher_pending=False
+                    if runtime != self.runtime:watcher.stop()
+                    else:
+                        self.ham_design_watcher=watcher
+                        if hasattr(self,'ham_home_status'):
+                            self.ham_home_status.set('HAM izleme aktif · Son numara: '+str(report['high']))
+                        self._log('HAM numara denetimi: '+str(report['high'])+' · '+str(report['path']))
+                elif kind=='ham_watcher_failed':
+                    self._ham_watcher_pending=False
+                    self._log('HAM izleme başlatılamadı: '+str(value))
+                elif kind=='inbox_preflight_done':
+                    self._inbox_finish_preflight(value)
+                elif kind=='inbox_ready':
+                    runtime,watcher=value
+                    self._inbox_watcher_pending=False
+                    if runtime!=self.runtime:watcher.stop()
+                    else:
+                        self.inbox_watcher=watcher
+                        self._log('Yeni görsel güvenli alım izleyicisi başlatıldı.')
+                elif kind=='inbox_failed':
+                    self._inbox_watcher_pending=False
+                    self._log('Yeni görsel izleme başlatılamadı: '+str(value))
+                elif kind=='review_preflight_done':
+                    self._review_finish_preflight(value)
+                elif kind=='review_spawned':
+                    self._review_finish_spawn(value)
+                elif kind=='review_start_error':
+                    self._review_show_error('Güvenli inceleme başlatma hatası',value)
+                elif kind=='production_ready':
+                    self._production_loading=False
+                    loader=getattr(self,'_production_loader',None)
+                    if loader is not None and loader.winfo_exists():loader.destroy()
+                    engine,registry=value
+                    try:
+                        from URETIM_V4.gui_v4 import open_unified_v4_window
+                        self.batch_windows.append(open_unified_v4_window(
+                            self.root,runtime_root=self.runtime,
+                            petek_registry=registry,prebuilt_engine=engine))
+                        self.status.set('Seri üretim açıldı; onaylı liste arka planda yükleniyor.')
+                    except Exception as exc:
+                        messagebox.showerror('Seri üretim açılmadı',str(exc),parent=self.root)
+                elif kind=='production_error':
+                    self._production_loading=False
+                    loader=getattr(self,'_production_loader',None)
+                    if loader is not None and loader.winfo_exists():loader.destroy()
+                    messagebox.showerror('Seri üretim hazırlanamadı',str(value),parent=self.root)
                 elif kind=='legacy_started':
+                    self._review_loading=False
                     self.review_button.configure(state='normal');self.tools_button.configure(state='normal')
                     self.status.set(
                         f'7 kategori şablon/maske incelemesi hazır: '
                         f'127.0.0.1:{self.editor_port}')
                     webbrowser.open(f'http://127.0.0.1:{self.editor_port}'+value)
                 elif kind=='legacy_error':
+                    self._review_loading=False
                     self.review_button.configure(state='normal');self.tools_button.configure(state='normal')
                     filename,diagnostic=value
                     try:excerpt=Path(filename).read_text(encoding='utf-8',errors='replace')[-1600:]
@@ -691,16 +955,64 @@ class Center:
         except Exception as exc:messagebox.showerror('Çıktı klasörü açılmadı',str(exc),parent=self.root)
 
     def close(self):
-        if any(getattr(win,'worker',None) and win.worker.is_alive() for win in self.batch_windows):
-            messagebox.showinfo('PETEK işi devam ediyor','Seri üretimde güvenli durdurmayı kullanın.',parent=self.root);return
-        if self.running:
-            messagebox.showinfo('Günlük üretim devam ediyor','Günlük işlemi güvenli olarak bitirin.',parent=self.root);return
-        if self.editor_proc is not None and self.editor_proc.poll() is None:
-            messagebox.showinfo('Altı kategori inceleme açık',
-                'Eski inceleme merkezi çalışıyor. Önce bu penceredeki "Eski inceleme sunucusunu durdur" düğmesini kullanın.',parent=self.root)
+        """Operator-facing safe exit, not a terminal kill or blanket taskkill.
+
+        A running production job or an unsaved child editor blocks exit.
+        A verified local review service may be stopped with explicit approval.
+        Normal exit returns from Tk mainloop, so the launcher BAT also ends.
+        """
+        if self._closing:
             return
-        if self.inbox_watcher is not None:self.inbox_watcher.stop()
-        if self.ham_design_watcher is not None:self.ham_design_watcher.stop()
+        if getattr(self,'_ham_watcher_pending',False) or getattr(self,'_inbox_watcher_pending',False):
+            messagebox.showinfo('Başlatma sürüyor',
+                'Dosya izleyicisi açılışı ve güvenlik yedeği tamamlanınca çıkın.',parent=self.root)
+            return
+        if getattr(self,'_review_loading',False):
+            messagebox.showinfo('İnceleme hazırlanıyor',
+                'SQLite yedekleme ve kimlik doğrulaması bitene kadar çıkış bekletildi.',
+                parent=self.root)
+            return
+        if any(getattr(win,'worker',None) and win.worker.is_alive()
+               for win in self.batch_windows):
+            messagebox.showinfo('Üretim devam ediyor',
+                'Önce seri üretim ekranında Güvenli Durdur kullanın. '
+                'İş tamamlanmadan program kapatılmayacak.',parent=self.root)
+            return
+        if self.running:
+            messagebox.showinfo('Günlük işlem devam ediyor',
+                'Önce günlük üretimin güvenli biçimde bitmesini bekleyin.',parent=self.root)
+            return
+        # Do not destroy unknown Tk child windows with potentially unsaved edits.
+        visible_children=[w for w in self.root.winfo_children()
+                          if isinstance(w,tk.Toplevel) and w.winfo_exists()]
+        if visible_children:
+            messagebox.showinfo('Açık alt pencereler var',
+                'Önce açık PETEK, üretim, not veya test pencerelerini kaydedip '
+                'kapatın. Ardından Programı Kapat düğmesine basın.',parent=self.root)
+            return
+        if self.editor_proc is not None and self.editor_proc.poll() is None:
+            if not messagebox.askyesno('Programı güvenle kapat',
+                'Şablon inceleme sunucusu hâlâ açık.\n\n'
+                'Dört köşe, maske ve onayları kaydettiğinden emin misin?\n'
+                'Yalnızca bu merkezin kimliği doğrulanan inceleme sunucusu '
+                'durdurulacak; ardından program kapanacak.\n\nDevam edilsin mi?',
+                parent=self.root):
+                return
+            if not self.stop_legacy_editor(confirmed=True):
+                return
+        self._closing=True
+        try:
+            if self.inbox_watcher is not None:
+                self.inbox_watcher.stop()
+            if self.ham_design_watcher is not None:
+                self.ham_design_watcher.stop()
+        except Exception as exc:
+            self._closing=False
+            messagebox.showerror('Kapatma tamamlanmadı',
+                'Arka plan izlemesi güvenli durdurulamadı. Program açık kaldı.\n'+str(exc),
+                parent=self.root)
+            return
         self.root.destroy()
+
 
 if __name__=='__main__':Center().root.mainloop()

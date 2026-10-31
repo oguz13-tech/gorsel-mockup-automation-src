@@ -63,6 +63,38 @@ def find_engine(explicit: Path | str | None = None) -> Path:
     system = which("realesrgan-ncnn-vulkan")
     if system:
         options.append(Path(system))
+    # V4.9.5: installed model may belong to an older, isolated Windows ZIP.
+    # Locate it from the private user-local cache only AFTER 4K was requested.
+    # This avoids reinstalling on every upgrade and does not scan drive trees.
+    try:
+        cache_root=Path(os.environ.get('LOCALAPPDATA') or Path.home()/'.gorsel_mockup')
+        memo=cache_root/'GorselMockup'/'4k_kurulum_durumu.json'
+        if memo.is_file() and not memo.is_symlink() and memo.stat().st_size <= 10_000:
+            data=json.loads(memo.read_text(encoding='utf-8'))
+            for profile in ('photo','fast'):
+                entry=data.get(profile,{})
+                if isinstance(entry,dict) and entry.get('engine'):
+                    options.append(Path(entry['engine']))
+    except (OSError,ValueError,TypeError):
+        pass
+    # A user may have already installed official weights inside the previous
+    # isolated release. Probe only a BOUNDED set of sibling release folders
+    # when 4K is explicitly selected; no recursive whole-disk scan or startup I/O.
+    try:
+        checked=0
+        for here in (repo.parent,repo.parent.parent):
+            if not here.is_dir():continue
+            for sibling in here.iterdir():
+                if checked>=90:break
+                checked+=1
+                if sibling==repo or sibling.is_symlink() or not sibling.is_dir():continue
+                if not any(term in sibling.name.lower() for term in ('gorsel','görsel','v49','mockup')):continue
+                options.extend((
+                    sibling/'AI_Kalite_Artirici'/'realesrgan-ncnn-vulkan.exe',
+                    sibling/'GORSEL_V46_CANDIDATE'/'AI_Kalite_Artirici'/'realesrgan-ncnn-vulkan.exe',
+                ))
+    except (OSError,PermissionError):
+        pass
     for item in options:
         if item.is_file() and not item.is_symlink():
             return item.resolve(strict=True)

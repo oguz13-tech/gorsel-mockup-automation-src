@@ -44,6 +44,8 @@ from openpyxl import Workbook, load_workbook
 
 from PETEK_V3 import engine as petek_engine
 from PETEK_V3.cutout_paste import render_with_cutout_paste
+from PETEK_V3.petek_finish_v492 import darken_slot_lips, despill_lower_left, draw_fifteen_slots, despill_lower_left_geometry_v493, STRENGTH, FIFTEEN_RECIPE as PETEK_FINISH_RECIPE
+from PETEK_V3.final_cleanup_v495 import cleanup_petek_magenta, RECIPE as PETEK_DESPILL_RECIPE
 from PETEK_V3.registry import Registry as PetekRegistry
 from PETEK_V3.safety_audit import audit_summary
 
@@ -472,11 +474,17 @@ class UnifiedV4Batch:
         upscale_4k: bool = False,
         upscale_model: str = "photo",
         upscale_exe: Path | str | None = None,
+        petek_slot_mode: str = "off",
+        petek_pink_cleanup: bool = False,
         _resume_expected: dict | None = None,
     ) -> dict[str, Any]:
         notify = notify or (lambda msg: None)
         if corner_radius is not None and not 0 <= float(corner_radius) <= .04:
             raise petek_engine.MaskError("Köşe yuvarlatma %0-%4 arasında olmalı.")
+        if petek_slot_mode not in STRENGTH:
+            raise petek_engine.MaskError("PETEK izgara modu gecersiz.")
+        if not isinstance(petek_pink_cleanup, bool):
+            raise petek_engine.MaskError("PETEK kenar temizleme ayari True/False olmali.")
         if glass_effect not in ("on", "off"):
             raise petek_engine.MaskError("Cam efekti Açık veya Kapalı olmalı.")
         if placement not in petek_engine.PLACEMENT_MODES:
@@ -547,6 +555,8 @@ class UnifiedV4Batch:
             'glass_effect': glass_effect,
             'upscale_4k': bool(upscale_4k),
             'upscale_model': upscale_model,
+            'petek_slot_mode': petek_slot_mode,
+            'petek_pink_cleanup': petek_pink_cleanup,
             'upscale_exe': str(upscale_exe) if upscale_exe is not None else None,
             'random_seed': seed,
         }
@@ -704,7 +714,9 @@ class UnifiedV4Batch:
                                 glass_effect=glass_effect if cat in (GLASS | DAYLIGHT) else "not_applicable",
                                 recipe=((V4_RECIPE + "+" + MATERIAL_RECIPE)
                                     if cat in (GLASS | DAYLIGHT) and glass_effect == "on" and lighting != "off"
-                                    else V4_RECIPE) + ('+STORE_CODES_V485' if selected_stores else ''),
+                                    else V4_RECIPE) + ('+STORE_CODES_V485' if selected_stores else '') +
+                                (('+' + PETEK_FINISH_RECIPE + ':' + petek_slot_mode + ':pink=' + str(petek_pink_cleanup) + ':' + PETEK_DESPILL_RECIPE)
+                                 if cat == '06_Petek_Kapama' and (petek_slot_mode != 'off' or petek_pink_cleanup) else ''),
                             )
                         except (petek_engine.MaskError, cv2.error, OSError, ValueError, KeyError, TypeError) as exc:
                             stats["rejected"] += 1
@@ -724,6 +736,13 @@ class UnifiedV4Batch:
                             identifiers=store_codes(design_id,group,cat)
                             sku=identifiers['sku']
                             output_name=store_filename(design_id,group,cat,uid)
+                            # Distinct immutable output for an opt-in PETEK
+                            # preview recipe. Never collide with the ordinary
+                            # V01.png SKU filename of an existing production.
+                            if cat=='06_Petek_Kapama' and (petek_slot_mode!='off' or petek_pink_cleanup):
+                                stem=Path(output_name).stem
+                                output_name=(stem+'__PV492_'+petek_slot_mode+
+                                             ('_P2' if petek_pink_cleanup else '_P0')+'.png')
                         else:
                             sku=f"{prefix}-{group}-{full_key[:18].upper()}"
                             output_name=f"{sku}_{key}.png"
@@ -791,8 +810,14 @@ class UnifiedV4Batch:
                                 from PETEK_V3.grille_guard_v482 import recommended_edge_feather
                                 source_scene=petek_engine.read_bgr(source_path)
                                 grille_edge_px=recommended_edge_feather(source_scene,item["quad"])
+                                # In-memory only. Original file/approved mask remain identical.
+                                render_scene, pink_qa = despill_lower_left_geometry_v493(
+                                    source_scene, mask, item["quad"], enabled=petek_pink_cleanup)
+                                if pink_qa.get('repaired_pixels', 0):
+                                    notify(f"PETEK sadece çıktıdaki alt-sol işaret temizlendi: "
+                                           f"{pink_qa['repaired_pixels']} piksel / {uid}")
                                 picture, _, _ = render_with_cutout_paste(
-                                    source_scene,
+                                    render_scene,
                                     render_art,
                                     item["quad"],
                                     mask,
@@ -803,14 +828,29 @@ class UnifiedV4Batch:
                                     edge_feather_px=grille_edge_px,
                                 )
                                 if lighting != "off" and glass_effect == "on":
-                                    picture = apply_material_finish(source_scene, picture, mask,
+                                    picture = apply_material_finish(render_scene, picture, mask,
                                         item["quad"], cat, enabled=True)
-                                # The same source scene is used for render/finish/
-                                # QA; no three separate PETEK scene decodes.
+                                if petek_slot_mode != 'off':
+                                    picture, slot_qa = draw_fifteen_slots(
+                                        render_scene, picture, mask, item["quad"], mode=petek_slot_mode)
+                                    notify(f"PETEK koyu ızgara ({petek_slot_mode}): "
+                                           f"{slot_qa['status']} / {slot_qa['changed_pixels']} piksel / {uid}")
+                                # Verify immutable physical areas BEFORE authorized
+                                # post-composite magenta correction. The only allowed
+                                # post-QA differences are logged geometric marker pixels.
                                 geometry_report = inspect_print_safety(
-                                    source_scene, picture, mask, item["quad"])
+                                    render_scene, picture, mask, item["quad"])
                                 if geometry_report['status'] != 'PASS':
                                     raise petek_engine.MaskError('PETEK_PROTECTED_PIXELS_CHANGED')
+                                if petek_pink_cleanup:
+                                    picture, final_qa = cleanup_petek_magenta(
+                                        picture, mask, item['quad'],
+                                        slot_centers=(slot_qa.get('centers_rectified_900')
+                                            if petek_slot_mode != 'off' else None))
+                                    notify(f"PETEK dört kenar + ızgara pembe onarım: "
+                                           f"{final_qa['status']} / {final_qa.get('repaired_pixels', 0)} px / {uid}")
+                                    if final_qa.get('remaining_pixels', 0):
+                                        raise petek_engine.MaskError('PETEK_PINK_CLEANUP_INCOMPLETE_REVIEW')
                                 picture = petek_engine.canvas_3x4(picture)
                             else:
                                 picture, _ = _render_legacy_six_cover(
