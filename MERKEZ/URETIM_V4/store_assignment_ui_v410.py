@@ -543,10 +543,10 @@ class StoreAssignmentWindow:
             self.refresh()
             self.on_change()
             messagebox.showinfo('Toplu kaldırma tamamlandı',
-                f'{store} mağazasından {removed} şablon ataması kaldırıldı.\\n'
+                f'{store} mağazasından {removed} şablon ataması kaldırıldı.\n'
                 'Şablonlar, onaylar ve önceki üretim dosyaları korunmuştur.',parent=self.pop)
         except (OSError,ValueError,KeyError,IndexError) as exc:
             messagebox.showerror('Toplu kaldırma yapılamadı',
-                str(exc)+'\\n\\nListeyi yenileyerek yeniden seçim yapın.',parent=self.pop)
+                str(exc)+'\n\nListeyi yenileyerek yeniden seçim yapın.',parent=self.pop)
         finally:
             self._unassign_busy=False
