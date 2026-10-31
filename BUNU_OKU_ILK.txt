@@ -1,0 +1,40 @@
+GÖRSEL ÜRETİM MERKEZİ V4.9.8 — ÖNCE BURAYI OKU
+
+BU BİR WINDOWS KABUL ADAYIDIR — canlı kullanıcı verisiyle henüz test edilmedi.
+1. Çalışan eski V4.9.5 uygulamasını ve orijinal şablon arşivini SİLME.
+2. Bu ZIP'i boş bir klasöre ÇIKAR. Eski kod veya OneDrive ana veri klasörünün ÜZERİNE AÇMA.
+3. V498_DOGRULA_WINDOWS.bat — dosya bütünlüğünü kontrol et.
+4. V498_BASLAT_WINDOWS.bat — ana merkezi başlat.
+5. Ana Çalışma Klasörü olarak önceki gerçek veri kökünü seçili bırak.
+6. PETEK toplu onayda tüm maskeleri gerçekten gözle incelemeden onaylama.
+7. Hata çıkarsa ilgili testi Test Merkezi'nde SORUN VAR olarak işaretle; onayı geçme.
+
+KURULUM İLK AÇILIŞTA PYTHON 3.11 VE EKSİK PAKETLERİ GEREKTİREBİLİR.
+4K ağırlıklarını yeniden indirmez; kurulu motorun durumunu ayrı düğmeyle kontrol edebilirsin.
+Detaylar: V498_YENI_SURUM_NOTLARI.txt
+
+--- Eski sürümün kurulum notlarının arşiv kopyası ---
+GÖRSEL ÜRETİM MERKEZİ V4.9.2 — WINDOWS GÜVENLİ ADAY
+
+1. Çalışan V4.8.8 ve V4.9.1 klasörlerine dokunma; eski gerçek OneDrive veri klasörünü koru.
+2. Bu ZIP'i YENİ ve BOŞ, OneDrive DIŞINDA bir klasöre çıkar.
+3. GORSEL_V46_CANDIDATE\V492_DOGRULA_WINDOWS.bat ile SHA-256 denetimini çalıştır.
+4. GORSEL_V46_CANDIDATE\BASLAT_V47_WINDOWS.bat ile aç (Python 3.11 gerekir).
+5. Seri Üretim > Kategori / Arama / Sıralama / Filtreleneni Seç; seçili toplamı kontrol et.
+6. PETEK: önce onaylı PETEK şablonunu ve tasarım klasörünü seç. 'orta' (veya 'hafif')
+   ızgara modu ile 'PETEK Önce / Sonra Test' düğmesine bas. Gerçek sonuç beğenilirse
+   önizleme penceresinde ONAYLA. Sadece YENİ üretilecek çıktı tarifine uygular;
+   onaylı maske ve dört köşe kaydı yeniden yazılmaz.
+7. Sol alt pembe temizleme deneysel ve varsayılan kapalı. Magenta olmayan sahnede
+   otomatik atlar, yakınında temiz kaynak pikselleri yoksa maske dışı temizleme yapmaz.
+8. 4K: Seri Üretim > '4K Durum / Kur / GPU Test' düğmesi resmi Real-ESRGAN
+   Windows paketini SHA-256 kontrolüyle indirir, eksik modelleri kurar ve
+   gerçek Vulkan GPU denemesi yapar. Bu ortamdan senin GPU'na kurulum yapılamaz.
+   Gerçek GPU PASS görmeden 4K seçimini üretimde açma.
+9. Magenta toplu eski şablon değiştirme otomatik yapılmaz; ayrı yedek, önizleme
+   ve insan onayı gerekir. Eski APPROVED profiller otomatik yeni dosyaya aktarılmaz.
+10. Hata veya riskte programı kapat; korunmuş eski sürümü tekrar aç. DB/maskeleri
+    silme, taşıma veya yeni sürüm ZIP'inden üzerine yazma.
+
+DETAYLI RAPOR: V492_TEST_VE_KABUL_RAPORU.md
+WINDOWS_NOT_VERIFIED: yerel Windows/OneDrive/Trendyol/ImgBB/4K testleri bekliyor.
