@@ -1,5 +1,5 @@
 {
-  "version": "V4.10.1",
+  "version": "V4.10.2",
   "created_utc": "2026-10-31T18:30:00Z",
   "files": [
     {
@@ -894,8 +894,8 @@
     },
     {
       "path": "MERKEZ/PETEK_V3/registry.py",
-      "bytes": 15182,
-      "sha256": "7a0c38bd51d87dfa74193faecd8fd1420934aa4cd22d2bdc60d04de70177fea9"
+      "bytes": 15311,
+      "sha256": "f90c7fb597b454a3111f75d7b1fdfe18fdad80aa1a273423075cf268cdaf97c7"
     },
     {
       "path": "MERKEZ/PETEK_V3/safety_audit.py",
@@ -1104,8 +1104,8 @@
     },
     {
       "path": "MERKEZ/personal_hub_v493.py",
-      "bytes": 38113,
-      "sha256": "81e748ac8f4b66d96dfc67fb0663aa7023a931ab878876003056945ac3d146a2"
+      "bytes": 39808,
+      "sha256": "86d9b44aeba040e81a1d79bc33e32ad1be660b32d51116be5f9806cc06b120bc"
     },
     {
       "path": "MERKEZ/petek_denetle.py",
@@ -1125,7 +1125,7 @@
     {
       "path": "MERKEZ/premium_dashboard_v489.py",
       "bytes": 15639,
-      "sha256": "1d718712180a116140223eca9bcfbed2554b3f8fffed6e927252936c3fa68a18"
+      "sha256": "a1eff2b49d24636761e84eed5f0170eab83e44e8ea65766dcb178c5cb9265f5a"
     },
     {
       "path": "MERKEZ/quad_interaction.py",
@@ -1179,8 +1179,8 @@
     },
     {
       "path": "MERKEZ/version_v47.py",
-      "bytes": 403,
-      "sha256": "80e1c9d996e93350e636ac248c0996ed06d5b59dce92bfed3f66cf298046e7ee"
+      "bytes": 386,
+      "sha256": "28fedc2ac1c8b4c725cd7fd773cc8690bc9dd562b6612f34a8ccee6de4e9a262"
     },
     {
       "path": "SABLON_V2_MIMARI/app.py",
@@ -1259,8 +1259,8 @@
     },
     {
       "path": "SABLON_V2_MIMARI/core/petek_web_v477.py",
-      "bytes": 34088,
-      "sha256": "d4b6d4220b9b2ac484dadf8f768bcee06975d223023f4dc22c65d765eede74e7"
+      "bytes": 34941,
+      "sha256": "e2a0c4794bb1f9e794bfee3b3514df83e6d9d6721801a1be7fcd670270773268"
     },
     {
       "path": "SABLON_V2_MIMARI/core/runtime_migration.py",
@@ -1333,6 +1333,11 @@
       "sha256": "2ac3e59369276f8f12af055dc313197871da3cf94acf8cc46d6e37d3de3627cd"
     },
     {
+      "path": "SABLON_V2_MIMARI/static/css/v4102_ui_system.css",
+      "bytes": 3803,
+      "sha256": "eac4888632a0aef859bb9417817e46e5a4ca7af9269fc5236c4b0af9c825b78c"
+    },
+    {
       "path": "SABLON_V2_MIMARI/static/css/v499_anthracite.css",
       "bytes": 3117,
       "sha256": "e68c79872311b69c04d96490f5f2692d6f36f76cd28be04e07e84aff5d0d22c1"
@@ -1354,8 +1359,8 @@
     },
     {
       "path": "SABLON_V2_MIMARI/static/js/petek_editor_v477.js",
-      "bytes": 50613,
-      "sha256": "47bbf0aab7756aa4548ae4d2e9f34178dcb9437a4a5ba5a1635f7a520bbd3b85"
+      "bytes": 52564,
+      "sha256": "e3cd2beb8b31365c578df8d655216c50f62b57d14f9aff2b235646b2ad9576c1"
     },
     {
       "path": "SABLON_V2_MIMARI/static/js/petek_quad_drag_v481.js",
@@ -1374,13 +1379,13 @@
     },
     {
       "path": "SABLON_V2_MIMARI/templates/index.html",
-      "bytes": 34827,
-      "sha256": "f79711d1617e3714797371098221e0f584e9d0a05e15392a0f90a3fdec673138"
+      "bytes": 34897,
+      "sha256": "9796f6f606299888649395670680026412a0b7d6baa4f82fe95bacbf7da5c526"
     },
     {
       "path": "SABLON_V2_MIMARI/templates/tools.html",
-      "bytes": 12003,
-      "sha256": "1e327021bfd31737038709cdd6906532d34672bdaf66fb3f796a4a3f2611d741"
+      "bytes": 12073,
+      "sha256": "5ec41b8017c8db67efa3f8ae9e4bb478b37593a4f7afb929f4164baa144d44af"
     },
     {
       "path": "SABLON_V2_MIMARI/test_suite.py",
@@ -1748,6 +1753,21 @@
       "sha256": "18debea7d908196aa4aa6706922883250b16a83124d47d90b640e9281549adbc"
     },
     {
+      "path": "V4102_BASLAT_WINDOWS.bat",
+      "bytes": 290,
+      "sha256": "39cd2a967038e59e752827428be01589407c28602d7f297650f7b6baf9112324"
+    },
+    {
+      "path": "V4102_DOGRULA_WINDOWS.bat",
+      "bytes": 399,
+      "sha256": "66d15d996fbfb3a718fe19cce4493af3167afebe8bec8b863a0a448f4c3ecbf7"
+    },
+    {
+      "path": "V4102_ILK_OKU.txt",
+      "bytes": 825,
+      "sha256": "39af068ba561e0cfa7b8842e16f37668631279c4731e1bb74e1eee15bb613074"
+    },
+    {
       "path": "V490_DOGRULA_WINDOWS.bat",
       "bytes": 126,
       "sha256": "ffa50753a2b953ffb786b743669fa65a726eba26bbdc0de2e62a0bcbc8289f1a"
@@ -1876,6 +1896,11 @@
       "path": "docs/V4101_WINDOWS_ACCEPTANCE.md",
       "bytes": 2642,
       "sha256": "fcf114e2fba9d402aa5ce8703cd116e581ac564ed5c6d2e8c117da9699b8d975"
+    },
+    {
+      "path": "docs/V4102_RELEASE_AND_AUDIT.md",
+      "bytes": 3693,
+      "sha256": "7e07aa7dd410ecb0161f2ca121ffbee90d5b32fe50ec38df85c55f564026f9af"
     },
     {
       "path": "docs/V46_ACCEPTANCE_CURRENT.md",
@@ -2051,6 +2076,11 @@
       "path": "scripts/v4101_verify_package.py",
       "bytes": 1270,
       "sha256": "e471af65aea63183301ee639ad96fdd8af56af322be39d20d01c5afbb3f791fa"
+    },
+    {
+      "path": "scripts/v4102_verify_package.py",
+      "bytes": 1270,
+      "sha256": "a4a32e1deffbe75c51cc28ef1a86b8bf51e3d95ef9a49fbceba96a372974a4b4"
     },
     {
       "path": "scripts/v46_all_category_geometry_benchmark.py",
