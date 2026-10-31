@@ -49,6 +49,7 @@ def test_default_theme_contrast_and_review_sections(monkeypatch):
     {'assignments':{'petek':{'petek-approval':'Maske'}},
      'tabs':{'petek':['Tümü','Maske']}},
     {'order':{'review':['review-quick']}},
+    {'order':{'review':[{'bad': 'input'}] + list(range(5))}},
     {'paneOrder':'invalid'},
 ])
 def test_reject_unsafe_layout(monkeypatch,change):
