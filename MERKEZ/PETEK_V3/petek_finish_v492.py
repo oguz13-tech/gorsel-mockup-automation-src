@@ -152,12 +152,12 @@ def despill_lower_left(source, mask, quad, *, enabled=False):
 
 # V4.9.3 controlled geometry-first option. This does NOT modify or reapprove a
 # stored V3 mask; it adds visible, photo-perspective vents to a print output.
-# 15 is a product invariant, not a count estimated from arbitrary dark artwork.
-FIFTEEN_RECIPE = 'petek-15-photo-measured-perspective-vnext-1'
+# Count is measured from original source (13..16), NEVER fabricated to 15.
+FIFTEEN_RECIPE = 'petek-real-count-photo-measured-perspective-vnext-2'
 
 
 def draw_fifteen_slots(source, rendered, mask, quad, *, mode='orta', geometry=None):
-    """Align EXACTLY 15 dark recesses with the original photographic openings.
+    """Align every observed real recess with its photographic opening.
 
     No equal-spaced fabricated layout or fixed-length slot strokes. The new
     geometry is measured independently in the *original photo* and in the
@@ -166,12 +166,12 @@ def draw_fifteen_slots(source, rendered, mask, quad, *, mode='orta', geometry=No
     pixels INSIDE the approved printable face, as before.
     """
     q=_validate(source,rendered,mask,quad)
-    if mode not in STRENGTH:raise ValueError('Invalid 15-slot mode')
+    if mode not in STRENGTH:raise ValueError('Invalid PETEK vent mode')
     if mode=='off':return rendered.copy(),{'status':'KAPALI','count':0,'changed_pixels':0}
-    from .petek_slot_geometry_vnext import measure_fifteen_vents, RECT_W, RECT_H
-    slots, measured=measure_fifteen_vents(source,mask,q)
-    if len(slots)!=15:
-        raise engine.MaskError('PETEK_15_GERCEK_DELIGI_OLCME_ZORUNLULUGU')
+    from .petek_slot_geometry_vnext import measure_real_vents, RECT_W, RECT_H
+    slots, measured=measure_real_vents(source,mask,q)
+    if not (13 <= len(slots) <= 16):
+        raise engine.MaskError('PETEK_IZGARA_GERCEK_SAYI_OLCULEMEDI')
     outer=np.zeros((RECT_H,RECT_W),np.uint8)
     inner=np.zeros_like(outer)
     rim=np.zeros_like(outer)
@@ -222,12 +222,13 @@ def draw_fifteen_slots(source, rendered, mask, quad, *, mode='orta', geometry=No
     report={key:value for key,value in measured.items() if key!='homography'}
     # The old enum remains supported only for old tests/records; the measured
     # status distinguishes new source measurements from trusted mask evidence.
-    if report['alignment']=='APPROVED_MASK_15':
-        report['alignment']='EXISTING_MASK_15'
-    return out, {**report,'status':'15_IZGARA_UYGULANDI','count':15,
+    if report['alignment'].startswith('APPROVED_MASK_'):
+        report['alignment']=report['alignment'].replace('APPROVED_MASK_','EXISTING_MASK_',1)
+    count=len(slots)
+    return out, {**report,'status':f'{count}_IZGARA_UYGULANDI','count':count,
                  'changed_pixels':int(np.count_nonzero(np.any(out!=rendered,axis=2))),
                  'recipe':FIFTEEN_RECIPE,'mode':mode,
-                 'note':'Gercek fotograf kaynakli 15 izgara: merkez, aralik, aciklik boyu ve genislik perspektifle olculdu.'}
+                 'note':f'Gercek fotograf kaynakli {count} izgara: merkez, aralik, aciklik boyu ve genislik perspektifle olculdu.'}
 
 
 def despill_lower_left_geometry_v493(source, mask, quad, *, enabled=False):
