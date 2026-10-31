@@ -1,5 +1,5 @@
 {
-  "version": "PETEK_DYNAMIC_13_16_CURVE_BRUSH_20261101",
+  "version": "PETEK_DYNAMIC_PREVIEW_ACCEPT_REAL_13_16_20261101",
   "files": [
     {
       "path": "99_SISTEM_MOTORLARI_VE_KODLAR/SISTEM_MOTORU/check_shifts.py",
@@ -1207,6 +1207,21 @@
       "sha256": "58091e6ecd6d1b9317c2d776338489c4709151f6df6f80928154bcee2c665b57"
     },
     {
+      "path": "PETEK_ACIL_BASLAT_WINDOWS.bat",
+      "bytes": 179,
+      "sha256": "ce67715ecec5220a2801e4f15801ef18a9cd096234c0f45a8a4bf05868dc8958"
+    },
+    {
+      "path": "PETEK_ACIL_DOGRULA_WINDOWS.bat",
+      "bytes": 331,
+      "sha256": "63e411ecb9ec8908988c35543a5888ea1641a6da8b35c586ceabde245f387115"
+    },
+    {
+      "path": "PETEK_ACIL_ILK_OKU.txt",
+      "bytes": 1500,
+      "sha256": "f33ffcc8b237683c92fb28791c49153380eb2568b1f40028679988d5ea5f8ffa"
+    },
+    {
       "path": "PETEK_VNEXT_BASLAT_WINDOWS.bat",
       "bytes": 175,
       "sha256": "112538bb9d723b74dca573029515d23cede449156aa0b3d25d4e7ed18444fe21"
@@ -1408,8 +1423,8 @@
     },
     {
       "path": "SABLON_V2_MIMARI/static/js/petek_editor_v477.js",
-      "bytes": 57978,
-      "sha256": "dfdd355f247c0b1aef070157863ee84527727549bd3f3f1ed11ea4c5f4aaa5a0"
+      "bytes": 58392,
+      "sha256": "9dd4e7e2878c00aed9c230c646ab33abf11f7de4fd1e3e4cb85516c8415bbf73"
     },
     {
       "path": "SABLON_V2_MIMARI/static/js/petek_quad_drag_v481.js",
@@ -1433,8 +1448,8 @@
     },
     {
       "path": "SABLON_V2_MIMARI/templates/index.html",
-      "bytes": 35132,
-      "sha256": "014e0ba872e3450d25418c3040ffa1f246bfad63224231e2591ecc361d5f8848"
+      "bytes": 35191,
+      "sha256": "74ee439b340250d072b84bc7da414f68dee7ef46db748b0cd599d46f411fc0e3"
     },
     {
       "path": "SABLON_V2_MIMARI/templates/tools.html",
@@ -2047,6 +2062,11 @@
       "sha256": "fe6b1ce06447b1a4398935b8e2545baf44aa1accd61bf249d0fb16409840c3a4"
     },
     {
+      "path": "docs/VNEXT_PETEK_PREVIEW_REAL_COUNT_HOTFIX_20261101.md",
+      "bytes": 1917,
+      "sha256": "b76ba4474b7ae2e65e7dfe9817abaffca97ce50e42646d5fa61c7170a7c27dd0"
+    },
+    {
       "path": "scripts/benchmark.py",
       "bytes": 13887,
       "sha256": "9edb5e4ec37cb1dba3852f62f83cf1ef602e38f8449ca38f61f0007be9c555f9"
@@ -2168,8 +2188,8 @@
     },
     {
       "path": "scripts/v4102_verify_package.py",
-      "bytes": 1442,
-      "sha256": "ce0d89e6238b5f0ab8cfcb5628341ce14ae441cf8f525c15a83c8414f698c635"
+      "bytes": 1494,
+      "sha256": "0fbe2799a4ac8ba46eedab8b2d9788cacba9809927a66ed2f90268a2576357a3"
     },
     {
       "path": "scripts/v46_all_category_geometry_benchmark.py",
@@ -2530,6 +2550,11 @@
       "path": "tests/test_vnext_petek_dynamic_photo_count.py",
       "bytes": 2873,
       "sha256": "62a8b65d0a4e4586455e199fe8c01ac8ec36b98ce47f98000978fa55dd1f055f"
+    },
+    {
+      "path": "tests/test_vnext_petek_dynamic_preview_ui.py",
+      "bytes": 5702,
+      "sha256": "82ccd9a52822ddf0430d473447317f39c4449841beab8f3505553404f963e862"
     },
     {
       "path": "tests/test_vnext_petek_photo_measured_geometry.py",
