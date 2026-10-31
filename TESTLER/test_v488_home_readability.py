@@ -47,7 +47,12 @@ def test_petek_minimum_readable_fonts_and_full_original_filename_tooltip():
     assert "button.title=item.name+' · '+item.uid+' · '+item.status" in js
     assert "button.textContent=shortName+' — '+readableState" in js
     assert "'/api/petek/thumbnail/'" in js
-    assert 'v=488-legible' in html
+    # Current release's accessible theme must be present, not a stale V4.8.8 cache key.
+    assert 'v4102_ui_system.css?v=4102' in html
+    modern=(ROOT/'SABLON_V2_MIMARI/static/css/v4102_ui_system.css').read_text('utf-8')
+    assert 'font-size:14px!important' in modern
+    assert 'font-size:12px!important' not in modern
+    assert 'font-size:12.5px!important' not in modern
 
 
 def test_main_working_root_never_auto_migrates_and_versions_are_in_sync():
@@ -59,7 +64,9 @@ def test_main_working_root_never_auto_migrates_and_versions_are_in_sync():
     import re
     match=re.search(r'^VERSION = "(V\d+\.\d+\.\d+)"$', version, re.MULTILINE)
     assert match, 'Canonical semantic version missing'
-    assert match.group(1) in gui, 'Production UI version drift' 
+    # Production UI intentionally reads canonical version dynamically, no hardcoded label.
+    assert 'from version_v45 import TITLE as VERSION_TEXT, VERSION as APP_VERSION' in gui
+    assert 'APP_VERSION' in gui 
     assert "self.runtime=preferred_runtime()" in src
     assert 'store_runtime_choice(Path(chosen))' in src
     assert 'self.root.after(150,self.start_auto_ham_designs)' in src
