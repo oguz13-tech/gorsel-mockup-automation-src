@@ -182,16 +182,18 @@ class Registry:
             source=engine.safe_file(Path(source_override))
         if engine.digest(source)!=profile['source_sha']:
             raise engine.MaskError('Orijinal sablon degismis: yeni inceleme gerekir.')
+        # One decode for both source dimensions and mask QA. Source SHA
+        # verification above is still authoritative and never cached here.
+        scene=engine.read_bgr(source)
         saved_size=profile.get('source_size')
         if saved_size is not None:
-            scene_size=engine.read_bgr(source).shape
+            scene_size=scene.shape
             if [int(scene_size[1]),int(scene_size[0])]!=list(saved_size):
                 raise engine.MaskError('PETEK_KAYNAK_BOYUTU_KAYITLA_UYUSMUYOR')
         mask_path=self.masks/(profile['mask_sha']+'.png')
         mask=engine.decode_mask(mask_path)
         if engine.mask_hash(mask)!=profile['mask_sha']:
             raise engine.MaskError('Maske SHA256 degismis; islem durduruldu.')
-        scene=engine.read_bgr(source)
         engine.mask_check(mask,scene,profile['quad'])
         return profile,mask
 
