@@ -153,7 +153,7 @@ def despill_lower_left(source, mask, quad, *, enabled=False):
 # V4.9.3 controlled geometry-first option. This does NOT modify or reapprove a
 # stored V3 mask; it adds visible, photo-perspective vents to a print output.
 # Count is measured from original source (13..16), NEVER fabricated to 15.
-FIFTEEN_RECIPE = 'petek-real-count-photo-measured-perspective-vnext-2'
+FIFTEEN_RECIPE = 'petek-real-count-straight-clipped-vnext-3'
 
 
 def draw_fifteen_slots(source, rendered, mask, quad, *, mode='orta', geometry=None):
@@ -175,11 +175,19 @@ def draw_fifteen_slots(source, rendered, mask, quad, *, mode='orta', geometry=No
     outer=np.zeros((RECT_H,RECT_W),np.uint8)
     inner=np.zeros_like(outer)
     rim=np.zeros_like(outer)
+    # Union of real measured slot *lengths*: do not allow painted strokes or
+    # rounded pen caps to extend above/below a photographed physical opening.
+    physical_extent=np.zeros_like(outer)
     for slot in slots:
+        cx=int(round(slot['center']))
+        half=max(5,int(round(slot['width']))+7)
+        top,bottom=int(slot['y0']),int(slot['y1'])
+        cv2.rectangle(physical_extent,(max(0,cx-half),max(0,top)),
+                      (min(RECT_W-1,cx+half),min(RECT_H-1,bottom)),255,-1)
         path=np.int32(np.round(slot['path'])).reshape(-1,1,2)
         width=max(3,int(round(slot['width'])))
-        # Local top, bottom and subtle curvature are measured from the source.
-        # A rounded stroke means real openings are never visibly extended.
+        # Each line is a measured straight physical slot, not an artwork-
+        # following polyline. Each photographic projection remains straight.
         cv2.polylines(outer,[path],False,255,width+6,cv2.LINE_AA)
         cv2.polylines(inner,[path],False,255,width,cv2.LINE_AA)
         rim_path=path.copy()
@@ -189,6 +197,9 @@ def draw_fifteen_slots(source, rendered, mask, quad, *, mode='orta', geometry=No
         cv2.circle(outer,tuple(path[-1,0]),max(2,(width+6)//2),255,-1,cv2.LINE_AA)
         cv2.circle(inner,tuple(path[0,0]),max(1,width//2),255,-1,cv2.LINE_AA)
         cv2.circle(inner,tuple(path[-1,0]),max(1,width//2),255,-1,cv2.LINE_AA)
+    outer=cv2.bitwise_and(outer,physical_extent)
+    inner=cv2.bitwise_and(inner,physical_extent)
+    rim=cv2.bitwise_and(rim,physical_extent)
     H=measured['homography']
     w,h=source.shape[1],source.shape[0]
     outskirts=cv2.warpPerspective(outer,H,(w,h),flags=cv2.INTER_LINEAR)
