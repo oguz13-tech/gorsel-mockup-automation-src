@@ -3,13 +3,31 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk
 
-BG = '#252a30'
-PANEL = '#343c46'
-ENTRY = '#3b4552'
-FG = '#f1f0ff'
-MUTED = '#d0d8e3'
-ACCENT = '#8a5cf6'
-HOVER = '#7246d5'
+from pathlib import Path
+import json
+
+# Shared purple design tokens. Localized and read-only; missing/corrupt JSON
+# safely falls back to the same built-in palette without affecting production.
+_FALLBACK = {
+    'background':'#111827','sidebar':'#0E1424','panel':'#1D2638',
+    'raised':'#29344B','border':'#384466','accent':'#7A4DFA',
+    'accent_hover':'#6239C7','text':'#F4F6FF','muted':'#C7D3E8'
+}
+try:
+    _raw = json.loads(Path(__file__).with_name('ui_mor_tokens_vnext.json').read_text(encoding='utf-8'))
+    UI_MOR_THEME = {key: _raw[key] if isinstance(_raw.get(key),str) and len(_raw[key])==7
+                    and _raw[key].startswith('#') and all(c in '0123456789abcdefABCDEF' for c in _raw[key][1:])
+                    else value for key,value in _FALLBACK.items()}
+except (OSError, ValueError, TypeError, KeyError):
+    UI_MOR_THEME = dict(_FALLBACK)
+
+BG = UI_MOR_THEME['background']
+PANEL = UI_MOR_THEME['panel']
+ENTRY = UI_MOR_THEME['raised']
+FG = UI_MOR_THEME['text']
+MUTED = UI_MOR_THEME['muted']
+ACCENT = UI_MOR_THEME['accent']
+HOVER = UI_MOR_THEME['accent_hover']
 
 
 def apply_dark_theme(root: tk.Misc):
