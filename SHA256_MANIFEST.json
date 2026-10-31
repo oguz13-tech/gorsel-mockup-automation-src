@@ -1,5 +1,5 @@
 {
-  "version": "V4.10.2",
+  "version": "MOR_VNEXT_UI_PARTIAL_20261031",
   "files": [
     {
       "path": "99_SISTEM_MOTORLARI_VE_KODLAR/SISTEM_MOTORU/check_shifts.py",
@@ -993,8 +993,8 @@
     },
     {
       "path": "MERKEZ/URETIM_V4/store_assignment_ui_v410.py",
-      "bytes": 23672,
-      "sha256": "7ba39239c314c3607bd09fe36fd939ec97be093ea9800c61c39785a199715747"
+      "bytes": 30172,
+      "sha256": "762b7f2cf7234622ed78742cde9a4fd536fe4dc96747596f4947d9d373a11562"
     },
     {
       "path": "MERKEZ/URETIM_V4/store_assignment_v410.py",
@@ -1013,8 +1013,8 @@
     },
     {
       "path": "MERKEZ/URETIM_V4/store_profiles_v47.py",
-      "bytes": 10202,
-      "sha256": "6166c7e7dbb65f7df9cb629c8c5cc6aa0f9f6bec9b86ce3d699d71c1cf44576e"
+      "bytes": 11321,
+      "sha256": "cee8d1c5e629a712882f7179f8ac6d4152e25ed2ffbad19e719f044f8b95afd5"
     },
     {
       "path": "MERKEZ/URETIM_V4/template_filter_v492.py",
@@ -1053,8 +1053,8 @@
     },
     {
       "path": "MERKEZ/dark_theme_v42.py",
-      "bytes": 3996,
-      "sha256": "6ac46578a1898cc98a6e4abf4ed61c5c0d3b298273cfa4aac724fcc521fc159b"
+      "bytes": 4960,
+      "sha256": "d032a1f4338650fd28f7e3480b4ae75031ead8f882dceb01ea3626c69fafe79f"
     },
     {
       "path": "MERKEZ/error_advisor_v498.py",
@@ -1123,8 +1123,8 @@
     },
     {
       "path": "MERKEZ/premium_dashboard_v489.py",
-      "bytes": 15639,
-      "sha256": "a1eff2b49d24636761e84eed5f0170eab83e44e8ea65766dcb178c5cb9265f5a"
+      "bytes": 15718,
+      "sha256": "8e3bdf973fa562f4106c9af68d95630b79a61abc13bb9e51e22f5f1d91f1d461"
     },
     {
       "path": "MERKEZ/quad_interaction.py",
@@ -1159,7 +1159,12 @@
     {
       "path": "MERKEZ/ui_layout_v498.py",
       "bytes": 15157,
-      "sha256": "2ebea1e19f9d18ecd459983481095f530e373c37a882d829a45bd5e0529f2781"
+      "sha256": "aeddd865ba4fcc67a98223133d20ad1b514e5d7f0e300337f8293ee7cbff6b89"
+    },
+    {
+      "path": "MERKEZ/ui_mor_tokens_vnext.json",
+      "bytes": 383,
+      "sha256": "e97afcc12c8c7bffc0288c1dab7b92267a6873c4cbcfeb89c3088e9dc9f4a2bd"
     },
     {
       "path": "MERKEZ/uretim_toplu_kabul_v479.py",
@@ -1182,9 +1187,24 @@
       "sha256": "28fedc2ac1c8b4c725cd7fd773cc8690bc9dd562b6612f34a8ccee6de4e9a262"
     },
     {
+      "path": "MOR_VNEXT_BASLAT_WINDOWS.bat",
+      "bytes": 171,
+      "sha256": "7681c5168b1a68d562056246e89223c528a283ca079eabc0043a58752da0ed88"
+    },
+    {
+      "path": "MOR_VNEXT_DOGRULA_WINDOWS.bat",
+      "bytes": 319,
+      "sha256": "a0cebe451c8a253e975047da8f3f6909e0c52448975fd0d97b3e23100269bc6e"
+    },
+    {
+      "path": "MOR_VNEXT_ILK_OKU.txt",
+      "bytes": 812,
+      "sha256": "58091e6ecd6d1b9317c2d776338489c4709151f6df6f80928154bcee2c665b57"
+    },
+    {
       "path": "SABLON_V2_MIMARI/app.py",
-      "bytes": 153315,
-      "sha256": "4afe8979a78c943f4dc4bd5c72cd4813dc917951c6830053fd3e0c4c1d42bedd"
+      "bytes": 153483,
+      "sha256": "90b11ec159b633c459189c9754b1e466890b927390e3abfb123fefebe14de08f"
     },
     {
       "path": "SABLON_V2_MIMARI/core/analysis_cache.py",
@@ -1262,6 +1282,11 @@
       "sha256": "e2a0c4794bb1f9e794bfee3b3514df83e6d9d6721801a1be7fcd670270773268"
     },
     {
+      "path": "SABLON_V2_MIMARI/core/review_layout_vnext.py",
+      "bytes": 8071,
+      "sha256": "189ad79e77c18ca2c97296054cccb2217260b224b11e7b2d6e5963cc291a7f9d"
+    },
+    {
       "path": "SABLON_V2_MIMARI/core/runtime_migration.py",
       "bytes": 13162,
       "sha256": "fb4fc4ea50b0880f51c4021f8256080dd2173f16bb17e5ccd53342268ab41c2d"
@@ -1305,6 +1330,11 @@
       "path": "SABLON_V2_MIMARI/orientation_sort_v489.py",
       "bytes": 7479,
       "sha256": "bb224e799d8255a6931e5bb3a99b13838b32b758841783b42243e0a6f84c1e92"
+    },
+    {
+      "path": "SABLON_V2_MIMARI/static/css/mor_premium_vnext.css",
+      "bytes": 6788,
+      "sha256": "ce232e19412e715a53496c551af5fcfd60926dd34ee701701abb356f7c73f4a7"
     },
     {
       "path": "SABLON_V2_MIMARI/static/css/petek_editor_v477.css",
@@ -1367,6 +1397,11 @@
       "sha256": "c9fa6e2dc8a2614bdf98e708954f89e7a54a96c8f49886dae69da926eced8ef1"
     },
     {
+      "path": "SABLON_V2_MIMARI/static/js/review_layout_vnext.js",
+      "bytes": 20315,
+      "sha256": "50c2942bc90b76ce31909c4c6c0cc4fd50882fae5ac4bab1c32c3e36af73200d"
+    },
+    {
       "path": "SABLON_V2_MIMARI/static/js/review_v46.js",
       "bytes": 10559,
       "sha256": "ad202ed941a3856ccdd10308e7d41ef60139a3081da18745a861269b1a80b3be"
@@ -1378,8 +1413,8 @@
     },
     {
       "path": "SABLON_V2_MIMARI/templates/index.html",
-      "bytes": 34897,
-      "sha256": "9796f6f606299888649395670680026412a0b7d6baa4f82fe95bacbf7da5c526"
+      "bytes": 35034,
+      "sha256": "e4103701dce49644bf9ba83fde1b211227743486b73bc6cc3ba45617c8307d91"
     },
     {
       "path": "SABLON_V2_MIMARI/templates/tools.html",
@@ -1957,6 +1992,31 @@
       "sha256": "96cddf17985063e31533b336aa04cc317c3736e2cf0f870417ea1e8d142fcd0e"
     },
     {
+      "path": "docs/VNEXT_F07_MAGAZA_TOPLU_ATAMA_KALDIRMA.md",
+      "bytes": 3427,
+      "sha256": "996c2f60f015a1938bf5d856f4aea511919131bb2b5fba20765aafbce0bc4e3a"
+    },
+    {
+      "path": "docs/VNEXT_MOR_56_UX_STATUS.md",
+      "bytes": 8393,
+      "sha256": "88581c285a01057a1763fe1c9b0bc3304c4a6c379a1c0c48f46526fcbba2f1b7"
+    },
+    {
+      "path": "docs/VNEXT_MOR_ROLLBACK.md",
+      "bytes": 1884,
+      "sha256": "3df9a37fb6d4c079eaccc4f4fab793f2098ca2711634bb3a6f86e6869fe213ac"
+    },
+    {
+      "path": "docs/VNEXT_MOR_SOURCE_AUDIT.md",
+      "bytes": 4206,
+      "sha256": "83f0781b6bb5a789efd0960a82f8858243b81c0ce9663cbf9d9560aa4afda88a"
+    },
+    {
+      "path": "docs/VNEXT_MOR_TEST_REPORT.md",
+      "bytes": 3395,
+      "sha256": "e387430a30dc1abdaa0ebad44c34a69ea0f5388dfb82b9ff39023d3f00d71767"
+    },
+    {
       "path": "scripts/benchmark.py",
       "bytes": 13887,
       "sha256": "9edb5e4ec37cb1dba3852f62f83cf1ef602e38f8449ca38f61f0007be9c555f9"
@@ -2078,8 +2138,8 @@
     },
     {
       "path": "scripts/v4102_verify_package.py",
-      "bytes": 1270,
-      "sha256": "a4a32e1deffbe75c51cc28ef1a86b8bf51e3d95ef9a49fbceba96a372974a4b4"
+      "bytes": 1356,
+      "sha256": "4d638359797d8da6ed8a04b5e4963cd80072bee2927dbebcc716cf810a4553b7"
     },
     {
       "path": "scripts/v46_all_category_geometry_benchmark.py",
@@ -2425,6 +2485,26 @@
       "path": "tests/test_v499_bulk_ui_and_revision.py",
       "bytes": 5094,
       "sha256": "aad645bdedae8e1728bdf09914e5d95bf558e9f3af38cd3ab8f784edb4a07b87"
+    },
+    {
+      "path": "tests/test_vnext_mor_theme_tokens.py",
+      "bytes": 1046,
+      "sha256": "b091c7c413b0fc9c9528bf8305bec9d8fdbfeeb3e6357858c5257336bc9fe9b0"
+    },
+    {
+      "path": "tests/test_vnext_review_browser.py",
+      "bytes": 4494,
+      "sha256": "f78ee7416244ee2052028bf91a63813c032d671915b70a010aa8405111cc0e3f"
+    },
+    {
+      "path": "tests/test_vnext_review_ui_only.py",
+      "bytes": 3868,
+      "sha256": "167f113f54c69aefae482bb2033932f8be07366b9d77f16d92f09d53e4df1276"
+    },
+    {
+      "path": "tests/test_vnext_store_bulk_unassign.py",
+      "bytes": 7315,
+      "sha256": "f5ed2fa959daba3abd4a79958f370867134840960ea9762ecc5f1fd696017f4c"
     },
     {
       "path": "tests/test_watcher_safety.py",
