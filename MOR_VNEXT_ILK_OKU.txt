@@ -1,0 +1,11 @@
+GÖRSEL ÜRETİM MERKEZİ — MOR PREMIUM VNext (KISMİ GELİŞTİRME ADAYI)
+
+1) V4.10.2 orijinalini ve kullanıcı verilerini koruyun. Bu ZIP'i SADECE ayrı boş klasöre çıkarın.
+2) MOR_VNEXT_DOGRULA_WINDOWS.bat ile SHA256 manifestini doğrulayın.
+3) MOR_VNEXT_BASLAT_WINDOWS.bat dosyasını başlatın.
+4) Şablon İnceleme ekranının sol üstünde ARAYÜZÜ DÜZENLE bulunur. Önce test klasöründeki örnekle deneyin.
+5) Mağaza ataması toplu kaldırma F07 kodu korunmuştur; test verisi kullanın.
+6) Gerçek Windows UAT yok: WINDOWS_NOT_VERIFIED. Tam 56 UX ve dört ekran finali henüz tamamlanmadı.
+7) Dokümanlar: docs/VNEXT_MOR_TEST_REPORT.md, docs/VNEXT_MOR_56_UX_STATUS.md, docs/VNEXT_MOR_ROLLBACK.md.
+
+Üretim sırasında orijinal maske/quad/archive/SQLite dosyalarını üzerine yazmayın.
