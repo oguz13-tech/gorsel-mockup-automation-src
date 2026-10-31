@@ -268,7 +268,7 @@ class UnifiedV4BatchWindow:
         # Checkbox alone NEVER authorizes a public upload: the existing explicit
         # online-sharing confirmation is required after the render completes.
         petek_row=ttk.Frame(quality_panel);petek_row.pack(fill='x',pady=(5,3))
-        ttk.Label(petek_row,text="PETEK 15 Izgara Kilidi:").pack(side='left')
+        ttk.Label(petek_row,text="PETEK gerçek yarık gölgesi (13–16):").pack(side='left')
         self.petek_slot_mode=tk.StringVar(value='orta')
         ttk.Combobox(petek_row,textvariable=self.petek_slot_mode,width=11,state='readonly',
                      values=('off','hafif','orta','guclu')).pack(side='left',padx=7)
@@ -278,9 +278,10 @@ class UnifiedV4BatchWindow:
         self.petek_pink_cleanup.trace_add('write',lambda *_:setattr(self,'_petek_preview_ok',None))
         ttk.Checkbutton(petek_row,text="PETEK dört kenar / köşe / ızgara pembe temizlik",
                         variable=self.petek_pink_cleanup).pack(side='left',padx=6)
-        ttk.Button(petek_row,text="15 Izgara / Pembe Önce-Sonra Test",command=self.start_petek_ab_preview).pack(side='left',padx=8)
-        ttk.Label(quality_panel,text="PETEK 15 ızgara varsayılan ORTA; gerçek üretime yalnız Önce/Sonra insan onayından sonra uygulanır. "
-                  "Orijinal dosyalar ve onaylı maskeler asla güncellenmez.",wraplength=1120).pack(anchor='w',pady=(0,4))
+        ttk.Button(petek_row,text="İsteğe Bağlı: Izgara / Pembe Önce-Sonra Test",command=self.start_petek_ab_preview).pack(side='left',padx=8)
+        ttk.Label(quality_panel,text="PETEK gerçek yarık gölgesi varsayılan ORTA. Önce/Sonra testi İSTEĞE BAĞLIDIR; üretim öncesi test onayı zorunlu değildir. "
+                  "Şablonun insan onayı, kaynak SHA, maske ve gerçek yarık geometrisi güvenlik kontrolleri devam eder. "
+                  "Izgara motoru güvenilir ölçüm yapamazsa yalnız o üretim işi hata olarak raporlanır; orijinal dosyalar ve onaylı maskeler değişmez.",wraplength=1120).pack(anchor='w',pady=(0,4))
         self.auto_cloud_link = tk.BooleanVar(value=False)
         ttk.Checkbutton(
             quality_panel,
@@ -861,11 +862,10 @@ class UnifiedV4BatchWindow:
             petek_slot_mode=self.petek_slot_mode.get()
             petek_pink_cleanup=bool(self.petek_pink_cleanup.get())
             petek_selected=any(self.template_items.get(uid,{}).get('category')=='06_Petek_Kapama' for uid in selected)
-            if (petek_slot_mode!='off' or petek_pink_cleanup) and petek_selected:
-                approved=self._petek_preview_ok
-                if not approved or approved[:2]!=(petek_slot_mode,petek_pink_cleanup) or approved[2] not in selected:
-                    raise ValueError('PETEK yeni görünümü önce "PETEK Önce / Sonra Test" ile görüntüleyip '
-                                     'açılan ekranda onaylamadan seri üretim başlatılamaz.')
+            # PETEK A/B visual comparison is OPTIONAL, not a production gate.
+            # Immutable APPROVED profile + source/mask SHA, store ownership and
+            # per-output real-vent geometry checks remain in the engine.
+            # A preview approval is *never* substituted for template approval.
             if upscale_4k:
                 if self._4k_installing:
                     raise UpscaleError('4K kurulumu sürüyor. Normal üretim için 4K seçimini kapatın.')
@@ -1029,7 +1029,7 @@ class UnifiedV4BatchWindow:
                   f" | Maske dışı değişen piksel: {qa['protected_pixel_changes']}"+
                   f" | Ortalama ışık farkı: {qa['mean_inside_delta']}"+
                   f" | Yazı/kenar farkı: {qa['detail_edge_delta']}"+
-                  ' — GERÇEK GÖRSELİ İNSAN ONAYLAMALI'),
+                  (' — A/B test isteğe bağlı; gerçek üretimde onaylı şablon/maske gerekir' if petek_demo else ' — GERÇEK GÖRSELİ İNSAN ONAYLAMALI')),
             wraplength=825,
         ).pack(pady=5)
         popup._keep_image_refs=images
@@ -1049,7 +1049,7 @@ class UnifiedV4BatchWindow:
                 self._petek_preview_ok=recipe
                 popup.destroy()
                 self.progress.set(f'PETEK deneme ayarı onaylandı: {uid}; yalnız yeni çıktılara uygulanacak.')
-            ttk.Button(popup,text='Bu PETEK denemesini onayla (yalnız yeni çıktılar)',
+            ttk.Button(popup,text='PETEK deneme ayarını kullan (isteğe bağlı)',
                        command=accept_preview).pack(pady=(0,9))
 
     def _maybe_start_auto_cloud(self) -> None:
