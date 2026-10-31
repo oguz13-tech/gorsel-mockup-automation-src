@@ -317,12 +317,12 @@
       <label for="petekV477Artwork">Baskı tasarımını seç (PNG / JPG / WEBP)</label>
       <input id="petekV477Artwork" type="file" accept="image/png,image/jpeg,image/webp">
       <button type="button" id="petekV477Preview" class="petek-v477-full">🎨 Gerçek Tasarımla Önizle</button>
-      <section class="petek-v493-compare" aria-label="PETEK 15 ızgara karşılaştırma">
-        <h3>15 Izgara Kilidi — Önce / Sonra Test</h3>
+      <section class="petek-v493-compare" aria-label="PETEK gerçek ızgara sayısı karşılaştırma">
+        <h3>Gerçek Izgara Sayısı — Önce / Sonra Test</h3>
         <label for="petekV493Strength">Koyu ızgara yoğunluğu</label>
         <select id="petekV493Strength"><option value="hafif">Hafif</option><option value="orta" selected>Orta</option><option value="guclu">Güçlü</option></select>
-        <label class="petek-v477-confirm"><input id="petekV493Pink" type="checkbox" checked> Dört kenar / alt köşeler / 15 ızgara pembe kalıntılarını temizle (önizleme)</label>
-        <button type="button" id="petekV493Preview" class="petek-v477-full">15 Izgara A/B Testi — Çalıştır</button>
+        <label class="petek-v477-confirm"><input id="petekV493Pink" type="checkbox" checked> Dört kenar / alt köşeler / gerçek ızgara pembe kalıntılarını temizle (önizleme)</label>
+        <button type="button" id="petekV493Preview" class="petek-v477-full">Gerçek Izgara A/B Testi — Çalıştır</button>
         <div class="petek-v477-actionrow">
           <button type="button" id="petekV493Before" disabled>ÖNCE</button>
           <button type="button" id="petekV493After" disabled>SONRA</button>
@@ -355,7 +355,7 @@
         <button type="button" data-petek-mode="protect">Delikleri Koru</button>
       </div>
       <label for="petekV477Brush">Fırça (gerçek fotoğraf pikseli)</label>
-      <input id="petekV477Brush" type="range" min="2" max="100" step="2" value="24">
+      <input id="petekV477Brush" type="range" min="2" max="100" step="2" value="24"><output id="petekV477BrushSize" for="petekV477Brush">24 px</output>
       <div class="petek-v477-note">Dikey yarıkların içini, siyah gölgeleri, zemini ve yan yüzleri yeşile boyama.</div>
       <h3>Üst ve Alt Kavis</h3>
       <div class="petek-v477-actionrow">
