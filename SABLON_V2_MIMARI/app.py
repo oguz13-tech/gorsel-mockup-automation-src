@@ -88,6 +88,9 @@ app = Flask(__name__)
 from core.petek_web_v477 import petek_web
 app.config['PETEK_WORKSPACE_V477'] = BASE_DIR
 app.register_blueprint(petek_web)
+# UI-only review layout; shares the current loopback/Origin/CSRF guards.
+from core.review_layout_vnext import review_layout_bp
+app.register_blueprint(review_layout_bp)
 from core.loopback_security_v47 import check as _loopback_check, token as _csrf_token
 
 @app.before_request

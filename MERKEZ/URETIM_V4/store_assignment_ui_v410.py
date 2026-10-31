@@ -28,8 +28,10 @@ class StoreAssignmentWindow:
         self._page_limit = 36
         self._thumb_seq = 0
         self._thumb_refs = {}
+        self._unassign_busy = False
+        self._layout_mode = None
         self.pop = tk.Toplevel(parent)
-        self.pop.title('Mağaza–Mockup Eşleştirme Merkezi · Güvenli Atama')
+        self.pop.title('Mağaza–Mockup Eşleştirme Merkezi · Güvenli Atama / Toplu Kaldır')
         self.pop.geometry('1290x790')
         self.pop.minsize(970, 600)
         self.pop.configure(bg=BG)
@@ -42,6 +44,7 @@ class StoreAssignmentWindow:
         styles.configure('StoreAssign.Small.Treeview',rowheight=26,background=PANEL,foreground=FG,fieldbackground=PANEL,font=('Segoe UI',9))
         styles.configure('StoreAssign.Small.Treeview.Heading',font=('Segoe UI',9,'bold'))
         self._build()
+        self.pop.bind('<Configure>', self._resize_layout, add='+')
         self.reload_stores()
         self.pop.protocol('WM_DELETE_WINDOW', self.pop.destroy)
 
@@ -83,13 +86,17 @@ class StoreAssignmentWindow:
         left.pack(side='left', fill='both', expand=True, padx=(0, 7))
         filters = ttk.Frame(left)
         filters.pack(fill='x', pady=(2, 7))
-        ttk.Label(filters, text='Ara:').pack(side='left')
+        search_row = ttk.Frame(filters)
+        search_row.pack(fill='x')
+        ttk.Label(search_row, text='Ara:').pack(side='left')
         self.search = tk.StringVar()
-        ttk.Entry(filters, textvariable=self.search, width=27).pack(side='left', padx=8, fill='x', expand=True)
+        ttk.Entry(search_row, textvariable=self.search, width=18).pack(side='left', padx=8, fill='x', expand=True)
         self.search.trace_add('write', lambda *_: self._search_changed())
-        ttk.Button(filters, text='Sayfadaki Uygunları Seç', command=self.select_available).pack(side='left', padx=3)
-        ttk.Button(filters, text='Kategorideki Tüm Uygunları Seç', command=self.select_all_available).pack(side='left', padx=3)
-        ttk.Button(filters, text='Seçimi Temizle', command=self.clear_selection).pack(side='left', padx=3)
+        select_row = ttk.Frame(filters)
+        select_row.pack(fill='x', pady=(4, 0))
+        ttk.Button(select_row, text='Sayfadaki Uygunları Seç', command=self.select_available).pack(side='left', padx=(0, 4))
+        ttk.Button(select_row, text='Kategorideki Tüm Uygunları Seç', command=self.select_all_available).pack(side='left')
+        ttk.Button(select_row, text='Seçimi Temizle', command=self.clear_selection).pack(side='right')
         self.status = tk.StringVar(value='Önce mağaza seçin; ardından kategoriyi belirleyin.')
         ttk.Label(left, textvariable=self.status, foreground='#cbd7ee').pack(anchor='w', pady=(0, 5))
         pager=ttk.Frame(left)
@@ -101,10 +108,10 @@ class StoreAssignmentWindow:
         self.pool = ttk.Treeview(left, columns=('mark', 'uid', 'state', 'owner'), show='tree headings',
                                  selectmode='browse', height=10,style='StoreAssign.Treeview')
         self.pool.heading('#0', text='Fotoğraf')
-        self.pool.column('#0',width=90,minwidth=65,stretch=False,anchor='center')
+        self.pool.column('#0',width=66,minwidth=52,stretch=False,anchor='center')
         for key, title, width, stretch in [
-            ('mark', 'Seç', 58, False), ('uid', 'Onaylı mockup görseli', 240, True),
-            ('state', 'Durum', 165, False), ('owner', 'Mağaza', 140, False),
+            ('mark', 'Seç', 46, False), ('uid', 'Onaylı mockup görseli', 170, True),
+            ('state', 'Durum', 122, False), ('owner', 'Mağaza', 105, False),
         ]:
             self.pool.heading(key, text=title)
             self.pool.column(key, width=width, minwidth=45, stretch=stretch,
@@ -125,22 +132,42 @@ class StoreAssignmentWindow:
                                style='Premium.TLabelframe', padding=10)
         right.pack(side='left', fill='both', expand=True, padx=(7, 0))
         self.assigned_summary = tk.StringVar(value='Henüz mağaza seçilmedi.')
-        ttk.Label(right, textvariable=self.assigned_summary, wraplength=310).pack(anchor='w', pady=(0, 5))
-        self.assigned = ttk.Treeview(right, columns=('template', 'condition'), show='headings',
+        self.assigned_summary_label = ttk.Label(right, textvariable=self.assigned_summary, wraplength=310)
+        self.assigned_summary_label.pack(anchor='w', pady=(0, 5))
+        assigned_table = ttk.Frame(right)
+        assigned_table.pack(fill='x', pady=(0, 5))
+        self.assigned = ttk.Treeview(assigned_table, columns=('template', 'condition'), show='headings',
                                      selectmode='extended', height=6, style='StoreAssign.Small.Treeview')
         for key, label, width in [('template','Kategori / Atanmış mockup',242),('condition','Durum',98)]:
             self.assigned.heading(key, text=label)
             self.assigned.column(key, width=width, minwidth=60, stretch=True)
         self.assigned.tag_configure('healthy',foreground='#6ef5aa')
         self.assigned.tag_configure('stale',foreground='#fdba74')
-        self.assigned.pack(fill='x',pady=(0, 8))
+        self.assigned.bind('<<TreeviewSelect>>', lambda _event: self._assigned_selection_changed())
+        self.assigned.pack(side='left', fill='x', expand=True)
+        assigned_scroll = ttk.Scrollbar(assigned_table, orient='vertical', command=self.assigned.yview)
+        assigned_scroll.pack(side='right', fill='y')
+        self.assigned.configure(yscrollcommand=assigned_scroll.set)
+        self.assigned_selected_count = tk.StringVar(value='0 atama seçildi')
+        ttk.Label(right, textvariable=self.assigned_selected_count,
+                  foreground='#cbd7ee').pack(anchor='w', pady=(0, 4))
+        choose = ttk.Frame(right)
+        choose.pack(fill='x', pady=(0, 5))
+        ttk.Button(choose, text='Tüm Atamaları Seç',
+                   command=self.select_all_assigned).pack(side='left', fill='x', expand=True, padx=(0, 4))
+        ttk.Button(choose, text='Bu Kategoriyi Seç',
+                   command=self.select_category_assigned).pack(side='left', fill='x', expand=True)
+        ttk.Button(right, text='Seçimi Temizle',
+                   command=self.clear_assigned_selection).pack(fill='x', pady=(0, 5))
+        ttk.Button(right, text='SEÇİLİ ATAMALARI TOPLU KALDIR',
+                   command=self.unassign).pack(fill='x', pady=(0, 5))
         preview = ttk.Frame(right, padding=5)
+        self.preview_panel = preview
         preview.pack(fill='both', expand=True)
         self.preview_image = ttk.Label(preview, text='Şablon önizlemesi\nListeden bir mockup seçin.', anchor='center')
         self.preview_image.pack(fill='both', expand=True)
         self.preview_info = tk.StringVar(value='')
         ttk.Label(preview, textvariable=self.preview_info, wraplength=340, justify='left').pack(fill='x')
-        ttk.Button(right, text='Seçili Atamaları Kaldır (Onaylı)', command=self.unassign).pack(side='bottom',fill='x',before=preview,pady=(5, 0))
 
         bottom = ttk.Frame(body, padding=(5, 11))
         bottom.pack(side='bottom',fill='x',before=main)
@@ -151,6 +178,26 @@ class StoreAssignmentWindow:
         ttk.Button(bottom, text='Kapat', command=self.pop.destroy).pack(side='right')
         ttk.Button(bottom, text='✓ SEÇİLEN MOCKUPLARI MAĞAZAYA ATA',
                    style='Premium.Primary.TButton', command=self.assign).pack(side='right', padx=(0, 14))
+
+    def _resize_layout(self, event):
+        """Keep destructive actions reachable on short Windows/DPI displays."""
+        if event.widget is not self.pop:
+            return
+        mode = 'tiny' if event.height < 670 else ('compact' if event.height < 750 else 'full')
+        if mode == self._layout_mode:
+            return
+        self._layout_mode = mode
+        self.assigned.configure(height={'tiny': 1, 'compact': 3, 'full': 6}[mode])
+        if mode == 'full':
+            if not self.preview_panel.winfo_manager():
+                self.preview_panel.pack(fill='both', expand=True)
+        else:
+            self.preview_panel.pack_forget()
+        if mode == 'tiny':
+            self.assigned_summary_label.pack_forget()
+        elif not self.assigned_summary_label.winfo_manager():
+            # Reinsert above the existing assigned table, not at the bottom.
+            self.assigned_summary_label.pack(anchor='w', pady=(0, 5), before=self.assigned.master)
 
     def _category_code(self):
         s = self.category.get()
@@ -330,7 +377,34 @@ class StoreAssignmentWindow:
                 self.assigned.insert('', 'end', iid=str(n),
                                      values=(f"{item['category'].split('_')[0]} · {item['uid']}", 'Bu mağazada'), tags=('healthy',))
         self.assigned_summary.set(f'{store} mağazası: {len(entries)} atama. '
-                                  'Sağda atanan şablonları, solda uygun ve kullanılmış şablonları görüyorsun.')
+                                  'Sağdaki listede çoklu seçim yapıp atamaları kaldırabilirsin.')
+        self._assigned_selection_changed()
+
+    def _assigned_selection_changed(self):
+        count = len(self.assigned.selection())
+        self.assigned_selected_count.set(f'{count} atama seçildi — sadece bunlar kaldırılacak')
+
+    def select_all_assigned(self):
+        """Explicit action; opening the dialog never preselects assignments."""
+        self.assigned.selection_set(self.assigned.get_children())
+        self._assigned_selection_changed()
+
+    def select_category_assigned(self):
+        category = self._category_code()
+        if not category:
+            messagebox.showwarning('Kategori seçin',
+                                   'Önce üst bölümden kategori seçin veya Tüm Atamaları Seç kullanın.',
+                                   parent=self.pop)
+            return
+        # Store keys are category:uid@source_sha. Do not guess from display text.
+        ids = [str(i) for i,key in enumerate(self.assigned_keys)
+               if key.split(':',1)[0] == category]
+        self.assigned.selection_set(ids)
+        self._assigned_selection_changed()
+
+    def clear_assigned_selection(self):
+        self.assigned.selection_remove(self.assigned.selection())
+        self._assigned_selection_changed()
 
     def _preview_selected(self, _event=None):
         sel = self.pool.selection()
@@ -429,25 +503,78 @@ class StoreAssignmentWindow:
         except (OSError,ValueError,KeyError) as exc:
             messagebox.showerror('Atama yapılamadı',str(exc)+'\n\nListeyi yenileyip uygun şablon seçin.',parent=self.pop)
 
+    def _confirm_unassignment(self, store: str, names: list[str]) -> bool:
+        """One explicit confirmation shows *every* selected assignment."""
+        dialog=tk.Toplevel(self.pop)
+        dialog.title('SON KONTROL — Çoklu Mağaza Ataması Kaldırma')
+        dialog.geometry('710x560')
+        dialog.minsize(530,390)
+        dialog.transient(self.pop)
+        dialog.configure(bg=BG)
+        body=ttk.Frame(dialog,padding=16)
+        body.pack(fill='both',expand=True)
+        ttk.Label(body,text=f'Mağaza: {store}',font=('Segoe UI',15,'bold')).pack(anchor='w')
+        ttk.Label(body,text=f'YALNIZCA seçilen {len(names)} mağaza eşleştirmesi kaldırılacak.',
+                  font=('Segoe UI',12,'bold'),foreground='#fbbf77').pack(anchor='w',pady=(8,5))
+        ttk.Label(body,text='Şablon dosyaları, onaylı maskeler, dört köşeler, üretim geçmişi ve Excel çıktıları silinmez. '
+                  'Kaldırılan mockup başka mağazaya yeniden atanabilir.',
+                  wraplength=650).pack(anchor='w',pady=(0,10))
+        holder=ttk.Frame(body)
+        holder.pack(fill='both',expand=True)
+        lst=tk.Listbox(holder,bg=PANEL,fg=FG,selectbackground=ACCENT,
+                       font=('Segoe UI',10),exportselection=False)
+        lst.pack(side='left',fill='both',expand=True)
+        sb=ttk.Scrollbar(holder,orient='vertical',command=lst.yview)
+        sb.pack(side='right',fill='y')
+        lst.configure(yscrollcommand=sb.set)
+        for i,name in enumerate(names,1):
+            lst.insert('end',f'{i:03d}  {name}')
+        result=[False]
+        def finish(ok):
+            result[0]=ok
+            dialog.destroy()
+        bar=ttk.Frame(body)
+        bar.pack(fill='x',pady=(12,0))
+        ttk.Button(bar,text='Vazgeç',command=lambda:finish(False)).pack(side='right')
+        ttk.Button(bar,text=f'{len(names)} ATAMAYI KALDIR',
+                   style='Premium.Primary.TButton',command=lambda:finish(True)).pack(side='right',padx=(0,12))
+        dialog.protocol('WM_DELETE_WINDOW',lambda:finish(False))
+        dialog.grab_set()
+        dialog.wait_window()
+        return result[0]
+
     def unassign(self):
-        indices = self.assigned.selection()
+        if self._unassign_busy:
+            return
+        selected = self.assigned.selection()
         store = self.store.get()
-        if not indices or not store:
-            messagebox.showwarning('Atama seçilmedi','Sağdaki listeden kaldırmak istediğin atamaları seç.',parent=self.pop)
+        if not selected or not store:
+            messagebox.showwarning('Atama seçilmedi',
+                'Sağdaki atama listesinden Ctrl/Shift ile birkaç satır seçebilir '
+                'veya Tüm Atamaları Seç / Bu Kategoriyi Seç düğmelerini kullanabilirsin.',
+                parent=self.pop)
             return
-        keys = [self.assigned_keys[int(i)] for i in indices]
-        names = '\n'.join('• '+k.split('@')[0] for k in keys[:12])
-        if not messagebox.askyesno('Atamayı kaldır',f'{store} mağazasından {len(keys)} atama kaldırılsın mı?\n{names}\n\n'
-                                   'Kaynak şablonlar ve eski üretim çıktıları silinmez.',parent=self.pop):
-            return
+        keys=[self.assigned_keys[int(i)] for i in selected]
+        self._unassign_busy=True
         try:
-            cfg = self.mgr.load()
-            current = cfg['stores'][store]['templates']
-            if not set(keys).issubset(set(current)):
-                raise ValueError('Atama listesi değişti. Yenileyip tekrar dene.')
-            cfg['stores'][store]['templates'] = [k for k in current if k not in set(keys)]
-            self.mgr.save(cfg)
+            before=self.mgr.load()
+            if store not in before['stores']:
+                raise ValueError('Seçilen mağaza artık bulunamadı.')
+            current=tuple(before['stores'][store]['templates'])
+            if not set(keys).issubset(current):
+                raise ValueError('Atamalar değişti. Listeyi yenileyin.')
+            # Identity and full key are shown, including stale/SHA-changed records.
+            names=[k.split('@',1)[0] for k in keys]
+            if not self._confirm_unassignment(store,names):
+                return
+            removed=self.mgr.unassign_keys(store,keys,expected_current_keys=current)
             self.refresh()
             self.on_change()
-        except (OSError,ValueError,KeyError) as exc:
-            messagebox.showerror('Kaldırma hatası',str(exc),parent=self.pop)
+            messagebox.showinfo('Toplu kaldırma tamamlandı',
+                f'{store} mağazasından {removed} şablon ataması kaldırıldı.\n'
+                'Şablonlar, onaylar ve önceki üretim dosyaları korunmuştur.',parent=self.pop)
+        except (OSError,ValueError,KeyError,IndexError) as exc:
+            messagebox.showerror('Toplu kaldırma yapılamadı',
+                str(exc)+'\n\nListeyi yenileyerek yeniden seçim yapın.',parent=self.pop)
+        finally:
+            self._unassign_busy=False

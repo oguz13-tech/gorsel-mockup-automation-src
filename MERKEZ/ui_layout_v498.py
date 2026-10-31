@@ -41,8 +41,8 @@ def settings_path():
 
 def initial():
     return {'schema':1,
-        'dashboard':{'tabs':{'Ana Sayfa':list(DASH_IDS)},'accent':'#995df4','effect':'hafif','colors':{}},
-        'production':{'tabs':{'Tümü':list(PROD_IDS)},'accent':'#995df4','effect':'hafif','colors':{}}}
+        'dashboard':{'tabs':{'Ana Sayfa':list(DASH_IDS)},'accent':'#7A4DFA','effect':'hafif','colors':{}},
+        'production':{'tabs':{'Tümü':list(PROD_IDS)},'accent':'#7A4DFA','effect':'hafif','colors':{}}}
 
 
 def normalize(raw):
@@ -52,7 +52,7 @@ def normalize(raw):
     for mode,ids,home in [('dashboard',DASH_IDS,'Ana Sayfa'),('production',PROD_IDS,'Tümü')]:
         src=raw.get(mode,{})
         if not isinstance(src,dict):continue
-        color=src.get('accent','#995df4')
+        color=src.get('accent','#7A4DFA')
         if isinstance(color,str) and re.fullmatch('#[0-9a-fA-F]{6}',color):
             default[mode]['accent']=color.lower()
         if src.get('effect') in ('kapalı','hafif','belirgin'):
