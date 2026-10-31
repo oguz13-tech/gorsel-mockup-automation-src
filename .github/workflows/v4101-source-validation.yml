@@ -1,0 +1,46 @@
+name: V4101 Source Integrity and Static Checks
+on:
+  push:
+    branches:
+      - release/v4101-source-and-windows-audit-20261031
+  pull_request:
+    paths:
+      - 'MERKEZ/**'
+      - 'SABLON_V2_MIMARI/**'
+      - 'scripts/**'
+      - 'tests/**'
+      - 'SHA256_MANIFEST.json'
+      - '.github/workflows/v4101-source-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  manifest-and-syntax:
+    name: Manifest, Python and JavaScript validation (no user data)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Verify V4.10.1 source hashes
+        run: python scripts/v4101_verify_package.py
+      - name: Python syntax
+        run: python -m compileall -q MERKEZ SABLON_V2_MIMARI scripts tests
+      - name: Web JavaScript syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          while IFS= read -r -d '' file; do
+            node --check "$file"
+          done < <(find SABLON_V2_MIMARI/static/js -type f -name '*.js' -print0)
+      - name: Scope and Windows acceptance reminder
+        run: |
+          echo "Static source checks do NOT prove Windows/Flask/GPU/marketplace acceptance."
+          echo "See docs/V4101_WINDOWS_ACCEPTANCE.md and V4101_TEST_VE_KABUL_RAPORU.md"
