@@ -81,7 +81,7 @@ body.ui-layout-editing #sidebar,body.ui-layout-editing #main,
 body.ui-layout-editing #petekV477Editor {outline:2px dashed #A26BFF;outline-offset:-2px;}
 body.ui-layout-editing #right-toolbar,body.ui-layout-editing .petek-v477-tools{
   box-shadow:inset 0 0 0 2px var(--mor-accent) !important;}
-body .ui-layout-launcher {position:fixed;right:20px;top:10px;z-index:2147483600;
+body .ui-layout-launcher {position:sticky;right:auto;top:0;width:100%;margin:0 0 12px;z-index:2147483600;
   padding:9px 12px;min-height:39px;background:#6334CF!important;color:#fff;
   border:1px solid #BCA4FF;border-radius:10px;font:700 14px 'Segoe UI',sans-serif;
   box-shadow:0 4px 15px #0B09284A;}
