@@ -23,8 +23,9 @@
 
 ## Test kanıtı (31.10.2026, izole Linux/Xvfb)
 
-- `xvfb-run -a pytest -q tests/test_v4100_store_assignment.py tests/test_vnext_store_bulk_unassign.py` → **14 passed**.
-- Genişletilmiş ilgili 8 test dosyası, `PYTHONPATH=.` ve tek Flask HTTP testi hariç → **59 passed, 1 skipped, 1 deselected**.
+- `xvfb-run -a pytest -q tests/test_v4100_store_assignment.py tests/test_vnext_store_bulk_unassign.py` → **17 passed**.
+- 970x600, 1280x720 ve 1366x768 pencere boylarında toplu kaldırma komutları ekranda ve tıklanabilir; gerçek Windows DPI doğrulaması ayrıca gereklidir.
+- Genişletilmiş ilgili 8 test dosyası, `PYTHONPATH=.` ve tek Flask HTTP testi hariç → **62 passed, 1 skipped, 1 deselected**.
 - Tüm `tests/` koleksiyonu paket dışı `V2_KONTROL_MERKEZI/app.py` eksikliği nedeniyle bloke. Flask HTTP testi `flask` modülü eksikliğinden çalıştırılamadı.
 - Gerçek Windows GUI/DPI, canlı çok mağazalı veri ve mağaza/Excel uçtan uca kabul: **WINDOWS_NOT_VERIFIED**.
 
