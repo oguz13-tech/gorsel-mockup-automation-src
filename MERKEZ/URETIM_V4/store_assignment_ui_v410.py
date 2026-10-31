@@ -15,7 +15,8 @@ from .unlimited_selection import CATEGORY_LABELS_TR
 
 
 class StoreAssignmentWindow:
-    def __init__(self, parent, *, state_root, get_approved, on_change):
+    def __init__(self, parent, *, state_root, get_approved, on_change,
+                 prefill_store=None, prefill_category=None, prefill_uid=None):
         self.mgr = StoreProfiles(Path(state_root))
         self.get_approved = get_approved
         self.on_change = on_change
@@ -46,6 +47,8 @@ class StoreAssignmentWindow:
         self._build()
         self.pop.bind('<Configure>', self._resize_layout, add='+')
         self.reload_stores()
+        if prefill_store and prefill_category and prefill_uid:
+            self.prefill_target(prefill_store, prefill_category, prefill_uid)
         self.pop.protocol('WM_DELETE_WINDOW', self.pop.destroy)
 
     def _build(self):
@@ -81,7 +84,7 @@ class StoreAssignmentWindow:
 
         main = ttk.Frame(body)
         main.pack(fill='both', expand=True)
-        left = ttk.LabelFrame(main, text='2  ONAYLI MOCKUP HAVUZU — sadece uygun olanlar seçilebilir',
+        left = ttk.LabelFrame(main, text='2  YENİ ATANACAK MOCKUPLAR — sadece soldaki kutular ATAMA içindir',
                               style='Premium.TLabelframe', padding=9)
         left.pack(side='left', fill='both', expand=True, padx=(0, 7))
         filters = ttk.Frame(left)
@@ -128,7 +131,7 @@ class StoreAssignmentWindow:
         self.pool.bind('<space>', self._toggle_keyboard)
         self.pool.bind('<<TreeviewSelect>>', self._preview_selected, add='+')
 
-        right = ttk.LabelFrame(main, text='3  SEÇİLEN MAĞAZANIN MEVCUT ATAMALARI',
+        right = ttk.LabelFrame(main, text='3  MEVCUT ATAMALAR — SAĞ SEÇİM YALNIZCA KALDIRMA İÇİN',
                                style='Premium.TLabelframe', padding=10)
         right.pack(side='left', fill='both', expand=True, padx=(7, 0))
         self.assigned_summary = tk.StringVar(value='Henüz mağaza seçilmedi.')
@@ -176,8 +179,10 @@ class StoreAssignmentWindow:
         ttk.Label(bottom, text='Kırmızı: başka mağazada · Yeşil: bu mağazada · Mavi: atanabilir',
                   foreground='#cbd7ee').pack(side='left', padx=22)
         ttk.Button(bottom, text='Kapat', command=self.pop.destroy).pack(side='right')
-        ttk.Button(bottom, text='✓ SEÇİLEN MOCKUPLARI MAĞAZAYA ATA',
-                   style='Premium.Primary.TButton', command=self.assign).pack(side='right', padx=(0, 14))
+        self.assign_button=ttk.Button(bottom, text='✓ SOLDAN SEÇİLENLERİ MAĞAZAYA ATA',
+                   style='Premium.Primary.TButton', command=self.assign)
+        self.assign_button.pack(side='right', padx=(0, 14))
+        self._marked_count()
 
     def _resize_layout(self, event):
         """Keep destructive actions reachable on short Windows/DPI displays."""
@@ -214,6 +219,38 @@ class StoreAssignmentWindow:
         self.store.set(keep if keep in names else '')
         self.categories.configure(state='readonly' if self.store.get() else 'disabled')
         self.refresh()
+
+    def prefill_target(self, store: str, category: str, uid: str):
+        """Prefill navigation only; no profile mutation or silent ownership change.
+
+        If a matching approved template is free, make its checkbox visible and
+        selected; final manual user confirmation is still mandatory.
+        """
+        self.marked.clear()
+        if store not in self.mgr.load().get('stores', {}):
+            raise ValueError('Hedef mağaza profil dosyasında bulunamadı: '+store)
+        if category not in CATEGORY_LABELS_TR:
+            raise ValueError('Hedef kategori tanınmıyor: '+category)
+        self.store.set(store)
+        self.categories.configure(state='readonly')
+        self.category.set(f'{CATEGORY_LABELS_TR[category]}  ({category})')
+        self.refresh()
+        matches=[row for row in self._all_category_rows
+                 if str(row['item']['uid'])==str(uid)]
+        if len(matches)==1 and matches[0]['state']=='available':
+            key=matches[0]['key']
+            self.marked.add(key)
+            self._page=next((i // self._page_limit for i,row in enumerate(
+                self._all_category_rows) if row['key']==key),0)
+            self.render_rows()
+            self.preview_info.set(f'Hedef: {uid}\nMağaza: {store}\n'
+                                  'Solda işaretlendi. Atama için alttaki düğme ile '
+                                  'ayrıca onay vermelisiniz.')
+        else:
+            owner=matches[0]['owner'] if matches else None
+            self.preview_info.set('Şablon otomatik atanmadı. '
+                                  +('Başka mağazada veya onayı değişmiş: '+str(owner)
+                                    if matches else 'Bu UID onaylı listede yok: '+str(uid)))
 
     def add_store(self):
         try:
@@ -344,7 +381,9 @@ class StoreAssignmentWindow:
         self._marked_count()
 
     def _marked_count(self):
-        self.marked_count.set(f'{len(self.marked)} mockup seçildi — yalnız bunlar atanacak')
+        self.marked_count.set(f'SOL: {len(self.marked)} YENİ mockup seçildi — yalnız bunlar atanacak')
+        if hasattr(self,'assign_button'):
+            self.assign_button.configure(state='normal' if self.marked else 'disabled')
 
     def select_available(self):
         self.marked.update(key for key in self._visible_keys if self.rows[key]['state']=='available')
@@ -382,7 +421,7 @@ class StoreAssignmentWindow:
 
     def _assigned_selection_changed(self):
         count = len(self.assigned.selection())
-        self.assigned_selected_count.set(f'{count} atama seçildi — sadece bunlar kaldırılacak')
+        self.assigned_selected_count.set(f'SAĞ: {count} mevcut atama seçildi — yalnız kaldırma için')
 
     def select_all_assigned(self):
         """Explicit action; opening the dialog never preselects assignments."""
@@ -485,6 +524,12 @@ class StoreAssignmentWindow:
         try:
             store = self.store.get()
             cat = self._category_code()
+            if not self.marked:
+                messagebox.showwarning('Yeni atama seçilmedi',
+                    'Soldaki YENİ ATANACAK MOCKUPLAR tablosundan Kullanılabilir '
+                    'şablonun kutusunu işaretleyin. Sağdaki mavi seçim sadece '
+                    'mevcut atamaları KALDIRMAK içindir.',parent=self.pop)
+                return
             if not cat:
                 raise ValueError('Önce mağazayı, ardından kategoriyi seçin.')
             fresh = self.mgr.load()
