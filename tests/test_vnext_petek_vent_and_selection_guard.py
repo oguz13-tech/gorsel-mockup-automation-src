@@ -34,8 +34,8 @@ def test_exact_fifteen_real_holes_keep_trusted_output():
     assert all(np.array_equal(a,b) for a,b in zip((scene,mask,q),snapshot))
 
 
-@pytest.mark.parametrize('n',[5,10,13,14,16,18])
-def test_ambiguous_holes_fail_closed_and_do_not_modify_inputs(n):
+@pytest.mark.parametrize('n',[5,10,18])
+def test_uncorroborated_hole_count_is_not_fabricated(n):
     scene,mask,q=_scene(n)
     original=[v.copy() for v in (scene,mask,q)]
     with pytest.raises(engine.MaskError,match='PETEK_IZGARA_KONUMU_BELIRSIZ'):
@@ -51,3 +51,18 @@ def test_petek_ui_saves_and_approves_current_selection_without_full_reload():
     assert "if(idx<0){notice('Seçili PETEK bu filtrede gizli." in js
     assert 'const target=list[idx+delta]' in js
     assert 'const target=list[idx+delta] || (idx<0?list[0]:null)' not in js
+
+
+@pytest.mark.parametrize('n',[13,14,15,16])
+def test_real_mask_count_used_without_fabricating_to_fifteen(n):
+    scene,mask,q=_scene(n)
+    unchanged=(scene.copy(),mask.copy(),q.copy())
+    output,qa=draw_fifteen_slots(scene,scene.copy(),mask,q,mode='orta')
+    assert qa['count']==n
+    assert qa['alignment']==f'EXISTING_MASK_{n}'
+    assert qa['status']==f'{n}_IZGARA_UYGULANDI'
+    assert len(qa['centers_rectified_900'])==n
+    assert len(qa['spacings_rectified_900'])==n-1
+    assert qa['changed_pixels']>0
+    assert np.array_equal(output[mask==0],scene[mask==0])
+    assert all(np.array_equal(x,y) for x,y in zip(unchanged,(scene,mask,q)))
