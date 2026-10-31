@@ -29,6 +29,7 @@ class StoreAssignmentWindow:
         self._thumb_seq = 0
         self._thumb_refs = {}
         self._unassign_busy = False
+        self._layout_mode = None
         self.pop = tk.Toplevel(parent)
         self.pop.title('Mağaza–Mockup Eşleştirme Merkezi · Güvenli Atama / Toplu Kaldır')
         self.pop.geometry('1290x790')
@@ -43,6 +44,7 @@ class StoreAssignmentWindow:
         styles.configure('StoreAssign.Small.Treeview',rowheight=26,background=PANEL,foreground=FG,fieldbackground=PANEL,font=('Segoe UI',9))
         styles.configure('StoreAssign.Small.Treeview.Heading',font=('Segoe UI',9,'bold'))
         self._build()
+        self.pop.bind('<Configure>', self._resize_layout, add='+')
         self.reload_stores()
         self.pop.protocol('WM_DELETE_WINDOW', self.pop.destroy)
 
@@ -84,13 +86,17 @@ class StoreAssignmentWindow:
         left.pack(side='left', fill='both', expand=True, padx=(0, 7))
         filters = ttk.Frame(left)
         filters.pack(fill='x', pady=(2, 7))
-        ttk.Label(filters, text='Ara:').pack(side='left')
+        search_row = ttk.Frame(filters)
+        search_row.pack(fill='x')
+        ttk.Label(search_row, text='Ara:').pack(side='left')
         self.search = tk.StringVar()
-        ttk.Entry(filters, textvariable=self.search, width=27).pack(side='left', padx=8, fill='x', expand=True)
+        ttk.Entry(search_row, textvariable=self.search, width=18).pack(side='left', padx=8, fill='x', expand=True)
         self.search.trace_add('write', lambda *_: self._search_changed())
-        ttk.Button(filters, text='Sayfadaki Uygunları Seç', command=self.select_available).pack(side='left', padx=3)
-        ttk.Button(filters, text='Kategorideki Tüm Uygunları Seç', command=self.select_all_available).pack(side='left', padx=3)
-        ttk.Button(filters, text='Seçimi Temizle', command=self.clear_selection).pack(side='left', padx=3)
+        select_row = ttk.Frame(filters)
+        select_row.pack(fill='x', pady=(4, 0))
+        ttk.Button(select_row, text='Sayfadaki Uygunları Seç', command=self.select_available).pack(side='left', padx=(0, 4))
+        ttk.Button(select_row, text='Kategorideki Tüm Uygunları Seç', command=self.select_all_available).pack(side='left')
+        ttk.Button(select_row, text='Seçimi Temizle', command=self.clear_selection).pack(side='right')
         self.status = tk.StringVar(value='Önce mağaza seçin; ardından kategoriyi belirleyin.')
         ttk.Label(left, textvariable=self.status, foreground='#cbd7ee').pack(anchor='w', pady=(0, 5))
         pager=ttk.Frame(left)
@@ -102,10 +108,10 @@ class StoreAssignmentWindow:
         self.pool = ttk.Treeview(left, columns=('mark', 'uid', 'state', 'owner'), show='tree headings',
                                  selectmode='browse', height=10,style='StoreAssign.Treeview')
         self.pool.heading('#0', text='Fotoğraf')
-        self.pool.column('#0',width=90,minwidth=65,stretch=False,anchor='center')
+        self.pool.column('#0',width=66,minwidth=52,stretch=False,anchor='center')
         for key, title, width, stretch in [
-            ('mark', 'Seç', 58, False), ('uid', 'Onaylı mockup görseli', 240, True),
-            ('state', 'Durum', 165, False), ('owner', 'Mağaza', 140, False),
+            ('mark', 'Seç', 46, False), ('uid', 'Onaylı mockup görseli', 170, True),
+            ('state', 'Durum', 122, False), ('owner', 'Mağaza', 105, False),
         ]:
             self.pool.heading(key, text=title)
             self.pool.column(key, width=width, minwidth=45, stretch=stretch,
@@ -126,7 +132,8 @@ class StoreAssignmentWindow:
                                style='Premium.TLabelframe', padding=10)
         right.pack(side='left', fill='both', expand=True, padx=(7, 0))
         self.assigned_summary = tk.StringVar(value='Henüz mağaza seçilmedi.')
-        ttk.Label(right, textvariable=self.assigned_summary, wraplength=310).pack(anchor='w', pady=(0, 5))
+        self.assigned_summary_label = ttk.Label(right, textvariable=self.assigned_summary, wraplength=310)
+        self.assigned_summary_label.pack(anchor='w', pady=(0, 5))
         assigned_table = ttk.Frame(right)
         assigned_table.pack(fill='x', pady=(0, 5))
         self.assigned = ttk.Treeview(assigned_table, columns=('template', 'condition'), show='headings',
@@ -147,14 +154,15 @@ class StoreAssignmentWindow:
         choose = ttk.Frame(right)
         choose.pack(fill='x', pady=(0, 5))
         ttk.Button(choose, text='Tüm Atamaları Seç',
-                   command=self.select_all_assigned).pack(side='left', padx=(0, 4))
+                   command=self.select_all_assigned).pack(side='left', fill='x', expand=True, padx=(0, 4))
         ttk.Button(choose, text='Bu Kategoriyi Seç',
-                   command=self.select_category_assigned).pack(side='left', padx=(0, 4))
-        ttk.Button(choose, text='Seçimi Temizle',
-                   command=self.clear_assigned_selection).pack(side='left')
+                   command=self.select_category_assigned).pack(side='left', fill='x', expand=True)
+        ttk.Button(right, text='Seçimi Temizle',
+                   command=self.clear_assigned_selection).pack(fill='x', pady=(0, 5))
         ttk.Button(right, text='SEÇİLİ ATAMALARI TOPLU KALDIR',
                    command=self.unassign).pack(fill='x', pady=(0, 5))
         preview = ttk.Frame(right, padding=5)
+        self.preview_panel = preview
         preview.pack(fill='both', expand=True)
         self.preview_image = ttk.Label(preview, text='Şablon önizlemesi\nListeden bir mockup seçin.', anchor='center')
         self.preview_image.pack(fill='both', expand=True)
@@ -170,6 +178,26 @@ class StoreAssignmentWindow:
         ttk.Button(bottom, text='Kapat', command=self.pop.destroy).pack(side='right')
         ttk.Button(bottom, text='✓ SEÇİLEN MOCKUPLARI MAĞAZAYA ATA',
                    style='Premium.Primary.TButton', command=self.assign).pack(side='right', padx=(0, 14))
+
+    def _resize_layout(self, event):
+        """Keep destructive actions reachable on short Windows/DPI displays."""
+        if event.widget is not self.pop:
+            return
+        mode = 'tiny' if event.height < 670 else ('compact' if event.height < 750 else 'full')
+        if mode == self._layout_mode:
+            return
+        self._layout_mode = mode
+        self.assigned.configure(height={'tiny': 1, 'compact': 3, 'full': 6}[mode])
+        if mode == 'full':
+            if not self.preview_panel.winfo_manager():
+                self.preview_panel.pack(fill='both', expand=True)
+        else:
+            self.preview_panel.pack_forget()
+        if mode == 'tiny':
+            self.assigned_summary_label.pack_forget()
+        elif not self.assigned_summary_label.winfo_manager():
+            # Reinsert above the existing assigned table, not at the bottom.
+            self.assigned_summary_label.pack(anchor='w', pady=(0, 5), before=self.assigned.master)
 
     def _category_code(self):
         s = self.category.get()
