@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "name": "Mor Premium Antrasit",
+  "background": "#111827",
+  "sidebar": "#0E1424",
+  "panel": "#1D2638",
+  "raised": "#29344B",
+  "border": "#384466",
+  "accent": "#7A4DFA",
+  "accent_hover": "#6239C7",
+  "text": "#F4F6FF",
+  "muted": "#C7D3E8",
+  "status_new": "#60A5FA",
+  "status_approved": "#34D399",
+  "status_draft": "#F3C05B",
+  "status_error": "#F87171"
+}
