@@ -126,3 +126,36 @@
 #petekV477List .petek-v484-item-wrap{padding:7px 6px;}
 #petekV477List .petek-v484-thumb{flex:0 0 54px;width:54px;height:54px;}
 @media(max-width:1050px){.petek-v477-tools{width:100%;max-width:none;}}
+
+/* V4.9.8: same compact row structure as six categories; optional thumbnails. */
+#petekV477List .petek-v484-item-wrap{margin:2px 0;min-height:33px;
+ padding:3px 6px;border-radius:5px;display:block}
+#petekV477List .petek-v484-line{gap:5px;}
+#petekV477List .petek-v484-name{min-height:30px;padding:5px 3px;font-size:13px!important;
+ font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-align:left}
+#petekV477List .petek-v484-pictos{display:inline;font-size:11px;white-space:nowrap}
+#petekV477List.petek-v498-compact .petek-v484-thumb{display:none!important}
+#petekV477List.petek-v498-compact .petek-v484-line{display:flex;min-height:26px}
+#petekV477List.petek-v498-compact .petek-v484-item-wrap{min-height:35px}
+#petekV477List .petek-v484-pictos{line-height:1.2}
+#petekV477List .petek-status-approved{background:#183d35;border:1px solid #3ebd88}
+#petekV477List .petek-status-pending{background:#42391b;border:1px solid #bb963d}
+#petekV477List .petek-status-error{background:#4d2229;border:1px solid #cf6464}
+#petekV498ListView{font-size:12px;background:#2c3146;color:#f5f3ff}
+.petek-v498-approve{background:#087c69!important;color:#fff!important;font-weight:700;
+ padding:10px 8px;border-radius:7px;white-space:normal}
+.petek-v498-review-dialog{background:#141b2e;color:#f5f3ff;border:1px solid #7766ac;
+ border-radius:14px;width:min(1090px,94vw);max-height:91vh;overflow:auto;padding:18px;}
+.petek-v498-review-dialog::backdrop{background:rgba(3,5,12,.82)}
+.petek-v498-review-dialog button{color:#fff;background:#3d315e;padding:8px;border:0;border-radius:5px;cursor:pointer}
+.petek-v498-review-top{display:flex;justify-content:space-between;align-items:center;gap:15px}
+.petek-v498-review-dialog p{color:#d4d4ea;font-size:13px}
+.petek-v498-review-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:13px}
+.petek-v498-review-card{background:#20283d;border:1px solid #59607b;border-radius:8px;
+ padding:10px;display:flex;flex-direction:column;gap:7px}
+.petek-v498-review-card strong{overflow-wrap:anywhere;font-size:12px}
+.petek-v498-review-card canvas{display:block;max-width:100%;height:auto;max-height:280px;object-fit:contain;background:#111;border-radius:4px}
+.petek-v498-review-card label{font-weight:600;color:#e3ebff;display:flex;align-items:center;gap:8px}
+.petek-v498-review-actions{display:flex;gap:15px;flex-wrap:wrap;align-items:center;margin-top:12px}
+.petek-v498-review-actions input{background:#0a1224;color:#fff;border:1px solid #7979aa;padding:7px}
+#petekV498ReviewStatus{white-space:pre-wrap;max-height:170px;overflow:auto;color:#a3f4ce}

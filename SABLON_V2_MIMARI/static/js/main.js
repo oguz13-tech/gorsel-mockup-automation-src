@@ -123,11 +123,32 @@ window.onerror = function(msg, url, line, col, error) {
         overlay.style.display = 'flex';
     }
 
+    // Shared six-category Web error guidance. PETEK also has its own
+    // context-sensitive modal; both describe a safe manual next step.
+    function adviceForWebError(message, title) {
+        const value=(String(title||'')+' '+String(message||'')).toLocaleLowerCase('tr');
+        if (/baskı alanı|maske taslağı|0[.,]0%/.test(value))
+            return ['Maske taslağı henüz oluşturulmamış veya geçersiz olabilir.',
+                    'Dört köşeleri kontrol et, “2. Otomatik Maske Taslağı”nı oluştur, sonra gerçek tasarımla önizle.'];
+        if (/onaylı.*kilit|approved.*locked/.test(value))
+            return ['Kayıt onaylı olduğundan kaynak maske korunuyor.',
+                    'Onaylı Maskeyi Yeniden Düzenle ile revizyon aç; eski sürümü yedekli tutarak değişiklikleri insan onayıyla etkinleştir.'];
+        if (/8080|8090|port.*kullanım/.test(value))
+            return ['İnceleme sunucusu veya port başka bir işlemce kullanılıyor olabilir.',
+                    'Önce kayıtları sakla; uygulamadaki güvenli sunucu durdurma aracını kullan. Rastgele süreç sonlandırma.'];
+        if (/kaynak.*değiş|sha|kimlik.*uyuş/.test(value))
+            return ['Fotoğraf/maske kimliği değişmiş; eski taslak kullanılamaz.',
+                    'Listeyi yenileyip güncel kaynağı incele; eski onayı zorla kullanma.'];
+        if (/hata|failed|error|başarısız|oluşturulamadı/.test(value))
+            return ['İşlem tamamlanmadı; ilgili kayıt veya uygulama adımı geçersiz olabilir.',
+                    'İşlem günlüğünü kopyala, aynı dosyayı yeniden dene; sorun sürerse Test Merkezi > Sorun Var olarak kaydet.'];
+        return null;
+    }
     function showMessage(message, title = 'Bilgi / Uyarı') {
-        showCopyableReport(
-            String(title || 'Bilgi / Uyarı'),
-            String(message ?? '')
-        );
+        const original=String(message ?? '');
+        const help=adviceForWebError(original,title);
+        const full=help ? original+'\n\nNEDEN: '+help[0]+'\n\nNE YAPMALIYIM? '+help[1] : original;
+        showCopyableReport(String(title || 'Bilgi / Uyarı'),full);
     }
 
     function formatStagingCollisionWarning(collision) {
@@ -1891,6 +1912,14 @@ window.onerror = function(msg, url, line, col, error) {
                     navigateToTemplate(cat, tmpl, item);
                 };
 
+                const isHealthError = !!(healthInfo && healthInfo.severity !== 'OK');
+                const reviewDanger = ['STALE_SOURCE_CHANGED','AMBIGUOUS_DUPLICATE','REVIEW_REQUIRED','INVALID'].includes(reviewStatus);
+                const uiStatus = (isHealthError || reviewDanger || itemData.supheli) ? 'ERROR'
+                    : reviewStatus === 'APPROVED' ? 'APPROVED'
+                    : (hasCorners || ['DRAFT','PENDING_REVIEW'].includes(reviewStatus)) ? 'DRAFT' : 'NEW';
+                item.dataset.v499Status = uiStatus;
+                item.classList.add('v499-status-'+uiStatus.toLowerCase());
+                if (window.V499StatusFilters) window.V499StatusFilters.applyRow(item);
                 list.appendChild(item);
                 allTemplates.push({cat, tmpl, elem: item, list});
             }
@@ -2387,7 +2416,11 @@ window.onerror = function(msg, url, line, col, error) {
 
     // Klavye Kısayolları    // Klavye Kısayolları (C, V, Enter, Space, N, P)
     window.addEventListener('keydown', (e) => {
-        if (e.target && e.target.tagName === 'INPUT') return;
+        // PETEK is a separate seventh-category editor. Never let generic
+        // Wi-Fi/six-category shortcuts consume its navigation keys.
+        if (window.PetekV477 && window.PetekV477.isActive()) return;
+        if (e.defaultPrevented || e.altKey || e.metaKey || e.ctrlKey) return;
+        if (e.target && (['INPUT','TEXTAREA','SELECT','BUTTON'].includes(e.target.tagName) || e.target.isContentEditable)) return;
         
         if (e.key === ' ' && !isSpacePressed) {
             e.preventDefault();
