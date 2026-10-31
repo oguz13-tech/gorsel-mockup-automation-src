@@ -55,14 +55,108 @@ class Registry:
             handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(message)s'))
             log.addHandler(handler)
 
+    def _active_index(self):
+        path=self.root/'active_revisions.json'
+        if path.is_symlink():raise engine.MaskError('PETEK_REVISION_INDEX_SYMLINK')
+        if not path.is_file():return {}
+        data=json.loads(path.read_text(encoding='utf-8'))
+        if (not isinstance(data,dict) or data.get('version')!=1 or
+                not isinstance(data.get('entries'),dict)):
+            raise engine.MaskError('PETEK_REVISION_INDEX_CORRUPT: kurtarma/yedek gerekli')
+        return data['entries']
+
+    def _root_uid(self,uid):
+        uid=_safe_id(uid)
+        p=self._profile_path(uid)
+        if p.exists():
+            data=json.loads(p.read_text(encoding='utf-8'))
+            return _safe_id(data.get('base_uid') or uid)
+        return uid
+
+    def is_current(self,uid):
+        uid=_safe_id(uid)
+        base=self._root_uid(uid)
+        entry=self._active_index().get(base)
+        if not entry:
+            p=self._profile_path(uid)
+            if not p.is_file():return False
+            prof=json.loads(p.read_text(encoding='utf-8'))
+            # A new approved revision is not used in production until activated.
+            return not bool(prof.get('revises_uid'))
+        return entry.get('active_uid')==uid
+
+    def link_draft_revision(self,approved_uid,new_uid,*,source_override=None):
+        approved_uid=_safe_id(approved_uid);new_uid=_safe_id(new_uid)
+        old,_=self.get(approved_uid,require_approved=True,source_override=source_override)
+        if not self.is_current(approved_uid):
+            raise engine.MaskError('Yalnız mevcut etkin onaylı maskeden revizyon açılabilir.')
+        path=self._profile_path(new_uid)
+        if path.is_symlink() or not path.is_file():
+            raise engine.MaskError('PETEK_REVISION_DRAFT_NOT_FOUND')
+        data=json.loads(path.read_text(encoding='utf-8'))
+        if (data.get('status')!='DRAFT' or data.get('source_sha')!=old['source_sha'] or
+                data.get('uid')!=new_uid or not new_uid.startswith(approved_uid[:70]+'_r')):
+            raise engine.MaskError('PETEK_REVISION_LINK_INVALID')
+        data['revises_uid']=approved_uid
+        data['base_uid']=self._root_uid(approved_uid)
+        _atomic_json(path,data)
+
+    def activate_revision(self,approved_uid,new_uid,confirm,*,source_override=None):
+        """Switch active *future* selection to approved revision, preserve originals.
+
+        The existing immutable masks and profiles remain byte-identical;
+        pending production items can retain their previously selected UID.
+        """
+        if confirm!='ACTIVATE_REVISED_PETEK_AND_KEEP_OLD':
+            raise engine.MaskError('PETEK_REVISION_EXPLICIT_CONFIRM_REQUIRED')
+        approved_uid=_safe_id(approved_uid);new_uid=_safe_id(new_uid)
+        old,_=self.get(approved_uid,require_approved=True,source_override=source_override)
+        new,_=self.get(new_uid,require_approved=True,source_override=source_override)
+        if old.get('source_sha')!=new.get('source_sha'):
+            raise engine.MaskError('PETEK_REVISION_SOURCE_MISMATCH')
+        if new.get('revises_uid')!=approved_uid or new.get('base_uid')!=self._root_uid(approved_uid):
+            raise engine.MaskError('PETEK_REVISION_PARENT_MISMATCH')
+        if not self.is_current(approved_uid):
+            raise engine.MaskError('PETEK_REVISION_CURRENT_CHANGED_RELOAD')
+        rootuid=self._root_uid(approved_uid)
+        data=self._active_index()
+        history=list(data.get(rootuid,{}).get('history',[]))
+        if approved_uid not in history:history.append(approved_uid)
+        data[rootuid]={'active_uid':new_uid,'history':history,'source_sha':new['source_sha']}
+        _atomic_json(self.root/'active_revisions.json',{'version':1,'entries':data})
+        return {'base_uid':rootuid,'previous_uid':approved_uid,'active_uid':new_uid,
+                'mask_sha':new['mask_sha'],'previous_mask_sha':old['mask_sha']}
+
+    def restore_revision(self,root_uid,previous_uid,confirm,*,source_override=None):
+        if confirm!='RESTORE_PREVIOUS_APPROVED_PETEK':
+            raise engine.MaskError('PETEK_REVISION_RESTORE_CONFIRM_REQUIRED')
+        root_uid=_safe_id(root_uid);previous_uid=_safe_id(previous_uid)
+        data=self._active_index();entry=data.get(root_uid)
+        if not entry or previous_uid not in entry.get('history',[]):
+            raise engine.MaskError('PETEK_REVISION_NOT_IN_HISTORY')
+        current,_=self.get(entry['active_uid'],require_approved=True,source_override=source_override)
+        prior,_=self.get(previous_uid,require_approved=True,source_override=source_override)
+        if current['source_sha']!=prior['source_sha']:
+            raise engine.MaskError('PETEK_REVISION_SOURCE_CHANGED')
+        history=list(entry['history'])
+        if entry['active_uid'] not in history:history.append(entry['active_uid'])
+        data[root_uid]={'active_uid':previous_uid,'history':history,'source_sha':prior['source_sha']}
+        _atomic_json(self.root/'active_revisions.json',{'version':1,'entries':data})
+        return {'active_uid':previous_uid,'previous_active_uid':entry['active_uid']}
+
     def list(self):
+        active=self._active_index()  # one index read; fail closed on corrupted pointer
         rows=[]
         for path in sorted(self.profiles.glob('*.json')):
             if path.is_symlink():continue
             try:
                 row=json.loads(path.read_text('utf-8'))
+                base=row.get('base_uid') or row['uid']
+                current=(active[base].get('active_uid')==row['uid']
+                         if base in active else not bool(row.get('revises_uid')))
                 rows.append({'uid':row['uid'],'source':row['source'],
-                             'status':row['status'],'source_sha':row['source_sha']})
+                             'status':row['status'],'source_sha':row['source_sha'],
+                             'is_current':current})
             except (OSError,ValueError,KeyError):continue
         return rows
 
@@ -162,14 +256,20 @@ class Registry:
                  'status':'APPROVED' if approved else 'DRAFT',
                  'reviewer':reviewer.strip() if approved else '', 'mask_qa':qa,
                  'curve_points':safe_points, 'base_mask_sha':base_sha}
+        if previous is not None:
+            for key in ('revises_uid','base_uid'):
+                if previous.get(key):profile[key]=previous[key]
         _atomic_json(path,profile)
         logging.getLogger('petek_v3').info('MASKE_%s uid=%s kaynak_sha=%s maske_sha=%s', profile['status'],uid,profile['source_sha'],sha)
         return profile
 
-    def approve(self,uid,reviewer,confirm):
+    def approve(self,uid,reviewer,confirm,*,source_override=None):
         if confirm!='I_VISUALLY_CHECKED_VENTS_ARCHES_FLOOR':
             raise engine.MaskError('Delik, kavis ve zemini inceleme onayi olmadan sablon kilitlenmez.')
         if not reviewer.strip():raise engine.MaskError('Onaylayan adini girin.')
-        p,mask=self.get(uid)
+        p,mask=self.get(uid,source_override=source_override)
         if p['status']!='DRAFT':raise engine.MaskError('Yalniz TASLAK onaylanabilir.')
-        return self.save(uid,p['source'],p['quad'],mask,p['physical_aspect'],reviewer,approved=True)
+        # A historical vanished source may have been matched to an explicit
+        # working-pool file of identical SHA. Never write to the old source.
+        actual_source=source_override if source_override is not None else p['source']
+        return self.save(uid,actual_source,p['quad'],mask,p['physical_aspect'],reviewer,approved=True)

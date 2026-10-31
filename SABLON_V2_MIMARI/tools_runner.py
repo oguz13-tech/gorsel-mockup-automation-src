@@ -89,6 +89,28 @@ def _ui():
         root.attributes("-topmost", True)
     except Exception:
         pass
+    # Parent UI really exists now; do not signal readiness on mere Popen.
+    ready_file = os.environ.get("MOCKUP_TOOL_READY_FILE", "").strip()
+    if ready_file:
+        # Refresh a tiny marker while the real GUI event loop exists. In some
+        # Windows venvs Popen.pid tracks a launcher, not the Tk child process.
+        # Therefore a live heartbeat is more reliable than launcher exit code.
+        import threading
+        marker = Path(ready_file)
+        marker.write_text("READY", encoding="ascii")
+        stopped = threading.Event()
+        def stop_when_destroyed(event):
+            if event.widget is root:
+                stopped.set()
+        root.bind("<Destroy>", stop_when_destroyed, add="+")
+        def heartbeat():
+            while not stopped.wait(1.5):
+                try:
+                    marker.touch()
+                except OSError:
+                    return
+        threading.Thread(target=heartbeat, daemon=True,
+                         name="mockup-tool-readiness").start()
     return root, filedialog, messagebox, simpledialog
 
 
@@ -1509,7 +1531,69 @@ def interactive_golden_audit() -> int:
     finally:root.destroy()
 
 
+
+def interactive_orientation_sort() -> int:
+    """Separate source/output selectors. Copy is the safe default."""
+    root, filedialog, messagebox, simpledialog = _ui()
+    try:
+        try:
+            from .orientation_sort_v489 import sort_folder
+        except ImportError:
+            from orientation_sort_v489 import sort_folder
+        source = filedialog.askdirectory(parent=root, title='Kaynak görsellerin klasörünü seç')
+        if not source:
+            return 0
+        output = filedialog.askdirectory(parent=root, title='ÜÇ KLASÖRÜN OLUŞACAĞI AYRI HEDEF KLASÖRÜ SEÇ')
+        if not output:
+            return 0
+        do_move = messagebox.askyesno('KOPYALA / TAŞI',
+            'Varsayılan işlem KOPYALA ve kaynak görseller korunur.\n\n'
+            'Kaynak görselleri taşımak istiyor musun?\n\n'
+            'EVET = TAŞI (kaynak dosyalar taşınacak)\nHAYIR = KOPYALA (önerilen)',
+            parent=root, default='no')
+        if do_move and not messagebox.askyesno('Kaynak silme için ikinci onay',
+           'Taşınan dosyaların eski konumları silinecek. Dosyalar önce SHA256 '
+           'ile doğrulanır. GERÇEKTEN TAŞI?\n\nHayır = iptal.',parent=root,default='no'):
+            return 0
+        import tkinter as tk
+        from tkinter import ttk
+        dialog = tk.Toplevel(root)
+        dialog.title('YATAY - DİKEY GÖRSEL SEÇİCİ — İşlem Durumu')
+        dialog.geometry('580x170')
+        dialog.resizable(False, False)
+        label = ttk.Label(dialog,text='Klasör taranıyor...',font=('Segoe UI',12,'bold'))
+        label.pack(fill='x',padx=18,pady=18)
+        bar = ttk.Progressbar(dialog,mode='determinate')
+        bar.pack(fill='x',padx=18,pady=8)
+        ttk.Label(dialog,text='KARE için varsayılan en/boy toleransı: %1. '
+               'EXIF yönleri dikkate alınır.',wraplength=540).pack(fill='x',padx=18,pady=7)
+        dialog.update()
+        def report(index,total,name):
+            bar.configure(maximum=max(1,total),value=index)
+            label.configure(text=f'{index}/{total}  —  {name[:62]}')
+            dialog.update()
+        try:
+            result = sort_folder(Path(source),Path(output),move=do_move,
+               protected_roots=tuple(_protected_template_roots(RUNTIME_ROOT)),progress=report)
+        finally:
+            dialog.destroy()
+        messagebox.showinfo('Yön Ayrımı Tamamlandı',
+            f'Toplam: {result.source_count}\n'
+            f'YATAY: {result.counts["YATAY"]}\n'
+            f'DİKEY: {result.counts["DİKEY"]}\n'
+            f'KARE: {result.counts["KARE"]}\n'
+            f'İşlenen: {result.copied+result.moved}\n'
+            f'Hatalar: {len(result.errors)}\n'
+            f'Rapor: {result.report_path}',parent=root)
+        return 0 if not result.errors else 2
+    except Exception as exc:
+        messagebox.showerror('Yatay - Dikey Görsel Seçici',str(exc),parent=root)
+        return 1
+    finally:
+        root.destroy()
+
 TOOLS = {
+    "orientation_sort": interactive_orientation_sort,
     "stage": interactive_safe_stage,
     "portrait_3x4": interactive_extend_3x4,
     "review_folder": interactive_review_folder,

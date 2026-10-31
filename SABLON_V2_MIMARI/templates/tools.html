@@ -110,6 +110,7 @@
             display: none;
         }
     </style>
+    <link rel="stylesheet" href="/static/css/premium_v489.css?v=489">
 </head>
 <body>
 <script src="/static/js/loopback_csrf_v47.js"></script>
@@ -129,6 +130,18 @@
     </div>
 
     <div class="grid">
+        <div class="card" style="border-color:#7650ab">
+            <div class="title">◫ YATAY - DİKEY GÖRSEL SEÇİCİ</div>
+            <div class="desc">Bir klasör ve alt klasörlerindeki görselleri EXIF yönüne göre YATAY, DİKEY ve KARE olarak üç klasöre ayırır.</div>
+            <div class="tiny">%1 kare toleransı · Başlangıçta KOPYALA · Aynı dosya adına güvenli yeni ad · Ayrı hedef klasör · SHA256 doğrulama · CSV raporu. Onaylı şablon/yedek klasörlerine yazmaz.</div>
+            <button onclick="launchTool('orientation_sort', this)">Görsel Seçiciyi Aç</button>
+        </div>
+        <div class="card">
+            <div class="title">📥 Güvenli Yeni Şablon Ekle</div>
+            <div class="desc">Dış klasördeki yeni şablon fotoğraflarını mevcut 7 kategoriden birine, inceleme ve insan onayı sırasına aktarır.</div>
+            <div class="tiny">Mevcut çalışma görsellerini veya orijinal yedekleri üzerine yazmaz. Çakışan kimliği engeller; yeni şablonlara kendiliğinden onay vermez.</div>
+            <button onclick="launchTool('stage', this)">Güvenli İçe Al</button>
+        </div>
         <div class="card">
             <div class="title">📝 Görsel İsimlendirici</div>
             <div class="desc">Yedi şablon kategorisinden birini seçin; son kullanılan numarayı ve sıradaki güvenli numarayı görerek isimlendirin.</div>
@@ -208,25 +221,42 @@
 </div>
 
 <script>
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function launchTool(name, button) {
     const status = document.getElementById('status');
     const oldText = button.textContent;
     button.disabled = true;
     button.textContent = 'Açılıyor...';
     status.style.display = 'block';
-    status.textContent = 'Araç başlatılıyor...';
-
+    status.textContent = 'Araç başlatılıyor; henüz pencere doğrulanmadı...';
     try {
-        const response = await fetch('/api/tools/launch/' + encodeURIComponent(name), {
-            method: 'POST'
-        });
+        const response = await fetch('/api/tools/launch/' + encodeURIComponent(name), {method: 'POST'});
         const data = await response.json();
-        if (!response.ok || !data.success) {
+        if (!response.ok || !data.success || !data.launch_id) {
             throw new Error(data.error || 'Araç başlatılamadı.');
         }
-        status.textContent = data.message || 'Araç ayrı pencerede açıldı.';
+        let completed = false;
+        for (let retry = 0; retry < 55; retry++) {
+            await sleep(550);
+            const check = await fetch('/api/tools/status/' + encodeURIComponent(data.launch_id), {cache:'no-store'});
+            const result = await check.json();
+            if (!check.ok || !result.success) {
+                throw new Error(result.error || 'Araç açılamadı.');
+            }
+            if (result.status === 'READY') {
+                status.textContent = result.message;
+                completed = true;
+                break;
+            }
+            if (result.status === 'CLOSED') {
+                status.textContent = 'Araç çok hızlı açılıp kapandı; çalıştığı doğrulanamadı.';
+                completed = true;
+                break;
+            }
+        }
+        if (!completed) throw new Error('Pencere hazır bildirimi zamanında gelmedi. Konsolu kontrol edin.');
     } catch (err) {
-        status.textContent = 'Hata: ' + err.message;
+        status.textContent = 'HATA: ' + err.message;
     } finally {
         button.disabled = false;
         button.textContent = oldText;

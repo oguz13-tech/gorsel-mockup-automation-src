@@ -18,7 +18,7 @@ import numpy as np
 from PIL import Image, ImageTk
 
 from . import engine, curves as curve_math
-from dark_theme_v42 import BG, PANEL, FG, MUTED
+from dark_theme_v42 import BG, PANEL, FG, MUTED, ACCENT
 from help_v42 import bind_help
 from .batch import Batch
 from .registry import Registry
@@ -101,7 +101,7 @@ class MaskEditor:
         self.canvas.bind('<Configure>', self._canvas_resized)
         def hint(parent, value):
             ttk.Label(parent, text=value, wraplength=320, foreground=MUTED,
-                      font=('Segoe UI', 9)).pack(anchor='w', pady=(0, 5))
+                      font=('Segoe UI', 10)).pack(anchor='w', pady=(0, 5))
         ttk.Label(left,text='PETEK: Mockup Hazırlama',font=('Segoe UI',15,'bold')).pack(anchor='w',pady=(2,12))
         ttk.Button(left,text='1. PETEK Mockup Fotoğrafını Seç',command=self.pick).pack(fill='x',pady=3)
         hint(left, 'Baskısız dolabın ODA fotoğrafını seç. Sonraki adım: dört köşeyi belirt.')
@@ -1004,7 +1004,7 @@ class BatchWindow:
         ttk.Label(area,text='Bunlar baskısız oda/dolap fotoğraflarıdır. Desenleri bir sonraki adımda seç.',
                   foreground=MUTED,wraplength=670).pack(anchor='w')
         self.listbox=tk.Listbox(area,selectmode='extended',height=8,exportselection=False,
-                                bg=PANEL,fg=FG,selectbackground='#2563eb',selectforeground='#ffffff')
+                                bg=PANEL,fg=FG,selectbackground=ACCENT,selectforeground='#ffffff')
         self.listbox.pack(fill='x')
         self.mapping=[];self.reload()
         ttk.Button(area,text='Yeni Onaylanan PETEK Fotoğraflarını Listele',command=self.reload).pack(anchor='w',pady=5)

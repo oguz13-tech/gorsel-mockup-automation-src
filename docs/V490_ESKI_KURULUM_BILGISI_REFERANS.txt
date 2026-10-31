@@ -1,0 +1,67 @@
+GÖRSEL ÜRETİM MERKEZİ V4.9.0 — WINDOWS ADAY / GÜVENLİ TESLİM
+Tarih: 31 Ekim 2026
+KAYNAK: Kullanıcının yüklediği V4.8.8 f1fa6bb2 ZIP paketinden İZOLE bir kopya.
+Bu ZIP için henüz GitHub PR/commit yayımlanmadı. Gerçek Windows kullanıcı kabulü: WINDOWS_NOT_VERIFIED.
+
+1) ÇALIŞAN PROGRAMI VE VERİ KLASÖRÜNÜ KORU
+Mevcut eski V4.8.8'i ve orijinal şablonları SİLME/TAŞIMA.
+Ana veri yolu: C:\Users\oguzc\OneDrive\Masaüstü\GörselÜretme-ve-Mockup Otomasyonu
+İlk açılışta bu klasörün seçili olduğunu kontrol et.
+Bu ZIP'i Ana Veri Klasörünün İÇİNE VEYA eski program klasörünün ÜZERİNE ÇIKARMA.
+
+2) KURULUM
+Arşivi C:\AI_WORK\GORSEL_MERKEZ_V490_ADAY\ gibi ayrı ve boş bir klasöre aç.
+ZIP içindeki GORSEL_V46_CANDIDATE\BASLAT_V47_WINDOWS.bat dosyasına çift tıkla.
+Sistemde Python 3.11 ile uyumlu ortam gereklidir; paket eski V4.8.8 başlangıç mekanizmasını korur.
+V490_DOGRULA_WINDOWS.bat ile ZIP dosya hash ve kısa test kontrolünü uygula.
+Aynı anda V4.8.8 ve V4.9.0 merkezini açma; önce eskisini güvenli kapat.
+
+3) YAPILANLAR
+- Modern koyu mor-magenda dashboard: ana sayfa, kartlar, sol menü, tema standardı.
+- Şablon inceleme web arayüzünde modern karanlık CSS / daha okunaklı alanlar.
+- PETEK ortak web editöründe modern CSS, 14px ve üstü işlem metinleri.
+- Windows üretim ve PETEK Tk ekranlarında ortak koyu renk paleti ve görünürlük iyileştirmesi.
+- Profesyonel Araçlar sayfasında modern kartlar ve YATAY - DİKEY GÖRSEL SEÇİCİ.
+- Görsel seçici: EXIF dahil gerçek fotoğraf yönü, 1% kare toleransı, üç klasör,
+  kaynak görüntülere dokunmayan KOPYALA varsayılanı, gerekirse çift onayla TAŞI,
+  dosya çakışmasında benzersiz ad, eksiksiz kopya için SHA256, CSV rapor.
+- Eski görünüme dönüş başlatıcısı: ESKI_GORUNUME_DON_WINDOWS.bat.
+- Magenta LAB güvenli değiştirme eski kodu ve erişim düğmesi KORUNDU.
+
+4) HER ZAMAN GÜVENLİ
+- Kod paketi hiçbir onaylı şablon, veritabanı, maske veya mağaza kaydını İÇERMEZ;
+  mevcut kişisel veri klasörü kullanıcıda olduğu gibi kalır.
+- Ana ekran açıldığında görüntüler otomatik magentaya DÖNÜŞTÜRÜLMEZ.
+- MAGENTA_TOPLU_GUVENLI_DEGISTIR_WINDOWS.bat ayrı önizleme ve açık kullanıcı onayı ister.
+  Yeni magenta görüntülerin eski onayı otomatik olarak devralmasına izin verilmez.
+- Windows'ta Magenta LAB kopyalarıyla eski şablonlara gerçekten yazılıp yazılmadığı
+  henüz doğrulanmadı. Kullanıcı onayından önce çalışma verisi güncellenmez.
+
+5) TEK WINDOWS KABUL
+[ ] V4.9.0 açılışı; ana veri klasörünün eski OneDrive yolu doğru
+[ ] Ana sayfada menüler, kartlar, rapor alanı, kaydırma, gelişmiş araçlar
+[ ] Şablon inceleme; 7 kategori; kayıtlı 4 köşe; son onay ve geri yükleme
+[ ] PETEK fotoğraf/maskeler, delikler, kavisler, okunabilir yazılar
+[ ] Seri üretim ekranı; aynı tasarım iki farklı mağaza; gerçek görüntü
+[ ] Bulut link/Excel/4K: sadece geçerli kullanıcı ayarı ve kendi onayı ile
+[ ] Profesyonel Araçlar görsel seçici: 3 klasör + bozuk dosya + aynı isim
+[ ] Magenta LAB: önce rapor/önizleme, sonra açık insan onayı
+[ ] Normal V4.9.0 ve eski görünüm geri dönüş BAT ile açılıyor
+[ ] Canlı dosya, maske, SQLite ve şablon arşivindeki eski veriler korunuyor
+
+6) TEST DURUMU
+- Linux izole sentetik testler: ilgili 70 test PASS, 0 FAIL (2026-10-31).
+- Linux Xvfb Tk dashboard başlatma ve gelişmiş araç menüsü smoke: PASS.
+- Windows gerçek bilgisayarda program açılışı, Word/Trendyol/ImgBB/GPU canlı test: WINDOWS_NOT_VERIFIED.
+- Bütün eski pytest testlerinin tamamı PASS diye raporlanmıyor; eski pakette
+  bulunmayan V2_KONTROL_MERKEZI/app.py bağımlılığı ve platform-bağımlı testler var.
+- Eski V4.8.8 CI başarı rakamları V4.9.0'e otomatik aktarılmaz.
+
+7) GERİ DÖNÜŞ
+Yeni arayüzü açamazsan ZIP içindeki ESKI_GORUNUME_DON_WINDOWS.bat ile eski ekran
+kodunu kullan. Kodları tamamen geri almak için V4.9.0'i kapatıp önceden korunmuş
+V4.8.8 uygulama klasöründen başlat. Ana veri klasörlerini KOPYALAMA/SİLME.
+
+8) EK DEĞERLENDİRME
+Bu bir WINDOWS_ADAY paketidir; gerçek kullanıcının Windows PC'sinde yedi kategori
+ve PETEK üretimi kabul edilmeden kesin FINAL / LIVE_GO olarak ilan edilemez.

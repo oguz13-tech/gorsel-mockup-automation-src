@@ -256,6 +256,10 @@ def discover_all_approved_seven_categories(
             uid = str(entry.get("uid") or "")
             if not uid or uid in seen_uids:
                 continue
+            if entry.get('is_current') is False:
+                skipped.append({'template_uid':uid,'category':'06_Petek_Kapama',
+                                'reason':'Eski onaylı revizyon; geçerli yeni maskeyle üretilecek'})
+                continue
             if entry.get("status") != "APPROVED":
                 skipped.append(
                     {

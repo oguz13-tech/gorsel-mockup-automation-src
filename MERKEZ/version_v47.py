@@ -2,7 +2,7 @@
 
 Changing this identity cannot claim live release acceptance.
 """
-VERSION = "V4.8.8"
+VERSION = "V4.10.1"
 RELEASE_CHANNEL = "WINDOWS_ADAY"
-RELEASE_STATUS = "CI doğrulandı; gerçek Windows kullanıcı kabulü bekliyor"
+RELEASE_STATUS = "PETEK liste/tek onay, 7 kategori durum teması, doğrudan kart taşıma ve açıklamalı hatalar; Windows kabulü bekliyor"
 TITLE = f"{VERSION} {RELEASE_CHANNEL} — {RELEASE_STATUS}"

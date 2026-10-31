@@ -1,0 +1,2411 @@
+{
+  "version": "V4.10.1",
+  "created_utc": "2026-10-31T18:30:00Z",
+  "files": [
+    {
+      "path": "99_SISTEM_MOTORLARI_VE_KODLAR/SISTEM_MOTORU/check_shifts.py",
+      "bytes": 953,
+      "sha256": "668763d077eba4e17c9126d617d2ee6e81c4851588a76b9fad976f056d06a034"
+    },
+    {
+      "path": "99_SISTEM_MOTORLARI_VE_KODLAR/SISTEM_MOTORU/config.py",
+      "bytes": 6674,
+      "sha256": "930a9ebd1159151aee9accb74dc3109ae4ab5ef7d8e76d713de9c73e4e1a4950"
+    },
+    {
+      "path": "99_SISTEM_MOTORLARI_VE_KODLAR/SISTEM_MOTORU/final_fix.py",
+      "bytes": 642,
+      "sha256": "795128302dae4797b9a822fefa660550b593dc301b6078c695ba8474a41285e3"
+    },
+    {
+      "path": "99_SISTEM_MOTORLARI_VE_KODLAR/SISTEM_MOTORU/fix_json_keys.py",
+      "bytes": 654,
+      "sha256": "be19c1ba77463153579984bf6d01f976b96add6d125b255a3c5e6ffa877e72c9"
+    },
+    {
+      "path": "99_SISTEM_MOTORLARI_VE_KODLAR/SISTEM_MOTORU/foreground_ai.py",
+      "bytes": 19874,
+      "sha256": "0c67ccf0ca48b0d7abe1c642cb87290d3d7749c60a846555462427d0f52f3af0"
+    },
+    {
+      "path": "99_SISTEM_MOTORLARI_VE_KODLAR/SISTEM_MOTORU/generate_links_md.py",
+      "bytes": 668,
+      "sha256": "98e69a8f828f0fc096410c286a7cecfd3f0926b90664ebf834fa15bce2151e83"
+    },
+    {
+      "path": "99_SISTEM_MOTORLARI_VE_KODLAR/SISTEM_MOTORU/generate_test_13er_tane.py",
+      "bytes": 6738,
+      "sha256": "fe1f96dc6c52231d3098862a966139f4467366b2eaad5f4d49b9916e2182f042"
+    },
+    {
+      "path": "99_SISTEM_MOTORLARI_VE_KODLAR/SISTEM_MOTORU/kalite_artirici_otomasyon.py",
+      "bytes": 10081,
+      "sha256": "c14f93c3f03126e3ff8986ad4ef03d51d8ee479b2de8ab42c115eab06dd8fde1"
+    },
+    {
+      "path": "99_SISTEM_MOTORLARI_VE_KODLAR/SISTEM_MOTORU/legacy_recovery_preview.py",
+      "bytes": 2851,
+      "sha256": "9f600f2847729e5e40a8893d1aeb7594c63e7160575aad600ea640d0ed7e48f9"
+    },
+    {
+      "path": "99_SISTEM_MOTORLARI_VE_KODLAR/SISTEM_MOTORU/manuel_mockup_motoru.py",
+      "bytes": 10550,
+      "sha256": "cbefd597cf3fe43d2a91d7f1c6eb353a0ee4538614b5c5fd7da0e47a248eb84c"
+    },
+    {
+      "path": "99_SISTEM_MOTORLARI_VE_KODLAR/SISTEM_MOTORU/migrate_to_png.py",
+      "bytes": 945,
+      "sha256": "63e59b3f3ac50bb6255dab558d68e586d6f8a50b93977c9444493eae50acca1c"
+    },
+    {
+      "path": "99_SISTEM_MOTORLARI_VE_KODLAR/SISTEM_MOTORU/pc_master_factory.py",
+      "bytes": 224150,
+      "sha256": "7ba183541ba441996b84e5823092dc2d1a9d026ca74b99760b46976a3f6697f8"
+    },
+    {
+      "path": "99_SISTEM_MOTORLARI_VE_KODLAR/SISTEM_MOTORU/rescue_edits.py",
+      "bytes": 651,
+      "sha256": "e3e1e11d37723b94b95fab83c361a33a89dea16c6253a8a0ce67b69fc0c5841a"
+    },
+    {
+      "path": "99_SISTEM_MOTORLARI_VE_KODLAR/SISTEM_MOTORU/rescue_edits_all.py",
+      "bytes": 663,
+      "sha256": "b7ba477c52b8ee5f5b07b7150503e274238427fb76ab0c89bd1be721480ffc26"
+    },
+    {
+      "path": "99_SISTEM_MOTORLARI_VE_KODLAR/SISTEM_MOTORU/rollback.py",
+      "bytes": 639,
+      "sha256": "e2f66679c0abe827250534a107936e0cb6bd7c98e9404f09e8659996c92722ef"
+    },
+    {
+      "path": "99_SISTEM_MOTORLARI_VE_KODLAR/SISTEM_MOTORU/sablon_beyazlatma_motoru.py",
+      "bytes": 9243,
+      "sha256": "670ead69c7e93a8f6edb3ae3b9e264d58938f11f8b236d6bc1fc0c35fec44024"
+    },
+    {
+      "path": "99_SISTEM_MOTORLARI_VE_KODLAR/SISTEM_MOTORU/sablon_oto_izleyici.py",
+      "bytes": 45339,
+      "sha256": "1696d2fb67f46fc9bfa656eb132bde4161aa9a1027f0093eca8493000857b1e9"
+    },
+    {
+      "path": "99_SISTEM_MOTORLARI_VE_KODLAR/SISTEM_MOTORU/sistem_otomatik_onarici.py",
+      "bytes": 1046,
+      "sha256": "d3b2a091fc7b264f57c094cc7152ee7ce9be56203c2a0dba345cf690fce9d9c2"
+    },
+    {
+      "path": "99_SISTEM_MOTORLARI_VE_KODLAR/SISTEM_MOTORU/temizlik_motoru.py",
+      "bytes": 1702,
+      "sha256": "4cba7bff11929d5efa70ab9e74e9a2e378f13a3b7c5f3093cc007f4b59abcba9"
+    },
+    {
+      "path": "99_SISTEM_MOTORLARI_VE_KODLAR/SISTEM_MOTORU/test_effects/create_and_compare_effects.py",
+      "bytes": 8593,
+      "sha256": "253cdd73420570fd4d875734fd243af1a556f9ab243043115f3996d0f422321a"
+    },
+    {
+      "path": "99_SISTEM_MOTORLARI_VE_KODLAR/SISTEM_MOTORU/test_effects/render_peacock_match.py",
+      "bytes": 6648,
+      "sha256": "2a087944280597ffc6e63936a60efd6b31272ea987e5db7fbb6633ac6971777a"
+    },
+    {
+      "path": "99_SISTEM_MOTORLARI_VE_KODLAR/SISTEM_MOTORU/test_new_glass_renderer.py",
+      "bytes": 12251,
+      "sha256": "b89736c6e5318b2d501c28b47eb22d18789ecfd290f726b3bd2f8d121d9ebc6c"
+    },
+    {
+      "path": "99_SISTEM_MOTORLARI_VE_KODLAR/SISTEM_MOTORU/test_safety.py",
+      "bytes": 1833,
+      "sha256": "ffa3f871993a4f5b5c31ce664c9719b71ab4d4ae6aeb0f018dc2153e2937be97"
+    },
+    {
+      "path": "99_SISTEM_MOTORLARI_VE_KODLAR/SISTEM_MOTORU/ultimate_rescue.py",
+      "bytes": 660,
+      "sha256": "445f64d06fdc0e47be31e2f8c25f53651a5330517ce10f47b25aa0d16b5e2ba8"
+    },
+    {
+      "path": "99_SISTEM_MOTORLARI_VE_KODLAR/TEST_LINKS.md",
+      "bytes": 9478,
+      "sha256": "f90df5be98e9eaf2c9db083d5dfa0117b746088f744d4f59249186afc42a1da0"
+    },
+    {
+      "path": "99_SISTEM_MOTORLARI_VE_KODLAR/_GELISTIRME_ARTIKLARI_ARSIVI/mockup_mask_inspector.py",
+      "bytes": 3816,
+      "sha256": "8fb81a685fe8778819ec86b22b87a0b64a3d49f2c39cdd7427852932a2773bf9"
+    },
+    {
+      "path": "99_SISTEM_MOTORLARI_VE_KODLAR/_GELISTIRME_ARTIKLARI_ARSIVI/renamer_script.py",
+      "bytes": 2951,
+      "sha256": "1e79cdd931cb579b0e83d79fe09f16af715021b12ec48dd3761a9ae556e2ea2e"
+    },
+    {
+      "path": "99_SISTEM_MOTORLARI_VE_KODLAR/_GELISTIRME_ARTIKLARI_ARSIVI/scratch_print_links.py",
+      "bytes": 961,
+      "sha256": "d9a88579ba4b3e7cb12d4ef0ef89f7a6735fe9c39784433199eed114807fb724"
+    },
+    {
+      "path": "AI_Kalite_Artirici/README_windows.md",
+      "bytes": 1901,
+      "sha256": "1d684ee832f8483155842695b2afa0ad5b2eb880b6ac644bfbb02be78d100ee1"
+    },
+    {
+      "path": "AI_Kalite_Artirici/kalite_motoru.py",
+      "bytes": 3864,
+      "sha256": "cfda78d8ce92190eec86d7d69f410b7b814b1d46daa40debd05ab80401be76d5"
+    },
+    {
+      "path": "BAGIMSIZ_ARACLAR/01_GORSEL_ISIMLENDIRICI.bat",
+      "bytes": 499,
+      "sha256": "d67f43cbac92546e9a40461079fbed109d1a1781e4243b8989eb3ccc781713fa"
+    },
+    {
+      "path": "BAGIMSIZ_ARACLAR/02_FORMAT_CEVIRICI_PNG_JPG.bat",
+      "bytes": 501,
+      "sha256": "fbc585e10d72638792826769020b5580b3f1c60c82b973f86384061d089c5397"
+    },
+    {
+      "path": "BAGIMSIZ_ARACLAR/03_OTOMATIK_FILIGRAN.bat",
+      "bytes": 505,
+      "sha256": "26e854532c6b0df9ef245f2cce24b864d6b41d9dc5d42c3b4e1ab6694d59fa32"
+    },
+    {
+      "path": "BAGIMSIZ_ARACLAR/04_AI_4K_KALITE_ARTIRICI.bat",
+      "bytes": 491,
+      "sha256": "8cb955d6603e07f6721ca412448122194d512351c3e94bb88066eb24fa1f7db5"
+    },
+    {
+      "path": "BAGIMSIZ_ARACLAR/05_GORSEL_LINK_EXCEL.bat",
+      "bytes": 497,
+      "sha256": "7082aa80663713348051dbe9fc4d99783c0bff546646eb7f7d96203bd29cb808"
+    },
+    {
+      "path": "BAGIMSIZ_ARACLAR/06_SEO_URUN_ADI_URETICI.bat",
+      "bytes": 507,
+      "sha256": "ff0551839f2e2bc06ea667a1e0f26edac7be6b96885152d16793fb46a32851bb"
+    },
+    {
+      "path": "BAGIMSIZ_ARACLAR/07_SEO_ACIKLAMA_URETICI.bat",
+      "bytes": 519,
+      "sha256": "3360c01a68b66f4c46f387660d804da1e376cf5b09b0e6d1ac446d731451eab3"
+    },
+    {
+      "path": "BAGIMSIZ_ARACLAR/08_RECURSIVE_PNG_DONUSTURUCU.bat",
+      "bytes": 513,
+      "sha256": "10d292457b948d5e11ec3c9dd75ffdd763887cc68ea479eb27000496a1abf123"
+    },
+    {
+      "path": "BAGIMSIZ_ARACLAR/09_GUVENLI_YENI_SABLON_EKLE.bat",
+      "bytes": 497,
+      "sha256": "7b5e934c0cea4fdd5a6e9d04b2fdd3c9d4647bb326a62ad5c3278de29d4c78de"
+    },
+    {
+      "path": "BAGIMSIZ_ARACLAR/10_YATAY_DİKEY_GORSEL_SECICI.bat",
+      "bytes": 519,
+      "sha256": "5a5d2a9db93d8a758a081a9000f17dc6db346ebc28397351690dff90220a9694"
+    },
+    {
+      "path": "BAKIM_V472_MAGENTA_KLASOR_DENETIM_WINDOWS.bat",
+      "bytes": 401,
+      "sha256": "9df5e8976311b6d6444c8763fe79eeebac2aaab2c4baba7fc62181c1c02007cb"
+    },
+    {
+      "path": "BASLAT_V46_WINDOWS.bat",
+      "bytes": 325,
+      "sha256": "7c730782b95fe39e55d130888bd1d3f4a4eb0c31bf7d9cf2ca9478c56d20319d"
+    },
+    {
+      "path": "BASLAT_V47_WINDOWS.bat",
+      "bytes": 166,
+      "sha256": "1627df4b494dd639c57b6bbd0c4166849415ef81206b251577fcc7ce2934adc8"
+    },
+    {
+      "path": "BUNU_OKU_ILK.txt",
+      "bytes": 2715,
+      "sha256": "f0489598f792a8244d6d2e472b38ee00fca3596cfb7c65f56d87f68235bb3129"
+    },
+    {
+      "path": "ESKI_GORUNUME_DON_WINDOWS.bat",
+      "bytes": 225,
+      "sha256": "5af63055003fb81c671447ef3464d03e07ae7e578de99c67450efb10b5ed0fcb"
+    },
+    {
+      "path": "KUR_ORTAM_V491_WINDOWS.bat",
+      "bytes": 1249,
+      "sha256": "92e715e39639ef5923e37eab7fb7ceb218619fba9258dabe8ca4dd60f4db3be8"
+    },
+    {
+      "path": "KUR_REAL_ESRGAN_4K_WINDOWS.bat",
+      "bytes": 424,
+      "sha256": "0cdc56bdfa13e35d0ead4576370240be3fda4f1af6cca25d93b6c7de37aac7cb"
+    },
+    {
+      "path": "KUR_REAL_ESRGAN_4K_WINDOWS.ps1",
+      "bytes": 8297,
+      "sha256": "cf67e647223f711fde2e1fb323f3ec239bba940c46c6eac3e63a3d4964b99014"
+    },
+    {
+      "path": "LEGACY_LAUNCHERS_REFERENCE/00_KLASORLERI_VE_SABLONLARI_YENILE.bat.reference.txt",
+      "bytes": 362,
+      "sha256": "e9932a95cdc56a1143932a1aeaded29b9a95cd2ea9cd8b545891555d1cb66ae3"
+    },
+    {
+      "path": "LEGACY_LAUNCHERS_REFERENCE/4K_KALITE_YUKSELT_ESRGAN.bat.reference.txt",
+      "bytes": 524,
+      "sha256": "4f37d12eec481cbca30e16e87804d5e77a99cb9aeb2e4edd4d0eadc0ad2e634f"
+    },
+    {
+      "path": "LEGACY_LAUNCHERS_REFERENCE/ARACLAR_MERKEZINI_AC.bat.reference.txt",
+      "bytes": 135,
+      "sha256": "804acac8bee45b394ab0f98d733e5fd12ea72f7f86a3de66f88c6a3dee67688c"
+    },
+    {
+      "path": "LEGACY_LAUNCHERS_REFERENCE/BASLAT_V44_TEK_MERKEZ_WINDOWS.bat.reference.txt",
+      "bytes": 305,
+      "sha256": "f0ed6d08cf03f9bcb3cfd2d2b9cca454e2a00108e0fe93c0681c03bbdfdb603c"
+    },
+    {
+      "path": "LEGACY_LAUNCHERS_REFERENCE/BASLAT_V45_TEK_MERKEZ_WINDOWS.bat.reference.txt",
+      "bytes": 289,
+      "sha256": "daaa2c79753aa108178190251a5f6471aefa9bcafd0a28223bbcdaad96268f16"
+    },
+    {
+      "path": "LEGACY_LAUNCHERS_REFERENCE/BASLAT_WINDOWS.bat.reference.txt",
+      "bytes": 42,
+      "sha256": "fc38ce682b3e7c381461737f3bab6e5c2daa026f18ec1c8add68d7f02201e325"
+    },
+    {
+      "path": "LEGACY_LAUNCHERS_REFERENCE/BIRLESIK_V42_BASLAT_WINDOWS.bat.reference.txt",
+      "bytes": 296,
+      "sha256": "c3c070beb16673127c9d658cdbd9214b711cd1757a1119683d90f140c10eceb1"
+    },
+    {
+      "path": "LEGACY_LAUNCHERS_REFERENCE/G3_GUVENLIK_KONTROLU_WINDOWS.bat.reference.txt",
+      "bytes": 358,
+      "sha256": "2a7e8fa762c7d64e8c8b2bc30b55e023c2fe66e384a648673deb9010600dcc0c"
+    },
+    {
+      "path": "LEGACY_LAUNCHERS_REFERENCE/GERI_AL_WINDOWS.bat.reference.txt",
+      "bytes": 528,
+      "sha256": "d8573d0d9373257bb26e4adc0c053065477d524a05dcb849fa9c7d6b996a8928"
+    },
+    {
+      "path": "LEGACY_LAUNCHERS_REFERENCE/GRUP1_BASLAT_WINDOWS.bat.reference.txt",
+      "bytes": 274,
+      "sha256": "889a4511b092f9068a640f6352e4f0fa26eb0be1e2830684c5434145d1f5521d"
+    },
+    {
+      "path": "LEGACY_LAUNCHERS_REFERENCE/INCELEME_MERKEZINI_AC.bat.reference.txt",
+      "bytes": 130,
+      "sha256": "feafe76bbb384bf05ed4a74b84f1f8e3b712cd904a9cab29c6f66a0a28be9ff9"
+    },
+    {
+      "path": "LEGACY_LAUNCHERS_REFERENCE/INCELEME_MERKEZINI_AC.ps1.reference.txt",
+      "bytes": 5643,
+      "sha256": "1251de7a858ce91ffbc9980b01accfc313e368f4a01acdcae6694e7b5acddac4"
+    },
+    {
+      "path": "LEGACY_LAUNCHERS_REFERENCE/KURULUM_WINDOWS.bat.reference.txt",
+      "bytes": 43,
+      "sha256": "c3719666a7943bb5e79cf857c4c121a86998e76739413415ff139fd76c8c71e2"
+    },
+    {
+      "path": "LEGACY_LAUNCHERS_REFERENCE/MANUEL_GORSELLERDEN_MOCKUP_URET.bat.reference.txt",
+      "bytes": 766,
+      "sha256": "a818f0bc13c19e9d677443a48c2a21c121b8b3e2785ef5501ed7f245141fc68f"
+    },
+    {
+      "path": "LEGACY_LAUNCHERS_REFERENCE/ON_KONTROL_WINDOWS.bat.reference.txt",
+      "bytes": 46,
+      "sha256": "26702fef35b1c69860007cd7a60cc5bf65c679e08117f0beb042046c10471a32"
+    },
+    {
+      "path": "LEGACY_LAUNCHERS_REFERENCE/OTOMASYONU_CALISTIR.bat.reference.txt",
+      "bytes": 3011,
+      "sha256": "51798533d7c57665aaaf90a73c1bd784826552c30739d430a909a1f5f4d5ac3f"
+    },
+    {
+      "path": "LEGACY_LAUNCHERS_REFERENCE/P0_RELEASE_HAZIRLIK_ON_KONTROL.bat.reference.txt",
+      "bytes": 580,
+      "sha256": "24d8b6169316f83a6565ad4aefe8034607031fa8ca9e0f41418f540a482da7d8"
+    },
+    {
+      "path": "LEGACY_LAUNCHERS_REFERENCE/P0_RELEASE_ONAYLI_KOD_GERI_AL.bat.reference.txt",
+      "bytes": 587,
+      "sha256": "3066cdfc66bed777ee1171a6d78eed3eed9a829cdf588099a9d69d1102cdef6b"
+    },
+    {
+      "path": "LEGACY_LAUNCHERS_REFERENCE/P0_RELEASE_ONAYLI_KOD_KUR.bat.reference.txt",
+      "bytes": 592,
+      "sha256": "658b39041a31eba1bf81ba68a3e1a95fcd1b0bb5bdc61a2c012e749984b2fb8f"
+    },
+    {
+      "path": "LEGACY_LAUNCHERS_REFERENCE/P0_RELEASE_ONAYLI_YEDEK_AL.bat.reference.txt",
+      "bytes": 725,
+      "sha256": "25730074f5a44d7e329d956a86e8d7a298eb2ae74ac6ef03a8d55e6ec4cccaff"
+    },
+    {
+      "path": "LEGACY_LAUNCHERS_REFERENCE/P0_RELEASE_ON_KONTROL.bat.reference.txt",
+      "bytes": 380,
+      "sha256": "37bc8c224ea0272567ff21248b04aa098045a19eb502367f0fe6a97183c02861"
+    },
+    {
+      "path": "LEGACY_LAUNCHERS_REFERENCE/SABLON_OTO_SEFFAFLASTIRICI_BASLAT.bat.reference.txt",
+      "bytes": 554,
+      "sha256": "68eb211dfa8cf8c64b1ac4392b26d8c81facf205ab733e13d13bf144ffc754e3"
+    },
+    {
+      "path": "LEGACY_LAUNCHERS_REFERENCE/SISTEMI_BASLAT.bat.reference.txt",
+      "bytes": 1577,
+      "sha256": "6d5e3fe58d20c8794fb3401ae15fd78b3acebcfd24f16c4ab6b36e4318cbfd02"
+    },
+    {
+      "path": "LEGACY_LAUNCHERS_REFERENCE/TEST_ET_WINDOWS.bat.reference.txt",
+      "bytes": 536,
+      "sha256": "1ac0017113a4b67f8759fa36c5c31a9da738928d953c5a33351c1893615d9145"
+    },
+    {
+      "path": "LEGACY_LAUNCHERS_REFERENCE/TOPLU_GORSEL_LINKLEYICI.bat.reference.txt",
+      "bytes": 499,
+      "sha256": "bf1d3ca7b57552ca4a26adbae70196d920ceb8f96de5e91ac0d3ba6d164c2a8e"
+    },
+    {
+      "path": "LEGACY_LAUNCHERS_REFERENCE/V46_SAFE_LAUNCHER.bat.reference.txt",
+      "bytes": 68,
+      "sha256": "053e910c23c0dad614c699f8cce413f7d2eb19ce41b6fd58d9d02ad42d128a30"
+    },
+    {
+      "path": "LEGACY_LAUNCHERS_REFERENCE/WINDOWS_HIZLI_BASLAT.bat.reference.txt",
+      "bytes": 2131,
+      "sha256": "2d926980715c70639460ad84ecff1eec168a83452542d050b2433066f3209e7b"
+    },
+    {
+      "path": "LEGACY_LAUNCHERS_REFERENCE/YENI_SABLONLARI_HAZIRLA.bat.reference.txt",
+      "bytes": 1458,
+      "sha256": "a8cb15bed4f0516c9bf5318e9727e01ccedb5735b7d805a7d11a609dde200072"
+    },
+    {
+      "path": "LEGACY_LAUNCHERS_REFERENCE/check_recycle_bin.ps1.reference.txt",
+      "bytes": 404,
+      "sha256": "59130f0236b8ba4e8e3d344f2d967d8a5f3a8809d64ba8c4bc897708c5abad84"
+    },
+    {
+      "path": "LEGACY_REFERANS_KOD/99_SISTEM_MOTORLARI_VE_KODLAR/SISTEM_MOTORU/check_shifts.py",
+      "bytes": 953,
+      "sha256": "668763d077eba4e17c9126d617d2ee6e81c4851588a76b9fad976f056d06a034"
+    },
+    {
+      "path": "LEGACY_REFERANS_KOD/99_SISTEM_MOTORLARI_VE_KODLAR/SISTEM_MOTORU/config.py",
+      "bytes": 6674,
+      "sha256": "930a9ebd1159151aee9accb74dc3109ae4ab5ef7d8e76d713de9c73e4e1a4950"
+    },
+    {
+      "path": "LEGACY_REFERANS_KOD/99_SISTEM_MOTORLARI_VE_KODLAR/SISTEM_MOTORU/final_fix.py",
+      "bytes": 642,
+      "sha256": "795128302dae4797b9a822fefa660550b593dc301b6078c695ba8474a41285e3"
+    },
+    {
+      "path": "LEGACY_REFERANS_KOD/99_SISTEM_MOTORLARI_VE_KODLAR/SISTEM_MOTORU/fix_json_keys.py",
+      "bytes": 654,
+      "sha256": "be19c1ba77463153579984bf6d01f976b96add6d125b255a3c5e6ffa877e72c9"
+    },
+    {
+      "path": "LEGACY_REFERANS_KOD/99_SISTEM_MOTORLARI_VE_KODLAR/SISTEM_MOTORU/foreground_ai.py",
+      "bytes": 19874,
+      "sha256": "0c67ccf0ca48b0d7abe1c642cb87290d3d7749c60a846555462427d0f52f3af0"
+    },
+    {
+      "path": "LEGACY_REFERANS_KOD/99_SISTEM_MOTORLARI_VE_KODLAR/SISTEM_MOTORU/generate_links_md.py",
+      "bytes": 668,
+      "sha256": "98e69a8f828f0fc096410c286a7cecfd3f0926b90664ebf834fa15bce2151e83"
+    },
+    {
+      "path": "LEGACY_REFERANS_KOD/99_SISTEM_MOTORLARI_VE_KODLAR/SISTEM_MOTORU/generate_test_13er_tane.py",
+      "bytes": 6738,
+      "sha256": "fe1f96dc6c52231d3098862a966139f4467366b2eaad5f4d49b9916e2182f042"
+    },
+    {
+      "path": "LEGACY_REFERANS_KOD/99_SISTEM_MOTORLARI_VE_KODLAR/SISTEM_MOTORU/kalite_artirici_otomasyon.py",
+      "bytes": 10081,
+      "sha256": "c14f93c3f03126e3ff8986ad4ef03d51d8ee479b2de8ab42c115eab06dd8fde1"
+    },
+    {
+      "path": "LEGACY_REFERANS_KOD/99_SISTEM_MOTORLARI_VE_KODLAR/SISTEM_MOTORU/legacy_recovery_preview.py",
+      "bytes": 2851,
+      "sha256": "9f600f2847729e5e40a8893d1aeb7594c63e7160575aad600ea640d0ed7e48f9"
+    },
+    {
+      "path": "LEGACY_REFERANS_KOD/99_SISTEM_MOTORLARI_VE_KODLAR/SISTEM_MOTORU/manuel_mockup_motoru.py",
+      "bytes": 10550,
+      "sha256": "cbefd597cf3fe43d2a91d7f1c6eb353a0ee4538614b5c5fd7da0e47a248eb84c"
+    },
+    {
+      "path": "LEGACY_REFERANS_KOD/99_SISTEM_MOTORLARI_VE_KODLAR/SISTEM_MOTORU/migrate_to_png.py",
+      "bytes": 945,
+      "sha256": "63e59b3f3ac50bb6255dab558d68e586d6f8a50b93977c9444493eae50acca1c"
+    },
+    {
+      "path": "LEGACY_REFERANS_KOD/99_SISTEM_MOTORLARI_VE_KODLAR/SISTEM_MOTORU/pc_master_factory.py",
+      "bytes": 224150,
+      "sha256": "7ba183541ba441996b84e5823092dc2d1a9d026ca74b99760b46976a3f6697f8"
+    },
+    {
+      "path": "LEGACY_REFERANS_KOD/99_SISTEM_MOTORLARI_VE_KODLAR/SISTEM_MOTORU/rescue_edits.py",
+      "bytes": 651,
+      "sha256": "e3e1e11d37723b94b95fab83c361a33a89dea16c6253a8a0ce67b69fc0c5841a"
+    },
+    {
+      "path": "LEGACY_REFERANS_KOD/99_SISTEM_MOTORLARI_VE_KODLAR/SISTEM_MOTORU/rescue_edits_all.py",
+      "bytes": 663,
+      "sha256": "b7ba477c52b8ee5f5b07b7150503e274238427fb76ab0c89bd1be721480ffc26"
+    },
+    {
+      "path": "LEGACY_REFERANS_KOD/99_SISTEM_MOTORLARI_VE_KODLAR/SISTEM_MOTORU/rollback.py",
+      "bytes": 639,
+      "sha256": "e2f66679c0abe827250534a107936e0cb6bd7c98e9404f09e8659996c92722ef"
+    },
+    {
+      "path": "LEGACY_REFERANS_KOD/99_SISTEM_MOTORLARI_VE_KODLAR/SISTEM_MOTORU/sablon_beyazlatma_motoru.py",
+      "bytes": 9243,
+      "sha256": "670ead69c7e93a8f6edb3ae3b9e264d58938f11f8b236d6bc1fc0c35fec44024"
+    },
+    {
+      "path": "LEGACY_REFERANS_KOD/99_SISTEM_MOTORLARI_VE_KODLAR/SISTEM_MOTORU/sablon_oto_izleyici.py",
+      "bytes": 45339,
+      "sha256": "1696d2fb67f46fc9bfa656eb132bde4161aa9a1027f0093eca8493000857b1e9"
+    },
+    {
+      "path": "LEGACY_REFERANS_KOD/99_SISTEM_MOTORLARI_VE_KODLAR/SISTEM_MOTORU/sistem_otomatik_onarici.py",
+      "bytes": 1046,
+      "sha256": "d3b2a091fc7b264f57c094cc7152ee7ce9be56203c2a0dba345cf690fce9d9c2"
+    },
+    {
+      "path": "LEGACY_REFERANS_KOD/99_SISTEM_MOTORLARI_VE_KODLAR/SISTEM_MOTORU/temizlik_motoru.py",
+      "bytes": 1702,
+      "sha256": "4cba7bff11929d5efa70ab9e74e9a2e378f13a3b7c5f3093cc007f4b59abcba9"
+    },
+    {
+      "path": "LEGACY_REFERANS_KOD/99_SISTEM_MOTORLARI_VE_KODLAR/SISTEM_MOTORU/test_effects/create_and_compare_effects.py",
+      "bytes": 8593,
+      "sha256": "253cdd73420570fd4d875734fd243af1a556f9ab243043115f3996d0f422321a"
+    },
+    {
+      "path": "LEGACY_REFERANS_KOD/99_SISTEM_MOTORLARI_VE_KODLAR/SISTEM_MOTORU/test_effects/render_peacock_match.py",
+      "bytes": 6648,
+      "sha256": "2a087944280597ffc6e63936a60efd6b31272ea987e5db7fbb6633ac6971777a"
+    },
+    {
+      "path": "LEGACY_REFERANS_KOD/99_SISTEM_MOTORLARI_VE_KODLAR/SISTEM_MOTORU/test_new_glass_renderer.py",
+      "bytes": 12251,
+      "sha256": "b89736c6e5318b2d501c28b47eb22d18789ecfd290f726b3bd2f8d121d9ebc6c"
+    },
+    {
+      "path": "LEGACY_REFERANS_KOD/99_SISTEM_MOTORLARI_VE_KODLAR/SISTEM_MOTORU/test_safety.py",
+      "bytes": 1833,
+      "sha256": "ffa3f871993a4f5b5c31ce664c9719b71ab4d4ae6aeb0f018dc2153e2937be97"
+    },
+    {
+      "path": "LEGACY_REFERANS_KOD/99_SISTEM_MOTORLARI_VE_KODLAR/SISTEM_MOTORU/ultimate_rescue.py",
+      "bytes": 660,
+      "sha256": "445f64d06fdc0e47be31e2f8c25f53651a5330517ce10f47b25aa0d16b5e2ba8"
+    },
+    {
+      "path": "LEGACY_REFERANS_KOD/BAGIMSIZ_ARACLAR/01_GORSEL_ISIMLENDIRICI.bat",
+      "bytes": 126,
+      "sha256": "26ca70b2939e2d60bfcc000dddd375d1f728425d3135030529a65cbb591ab581"
+    },
+    {
+      "path": "LEGACY_REFERANS_KOD/BAGIMSIZ_ARACLAR/02_FORMAT_CEVIRICI_PNG_JPG.bat",
+      "bytes": 130,
+      "sha256": "449508abe4088b8e93bbe0fae9f4c9d1eb78a8ceed574de5934aae0e83d43e85"
+    },
+    {
+      "path": "LEGACY_REFERANS_KOD/BAGIMSIZ_ARACLAR/03_OTOMATIK_FILIGRAN.bat",
+      "bytes": 126,
+      "sha256": "9c02ef0a3db769b7528478f5edc3b7d36f0befc6b11c17b13910f45e004483d9"
+    },
+    {
+      "path": "LEGACY_REFERANS_KOD/BAGIMSIZ_ARACLAR/04_AI_4K_KALITE_ARTIRICI.bat",
+      "bytes": 123,
+      "sha256": "533221d20ec923630ca1798abc46cae4d373d3a6e0ea90e7a982ca6b08d432c3"
+    },
+    {
+      "path": "LEGACY_REFERANS_KOD/BAGIMSIZ_ARACLAR/05_GORSEL_LINK_EXCEL.bat",
+      "bytes": 134,
+      "sha256": "de2f7b1c1e4d7ee5f6ab723dd71c8efd9636a5c00e5ffb1b0ab2135984718483"
+    },
+    {
+      "path": "LEGACY_REFERANS_KOD/BAGIMSIZ_ARACLAR/06_SEO_URUN_ADI_URETICI.bat",
+      "bytes": 130,
+      "sha256": "24969be2d71cb0f2d6e2f4b572096aea889699920aa2a769f0b6df47f60183d4"
+    },
+    {
+      "path": "LEGACY_REFERANS_KOD/BAGIMSIZ_ARACLAR/07_SEO_ACIKLAMA_URETICI.bat",
+      "bytes": 136,
+      "sha256": "a2254b8b6d6f8e834329445ab8213d086071a8d60e8c0c2d5bdb555ac37fcef4"
+    },
+    {
+      "path": "LEGACY_REFERANS_KOD/BAGIMSIZ_ARACLAR/08_RECURSIVE_PNG_DONUSTURUCU.bat",
+      "bytes": 141,
+      "sha256": "f0e401c60a5b86b252a54e522035bf1a2de485414b709fb787babb2835fda6a6"
+    },
+    {
+      "path": "LEGACY_REFERANS_KOD/BAGIMSIZ_ARACLAR/09_GUVENLI_YENI_SABLON_EKLE.bat",
+      "bytes": 276,
+      "sha256": "bea86cd71bb141b8b9478113b51eb681f32a6cdf1e914ecfcf18b7331c168cec"
+    },
+    {
+      "path": "LEGACY_REFERANS_KOD/SABLON_V2_MIMARI/app.py",
+      "bytes": 138943,
+      "sha256": "3a549265c06afbd91f23bdad81021033695b80f61d8a254b5c42ec147abcc814"
+    },
+    {
+      "path": "LEGACY_REFERANS_KOD/SABLON_V2_MIMARI/core/analysis_cache.py",
+      "bytes": 3197,
+      "sha256": "02a67fc068decefca234acfee980fb4874185ab5493314c335ff9d9c29b5919d"
+    },
+    {
+      "path": "LEGACY_REFERANS_KOD/SABLON_V2_MIMARI/core/db.py",
+      "bytes": 18271,
+      "sha256": "3440fb273241e47e1f366a69b54c84038572b42ae82a59b1d1e95d1da2685624"
+    },
+    {
+      "path": "LEGACY_REFERANS_KOD/SABLON_V2_MIMARI/core/factory_doctor.py",
+      "bytes": 36628,
+      "sha256": "14dc195860445d6a589c97f34403a0f6a2c5b530d1e60e0b0279fb67166f8e22"
+    },
+    {
+      "path": "LEGACY_REFERANS_KOD/SABLON_V2_MIMARI/core/file_safety.py",
+      "bytes": 6842,
+      "sha256": "3f0f72805e776b99467f7caeb6ac17dddd2933c883a302cf71b81d8b0550e91d"
+    },
+    {
+      "path": "LEGACY_REFERANS_KOD/SABLON_V2_MIMARI/core/job_engine.py",
+      "bytes": 10268,
+      "sha256": "4db3e1598734e089aeb77a4b1fc486738a2081c6bfcd47ba852fe7ceb2e65469"
+    },
+    {
+      "path": "LEGACY_REFERANS_KOD/SABLON_V2_MIMARI/core/lifecycle_reconciliation.py",
+      "bytes": 37675,
+      "sha256": "99ca75d853464c93809958b0e72f96eccbcc07c3696dcd36c3bb5f957599be0e"
+    },
+    {
+      "path": "LEGACY_REFERANS_KOD/SABLON_V2_MIMARI/core/manual_production_guard.py",
+      "bytes": 3486,
+      "sha256": "fdd3579704146db3058b4695c761edcdff9231af0eb6160d7c5c1f2e19873193"
+    },
+    {
+      "path": "LEGACY_REFERANS_KOD/SABLON_V2_MIMARI/core/operation_lock.py",
+      "bytes": 3515,
+      "sha256": "906eb44020e74f65bfbdcca899dcc3d26f619078fd062e1a27c606aed424820b"
+    },
+    {
+      "path": "LEGACY_REFERANS_KOD/SABLON_V2_MIMARI/core/path_registry.py",
+      "bytes": 5135,
+      "sha256": "bed34f80c2d9c772d5e6bc1063fcba3a1be4031109c1e1024712f5b34377e2d6"
+    },
+    {
+      "path": "LEGACY_REFERANS_KOD/SABLON_V2_MIMARI/core/petek_cutout_engine.py",
+      "bytes": 848,
+      "sha256": "8563ad6ce4ee4fcfb48925c158eb22aeddd61c082c53f6e36eecabbf2669d5b9"
+    },
+    {
+      "path": "LEGACY_REFERANS_KOD/SABLON_V2_MIMARI/core/runtime_migration.py",
+      "bytes": 13162,
+      "sha256": "fb4fc4ea50b0880f51c4021f8256080dd2173f16bb17e5ccd53342268ab41c2d"
+    },
+    {
+      "path": "LEGACY_REFERANS_KOD/SABLON_V2_MIMARI/core/safe_working_revision.py",
+      "bytes": 8676,
+      "sha256": "cd1a40521f9af6200267256a5b0181fe8d136b1b6abd8e9c9a2408e94286f4c7"
+    },
+    {
+      "path": "LEGACY_REFERANS_KOD/SABLON_V2_MIMARI/core/template_identity.py",
+      "bytes": 35469,
+      "sha256": "803928e60196ceed3b72ef35c5725fec437fe4da97e3d748099462fbb3813062"
+    },
+    {
+      "path": "LEGACY_REFERANS_KOD/SABLON_V2_MIMARI/core/template_intelligence.py",
+      "bytes": 91137,
+      "sha256": "c6d09b420a73ebdfbf698ad0235706eb23421f10274973033c0437a60ee986f9"
+    },
+    {
+      "path": "LEGACY_REFERANS_KOD/SABLON_V2_MIMARI/core/vision.py",
+      "bytes": 53928,
+      "sha256": "4434133240b7508689ecf9953ed10dff51328bf9b13436c7123b217468e36f5a"
+    },
+    {
+      "path": "LEGACY_REFERANS_KOD/SABLON_V2_MIMARI/core/visual_qa_audit.py",
+      "bytes": 4473,
+      "sha256": "2540f676a352ac6eaf8dfe0eb5ef49057afbc15a84ed8b1ca1a31a68caaf551d"
+    },
+    {
+      "path": "LEGACY_REFERANS_KOD/SABLON_V2_MIMARI/core/workspace_consistency.py",
+      "bytes": 38186,
+      "sha256": "47e99ee889c6065b80bf9761b325e9b754a868bb6dee9dc54354965efb6f043c"
+    },
+    {
+      "path": "LEGACY_REFERANS_KOD/SABLON_V2_MIMARI/migrate_to_sqlite.py",
+      "bytes": 1715,
+      "sha256": "d026ed159d46f18794ddb41a292ccca6174e214ba907263d16795a95e6464b32"
+    },
+    {
+      "path": "LEGACY_REFERANS_KOD/SABLON_V2_MIMARI/static/css/style.css",
+      "bytes": 8917,
+      "sha256": "195185cde99431c9a07afdd1b2bb3246d2cd1cda5e0ee092c98432a17e3db042"
+    },
+    {
+      "path": "LEGACY_REFERANS_KOD/SABLON_V2_MIMARI/static/js/main.js",
+      "bytes": 175879,
+      "sha256": "81a56f028ba4b24ba08c96a01a7a905c890cb03d4c0cdcb065e61e40bc4010e3"
+    },
+    {
+      "path": "LEGACY_REFERANS_KOD/SABLON_V2_MIMARI/templates/index.html",
+      "bytes": 18189,
+      "sha256": "ec45ad7f94db9514a5370190a8ba99b5678524460c8ae9e234d9631f10ecb6e1"
+    },
+    {
+      "path": "LEGACY_REFERANS_KOD/SABLON_V2_MIMARI/templates/tools.html",
+      "bytes": 8288,
+      "sha256": "abf6698c807a8ffc8ba36996beda2e3a95b8c3f96a88dfbd54c1e20d825eee7d"
+    },
+    {
+      "path": "LEGACY_REFERANS_KOD/SABLON_V2_MIMARI/test_suite.py",
+      "bytes": 3790,
+      "sha256": "3bd18d583022895b0eea0a155abf30009e5be388c44ed64ce8ced4f6f103da8d"
+    },
+    {
+      "path": "LEGACY_REFERANS_KOD/SABLON_V2_MIMARI/tools_runner.py",
+      "bytes": 46123,
+      "sha256": "c71e2a2880c356e072e2535dbd982f21a1f4b272353b9838aa0ec15e876245d6"
+    },
+    {
+      "path": "LEGACY_REFERANS_KOD/SABLON_V2_MIMARI/v2_baslat.bat",
+      "bytes": 719,
+      "sha256": "38adb7c0512be04de8af6b17b4c20454be9dac27f322b1681c99cef131b1eb2f"
+    },
+    {
+      "path": "LEGACY_REFERANS_KOD/V2_KONTROL_MERKEZI/app.py",
+      "bytes": 26596,
+      "sha256": "948bac66ccc2b6ceb871e9a7b1bdc4c8b3005791bce2f3034b271f3f600f85d3"
+    },
+    {
+      "path": "LEGACY_REFERANS_KOD/V2_KONTROL_MERKEZI/templates/index.html",
+      "bytes": 19640,
+      "sha256": "abe7c8f23867d9b4a1818ea8130f8b99461912dfc7d262d93f458a11a5beb49a"
+    },
+    {
+      "path": "LEGACY_REFERANS_KOD/V2_KONTROL_MERKEZI/test_app.py",
+      "bytes": 4611,
+      "sha256": "adf92373320aceae1441a9b7de2afaa873a3af99c4bcc9fa4011f8308e0e73db"
+    },
+    {
+      "path": "LEGACY_TOOLS_REFERENCE/SABLON_DUZELTICI.py.reference.txt",
+      "bytes": 115545,
+      "sha256": "48c32611d693c32bc44c7ae2ebf881baa5e56fb180185bf3f8696465d6cbdfe9"
+    },
+    {
+      "path": "LEGACY_TOOLS_REFERENCE/check_img.py.reference.txt",
+      "bytes": 509,
+      "sha256": "619a6344d878700c617f2b68d4e5efb9f4239342710e3ab501adba103b9d5fe8"
+    },
+    {
+      "path": "LEGACY_TOOLS_REFERENCE/create_analysis_doc.py.reference.txt",
+      "bytes": 5001,
+      "sha256": "dfa29d4f681b4f8c964e37354536bd2d342295e0e623f440c42fb0594a5703c1"
+    },
+    {
+      "path": "LEGACY_TOOLS_REFERENCE/dump_html.py.reference.txt",
+      "bytes": 387,
+      "sha256": "f47f824f40c0bb90cc99e32f0a954bff99c812904af1c8b1c9536688eca35da3"
+    },
+    {
+      "path": "LEGACY_TOOLS_REFERENCE/test_system_core.py.reference.txt",
+      "bytes": 7433,
+      "sha256": "50531c9012e77f18ac68b04d914a6ba0e5ffc282aa559e473e72713df954e1c7"
+    },
+    {
+      "path": "LEGACY_TOOLS_REFERENCE/toplu_gorsel_linkle.py.reference.txt",
+      "bytes": 3560,
+      "sha256": "344192f78fb6ca4b06aee5d0d6bbe74bae51cd0d037ea333a4f05fe1f020f322"
+    },
+    {
+      "path": "MAGENTA_TOPLU_GUVENLI_DEGISTIR_WINDOWS.bat",
+      "bytes": 633,
+      "sha256": "6c5e32065ca96615f82e008bb014d9f4f959e2d988f574d7369d7c71af7d6806"
+    },
+    {
+      "path": "MERKEZ/BASLAT.bat",
+      "bytes": 401,
+      "sha256": "fecbdbc067ee4f277cab9f92add1d047fe8fc2cf832151d09c6533c3101f5c40"
+    },
+    {
+      "path": "MERKEZ/BASLAT.ps1",
+      "bytes": 544,
+      "sha256": "b940472297740b998af4899f4e753251ca5ea19d9fb73c3707d8f0c8644f4330"
+    },
+    {
+      "path": "MERKEZ/G3_GUVENLIK_KONTROLU.py",
+      "bytes": 1451,
+      "sha256": "1ad5b965f79e3c5eb3af27eabfa0142e96001399f55d753994552dda33854a5c"
+    },
+    {
+      "path": "MERKEZ/GUNLUK/BASLAT.bat",
+      "bytes": 367,
+      "sha256": "4ba2496d99eb29abd3c9991b33662759693b0632b273edf0d24a8e03d85fb59e"
+    },
+    {
+      "path": "MERKEZ/GUNLUK/BASLAT.ps1",
+      "bytes": 1829,
+      "sha256": "479b3a230c16d0fd6058925e409b4ef65274d05e158e944418acfd2080a90ecd"
+    },
+    {
+      "path": "MERKEZ/GUNLUK/INSTALLED_NUMBER_SPEC.json",
+      "bytes": 1827,
+      "sha256": "c6fe4587b12a93d20c8a45e9b074c8e944ab7493c44ef67b3383cbfa1fc34032"
+    },
+    {
+      "path": "MERKEZ/GUNLUK/checks.py",
+      "bytes": 3173,
+      "sha256": "a4982f6426229178b9a88cb8cca1205df27b090a5ed20a86e95b62dbb6a60018"
+    },
+    {
+      "path": "MERKEZ/GUNLUK/daily.py",
+      "bytes": 17630,
+      "sha256": "12fcef7e909ae19bf2d947fbd7453231a6f3d3c5abe4a7eac3c451f5a015f044"
+    },
+    {
+      "path": "MERKEZ/GUNLUK/helpers.py",
+      "bytes": 2654,
+      "sha256": "9e091df95266729b976c548e0210e4e655481f4cdd524bb7b4ee7f82fbac162a"
+    },
+    {
+      "path": "MERKEZ/GUNLUK/local_job.py",
+      "bytes": 8521,
+      "sha256": "86e1fab2b20075592b5ccc1c07458e198394997f187a186069ea813ddb6ad427"
+    },
+    {
+      "path": "MERKEZ/GUNLUK/run.py",
+      "bytes": 7016,
+      "sha256": "8118043c921e0efb5924df8d884c476e918043ec4098480218059738e7ee85da"
+    },
+    {
+      "path": "MERKEZ/GUNLUK/selection.py",
+      "bytes": 4920,
+      "sha256": "78ff566acc396e0a8803b3432d270ebc754a2f1ecd5136a984d854fa65ddabaa"
+    },
+    {
+      "path": "MERKEZ/GUNLUK/session_safety.py",
+      "bytes": 5267,
+      "sha256": "7cb6eff7f4d6d744330845b520f94b25669791da146e5e4cdb9fa2b76d2bf36b"
+    },
+    {
+      "path": "MERKEZ/HAM_BASKI_TASARIMLARI_V487.md",
+      "bytes": 1728,
+      "sha256": "cbd570b51924fe5f5e5c0aadc38ee98ae6bea36716102d250e5b8d7ea8872be1"
+    },
+    {
+      "path": "MERKEZ/KURULUM.bat",
+      "bytes": 808,
+      "sha256": "0b743693b3540bc99b49b33ca3f38fb031e4122259c4ffe4dd89a3edaf35e790"
+    },
+    {
+      "path": "MERKEZ/ON_KONTROL.bat",
+      "bytes": 181,
+      "sha256": "fedaa85041813f7808aad4d391acbba6acd28c083e8df270b9595788221b7bc4"
+    },
+    {
+      "path": "MERKEZ/ON_KONTROL.py",
+      "bytes": 1984,
+      "sha256": "85d93c9d59c6254f23e404e328ad97e6e67ddf5da3b9e23be155b475a4ebdc3e"
+    },
+    {
+      "path": "MERKEZ/PETEK_V3/__init__.py",
+      "bytes": 79,
+      "sha256": "98c9683f022d3e558e6ceec83b6fcb6ecba97e860d7ae63d343c424d4b9e772f"
+    },
+    {
+      "path": "MERKEZ/PETEK_V3/batch.py",
+      "bytes": 13495,
+      "sha256": "02737804a48199825b953f9d97f51f0e82ee48ff767779ce5b6e60ff4250d5d2"
+    },
+    {
+      "path": "MERKEZ/PETEK_V3/brush_tools.py",
+      "bytes": 1711,
+      "sha256": "37422fd29d0a21458336c6ec268eb60571b118e86ae9c75af95afd732f9f3535"
+    },
+    {
+      "path": "MERKEZ/PETEK_V3/curves.py",
+      "bytes": 6021,
+      "sha256": "8c27ec8fbd81b43703977bd43c8c5e17047385da86fa556209fa0f3c46e57f54"
+    },
+    {
+      "path": "MERKEZ/PETEK_V3/cutout_paste.py",
+      "bytes": 6558,
+      "sha256": "16e69d1644e73488e99dd194c571edb8a62cf38dfba8921aa71558990d397cc7"
+    },
+    {
+      "path": "MERKEZ/PETEK_V3/engine.py",
+      "bytes": 22938,
+      "sha256": "61203095177382cd66939ced8aa4aabfd8754a75badf749c3517cec83422fffb"
+    },
+    {
+      "path": "MERKEZ/PETEK_V3/excel_links_v42.py",
+      "bytes": 1638,
+      "sha256": "fe0f8ee93bb2238ce9c71b66384acb1755b00f939daacbf9266e6643e1ad6a2b"
+    },
+    {
+      "path": "MERKEZ/PETEK_V3/final_cleanup_v495.py",
+      "bytes": 5444,
+      "sha256": "5d4e14536cab4125dfd12b1acc1682fffae1735d65e05630bdec80f4c62ecd69"
+    },
+    {
+      "path": "MERKEZ/PETEK_V3/finish.py",
+      "bytes": 2357,
+      "sha256": "26b4b37bf9d3e985c65ce9006b9ccfc50a1d627badf84909157622010377cdd1"
+    },
+    {
+      "path": "MERKEZ/PETEK_V3/geometry_qa_v47.py",
+      "bytes": 2253,
+      "sha256": "c2281050e8916c9e9cd03f1a438081e65057e1df0db969b1b73a83b11cf43609"
+    },
+    {
+      "path": "MERKEZ/PETEK_V3/grille_guard_v482.py",
+      "bytes": 3108,
+      "sha256": "2392ff2107fafe6ae8943d597e23b66f76b2c986ce4e015af5b7b4e30ed0901b"
+    },
+    {
+      "path": "MERKEZ/PETEK_V3/gui.py",
+      "bytes": 63803,
+      "sha256": "a85f62ebe119299e77760eb6038dc5058804589008c73d9d4e94460cd086db74"
+    },
+    {
+      "path": "MERKEZ/PETEK_V3/magenta_quad_v479.py",
+      "bytes": 3474,
+      "sha256": "32bf57d0cc5e1dd94994059b4f3681dcae47e04922d2341b46409944740b8f73"
+    },
+    {
+      "path": "MERKEZ/PETEK_V3/petek_finish_v492.py",
+      "bytes": 16838,
+      "sha256": "7d57403c61d7f47c8312c2aed7345532cebc5c9a62d5a584878e3f3b2f6f9715"
+    },
+    {
+      "path": "MERKEZ/PETEK_V3/realism.py",
+      "bytes": 4251,
+      "sha256": "245429861b9e1baba1a7906630d4729de7dda52ed71693ba53ae97ece286b854"
+    },
+    {
+      "path": "MERKEZ/PETEK_V3/registry.py",
+      "bytes": 15182,
+      "sha256": "7a0c38bd51d87dfa74193faecd8fd1420934aa4cd22d2bdc60d04de70177fea9"
+    },
+    {
+      "path": "MERKEZ/PETEK_V3/safety_audit.py",
+      "bytes": 4137,
+      "sha256": "83930f1c90c7e3a0b589793cc6905174551c907f3f626ab3a7f17d64d380a1e7"
+    },
+    {
+      "path": "MERKEZ/PETEK_V3/viewport.py",
+      "bytes": 2223,
+      "sha256": "fab510ccbec85e4869301ebc937e9ae99901319a7990ee6d3696e56b393b3cb5"
+    },
+    {
+      "path": "MERKEZ/URETIM_V4/__init__.py",
+      "bytes": 790,
+      "sha256": "d95f73a581e073d4356e9f3aeb51a81c8238a0714db7d907ad69935b9a99dbb1"
+    },
+    {
+      "path": "MERKEZ/URETIM_V4/chroma_render_v46.py",
+      "bytes": 966,
+      "sha256": "9ed36aec6609d7fce6b87af9df749ab48a39e7e9b6c46d004bd6f0af3d25ea05"
+    },
+    {
+      "path": "MERKEZ/URETIM_V4/cloud_excel_v43.py",
+      "bytes": 12928,
+      "sha256": "3f9c0f0633ca725a459dde1027730c125d97b2f97f4dd2831a1ec1becc64cf55"
+    },
+    {
+      "path": "MERKEZ/URETIM_V4/crash_recovery.py",
+      "bytes": 9971,
+      "sha256": "1ccb4cd2c7c353c32c288d3405df703e8d02894206e3911cd12f421f776b8698"
+    },
+    {
+      "path": "MERKEZ/URETIM_V4/deleted_receipts_v474.py",
+      "bytes": 6207,
+      "sha256": "6b36d6a80743b5536226cb11796b3f4d8c1314926670b385bd703df8e9909e6b"
+    },
+    {
+      "path": "MERKEZ/URETIM_V4/design_proxy_v43.py",
+      "bytes": 7643,
+      "sha256": "cc4b56e8abff4223eca4b6029e63b9883630f06c5e91b8a88f76fe28a236e7da"
+    },
+    {
+      "path": "MERKEZ/URETIM_V4/final_guard_v44.py",
+      "bytes": 11660,
+      "sha256": "0bcbd67bfccda7a9554feda1ca8c1f71ae7a43ca7d9f0f417fe54cb49d158bda"
+    },
+    {
+      "path": "MERKEZ/URETIM_V4/finish_material_v46.py",
+      "bytes": 5208,
+      "sha256": "9e700b6d0b6a8440bc946f551018066a3a0ad1695fd5ec5082377d82f1ff29e0"
+    },
+    {
+      "path": "MERKEZ/URETIM_V4/finish_v42.py",
+      "bytes": 4832,
+      "sha256": "af8724e01e14b8f24f5529cd496d12eb254dd106ee7fcbe17ef13893c71757ca"
+    },
+    {
+      "path": "MERKEZ/URETIM_V4/gui_v4.py",
+      "bytes": 70371,
+      "sha256": "35a42b09f9dfa5b1e3d2ed8c96bd80b2b150f9fff5f221ecb8c97a437ccc76f6"
+    },
+    {
+      "path": "MERKEZ/URETIM_V4/manual_geometry.py",
+      "bytes": 2328,
+      "sha256": "2a4000e3656ed0d235a41b934e225fcd6caf78d95d8e82672451caa924824d31"
+    },
+    {
+      "path": "MERKEZ/URETIM_V4/marketplace_excel_v45.py",
+      "bytes": 10346,
+      "sha256": "5e4778ad2e8255b282843f94a4a092f29157d26284982642e2b330e7e813ba6a"
+    },
+    {
+      "path": "MERKEZ/URETIM_V4/on_demand_4k_v495.py",
+      "bytes": 3471,
+      "sha256": "6fa9cfdfada6f65b2fd0a9d16a94204d39190f971209b88ce4a085aab7cbde63"
+    },
+    {
+      "path": "MERKEZ/URETIM_V4/ops_dashboard_v45.py",
+      "bytes": 2624,
+      "sha256": "73bedc2c497cc80ab993213d656c6ab688dcc46ca49a69dddca96a16b191c42b"
+    },
+    {
+      "path": "MERKEZ/URETIM_V4/optical_qa_v47.py",
+      "bytes": 1525,
+      "sha256": "463ad5c563ad0726b471c5498f22c99c1dd4214ce7278babe8e4e956689f96f2"
+    },
+    {
+      "path": "MERKEZ/URETIM_V4/read_only_audit_v44.py",
+      "bytes": 1689,
+      "sha256": "0858dc3edf63f2aae029b0bcd5c68739abc2105665c6b945b58df15365bd71b9"
+    },
+    {
+      "path": "MERKEZ/URETIM_V4/resume_checkpoint_v47.py",
+      "bytes": 5140,
+      "sha256": "6cb7a360fa5e6e9570e6ea2d31d0efd978ed8e8e609e6511b7ee51e862ee6fbf"
+    },
+    {
+      "path": "MERKEZ/URETIM_V4/store_assignment_ui_v410.py",
+      "bytes": 23672,
+      "sha256": "7ba39239c314c3607bd09fe36fd939ec97be093ea9800c61c39785a199715747"
+    },
+    {
+      "path": "MERKEZ/URETIM_V4/store_assignment_v410.py",
+      "bytes": 3053,
+      "sha256": "ca560df7f2aee38685e44460aee7ad7a86dc942d986b90b6e74f5a1da8a68695"
+    },
+    {
+      "path": "MERKEZ/URETIM_V4/store_excel_v485.py",
+      "bytes": 8232,
+      "sha256": "21be95aa76707d91d5fb44b268f6b50681fb41be9bd11bacf8323307fdd090bb"
+    },
+    {
+      "path": "MERKEZ/URETIM_V4/store_identity_v485.py",
+      "bytes": 3048,
+      "sha256": "dee37c9f7de34deff3502766b86fbdcf097104a9d8f8a12f54146b3fb90c3e0f"
+    },
+    {
+      "path": "MERKEZ/URETIM_V4/store_profiles_v47.py",
+      "bytes": 10202,
+      "sha256": "6166c7e7dbb65f7df9cb629c8c5cc6aa0f9f6bec9b86ce3d699d71c1cf44576e"
+    },
+    {
+      "path": "MERKEZ/URETIM_V4/template_filter_v492.py",
+      "bytes": 829,
+      "sha256": "646001d22f0f2afca608b0015dbd17fb9b6e507acdf4cc44f92c2484199ebf5b"
+    },
+    {
+      "path": "MERKEZ/URETIM_V4/unified_batch.py",
+      "bytes": 53492,
+      "sha256": "92e4c3914a490fda5594bcdb971f16107f6b5c91abd31bfbc4d1312dcf439833"
+    },
+    {
+      "path": "MERKEZ/URETIM_V4/unlimited_selection.py",
+      "bytes": 16888,
+      "sha256": "0b27c5968af94e97f4b7ba9d6bf7d311fb3d0874588f73ab5bf3981c04d3ef40"
+    },
+    {
+      "path": "MERKEZ/URETIM_V4/upscale4k_v44.py",
+      "bytes": 11293,
+      "sha256": "50b84ea4decd88a0de7cb2578b166c236d5448da8334b86b2f37b88030c39e73"
+    },
+    {
+      "path": "MERKEZ/URETIM_V4/user_removed_v46.py",
+      "bytes": 5375,
+      "sha256": "64f071e7ec71f7ee8e642f7dbd5d65a1051628e8eb2346f7fc4bc11b18a9a896"
+    },
+    {
+      "path": "MERKEZ/bakim_merkezi_v472.py",
+      "bytes": 18746,
+      "sha256": "c246b9634dedf5f2f721991a179297dcea06b6363793d60ced29fe373e5c6fd6"
+    },
+    {
+      "path": "MERKEZ/chroma_replace_ui_v486.py",
+      "bytes": 4146,
+      "sha256": "8011975a80e18b4d45f9f71d71ad0edba6e3782aa506daa72c72e20fce557c10"
+    },
+    {
+      "path": "MERKEZ/dark_theme_v42.py",
+      "bytes": 3996,
+      "sha256": "6ac46578a1898cc98a6e4abf4ed61c5c0d3b298273cfa4aac724fcc521fc159b"
+    },
+    {
+      "path": "MERKEZ/error_advisor_v498.py",
+      "bytes": 3636,
+      "sha256": "d11d454a103f123dcf88f7d0e8609da1efbc09ebb940782036e64d54d63bdec3"
+    },
+    {
+      "path": "MERKEZ/external_inventory_v472.py",
+      "bytes": 17281,
+      "sha256": "698a993420b876d0675961cd34a4a71807c3e1f5de0471f909b01556888a41da"
+    },
+    {
+      "path": "MERKEZ/ham_designs_v487.py",
+      "bytes": 22654,
+      "sha256": "49b0a93051faa0f093c880bec620a18d1b3609ad3d0f6ca4016f3eb3729f0b9e"
+    },
+    {
+      "path": "MERKEZ/help_v42.py",
+      "bytes": 4938,
+      "sha256": "55a706283a244facaee7953f3e2e1db4f64fc9711042dccf3b5f4ed36aba3b82"
+    },
+    {
+      "path": "MERKEZ/inbox_auto_v42.py",
+      "bytes": 16222,
+      "sha256": "0c6728609903ee417d37f4f95a200126639c6a50b999ef2000661674cc81e955"
+    },
+    {
+      "path": "MERKEZ/legacy_manager.py",
+      "bytes": 14751,
+      "sha256": "c0fdceea7303a135256093e0c9a559373ccbac339e30059881059792a740bdf8"
+    },
+    {
+      "path": "MERKEZ/magenta_reconcile_v472.py",
+      "bytes": 25998,
+      "sha256": "6267d5b7eb4322f619606ab934e060742da10bac6ba82765a0a88631a78857e4"
+    },
+    {
+      "path": "MERKEZ/merkez.py",
+      "bytes": 56451,
+      "sha256": "7e5f5436f4af4fd55160a79074ad00a3e71b9085041c9c28e07932176d084d4e"
+    },
+    {
+      "path": "MERKEZ/merkez_saglik.py",
+      "bytes": 2694,
+      "sha256": "58265243954902bd451504f85343aa606b1e9521f8caa6f39405fd44e30645b1"
+    },
+    {
+      "path": "MERKEZ/personal_hub_v493.py",
+      "bytes": 38113,
+      "sha256": "81e748ac8f4b66d96dfc67fb0663aa7023a931ab878876003056945ac3d146a2"
+    },
+    {
+      "path": "MERKEZ/petek_denetle.py",
+      "bytes": 1124,
+      "sha256": "9d8e4b7e9211347a72c0b3d25d3a8898d3d942ebe597b89a5610246223db800b"
+    },
+    {
+      "path": "MERKEZ/petek_folders_v46.py",
+      "bytes": 3012,
+      "sha256": "c1bab9de1fa8a5e257905e94d48cb6c02c79061bb22e90b520f72bd4fc93b497"
+    },
+    {
+      "path": "MERKEZ/port_transition_v46.py",
+      "bytes": 4844,
+      "sha256": "e70b30945381fd5112e8f8388f418495afd267f178cc13c1f303c9ee493ef3c7"
+    },
+    {
+      "path": "MERKEZ/premium_dashboard_v489.py",
+      "bytes": 15639,
+      "sha256": "1d718712180a116140223eca9bcfbed2554b3f8fffed6e927252936c3fa68a18"
+    },
+    {
+      "path": "MERKEZ/quad_interaction.py",
+      "bytes": 1555,
+      "sha256": "a264b254009cabc5a17f7eadc991235fcbf1182282e7f70129e307ef353aba1f"
+    },
+    {
+      "path": "MERKEZ/requirements-v46-lock.txt",
+      "bytes": 207,
+      "sha256": "bd31c917f1d68631d50501718e8df7888731d2dda3268921f88f678d5cef3aa9"
+    },
+    {
+      "path": "MERKEZ/requirements.txt",
+      "bytes": 217,
+      "sha256": "7dbefa2380fd15c086cc12452f6a2a19cc10bb82a05fe5dca8c428e4f5019e68"
+    },
+    {
+      "path": "MERKEZ/review_port_owner_v478.py",
+      "bytes": 7307,
+      "sha256": "5023e30202ad3f2bf11bc6a898f1915a06647a026f26ba9211db65a896610b4e"
+    },
+    {
+      "path": "MERKEZ/runtime_relocate_v473.py",
+      "bytes": 10291,
+      "sha256": "bbde1089aead770b41d1104d0ce467caf047b8ee25d3c13fb6af58b47aca92c5"
+    },
+    {
+      "path": "MERKEZ/system_integrity_v475.py",
+      "bytes": 17338,
+      "sha256": "cc230bbdec052dfcb2ceab87953fa8745d150a596cb26c737d5ee26d1328825a"
+    },
+    {
+      "path": "MERKEZ/ui_layout_v498.py",
+      "bytes": 15157,
+      "sha256": "2ebea1e19f9d18ecd459983481095f530e373c37a882d829a45bd5e0529f2781"
+    },
+    {
+      "path": "MERKEZ/uretim_toplu_kabul_v479.py",
+      "bytes": 7570,
+      "sha256": "8b56ee5b5051819ef27332e72735e569b21d157deb15f78c28edf1f3dd7bbd27"
+    },
+    {
+      "path": "MERKEZ/version_v45.py",
+      "bytes": 173,
+      "sha256": "6b1f46a0caeefa76e4e3f2b6d8b5c8f8b2cbe5ffbb5902a33e30cf110185e0ed"
+    },
+    {
+      "path": "MERKEZ/version_v46.py",
+      "bytes": 158,
+      "sha256": "7bfcbf82c8ce38473c20c119715ebbca8fae6e930550fc53a785bf884eb70214"
+    },
+    {
+      "path": "MERKEZ/version_v47.py",
+      "bytes": 403,
+      "sha256": "80e1c9d996e93350e636ac248c0996ed06d5b59dce92bfed3f66cf298046e7ee"
+    },
+    {
+      "path": "SABLON_V2_MIMARI/app.py",
+      "bytes": 153315,
+      "sha256": "4afe8979a78c943f4dc4bd5c72cd4813dc917951c6830053fd3e0c4c1d42bedd"
+    },
+    {
+      "path": "SABLON_V2_MIMARI/core/analysis_cache.py",
+      "bytes": 3197,
+      "sha256": "02a67fc068decefca234acfee980fb4874185ab5493314c335ff9d9c29b5919d"
+    },
+    {
+      "path": "SABLON_V2_MIMARI/core/chroma_quad_detector.py",
+      "bytes": 5815,
+      "sha256": "194ee3bd71b54af3697c4855209efa70e65984b9aaa3b7c37131c25a8ea337e4"
+    },
+    {
+      "path": "SABLON_V2_MIMARI/core/db.py",
+      "bytes": 18271,
+      "sha256": "3440fb273241e47e1f366a69b54c84038572b42ae82a59b1d1e95d1da2685624"
+    },
+    {
+      "path": "SABLON_V2_MIMARI/core/doctor_guidance.py",
+      "bytes": 6093,
+      "sha256": "20d3394824d3992e15c193582ac99042765e3944584e5851bcbd33358efbef57"
+    },
+    {
+      "path": "SABLON_V2_MIMARI/core/factory_doctor.py",
+      "bytes": 36629,
+      "sha256": "5db4ad5ceafec31c1cb69757ed8998ec5d69914a41170cf941baf086adc4348d"
+    },
+    {
+      "path": "SABLON_V2_MIMARI/core/file_safety.py",
+      "bytes": 6842,
+      "sha256": "3f0f72805e776b99467f7caeb6ac17dddd2933c883a302cf71b81d8b0550e91d"
+    },
+    {
+      "path": "SABLON_V2_MIMARI/core/group2_quality.py",
+      "bytes": 10982,
+      "sha256": "bc132ead70a793a0e5da34547bfe37bc3ba11964b84bd4224444071a138b35c2"
+    },
+    {
+      "path": "SABLON_V2_MIMARI/core/job_engine.py",
+      "bytes": 10268,
+      "sha256": "4db3e1598734e089aeb77a4b1fc486738a2081c6bfcd47ba852fe7ceb2e65469"
+    },
+    {
+      "path": "SABLON_V2_MIMARI/core/lifecycle_reconciliation.py",
+      "bytes": 37675,
+      "sha256": "99ca75d853464c93809958b0e72f96eccbcc07c3696dcd36c3bb5f957599be0e"
+    },
+    {
+      "path": "SABLON_V2_MIMARI/core/loopback_security_v47.py",
+      "bytes": 1576,
+      "sha256": "bd3bca57e54d0285558b6c096ca08f2e7aa4902573b72e0076f3c75337bdc6c0"
+    },
+    {
+      "path": "SABLON_V2_MIMARI/core/manual_production_guard.py",
+      "bytes": 3486,
+      "sha256": "fdd3579704146db3058b4695c761edcdff9231af0eb6160d7c5c1f2e19873193"
+    },
+    {
+      "path": "SABLON_V2_MIMARI/core/operation_lock.py",
+      "bytes": 3515,
+      "sha256": "906eb44020e74f65bfbdcca899dcc3d26f619078fd062e1a27c606aed424820b"
+    },
+    {
+      "path": "SABLON_V2_MIMARI/core/path_registry.py",
+      "bytes": 5135,
+      "sha256": "bed34f80c2d9c772d5e6bc1063fcba3a1be4031109c1e1024712f5b34377e2d6"
+    },
+    {
+      "path": "SABLON_V2_MIMARI/core/petek_cutout_engine.py",
+      "bytes": 848,
+      "sha256": "8563ad6ce4ee4fcfb48925c158eb22aeddd61c082c53f6e36eecabbf2669d5b9"
+    },
+    {
+      "path": "SABLON_V2_MIMARI/core/petek_web_v477.py",
+      "bytes": 34088,
+      "sha256": "d4b6d4220b9b2ac484dadf8f768bcee06975d223023f4dc22c65d765eede74e7"
+    },
+    {
+      "path": "SABLON_V2_MIMARI/core/runtime_migration.py",
+      "bytes": 13162,
+      "sha256": "fb4fc4ea50b0880f51c4021f8256080dd2173f16bb17e5ccd53342268ab41c2d"
+    },
+    {
+      "path": "SABLON_V2_MIMARI/core/safe_working_revision.py",
+      "bytes": 13590,
+      "sha256": "715b509fc4f289d6fc549b25585a72916c3276b8ff7944b8477907b07c967055"
+    },
+    {
+      "path": "SABLON_V2_MIMARI/core/template_identity.py",
+      "bytes": 36094,
+      "sha256": "f09ccae86c70394f4a7d0f0b9465bc2bd9fd308b049603efe62133918bee9849"
+    },
+    {
+      "path": "SABLON_V2_MIMARI/core/template_intelligence.py",
+      "bytes": 91395,
+      "sha256": "97aa6da1f5fd951ae1457547e70a40631fd605f792109bfe21febcfb51bc772a"
+    },
+    {
+      "path": "SABLON_V2_MIMARI/core/vision.py",
+      "bytes": 53928,
+      "sha256": "4434133240b7508689ecf9953ed10dff51328bf9b13436c7123b217468e36f5a"
+    },
+    {
+      "path": "SABLON_V2_MIMARI/core/visual_qa_audit.py",
+      "bytes": 4473,
+      "sha256": "2540f676a352ac6eaf8dfe0eb5ef49057afbc15a84ed8b1ca1a31a68caaf551d"
+    },
+    {
+      "path": "SABLON_V2_MIMARI/core/workspace_consistency.py",
+      "bytes": 38186,
+      "sha256": "47e99ee889c6065b80bf9761b325e9b754a868bb6dee9dc54354965efb6f043c"
+    },
+    {
+      "path": "SABLON_V2_MIMARI/migrate_to_sqlite.py",
+      "bytes": 1715,
+      "sha256": "d026ed159d46f18794ddb41a292ccca6174e214ba907263d16795a95e6464b32"
+    },
+    {
+      "path": "SABLON_V2_MIMARI/orientation_sort_v489.py",
+      "bytes": 7479,
+      "sha256": "bb224e799d8255a6931e5bb3a99b13838b32b758841783b42243e0a6f84c1e92"
+    },
+    {
+      "path": "SABLON_V2_MIMARI/static/css/petek_editor_v477.css",
+      "bytes": 12629,
+      "sha256": "87d26ceac006f39e21d03214da1cfa5664f90fc6c6e7841654e5cc7dc2075b09"
+    },
+    {
+      "path": "SABLON_V2_MIMARI/static/css/premium_petek_v489.css",
+      "bytes": 2886,
+      "sha256": "ca7fb2a01868d8af25e0733016427a0c62f13aee287dc7017c678684a1658aec"
+    },
+    {
+      "path": "SABLON_V2_MIMARI/static/css/premium_v489.css",
+      "bytes": 4287,
+      "sha256": "b9e2589241560fbf68be6a84d41ca052d0d1c0b31aea0e0d256048e0eebad402"
+    },
+    {
+      "path": "SABLON_V2_MIMARI/static/css/style.css",
+      "bytes": 11710,
+      "sha256": "2f9687099e458477d1456204e9d3438b0853a828c0dc4744dbaf8477f7704b4d"
+    },
+    {
+      "path": "SABLON_V2_MIMARI/static/css/v4101_unified.css",
+      "bytes": 4556,
+      "sha256": "2ac3e59369276f8f12af055dc313197871da3cf94acf8cc46d6e37d3de3627cd"
+    },
+    {
+      "path": "SABLON_V2_MIMARI/static/css/v499_anthracite.css",
+      "bytes": 3117,
+      "sha256": "e68c79872311b69c04d96490f5f2692d6f36f76cd28be04e07e84aff5d0d22c1"
+    },
+    {
+      "path": "SABLON_V2_MIMARI/static/js/edge_angles_v46.js",
+      "bytes": 1651,
+      "sha256": "601563636495ce98410d10ddfcdaf7a282b0e7908a3a6bd113eb03af8d516536"
+    },
+    {
+      "path": "SABLON_V2_MIMARI/static/js/loopback_csrf_v47.js",
+      "bytes": 1300,
+      "sha256": "7abc026d4be7343d040de24d2f020e83034dac4d37721437087c5ffa62503c19"
+    },
+    {
+      "path": "SABLON_V2_MIMARI/static/js/main.js",
+      "bytes": 183921,
+      "sha256": "fbba4bbe82b2e2300042c8200b1601455383552c3831832ec63647523ac38d7f"
+    },
+    {
+      "path": "SABLON_V2_MIMARI/static/js/petek_editor_v477.js",
+      "bytes": 50613,
+      "sha256": "47bbf0aab7756aa4548ae4d2e9f34178dcb9437a4a5ba5a1635f7a520bbd3b85"
+    },
+    {
+      "path": "SABLON_V2_MIMARI/static/js/petek_quad_drag_v481.js",
+      "bytes": 1927,
+      "sha256": "c9fa6e2dc8a2614bdf98e708954f89e7a54a96c8f49886dae69da926eced8ef1"
+    },
+    {
+      "path": "SABLON_V2_MIMARI/static/js/review_v46.js",
+      "bytes": 10559,
+      "sha256": "ad202ed941a3856ccdd10308e7d41ef60139a3081da18745a861269b1a80b3be"
+    },
+    {
+      "path": "SABLON_V2_MIMARI/static/js/v499_status_filter.js",
+      "bytes": 955,
+      "sha256": "3a3ac4ae0b0894943cd7e2c6f582a98d450a2fbeef140d6a69d4f33788d0ba0d"
+    },
+    {
+      "path": "SABLON_V2_MIMARI/templates/index.html",
+      "bytes": 34827,
+      "sha256": "f79711d1617e3714797371098221e0f584e9d0a05e15392a0f90a3fdec673138"
+    },
+    {
+      "path": "SABLON_V2_MIMARI/templates/tools.html",
+      "bytes": 12003,
+      "sha256": "1e327021bfd31737038709cdd6906532d34672bdaf66fb3f796a4a3f2611d741"
+    },
+    {
+      "path": "SABLON_V2_MIMARI/test_suite.py",
+      "bytes": 3790,
+      "sha256": "3bd18d583022895b0eea0a155abf30009e5be388c44ed64ce8ced4f6f103da8d"
+    },
+    {
+      "path": "SABLON_V2_MIMARI/tools_runner.py",
+      "bytes": 61258,
+      "sha256": "82b78506cecccc6df68cc4cecda5db4d59eeb10cf2f7f33c601ab60d47ea04a4"
+    },
+    {
+      "path": "SABLON_V2_MIMARI/v2_baslat.bat",
+      "bytes": 719,
+      "sha256": "38adb7c0512be04de8af6b17b4c20454be9dac27f322b1681c99cef131b1eb2f"
+    },
+    {
+      "path": "TESTLER/test_emergency_release.py",
+      "bytes": 2918,
+      "sha256": "60fe2d0d0cc1d5ee9abce905913cee4d599866a12defde48451e5991191aa965"
+    },
+    {
+      "path": "TESTLER/test_final_audit_ui.py",
+      "bytes": 651,
+      "sha256": "f8b86f180483f0ab87ca5560a2781c95088539783a659fbf5f42d967a29dc543"
+    },
+    {
+      "path": "TESTLER/test_final_integrity.py",
+      "bytes": 3745,
+      "sha256": "276e433aff259fb3874a588b27f61da4125de0b2feee2bd6fd7e0e2c6bc3683e"
+    },
+    {
+      "path": "TESTLER/test_final_parallel_reserve.py",
+      "bytes": 1511,
+      "sha256": "c7f3dc372078cedd58eb3f84532a80352e2492883863f3419419924d462bb157"
+    },
+    {
+      "path": "TESTLER/test_grup1_sablon_guvenlik.py",
+      "bytes": 10163,
+      "sha256": "8ab169915de66cf844baefe949ab5c47f046339f38ed484d46cb05871dc374b5"
+    },
+    {
+      "path": "TESTLER/test_gui_image_visible.py",
+      "bytes": 2285,
+      "sha256": "c889bd42f06cbda86956e87ea908a35e010d09e9a8fcf535c738342d60ebe131"
+    },
+    {
+      "path": "TESTLER/test_petek_cover_v3_2.py",
+      "bytes": 5728,
+      "sha256": "1447477a19f00a8539dbdbed10a09b8e9d9622d7529ce9d7ff3ae27c09cb1266"
+    },
+    {
+      "path": "TESTLER/test_petek_v33_quad_clipping.py",
+      "bytes": 4390,
+      "sha256": "b23fb056657fc7cb2447badec877d98bab329543ba9d034415d6b5cd745bb6ee"
+    },
+    {
+      "path": "TESTLER/test_petek_windows_v3.py",
+      "bytes": 8316,
+      "sha256": "786c9d97223eba913fc10fd8fb89cc4996970ed26f5548bde0418cdc40381a3e"
+    },
+    {
+      "path": "TESTLER/test_port_transition_force_fallback.py",
+      "bytes": 2261,
+      "sha256": "824145f01ddae51a3d4819ccdf7df64530edbfdae0ca0363bd6c6dd20d844606"
+    },
+    {
+      "path": "TESTLER/test_v310_pinhole_safe.py",
+      "bytes": 5295,
+      "sha256": "bcb8b0fdcac3f284338022fa97b50ff09c58e5aa918517c5c605ca4d429fdbc1"
+    },
+    {
+      "path": "TESTLER/test_v311_manual_curve_control.py",
+      "bytes": 6072,
+      "sha256": "10d3a52adbeec61efec5014172c8ff87f6e83411a8524f40dccecaf4bfca2057"
+    },
+    {
+      "path": "TESTLER/test_v314_legacy_bridge.py",
+      "bytes": 4501,
+      "sha256": "174d4104d53f6c869191fffc6ca574470c88b2696ff0c070eb31a8543e47abf4"
+    },
+    {
+      "path": "TESTLER/test_v314_tk_menu.py",
+      "bytes": 1632,
+      "sha256": "7d4e0b2d247924add1124aec7dfe0b6816b99ad13708f4c3cc3849b1e4c8ffe1"
+    },
+    {
+      "path": "TESTLER/test_v35_drag_and_light.py",
+      "bytes": 2854,
+      "sha256": "25cf94a9777a6b46a7a9d092f8504096fcfc09142daa60902367a85ffc94e50e"
+    },
+    {
+      "path": "TESTLER/test_v36_viewport_undo_lighting.py",
+      "bytes": 3017,
+      "sha256": "8681f58836c2cf2402f96210eab648a011c72b468a6f571c1504631a59ea25cd"
+    },
+    {
+      "path": "TESTLER/test_v37_curve_brush_sku.py",
+      "bytes": 8931,
+      "sha256": "6ef866026d4303dcbbd04325cbe3eb6d385384588bc8ec0510781c845e646a31"
+    },
+    {
+      "path": "TESTLER/test_v38_natural_finish.py",
+      "bytes": 5732,
+      "sha256": "371f83881fcd58fc3c3726f8916b277f2df5bdb8c11b91715065de677c70b249"
+    },
+    {
+      "path": "TESTLER/test_v39_brush.py",
+      "bytes": 1567,
+      "sha256": "76cc4876c0b4ea8796910cb2905249572ee0d22e0573ae29b227e9d3a635b1f0"
+    },
+    {
+      "path": "TESTLER/test_v40_unified_seven_category.py",
+      "bytes": 13320,
+      "sha256": "bb6c87dea6ddf1a58394b4fe1b975b5287d5ddc5b0597d7a933fac2626b28d1c"
+    },
+    {
+      "path": "TESTLER/test_v41_private_git_and_guidance.py",
+      "bytes": 2156,
+      "sha256": "76b35a1458e8971f1308fffdd2a8e6c9221d75438f71ccea019627b629388fa5"
+    },
+    {
+      "path": "TESTLER/test_v422_factory_doctor_guidance.py",
+      "bytes": 4411,
+      "sha256": "ef5c87f00eb4a0765bec1b231e0bf5b9eca430f1f4adb19434a483e4b1f77493"
+    },
+    {
+      "path": "TESTLER/test_v42_final_audit_fixes.py",
+      "bytes": 4065,
+      "sha256": "0d04090e81026bf02d5062455268ad6b7a2eeebb9a62e64390b4f88630d0c796"
+    },
+    {
+      "path": "TESTLER/test_v42_group2_combined.py",
+      "bytes": 4796,
+      "sha256": "d396d4e52c87c1a0556f718535f5455d114a3f83b1d0893fbd809d1e6dbd8d54"
+    },
+    {
+      "path": "TESTLER/test_v42_hotfix_number_and_restore.py",
+      "bytes": 7133,
+      "sha256": "66ef3b2390322a9433dc165a41c1e62e42025579c431021a454ee0e3c345a335"
+    },
+    {
+      "path": "TESTLER/test_v43_finish_cloud_reapproval.py",
+      "bytes": 6195,
+      "sha256": "2b7e0f6985b4454c05e8879e723fd3b19c829939b0a4f1ca1aa83d51b446a93d"
+    },
+    {
+      "path": "TESTLER/test_v44_group1_upscale_ui.py",
+      "bytes": 6054,
+      "sha256": "19186e95e67c7606885d733d0a6048fa86fa50b4164f1c45a76936db64bd3f55"
+    },
+    {
+      "path": "TESTLER/test_v44_group2_safe_tools.py",
+      "bytes": 7856,
+      "sha256": "9e7d9f056cb60651ab57da2acff38cc27cfc5c17b48b0f1337e9f5fcb5581a40"
+    },
+    {
+      "path": "TESTLER/test_v44_group3_release_safety.py",
+      "bytes": 9243,
+      "sha256": "4562d1e3ee205343db6ac6a76b0f77a2375519959df4db54c9cee810043d1d2c"
+    },
+    {
+      "path": "TESTLER/test_v45_final_closure.py",
+      "bytes": 8090,
+      "sha256": "beb162fb16ed0f6f02ad3b8d20a867e6d65cb7019ff51a465291b742cbc97f93"
+    },
+    {
+      "path": "TESTLER/test_v46_chroma_batch.py",
+      "bytes": 2759,
+      "sha256": "6a27b9d27157c18b8d08eff504b6cb614f1c0f5bcacdfa04844f08e190f72ed1"
+    },
+    {
+      "path": "TESTLER/test_v46_chroma_detector.py",
+      "bytes": 1395,
+      "sha256": "c2cce8ea4b3bea7856c0fa1562de2658aa954c9dd5ec6637272d62ecca345959"
+    },
+    {
+      "path": "TESTLER/test_v46_chroma_render.py",
+      "bytes": 1673,
+      "sha256": "fe5e17f9860751a63bb39960776fa9cee8d71e91f5afb6001119ff99fe2163dc"
+    },
+    {
+      "path": "TESTLER/test_v46_inbox_identity.py",
+      "bytes": 2946,
+      "sha256": "4e71cd5513350e010373dc21cadbec95ce40399117ccb3c3edff2271fcb20036"
+    },
+    {
+      "path": "TESTLER/test_v46_launcher_preflight.py",
+      "bytes": 868,
+      "sha256": "198f7c73a87df1c733ad6487dbd3ccda64222023ee35c97f6e39cd71f4bde453"
+    },
+    {
+      "path": "TESTLER/test_v46_optional_4k.py",
+      "bytes": 664,
+      "sha256": "fdbeaa844077c1765c766cb711f25a78c10984659547f8d3d2997dade1067760"
+    },
+    {
+      "path": "TESTLER/test_v46_package.py",
+      "bytes": 1031,
+      "sha256": "8aa28bf2a63553d3c5e0b773d861812abc5346c1c03b318d4becdca60aa2c728"
+    },
+    {
+      "path": "TESTLER/test_v46_petek_folders_and_user_deleted.py",
+      "bytes": 10289,
+      "sha256": "6808667268fa04bb7e759c51cf89bbef63806fe530e52f83751bb087501f8180"
+    },
+    {
+      "path": "TESTLER/test_v46_review_bulk_esrgan.py",
+      "bytes": 7108,
+      "sha256": "b450108f6e805d1dab830290ee164028ceef99ca668460be865d8e5e3e3e40d6"
+    },
+    {
+      "path": "TESTLER/test_v46_review_layout.py",
+      "bytes": 1569,
+      "sha256": "14141ddd5f6d5b51b03bebc072e6805fc29b330e98eeb3f38fd4c3ba64c7b601"
+    },
+    {
+      "path": "TESTLER/test_v46_workspace_identity.py",
+      "bytes": 6232,
+      "sha256": "8e148908b6e6e184c4510ddb151d492ee74a16ab857d15054211f2330fe5661b"
+    },
+    {
+      "path": "TESTLER/test_v472_magenta_external_reconciliation.py",
+      "bytes": 21154,
+      "sha256": "54623abc439a0f7ab2c18eb439ac487337e9ee4af20ee9cdbc9336c7c52d2943"
+    },
+    {
+      "path": "TESTLER/test_v473_runtime_relocation.py",
+      "bytes": 9659,
+      "sha256": "db74910d02c12453e463a4b6258b7c9a7d79baeb72c8f0cdb635b44ce0e21591"
+    },
+    {
+      "path": "TESTLER/test_v474_deleted_receipts.py",
+      "bytes": 4299,
+      "sha256": "7e5feaec89de6b2b59614d302fb04245ebfff26c56a87b4d19491665187e859f"
+    },
+    {
+      "path": "TESTLER/test_v475_package_completeness.py",
+      "bytes": 4373,
+      "sha256": "ebf4ad8f6d73766a378b7785b880418cddbb9f4b6af811618e0d3a7a747b5eb6"
+    },
+    {
+      "path": "TESTLER/test_v475_system_integrity.py",
+      "bytes": 6770,
+      "sha256": "e6ba5a2f80b02124031babca254d1f861ffbded536d0c7cc8fdf630ec699b819"
+    },
+    {
+      "path": "TESTLER/test_v476_review_port_petek_ui.py",
+      "bytes": 4596,
+      "sha256": "edcc18ac99430b0359ddc6f84901b26965fc3b4c19cc954f475b99a14e8d0892"
+    },
+    {
+      "path": "TESTLER/test_v477_petek_browser_integration.py",
+      "bytes": 19419,
+      "sha256": "441bebcb2732d09994d674b82714806ccc82dff497d78e483034785158eb4a08"
+    },
+    {
+      "path": "TESTLER/test_v478_port_owner.py",
+      "bytes": 4518,
+      "sha256": "1c2dda15348ba389730cc613d06434ba8579aed23368c8b7080b685cc1956bc4"
+    },
+    {
+      "path": "TESTLER/test_v479_grouped_windows_acceptance.py",
+      "bytes": 2232,
+      "sha256": "e70bf4a73c349b955fcb6cfd1e619b5c123d60d9c6005319d0cc9e989d4aaf31"
+    },
+    {
+      "path": "TESTLER/test_v47_audit_integrity.py",
+      "bytes": 5117,
+      "sha256": "2c6523bc1d00bdcf7a425e32bc34536d6644b1b38aa25750c25c9dcd81a73523"
+    },
+    {
+      "path": "TESTLER/test_v47_material_store_random.py",
+      "bytes": 6436,
+      "sha256": "2d6605aac28f3b5eff63963bb11f9963a26694fa7dd3faa5ce513cb026641f9d"
+    },
+    {
+      "path": "TESTLER/test_v47_p1_p2_acceptance.py",
+      "bytes": 10419,
+      "sha256": "0ea00b7b6cf1ec002a97656280005e03293febc7bedee3784ae7c7319795a6fe"
+    },
+    {
+      "path": "TESTLER/test_v47_pause_stop_resume.py",
+      "bytes": 6949,
+      "sha256": "3aa367f1a23186a1025b0e3e849246e1c272a8c2075e00fbb7002b6856a2b615"
+    },
+    {
+      "path": "TESTLER/test_v480_petek_workspace_tools.py",
+      "bytes": 4952,
+      "sha256": "f9c63cb90353c9fcb5ac7d3c5ba5350905230fec36561b95fcb7533718fdcb62"
+    },
+    {
+      "path": "TESTLER/test_v483_petek_grille_guard.py",
+      "bytes": 5741,
+      "sha256": "ab6d7256a59795fbf318ab949f92c48984a36f5ea86fcddb52c4c311542d303f"
+    },
+    {
+      "path": "TESTLER/test_v484_petek_bulk_ops.py",
+      "bytes": 7332,
+      "sha256": "b6736247504513faa724a05a2d6c7abce4d644bfe98040fea587af89c38325ac"
+    },
+    {
+      "path": "TESTLER/test_v485_multistore_design_excel.py",
+      "bytes": 6749,
+      "sha256": "7388e361bc743898b714e79c315700acc302d10d5d4dcd4963d4d0fd892658d6"
+    },
+    {
+      "path": "TESTLER/test_v487_ham_designs.py",
+      "bytes": 8739,
+      "sha256": "4130a4958879513b8bbef5d180bfacd1907072cbee7f0fa5ac394cf7549742e3"
+    },
+    {
+      "path": "TESTLER/test_v488_home_readability.py",
+      "bytes": 3665,
+      "sha256": "da3b35edbdb6a61ae09d8b0c33338668aaef578b7afbc8f68d2fd57c874c1df6"
+    },
+    {
+      "path": "TESTLER/test_v490_premium_ui.py",
+      "bytes": 2190,
+      "sha256": "0d2c218ce16df6ff5467efeb499442cafc8c5cace46ade73be936940221fcedd"
+    },
+    {
+      "path": "TOPLU_URETIM_KABUL_WINDOWS.bat",
+      "bytes": 616,
+      "sha256": "9871606f90002114b68a9d6f4c746d10a36f2f2c48ead77d6b84e04e6053f447"
+    },
+    {
+      "path": "V4100_BASLAT_WINDOWS.bat",
+      "bytes": 268,
+      "sha256": "bc5e8b3db82714e68b837a3e9a73ad2eb2050e3b23ddddd31494f902b0d24abb"
+    },
+    {
+      "path": "V4100_DOGRULA_WINDOWS.bat",
+      "bytes": 403,
+      "sha256": "5098addf1c8ec9e44ba89079a015cdaef9bdb02ea9246731ba53cd816e6ab9ab"
+    },
+    {
+      "path": "V4100_GELISTIRMELER_VE_TEST_RAPORU.md",
+      "bytes": 4431,
+      "sha256": "b19ded765130ad8fbbcd3b3f0da88890954c4a80240c6a92f3f99351952c5cbe"
+    },
+    {
+      "path": "V4100_ILK_OKU.txt",
+      "bytes": 1161,
+      "sha256": "696c56e079a3c84cdf31aa1e5132d7327df6001e035ee7165143be838f6c774f"
+    },
+    {
+      "path": "V4101_BASLAT_WINDOWS.bat",
+      "bytes": 265,
+      "sha256": "1b3c10a8ca15b85fb59e593238a8359930af41be0b1d9d79f1b4f6be285ec8a1"
+    },
+    {
+      "path": "V4101_DOGRULA_WINDOWS.bat",
+      "bytes": 394,
+      "sha256": "bef32df879262658939aaa35cea16c06d524dedc5c4b0cc8ee4d76bfdf6ea702"
+    },
+    {
+      "path": "V4101_ILK_OKU.txt",
+      "bytes": 808,
+      "sha256": "55e4ff68a4f4a4784e28a20269c69709cab420c4ab0e10720b2e4a1658b77a59"
+    },
+    {
+      "path": "V4101_TEST_VE_KABUL_RAPORU.md",
+      "bytes": 2516,
+      "sha256": "18debea7d908196aa4aa6706922883250b16a83124d47d90b640e9281549adbc"
+    },
+    {
+      "path": "V490_DOGRULA_WINDOWS.bat",
+      "bytes": 126,
+      "sha256": "ffa50753a2b953ffb786b743669fa65a726eba26bbdc0de2e62a0bcbc8289f1a"
+    },
+    {
+      "path": "V491_DOGRULA_WINDOWS.bat",
+      "bytes": 120,
+      "sha256": "8727452ba5b1fdc7a19c2c7f94cec65ca6ea88b8c0c30a2831b1b7800303335c"
+    },
+    {
+      "path": "V491_KURULUM_VE_KABUL.txt",
+      "bytes": 1542,
+      "sha256": "9cf8c54a610219783fda20ac9f6ddd4861f5c6fabd0da333a82a6e0ff9a2f2c4"
+    },
+    {
+      "path": "V491_TEST_VE_KABUL_RAPORU.md",
+      "bytes": 7171,
+      "sha256": "5293f695d45dad2e4df7cf476e8f6a02d1a96c4193eaacaeb7dff8730cbcccc1"
+    },
+    {
+      "path": "V492_DOGRULA_WINDOWS.bat",
+      "bytes": 793,
+      "sha256": "1546e0b3873ef11754b62641f40d436b6af2f61fedcc801244768364e6aaaa0f"
+    },
+    {
+      "path": "V492_TEST_VE_KABUL_RAPORU.md",
+      "bytes": 5311,
+      "sha256": "cbc64d1eb32c9ba300c55c5cd9fe70179525efab4cb9722712c2413fde645296"
+    },
+    {
+      "path": "V493_BASLAT_TEK_TIK_WINDOWS.bat",
+      "bytes": 217,
+      "sha256": "9dc19d71442a8cc6a3c38ff337ab72bb723fbf23d5cbff32fe8e02d15f0a8107"
+    },
+    {
+      "path": "V493_DOGRULA_WINDOWS.bat",
+      "bytes": 846,
+      "sha256": "8308490fbb659f950a25c48ca92f9d178ca53adb4c05ef81c36e33f33ffd4cab"
+    },
+    {
+      "path": "V493_YENILIKLER_GUVENLIK_TEST_KILAVUZU.md",
+      "bytes": 8079,
+      "sha256": "d3459f29db86c63ed2550b9030b5405193413bf9810dccd0d41d3fa345bcb80d"
+    },
+    {
+      "path": "V494_BASLAT_WINDOWS.bat",
+      "bytes": 301,
+      "sha256": "efd7bca3fa91249400fafd8ef97692c681c85ad4bb812a46d34a532ac230ab66"
+    },
+    {
+      "path": "V494_DOGRULA_WINDOWS.bat",
+      "bytes": 897,
+      "sha256": "02fd5a53f5a4389ed2b23ae027aacde4af37d0702a7a02e914695da4daef5330"
+    },
+    {
+      "path": "V495_BASLAT_WINDOWS.bat",
+      "bytes": 289,
+      "sha256": "e8ec575d66f4b80d690e82aea6c37d8825db6e057ef7c022765d9c71880bd2e2"
+    },
+    {
+      "path": "V495_DOGRULA_WINDOWS.bat",
+      "bytes": 764,
+      "sha256": "0fda5345e7bbc5cb441360b95c1677951df90f7912553ad95fa46fed7138d9f9"
+    },
+    {
+      "path": "V495_GELISTIRMELER_TEST_VE_KURULUM.md",
+      "bytes": 5820,
+      "sha256": "cd9b97c3378589fe555b7640d4fee8182c0990cc4c781c633dda6383ced1e99e"
+    },
+    {
+      "path": "V498_BASLAT_WINDOWS.bat",
+      "bytes": 266,
+      "sha256": "7d5b62038bcdc4b00b0f4a6c9a98782eaee2cbae10b109f8e981d282e51f9b5c"
+    },
+    {
+      "path": "V498_DOGRULA_WINDOWS.bat",
+      "bytes": 399,
+      "sha256": "f71a852acd7a1e45f4705f9d8e6a122a717a7cec98cadea4b2c6400dd16e9c9d"
+    },
+    {
+      "path": "V498_YENI_SURUM_NOTLARI.txt",
+      "bytes": 1600,
+      "sha256": "b8d46595135830b0b4b5b7a7ec7eb3e5e0734debfe59372979abfbd599aac3d9"
+    },
+    {
+      "path": "V499_BASLAT_WINDOWS.bat",
+      "bytes": 266,
+      "sha256": "485e3033c94bdc825fc888ea7e451615ae83956724f4f3faa692fbb78c876c07"
+    },
+    {
+      "path": "V499_DOGRULA_WINDOWS.bat",
+      "bytes": 399,
+      "sha256": "38b4e8e1ce37ed6e49c3321b30d71c5bff330b539c6901c512fab49a9edc4263"
+    },
+    {
+      "path": "V499_ONEMLI_OKU.txt",
+      "bytes": 955,
+      "sha256": "ffafd54c7dc728c17ab19baf30d9f76bfd7be112a8cd500358da7335e6793976"
+    },
+    {
+      "path": "V499_TEST_VE_KABUL.md",
+      "bytes": 6256,
+      "sha256": "644039910f697af7206b0aac954ff7b2defc412f981c873167d2187af00f4222"
+    },
+    {
+      "path": "docs/V4101_ARCHITECTURE.md",
+      "bytes": 5557,
+      "sha256": "fd1c3100f1c0ae869de6056dea92ead17d6d80062789ee29c0a80d76a5a70b3b"
+    },
+    {
+      "path": "docs/V4101_CHANGELOG_AND_GAPS.md",
+      "bytes": 3776,
+      "sha256": "da55e445643efae2723cf791117b3a46897cd4897aa8fa0f5da957778fc689b0"
+    },
+    {
+      "path": "docs/V4101_GITHUB_SYNC_STATUS.md",
+      "bytes": 1837,
+      "sha256": "f1b9661159951afe019145a84597401b1189212a48a1c17e2584580a67317e90"
+    },
+    {
+      "path": "docs/V4101_SOURCE_FILE_INDEX.md",
+      "bytes": 30121,
+      "sha256": "1bddb8cd456def24c812cc036bff0d701f4fc2e368d5d759b7b1548772d668ec"
+    },
+    {
+      "path": "docs/V4101_WINDOWS_ACCEPTANCE.md",
+      "bytes": 2642,
+      "sha256": "fcf114e2fba9d402aa5ce8703cd116e581ac564ed5c6d2e8c117da9699b8d975"
+    },
+    {
+      "path": "docs/V46_ACCEPTANCE_CURRENT.md",
+      "bytes": 1569,
+      "sha256": "e5c4bd8e52f2167c35e80d65e939ed6e8744a965a6e7c191aeb001ebf677a7e4"
+    },
+    {
+      "path": "docs/V46_CANDIDATE_RUNBOOK.md",
+      "bytes": 8272,
+      "sha256": "7b526c69e3e5d346954cd69c524f0ae3ec9e3312c85d76bde0f9495c6851853e"
+    },
+    {
+      "path": "docs/V46_LIVE_CHECKPOINTS.md",
+      "bytes": 6660,
+      "sha256": "2a9c7e50429db486dc5484065969997e9dc7ec6baf4b359ed858c023edccf82e"
+    },
+    {
+      "path": "docs/V472_MAGENTA_AND_EXTERNAL_INVENTORY.md",
+      "bytes": 5275,
+      "sha256": "3d69e56a3504e7bcad86a340b6908199ad031b7adf83dcfb81a3284f4e1a1fec"
+    },
+    {
+      "path": "docs/V473_FINAL_SAFE_HANDOFF.md",
+      "bytes": 5094,
+      "sha256": "d873fe4ca9d5beb50d07961aac20f7401f3cc12468454c2da0d4a8194188ed7f"
+    },
+    {
+      "path": "docs/V475_FINAL_CODE_DELIVERY.md",
+      "bytes": 6647,
+      "sha256": "47d83c12679cc683edd6b7dec70bdb9af5fd48301ecdd092a93335cf81134e98"
+    },
+    {
+      "path": "docs/V476_EDITOR_PORT_AND_PETEK_LAYOUT.md",
+      "bytes": 3097,
+      "sha256": "4e513cf7acbe5eb7f39290862e56fdb48c08be18b3b063a8593d45681e17a325"
+    },
+    {
+      "path": "docs/V477_PETEK_7_CATEGORY_NATIVE.md",
+      "bytes": 3602,
+      "sha256": "bd279746a9e0b439131c5b8a60ca79c22a46bbdc39afb3187dc7bcbd84b80939"
+    },
+    {
+      "path": "docs/V47_P1_P2_QA_RUNBOOK.md",
+      "bytes": 3979,
+      "sha256": "0b73962f04d323c83c2cf93cbccd7307fe50e71386bbec0514edc3acedb71064"
+    },
+    {
+      "path": "docs/V490_ESKI_KURULUM_BILGISI_REFERANS.txt",
+      "bytes": 4322,
+      "sha256": "807280c499d4d1bb12886d1a3350ed3f8ae1a1217905e94b5eaa48f73332d95b"
+    },
+    {
+      "path": "docs/V492_GELISTIRME_NOTLARI.txt",
+      "bytes": 770,
+      "sha256": "96cddf17985063e31533b336aa04cc317c3736e2cf0f870417ea1e8d142fcd0e"
+    },
+    {
+      "path": "scripts/benchmark.py",
+      "bytes": 13887,
+      "sha256": "9edb5e4ec37cb1dba3852f62f83cf1ef602e38f8449ca38f61f0007be9c555f9"
+    },
+    {
+      "path": "scripts/build_v46_candidate.py",
+      "bytes": 5855,
+      "sha256": "2f54e53c244a65a771dd37bac122c20c7c97c9aa0e274c7d44541f79ba2c13eb"
+    },
+    {
+      "path": "scripts/capture_runtime_baseline.py",
+      "bytes": 2738,
+      "sha256": "6afcead4c6e6816a9f01a3e1ee2c564aeee760ca5dbde9cccdc397e1a5c0227f"
+    },
+    {
+      "path": "scripts/check_safe_git_push.py",
+      "bytes": 2344,
+      "sha256": "2ac7013b887eaaf27bb1f29e64c767ac71a678dbfe7269128537f3e94b9e8161"
+    },
+    {
+      "path": "scripts/create_v46_acceptance_snapshot.py",
+      "bytes": 4805,
+      "sha256": "6ec61f375e81cff7e4c44f0e6f8940497c54e3cd1e3cdcdd70f7c0bc9e1bf3e8"
+    },
+    {
+      "path": "scripts/create_v46_final_candidate.py",
+      "bytes": 2911,
+      "sha256": "d6026f39b6217358255e0a4370f2bd7f4841b0ce092e50266002c20160ddd801"
+    },
+    {
+      "path": "scripts/create_v46_final_evidence.py",
+      "bytes": 3031,
+      "sha256": "0b941f308b862f3b996894366b0a473560739430e480d78daad7759b1b1e4d8c"
+    },
+    {
+      "path": "scripts/create_v46_review_selection.py",
+      "bytes": 1837,
+      "sha256": "7b9dedc3ab2e296989d19035019c4cd105311d6c0c1e72f5f2e96739a9846a12"
+    },
+    {
+      "path": "scripts/create_v46_test_results.py",
+      "bytes": 2420,
+      "sha256": "605b2e36aea148ca3a2d4c27964d3583eb968dac8cd1fc5f9e945633efa4104a"
+    },
+    {
+      "path": "scripts/epic3_benchmark.py",
+      "bytes": 12954,
+      "sha256": "d42fee379624c4238c87865c9c0863db86bff2636f2ead69ff3c16f009fff038"
+    },
+    {
+      "path": "scripts/epic3_real_artwork_pilot.py",
+      "bytes": 19255,
+      "sha256": "370e97974b909ee2f78d08fc11e018beb9e5460398ce47332aa48fb294ea87a5"
+    },
+    {
+      "path": "scripts/epic3_six_template_smoke.py",
+      "bytes": 20416,
+      "sha256": "bc390e0684e391abd86bd4c0158840c6f67e6e44204889feb90ea7c35dfb2796"
+    },
+    {
+      "path": "scripts/epic3_validation_bundle.py",
+      "bytes": 35495,
+      "sha256": "cf2faf7a29b34a8b4d488ae6fcd716a62900d6edadc24d58bc5dc19d6f7e29fd"
+    },
+    {
+      "path": "scripts/epic3_visual_candidate_sheets.py",
+      "bytes": 11788,
+      "sha256": "c8f55dfad12ea811502e859d567e47096fa42e20f66fedd5dba0c7e318ed9b7a"
+    },
+    {
+      "path": "scripts/factory_doctor.py",
+      "bytes": 3088,
+      "sha256": "681c4382958b2961059ed81c16d2b9c6661bd266906a1af5d0644318341e5a85"
+    },
+    {
+      "path": "scripts/geometry_diagnostics.py",
+      "bytes": 11929,
+      "sha256": "788a33c27fd074aea87feaad291ac29482e8443459e2f7ccf771a6662d82a483"
+    },
+    {
+      "path": "scripts/migrate_legacy_geometry_profiles.py",
+      "bytes": 20814,
+      "sha256": "afdd9d6a6036687bd1486906195c0c11c20bc0f42051b4429993c3cda773b34d"
+    },
+    {
+      "path": "scripts/p0_db_migration_gate.py",
+      "bytes": 6032,
+      "sha256": "98314af5a04fac7f3ed39fb791baf3d2e24ed9cb93bd6b23184e3ab3da504434"
+    },
+    {
+      "path": "scripts/p0_prepare_release.py",
+      "bytes": 4735,
+      "sha256": "e77e2c799d341b446a30d64677fee90b836cc6949517f1875303ffc6289dc19e"
+    },
+    {
+      "path": "scripts/p0_release_transaction.py",
+      "bytes": 15032,
+      "sha256": "e5323ec9c275e9f296ef73595e6efb308dec5d3f15a118f7bcec75b19c53fce0"
+    },
+    {
+      "path": "scripts/runtime_workspace_migration.py",
+      "bytes": 3100,
+      "sha256": "260fb38a79d10518f2e59971f443adee475b1e81c4591a77e2a8318adf7d74ca"
+    },
+    {
+      "path": "scripts/scorer_telemetry.py",
+      "bytes": 10027,
+      "sha256": "376f55f611b41810573743a97b57b653228ee2ad689ec83d1905d650e7638093"
+    },
+    {
+      "path": "scripts/v4100_verify_package.py",
+      "bytes": 1270,
+      "sha256": "903cdd5c282c4810ce3ca975600aaf7ce7243d4d2abfe92fb7d280b65d530002"
+    },
+    {
+      "path": "scripts/v4101_verify_package.py",
+      "bytes": 1270,
+      "sha256": "e471af65aea63183301ee639ad96fdd8af56af322be39d20d01c5afbb3f791fa"
+    },
+    {
+      "path": "scripts/v46_all_category_geometry_benchmark.py",
+      "bytes": 7177,
+      "sha256": "f0d6ecdfdd9faac457e202a0b599c0da0c03e4631460abe7216800ce9553b662"
+    },
+    {
+      "path": "scripts/v46_dependency_check.py",
+      "bytes": 741,
+      "sha256": "733b6bb0bcf1e9d70df64aebb713adaedfe8d20d9ac0cc969b94b188fb85c1ab"
+    },
+    {
+      "path": "scripts/v46_launcher_preflight.py",
+      "bytes": 1147,
+      "sha256": "3bb3eed34004aa5ec34b89af2590984854965833bc7e51942a74b5173c386766"
+    },
+    {
+      "path": "scripts/v46_synthetic_corner_benchmark.py",
+      "bytes": 8484,
+      "sha256": "51679cb9cd0d2777d34be63bebc7e4a5b2f6eb026b54ae36a27489fb7015e205"
+    },
+    {
+      "path": "scripts/v490_verify_package.py",
+      "bytes": 978,
+      "sha256": "cc0befa6b538b9e0be7fedf9ab67943df3184065ad5817132fc00d7683b8e7c8"
+    },
+    {
+      "path": "scripts/v491_static_connections.py",
+      "bytes": 4293,
+      "sha256": "bf90a75f047117afafa6d4a083778cc6a9f6b82ff54120dcf40e18ff218569ce"
+    },
+    {
+      "path": "scripts/v491_verify_package.py",
+      "bytes": 980,
+      "sha256": "640d0b65a9fde134692f5cea346eba129d7cfc8e4cd4919e794b6b20ca02d2e8"
+    },
+    {
+      "path": "scripts/v492_verify_package.py",
+      "bytes": 1651,
+      "sha256": "66c653e188ca207e771a1867ec2b717e9897f46b0aba6f601b6f892035a2b26c"
+    },
+    {
+      "path": "scripts/v493_verify_package.py",
+      "bytes": 1651,
+      "sha256": "e101368f12ac0de88832aee1cf514e344df58cfce5b1a386a2c8a6f8380415c4"
+    },
+    {
+      "path": "scripts/v494_verify_package.py",
+      "bytes": 1651,
+      "sha256": "08f8c1741bfc0812b4510b687e7fdfe709b06b781136b4d4b5b492677b062cbf"
+    },
+    {
+      "path": "scripts/v495_verify_package.py",
+      "bytes": 1651,
+      "sha256": "3a7779273a48aa63b9491409dcb1fa444c5453a255581ff18290ec1b60a65de3"
+    },
+    {
+      "path": "scripts/v498_verify_package.py",
+      "bytes": 1267,
+      "sha256": "a76531b1822b0c6a6e664f0a6d9326e7682516527de56da2815beedbd3eb9efc"
+    },
+    {
+      "path": "scripts/v499_verify_package.py",
+      "bytes": 1267,
+      "sha256": "8f8ae8e7936a45dc26b32dcb94c8945132b1b07b6748043fe71dfe132180647e"
+    },
+    {
+      "path": "tests/js/test_edge_angles_v46.cjs",
+      "bytes": 1602,
+      "sha256": "46bdc0858415834fee1f9ee0e701e62f26b3c4644022e04b9ca1af22e1dd99dc"
+    },
+    {
+      "path": "tests/js/test_petek_quad_drag_v481.cjs",
+      "bytes": 1539,
+      "sha256": "1d0b02c17c82ff7f5608de067efa9ec5cd4b042d6208aba58f84fe124554009b"
+    },
+    {
+      "path": "tests/js/test_petek_sidebar_refresh_v482.cjs",
+      "bytes": 4585,
+      "sha256": "4b04705eafd4a61721aad3b16826241a898e84b7d7b79c81437472b1f370e221"
+    },
+    {
+      "path": "tests/test_benchmark_metrics.py",
+      "bytes": 5011,
+      "sha256": "99bb2f04757b1a42c7da4521f8bfc77c20129cd6952a22368c98640b835dfd13"
+    },
+    {
+      "path": "tests/test_control_center_file_ops.py",
+      "bytes": 3888,
+      "sha256": "86c5f527457aa2b94fa7a65df4a07936f55e6252a9c95e3e394b776665378dc6"
+    },
+    {
+      "path": "tests/test_epic3_archive_guards_readonly.py",
+      "bytes": 9174,
+      "sha256": "d399a587dca80fd28bf13e24a8c0354897557156e322d6b406110097571377d0"
+    },
+    {
+      "path": "tests/test_epic3_benchmark.py",
+      "bytes": 1642,
+      "sha256": "47cd8c801375f4402935580e0809ff04ad02f0378d853182854821e7819e4e53"
+    },
+    {
+      "path": "tests/test_epic3_doctor_windows_encoding.py",
+      "bytes": 3007,
+      "sha256": "360684c4d4e62333a10450fa842ad2927e1e9d19d9a060bb788a58f9818959b9"
+    },
+    {
+      "path": "tests/test_epic3_lifecycle_no_overwrite.py",
+      "bytes": 7698,
+      "sha256": "0527737f1653f54706cf408bb4686a3beac818ef61adaa599b1320eb6e797e84"
+    },
+    {
+      "path": "tests/test_epic3_real_artwork_pilot.py",
+      "bytes": 16157,
+      "sha256": "bb5ef01b045565ba5b1d5806b5d5a7061d5748563b4d7116629594c70a614863"
+    },
+    {
+      "path": "tests/test_epic3_release_checkout_guard.py",
+      "bytes": 3068,
+      "sha256": "f84d0b568f4b73704ad2ea7ebce688bd31a7755743d7718176a836f9d8459734"
+    },
+    {
+      "path": "tests/test_epic3_six_template_real_renderer.py",
+      "bytes": 10115,
+      "sha256": "493f132364745041e2b05101da560b14808fae285a7b1ed8bb791d44f57fed3b"
+    },
+    {
+      "path": "tests/test_epic3_six_template_smoke.py",
+      "bytes": 9075,
+      "sha256": "5434c87064ff491df959a3a9f16a41a8dd89271d3454689fa1948d47be3f3ab1"
+    },
+    {
+      "path": "tests/test_epic3_validation_bundle.py",
+      "bytes": 10688,
+      "sha256": "0e53c34d18940d1c06b210e4a5721830198fbf7f1be3b13d3d0b86d50549acdf"
+    },
+    {
+      "path": "tests/test_epic3_visual_candidate_sheets.py",
+      "bytes": 5517,
+      "sha256": "51988c453d37c6e7c10dde9ed576d93d2691484e1aaeb610bcba5cc76cb32e6e"
+    },
+    {
+      "path": "tests/test_factory_doctor.py",
+      "bytes": 8494,
+      "sha256": "33dd9d92f42709e76a67320f741193066f9ed01de10fe5e6ba5a073bffbc37eb"
+    },
+    {
+      "path": "tests/test_fill_v1_delivery.py",
+      "bytes": 1179,
+      "sha256": "e8df1d8c2c757c17b2f274b1bc59f0c04ae9410ed2e331925b32ab6589533e7e"
+    },
+    {
+      "path": "tests/test_full_inventory_manual_guard.py",
+      "bytes": 2332,
+      "sha256": "2f9af1ad1d29c1b6ea1b526e4f5b8b3fa37086b4cdd9616bf4365825cbf73d2f"
+    },
+    {
+      "path": "tests/test_geometry_diagnostics.py",
+      "bytes": 3312,
+      "sha256": "27df371e1b8f1e786daa51ddde583c42cb0e68d94a5a8eb29dff871e3f315483"
+    },
+    {
+      "path": "tests/test_lifecycle_reconciliation.py",
+      "bytes": 19788,
+      "sha256": "0846acaae4262362eb35118161304bec069ab75256a3f878763fd93b2b2d7e5e"
+    },
+    {
+      "path": "tests/test_number_guard_v2.py",
+      "bytes": 24332,
+      "sha256": "c98ed185796e192f5bbe75a08d9d63874730dc1c6a3612cae1ac5ee401ca5142"
+    },
+    {
+      "path": "tests/test_orientation_sort_v489.py",
+      "bytes": 3108,
+      "sha256": "e8002402ed0af6131d808f948e8b34a2b386bc3824b00b13b47e3fe480036bb2"
+    },
+    {
+      "path": "tests/test_p0_app_8080.py",
+      "bytes": 3661,
+      "sha256": "051d4705257fadcc436c0be22aa01c54bc74ed2229bf5b25c203b81a5a8719ab"
+    },
+    {
+      "path": "tests/test_p0_final_release_gates.py",
+      "bytes": 3294,
+      "sha256": "6c89b7488fd4fa593e157f8e4f6035823f12617a1375c0e66df080dc3b73e8c6"
+    },
+    {
+      "path": "tests/test_p0_independent_release_safety.py",
+      "bytes": 7022,
+      "sha256": "f768f6bdb9251fc6dda737bbccd564e36c8d49c12506c792cb6a8131f1dff0cf"
+    },
+    {
+      "path": "tests/test_p0_isolated_factory_render.py",
+      "bytes": 4097,
+      "sha256": "acfe4d152d1d4ef282151ba9ab71ddcdc2fd53b4c7738028968007812880a170"
+    },
+    {
+      "path": "tests/test_p0_legacy_full_inventory_guards.py",
+      "bytes": 2057,
+      "sha256": "740f002120431432aa3a934de6d957dcfbae20550aaa17054cb3ca7c57b1b1f6"
+    },
+    {
+      "path": "tests/test_p0_numbering_archive_stress.py",
+      "bytes": 7276,
+      "sha256": "348fe31d4dbe7317b2c81a45467b18e99b4c492d504ebd09917fd92fa28fd857"
+    },
+    {
+      "path": "tests/test_p0_regressions.py",
+      "bytes": 48986,
+      "sha256": "aa986485279f5215b128af89b941a331372da7561c93d5b1abbfddffafad72f4"
+    },
+    {
+      "path": "tests/test_p0_release_transaction.py",
+      "bytes": 7246,
+      "sha256": "896f8212f6f856eb293ee247643eba7007874b4bb6e897bd121e9597398c58e0"
+    },
+    {
+      "path": "tests/test_p0_review_endpoints.py",
+      "bytes": 8457,
+      "sha256": "1a336a178154efa9dfd67bdcc04059afc5c78e962a96f86acd4dd92c39eeb583"
+    },
+    {
+      "path": "tests/test_p0_sqlite_migration_simulation.py",
+      "bytes": 1894,
+      "sha256": "4e4c2f2cf186d42100cd44641606617002d9550257548d825651e9b6f4891d2a"
+    },
+    {
+      "path": "tests/test_p0_visual_qa_guard.py",
+      "bytes": 1665,
+      "sha256": "37cb4de9ea4bb7d5622ad6970547d43eb665f9b6222e354c560646a287cbbac1"
+    },
+    {
+      "path": "tests/test_p1_p15_suite.py",
+      "bytes": 73693,
+      "sha256": "dc147d775af4b5562c8ef3ddc2e41d8e9a990ac8a76acbe4a454fbfe142a7d4f"
+    },
+    {
+      "path": "tests/test_quality_power_tool.py",
+      "bytes": 2395,
+      "sha256": "1720319e4d35dd4924654a22ce4f16a6c09b45e79029f7a58b9a5c438f622657"
+    },
+    {
+      "path": "tests/test_runtime_infrastructure.py",
+      "bytes": 10263,
+      "sha256": "5f375f86ad3c28b3aef78d8e197f7fcc5c2aac07547b9b9ccb4a2d400b6b6a3f"
+    },
+    {
+      "path": "tests/test_runtime_migration.py",
+      "bytes": 7711,
+      "sha256": "d70b0497937a6be613e49c28005e004605acc8fdf6753000d54aa6b6ee58660f"
+    },
+    {
+      "path": "tests/test_runtime_workspace_routing.py",
+      "bytes": 7240,
+      "sha256": "1f6868fb9102cfb625761e7d9f4325e0c7029e278b0eaf63b0ad83b8e6ab2583"
+    },
+    {
+      "path": "tests/test_surface_mode_detection.py",
+      "bytes": 14169,
+      "sha256": "a71f92b004945fbe4ce442e732b265daec741d71551464b070841264148f76d4"
+    },
+    {
+      "path": "tests/test_t1_client.py",
+      "bytes": 16109,
+      "sha256": "9262c15208bfb78d85aeac495a4b3989170d3455d5c82ebbcefa397eba099937"
+    },
+    {
+      "path": "tests/test_template_identity.py",
+      "bytes": 3654,
+      "sha256": "a68e306fbcd346d012c2dab5296b0a5bb81b9c6d64e8b9e0b1553041996ed2c1"
+    },
+    {
+      "path": "tests/test_template_identity_extensions.py",
+      "bytes": 5341,
+      "sha256": "0d250423ca7e215d007a255e36bc6321bb00e62e0ce278912090b7f85be7d0d3"
+    },
+    {
+      "path": "tests/test_template_profile_schema_migration.py",
+      "bytes": 5377,
+      "sha256": "e280e7d4b21516dfb5f56fec12c6a327e2b2a5fe12f6a9a5e1d3c2cc99d6bdb5"
+    },
+    {
+      "path": "tests/test_user_tools.py",
+      "bytes": 11970,
+      "sha256": "003f157774bf6ed7444021d99cb12a01e595b7bb9adf8e3a939e229246d3ddc7"
+    },
+    {
+      "path": "tests/test_v4100_store_assignment.py",
+      "bytes": 10266,
+      "sha256": "971c640287b271ee78b3668af2f93aed7ae4a00390544380365a1a1254a2b21e"
+    },
+    {
+      "path": "tests/test_v4101_release.py",
+      "bytes": 4211,
+      "sha256": "6ea70b8cc675f3782a150894ffc549b679c3c387c559b581c00eb1052386fffc"
+    },
+    {
+      "path": "tests/test_v46_all_category_geometry_benchmark.py",
+      "bytes": 888,
+      "sha256": "7a50fcf13e58973c78e32d0e905b3e749b2429cb84891655be5896e0b406b966"
+    },
+    {
+      "path": "tests/test_v46_synthetic_corner_benchmark.py",
+      "bytes": 813,
+      "sha256": "2805a91c41300d0652b9aacbefe5a5bfa2ba0f38cdde2a50d51a7b85a3241f10"
+    },
+    {
+      "path": "tests/test_v491_independent_tool_launch.py",
+      "bytes": 2479,
+      "sha256": "12669df064d7d1f4ad8b18e3cb5fecdcba505674ef191829c2aa7b4fefb0f3a8"
+    },
+    {
+      "path": "tests/test_v491_safety_fixes.py",
+      "bytes": 3691,
+      "sha256": "02ba78fb009a8ca3bc60e184d7c7c26ca639e82163ad282408a82fe26e46a2b0"
+    },
+    {
+      "path": "tests/test_v492_petek_finish_filter.py",
+      "bytes": 3362,
+      "sha256": "aab8962c79f2504accf35d16669a9705925a7e18eeddedbfeef8fbc0281d1735"
+    },
+    {
+      "path": "tests/test_v493_persistent_acceptance_and_fifteen.py",
+      "bytes": 6159,
+      "sha256": "77e301314925139352f84afd0f9ebf53b1a27318c4cfc593f955f2f9cf5f68e3"
+    },
+    {
+      "path": "tests/test_v494_safe_exit.py",
+      "bytes": 4480,
+      "sha256": "5fe90cad2b6ed7d856bac47eb3d9cceb12dc4925ef5e3ab9a4d0a3f664d80bf7"
+    },
+    {
+      "path": "tests/test_v495_release_safety.py",
+      "bytes": 4721,
+      "sha256": "7bf27485684bd9624a379044112225b2b1cf81ed693d977330278021e0450758"
+    },
+    {
+      "path": "tests/test_v498_ui_and_approval_safety.py",
+      "bytes": 5901,
+      "sha256": "85f87dfabe9df41a7e0dd3f47f5da2859ece22f720ed362f40ff8fd3523ca714"
+    },
+    {
+      "path": "tests/test_v499_bulk_ui_and_revision.py",
+      "bytes": 5094,
+      "sha256": "aad645bdedae8e1728bdf09914e5d95bf558e9f3af38cd3ab8f784edb4a07b87"
+    },
+    {
+      "path": "tests/test_watcher_safety.py",
+      "bytes": 18801,
+      "sha256": "59bb1e32542fc9344e2f251393cc2fc270dd0f38e2858c4e82bb631bea129f9a"
+    },
+    {
+      "path": "tests/test_workspace_consistency.py",
+      "bytes": 15795,
+      "sha256": "31bec7fd443e441fdf5ece370a8460494e4219f3101c7c0411a073b4ea59efa3"
+    }
+  ]
+}

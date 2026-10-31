@@ -12,13 +12,36 @@ const s={
   img:null,mask:null,base:null,mode:'corners',painting:false,
   dragCorner:-1,dragChanged:false,dirty:false,needsCurveApply:false,
   fitScale:1,zoom:1,preview:null,previewMode:false,entries:[],spaceHeld:false,panning:false,undoStack:[],listHost:null,
-  bulkMode:false,bulkSelected:new Set(),bulkActive:false,bulkStop:false,bulkRows:[],bulkReport:[]
+  bulkMode:false,bulkSelected:new Set(),bulkActive:false,bulkStop:false,bulkRows:[],bulkReport:[],compactList:true
 };
-const names={corners:'Dört köşe',wood:'Baskı ahşabını boya',protect:'Delik / yan yüzü koru',top:'Üst kavis',bottom:'Alt kavis'};
+const names={corners:'Dört köşe',wood:'Baskı ahşabını boya',erasewood:'Ahşap boyasını sil',protect:'Delik / yan yüzü koru',top:'Üst kavis',bottom:'Alt kavis'};
+const errorSolutions=[
+  [/maske taslağı|baskı alanı|%0|0[.,]0%/i,'Dört köşe kaydedildiyse önce “2. Otomatik Maske Taslağı” oluştur, ardından gerçek tasarımla önizle. Kaydedilmiş maske yokken baskı alanını %0 diye yorumlama.','petekV477Auto'],
+  [/onaylı.*kilit|kilitli/i,'“Onaylı Maskeyi Düzenle / Yeni Revizyon” yolunu kullan. Orijinal onaylı kayıt korunur; yeni revizyonu onayladıktan sonra etkinleştir.','petekV477Revision'],
+  [/kaynak|sha|uid|kimlik/i,'Kaynak fotoğraf veya maskenin SHA değeri değişmiş olabilir. Listeyi yenile, güncel taslağı incele; eski kaydı zorla onaylama.',null],
+  [/4k|esrgan|vulkan/i,'Seri Üretim > “4K Kurulumunu Kontrol Et” düğmesini kullan. 4K kapalı normal üretim sürdürülebilir.',null]
+];
+let lastErrorKey='',lastErrorTime=0;
 function notice(message,bad=false){
  const e=$('petekV477Status'); if(!e)return;
- e.textContent=String(message);e.style.color=bad?'#fca5a5':'#c6f6d5';
+ const raw=String(message);let recommendation=null;
+ if(bad){for(const [pattern,advice,id] of errorSolutions){if(pattern.test(raw)){recommendation={advice,id};break;}}}
+ e.textContent=raw+(recommendation?'\nNEDEN / ÇÖZÜM: '+recommendation.advice:'');
+ e.style.color=bad?'#fca5a5':'#c6f6d5';
+ // Only blocking, non-batch errors trigger the popup once. Per-file bulk
+ // failures are aggregated in the report and must not stop the queue.
+ if(!bad||s.bulkActive||!recommendation)return;
+ const popup=$('petekV4101ErrorDialog');if(!popup||typeof popup.showModal!=='function')return;
+ const key=raw;const now=Date.now();if(key===lastErrorKey&&now-lastErrorTime<1500)return;
+ lastErrorKey=key;lastErrorTime=now;
+ $('petekV4101ErrorText').textContent=raw;
+ $('petekV4101ErrorAdvice').textContent=recommendation.advice;
+ const button=$('petekV4101ErrorAction');button.hidden=!recommendation.id;
+ button.onclick=()=>{popup.close();const item=$(recommendation.id);
+   if(item){item.scrollIntoView({block:'center'});item.focus();}};
+ if(!popup.open)popup.showModal();
 }
+
 function photoUrl(name){return '/api/petek/photo/'+encodeURIComponent(name);}
 function detailUrl(name,uid){return '/api/petek/detail/'+encodeURIComponent(name)+'?uid='+encodeURIComponent(uid);}
 async function api(path,body){
@@ -92,21 +115,22 @@ function setZoom(value){
  fit();
 }
 function chooseRelative(delta){
- const list=s.entries,idx=list.findIndex(x=>x.uid===s.uid&&x.name===s.name);
- const target=list[idx+delta];if(!target)return;
+ const list=visiblePetekItems(),idx=list.findIndex(x=>x.uid===s.uid&&x.name===s.name);
+ const target=list[idx+delta] || (idx<0?list[0]:null);if(!target)return;
  if(s.dirty&&!confirm('Kaydedilmemiş PETEK taslağını bırakıp sonraki şablona geçilsin mi?'))return;
  select(target.name,target.uid);
 }
 function bulkKey(item){return JSON.stringify([item.name,item.uid,item.source_sha]);}
 function visiblePetekItems(){
  const q=$('petekV477Search').value.trim().toLocaleLowerCase('tr');
- return s.entries.filter(x=>!q||x.name.toLocaleLowerCase('tr').includes(q)||x.uid.toLocaleLowerCase('tr').includes(q));
+ return s.entries.filter(x=>(!q||x.name.toLocaleLowerCase('tr').includes(q)||x.uid.toLocaleLowerCase('tr').includes(q)) && (!window.V499StatusFilters || window.V499StatusFilters.allowed(petekState(x))));
 }
 function refreshBulkCount(){
- $('petekV484BulkCount').textContent=s.bulkSelected.size+' PETEK şablonu seçildi';
+ $('petekV484BulkCount').textContent=s.bulkSelected.size+' PETEK şablonu seçildi; toplu ONAY için tikleme gerekmez';
  const selectedCount=s.bulkSelected.size;
  $('petekV484BulkDetect').disabled=!selectedCount||s.bulkActive;
  $('petekV484BulkSave').disabled=!selectedCount||s.bulkActive;
+ $('petekV498BulkApprove').disabled=s.bulkActive;
  $('petekV484BulkStop').disabled=!s.bulkActive;
  $('petekV484BulkMode').disabled=s.bulkActive;
 }
@@ -192,6 +216,60 @@ async function runBulkPetek(save){
   refreshBulkCount();
  }
 }
+/* V4.10.1: The retired eight-at-a-time human review UI was removed.
+ * One explicit global confirmation applies to every eligible visible DRAFT;
+ * each individual mask/source is still independently validated by the server. */
+/* V4.9.9 single-confirm bulk approval. Backend rechecks every source, UID and mask.
+ * Any internal eight-record chunks are invisible to the operator; no checkbox
+ * or repeated prompt. Failed items stay DRAFT, approved originals stay locked. */
+async function beginBulkPetekApproval(){
+ if(s.bulkActive)return;
+ if(s.dirty){notice('Kaydedilmemiş PETEK düzenlemesi var. Önce kaydet veya geri al.',true);return;}
+ const drafts=visiblePetekItems().filter(x=>x.status==='DRAFT'&&x.mask_verified);
+ const rejected=visiblePetekItems().filter(x=>x.status==='DRAFT'&&!x.mask_verified).length;
+ if(!drafts.length){notice('Onaylanabilecek doğrulanmış PETEK TASLAĞI bulunamadı. Önce Otomatik Maske Taslağı oluştur ve kaydet.',true);return;}
+ const reviewer=($('petekV477Reviewer')?.value||'Can').trim();
+ if(!reviewer){notice('İnceleyen kişinin adını gir.',true);return;}
+ if(!confirm(drafts.length+' PETEK TASLAĞININ TÜMÜ SUNUCUDA AYRI AYRI DENETLENECEK.\n\n'+
+   'Kaynak fotoğraf, maske SHA, dört köşe ve baskı alanı doğru olanlar ONAYLANACAK; hatalılar TASLAK kalacak.\n'+
+   'Onaylı eski maskeler ve orijinal dosyalar değişmeyecek.\n\n'+
+   'Her dosyaya tik atmanız gerekmiyor. Toplu onayı BAŞLATMAK istiyor musunuz?'))return;
+ s.bulkActive=true;s.bulkStop=false;s.bulkRows=[];
+ s.bulkReport=['PETEK TEK ONAYLI TOPLU TASLAK KİLİTLEME | '+new Date().toLocaleString('tr-TR'),
+   'Başlangıç taslak sayısı: '+drafts.length+' | Maskesi doğrulanmamış: '+rejected];
+ refreshBulkCount();
+ let processed=0,ok=0,failed=0;
+ try{
+   for(let offset=0;offset<drafts.length;offset+=8){
+     if(s.bulkStop)break;
+     const chunk=drafts.slice(offset,offset+8).map(item=>({name:item.name,
+       uid:item.uid,source_sha:item.source_sha}));
+     $('petekV484BulkStatus').textContent='PETEK toplu onay işleniyor...\n'+
+       processed+'/'+drafts.length+' kontrol edildi · '+ok+' onaylandı · '+failed+' hata';
+     try{
+       const result=await api('/api/petek/bulk-approve-confirmed',{items:chunk,reviewer,
+         confirm:'I_APPROVE_ALL_VALID_PETEK_DRAFTS_IN_THIS_SELECTION'});
+       for(const approved of result.approved||[]){ok++;s.bulkReport.push('ONAYLI | '+approved.name+' | '+approved.uid);}
+       for(const problem of result.failed||[]){failed++;s.bulkReport.push('HATALI/TASLAK KALDI | '+problem.name+' | '+problem.error);}
+     }catch(error){for(const item of chunk){failed++;s.bulkReport.push(
+       'HATALI/TASLAK KALDI | '+item.name+' | '+error.message);}}
+     processed+=chunk.length;
+     $('petekV484BulkStatus').textContent='PETEK TOPLU ONAY\n'+processed+'/'+drafts.length+
+       ' kontrol edildi · '+ok+' onaylandı · '+failed+' sorun';
+     await new Promise(resolve=>setTimeout(resolve,0));
+   }
+   if(s.bulkStop)s.bulkReport.push('İPTAL EDİLDİ | kalan '+(drafts.length-processed)+' taslak korunur');
+   $('petekV484BulkStatus').textContent='SONUÇ: '+ok+' onaylandı; '+failed+' hata; '+
+       (drafts.length-processed)+' işlem yapılmadı. Detay için Raporu Kopyala.';
+   notice(ok+' PETEK taslağı onaylandı; '+failed+' kontrol gerekli. Hatalı kayıtlar taslak kaldı.',failed>0);
+ }finally{s.bulkActive=false;s.bulkStop=false;await reload(s.uid);refreshBulkCount();}
+}
+function petekState(item){
+ if(item.status==='REVIEW_REQUIRED'||item.backup_status==='UNSAFE'||item.backup_status==='DIFFERENT'||(item.approved&&!item.mask_verified))return 'ERROR';
+ if(item.status==='APPROVED'&&item.approved&&item.mask_verified)return 'APPROVED';
+ if(item.status==='DRAFT')return 'DRAFT';
+ return 'NEW';
+}
 function petekHealth(item){
  // Never claim approval from badge colour alone: both SHA-bound mask and
  // registry human approval are necessary.
@@ -204,6 +282,7 @@ function listVisual(){
  const panel=$('petekV477List')||s.listHost?.querySelector('#petekV477List');
  if(!panel){notice('PETEK şablon listesi bulunamadı: HTML ve JS sürümlerini eşitle.',true);return;}
  panel.replaceChildren();
+ panel.classList.toggle('petek-v498-compact',s.compactList);
  const summaries=s.entries.reduce((acc,item)=>{
    acc[item.status]=(acc[item.status]||0)+1;
    if(item.backup_status!=='MATCH')acc.backup++;
@@ -215,7 +294,7 @@ function listVisual(){
    ' yeni · ⚠️ '+summaries.REVIEW_REQUIRED+' kayıt sorunu · 🗄️ '+summaries.backup+' ham kontrol';
  for(const item of visiblePetekItems()){
    const wrap=document.createElement('div');
-   wrap.className='petek-v484-item-wrap petek-status-'+petekHealth(item);
+   wrap.className='petek-v484-item-wrap petek-status-'+petekHealth(item)+' v499-status-'+petekState(item).toLowerCase();
    wrap.setAttribute('aria-label',item.name+' — '+(petekHealth(item)==='approved'?'Onaylı':petekHealth(item)==='error'?'Ciddi sorun, kontrol gerekli':'İnceleme bekliyor'));
    const line=document.createElement('div');
    line.className='petek-v484-line';
@@ -265,6 +344,8 @@ function listVisual(){
       ' / Ham: '+String(item.backup_status||'BİLİNMİYOR')+
       ' / Maske: '+(item.mask_verified?'doğrulandı':'yeni/taslak veya kontrol')+
       ' / Onay: '+(item.approved?'insan onaylı':'yok');
+   // Each row has an immutable filename label and a separately sized checkbox.
+   // Do not let global input{width:100%} consume the entire row.
    wrap.append(line,pictos);
    if(s.bulkSelected.has(key))wrap.classList.add('petek-v484-selected');
    if(petekHealth(item)==='error')wrap.classList.add('petek-v484-warning');
@@ -350,6 +431,7 @@ function setMode(mode){
  $('petekV477Mode').textContent='Mod: '+names[mode];
  notice(mode==='corners'?(s.quad.length===4?'Dört köşe hazır. Kırmızı noktayı fareyle sürükle; zoom + Ctrl+Z kullanılabilir.':'Köşeleri sol üst, sağ üst, sağ alt, sol alt sırasıyla işaretle.'):
        mode==='wood'?'Yeşil boyanacak ön ahşabı boya. Dikey yarıklara ve zemine taşırma.':
+       mode==='erasewood'?'Ahşap Boyasını Sil: Yeşil maske alanını siyaha geri döndürür; fotoğraf piksellerine dokunmaz. Ctrl+Z ile geri al.':
        mode==='protect'?'Siyah koruma fırçası: delikler, gölgeler, üst/alt kavis ve yan yüz.':
        'Kavis uçları yan kenarlara ulaşmalı. Noktaları soldan sağa işaretle.');
  draw();
@@ -358,6 +440,8 @@ async function select(name,uid){
  try{
   const data=await api(detailUrl(name,uid));
   s.name=name;s.uid=data.uid;s.sha=data.source_sha;s.status=data.status;
+  s.revisesUid=data.revises_uid||null;s.baseUid=data.base_uid||null;
+  s.isCurrent=data.is_current!==false;
   s.preview=null;s.previewMode=false;s.zoom=1;s.undoStack=[];
   s.width=data.width;s.height=data.height;s.quad=data.quad||[];
   s.curves=data.curve_points||{top:[],bottom:[]};s.needsCurveApply=false;
@@ -370,7 +454,9 @@ async function select(name,uid){
   $('petekV477AutoCorners').disabled=data.status==='APPROVED';
   $('petekV477Approve').disabled=data.status==='APPROVED';
   $('petekV477Save').disabled=data.status==='APPROVED';
-  $('petekV477Revision').disabled=data.status!=='APPROVED';
+  $('petekV477Revision').disabled=data.status!=='APPROVED'||!s.isCurrent;
+  $('petekV499Restore').disabled=!(data.status==='APPROVED'&&data.revises_uid&&s.isCurrent);
+  $('petekV499Activate').disabled=!(data.status==='APPROVED'&&data.revises_uid&&!s.isCurrent);
   $('petekV477Confirm').checked=true;
   $('petekV477Reviewer').value='Can';
   listVisual();
@@ -422,8 +508,24 @@ async function reload(preferUid){
   }
  }catch(e){notice(e.message,true);}
 }
-async function previewArtwork(){
- if(!s.img||s.quad.length!==4||!s.mask){notice('Önce dört köşe ve baskı maskesi gerekli.',true);return;}
+async function previewArtwork(isFifteen=false){
+ if(!s.img||s.quad.length!==4||!s.mask){
+   const msg='Önizleme için önce dört köşe ve baskı maskesi gerekli.\nÇözüm: 4 köşe → 2. Otomatik Maske Taslağı → Gerçek Tasarımla Önizle.';
+   notice(msg,true);alert(msg);return;
+ }
+ // After automatic quad proposal a blank black canvas exists, but no actual
+ // printable mask has been generated. Avoid misleading "0.0% bad mask" error.
+ const context=s.mask.getContext('2d',{willReadFrequently:true});
+ const rgba=context.getImageData(0,0,s.mask.width,s.mask.height).data;
+ let printable=false;
+ for(let i=0;i<rgba.length;i+=4*48){if(rgba[i]>96){printable=true;break;}}
+ if(!printable){
+   const msg='DÖRT KÖŞE BULUNDU, ancak OTOMATİK MASKE TASLAĞI henüz oluşturulmadı.\n\n'
+       +'Çözüm: Sağ panelde 2. Otomatik Maske Taslağı düğmesine bas. '
+       +'Sonra yeşil baskı alanını, 15 yarığı ve üst-alt kavisi kontrol ederek önizlemeyi yeniden aç.';
+   notice(msg,true);alert(msg);return;
+ }
+
  if(s.needsCurveApply){notice('Önce kavis maskesini güncelle.',true);return;}
  const file=$('petekV477Artwork').files[0];
  if(!file){notice('Önizleme için PNG, JPG veya WEBP tasarım dosyası seç.',true);return;}
@@ -441,15 +543,33 @@ async function previewArtwork(){
   const c=document.createElement('canvas');c.width=Math.round(design.naturalWidth*ratio);c.height=Math.round(design.naturalHeight*ratio);
   c.getContext('2d').drawImage(design,0,0,c.width,c.height);
   const data=await api('/api/petek/preview-artwork',{
-    ...content(),artwork_png:c.toDataURL('image/png')});
+    ...content(),artwork_png:c.toDataURL('image/png'),
+    fifteen_slot_ab:!!isFifteen,
+    fifteen_slot_strength:isFifteen?$('petekV493Strength').value:'orta',
+    pink_cleanup:isFifteen?!!$('petekV493Pink').checked:false});
   if(s.name!==before.name||s.uid!==before.uid||s.sha!==before.sha){
    notice('Şablon değişti; farklı fotoğrafın önizlemesi gösterilmedi.',true);return;
   }
-  s.preview=await imageOf(data.preview);s.previewMode=true;draw();
+  const previewBefore=await imageOf(data.preview);
+  if(isFifteen){
+    if(!data.after||data.slot_qa?.count!==15)throw Error('Tam 15 ızgara önizlemesi üretilemedi.');
+    const previewAfter=await imageOf(data.after);
+    s.previewBefore=previewBefore;s.previewAfter=previewAfter;
+    s.preview=previewAfter;
+    $('petekV493Before').disabled=false;$('petekV493After').disabled=false;
+    $('petekV493Result').textContent='15 / 15 ızgara konumu oluşturuldu • Değişen piksel: '+
+      data.slot_qa.changed_pixels+' • Dört kenar / ızgara temizliği: '+data.pink_qa.status+
+      ' · Kalan yüksek doygunluklu pembe: '+(data.pink_qa.remaining_pixels||0)+'. ÖNCE / SONRA ile kontrol et; gerçek dosyalar değişmedi.';
+  }else{
+    s.previewBefore=null;s.previewAfter=null;s.preview=previewBefore;
+    $('petekV493Before').disabled=true;$('petekV493After').disabled=true;
+  }
+  s.previewMode=true;draw();
   const residual=Number(data.mask_qa?.protected_magenta_pixels||0);
-  notice('GERÇEK BASKI ÖNİZLEMESİ — PETEK V3 kes-yapıştır motoru; ızgara/kavis/zemin korundu. '+
+  notice((isFifteen?'15 IZGARA A/B ÖNİZLEMESİ — ':'GERÇEK BASKI ÖNİZLEMESİ — ')+ 'PETEK V3 motoru. '+
      (residual?'Maskenin DIŞINDA '+residual+' pembe kaynak pikseli korunuyor: tasarım öncesi maskeyi incele. ':'Magenta kenarlarda pembe geçiş karışımı kapalı. ')+
-     'Önizleme kaydedilmedi. 3:4 üretim tuvali ve seçili üretim efektleri son çıktıyı değiştirebilir.',residual>30);
+     'Önizleme kaydedilmedi. 3:4 üretim tuvali ve seçili üretim efektleri son çıktıyı değiştirebilir.',
+     residual>30||!!(data.pink_qa&&data.pink_qa.remaining_pixels>0));
  }catch(e){notice('Baskı önizlemesi oluşturulamadı: '+e.message,true);}
  finally{btn.disabled=false;}
 }
@@ -532,22 +652,48 @@ async function approve(){
  if(!$('petekV477Confirm').checked){
    notice('Dikey delikler, üst-alt kavis, yan yüzler ve zemini kontrol ettiğini işaretle.',true);return;
  }
- if(!confirm('Bu PETEK maskesini insan onaylı, SHA-kilitli üretim şablonu yapıyorsun. Onaylıyor musun?'))return;
+ if(!confirm(s.revisesUid
+   ? 'DÜZENLENMİŞ MASKENİN KAYDINI ONAYLA VE GÜNCEL YAP: eski onaylı maske dosyası korunacak; sonraki üretimlerde yeni maske kullanılacak. Devam?'
+   : 'Bu PETEK maskesini insan onaylı, SHA-kilitli üretim şablonu yapıyorsun. Onaylıyor musun?'))return;
  try{
   await api('/api/petek/approve',{name:s.name,uid:s.uid,source_sha:s.sha,confirmed_sha:s.sha,
-    reviewer,confirm:'I_VISUALLY_CHECKED_VENTS_ARCHES_FLOOR'});
-  await reload();notice('PETEK MASKESİ ONAYLANDI. Ortak 7 kategori üretiminde kullanılabilir.');
+    reviewer,confirm:'I_VISUALLY_CHECKED_VENTS_ARCHES_FLOOR',
+    activate_revision:!!s.revisesUid,
+    activate_confirm:s.revisesUid?'ACTIVATE_REVISED_PETEK_AND_KEEP_OLD':null});
+  await reload(s.uid);notice(s.revisesUid
+    ? 'YENİ ONAYLI MASKE GÜNCEL SÜRÜM OLDU. Eski onaylı maske yedek/geri dönüş için korunuyor.'
+    : 'PETEK MASKESİ ONAYLANDI. Ortak 7 kategori üretiminde kullanılabilir.');
  }catch(e){notice(e.message,true);}
 }
 async function newRevision(){
  if(!s.img||s.status!=='APPROVED')return;
- if(!confirm('Onaylı PETEK maskesi kilitli kalacak. Aynı fotoğraf için yeni, BAĞIMSIZ _r2 TASLAĞI oluşturulsun mu?'))return;
+ if(!confirm('Onaylı maskeyi yeniden düzenlemek için bu fotoğrafın güvenli, bağımsız bir TASLAK revizyonu açılacak. Mevcut onaylı maske ve önceki üretimler değişmeyecek. Devam?'))return;
  try{
     const data=await api('/api/petek/new-revision',{
         name:s.name,uid:s.uid,source_sha:s.sha,confirmed_sha:s.sha});
     await reload(data.uid);
-    notice('Onaylı eski maske korunuyor. Yeni '+data.uid+' TASLAĞINI düzenleyebilirsin.');
+    notice('DÜZENLEME MODU AÇILDI: '+data.uid+' TASLAĞI. 4 köşeleri sürükleyebilir, maskeyi değiştirebilirsin. Kaydet ve ardından insan onayı ver. Eski etkin onaylı kayıt değişmedi.');
  }catch(e){notice(e.message,true);}
+}
+async function restorePreviousApproved(){
+ if(!s.isCurrent||!s.revisesUid||!s.baseUid){notice('Bu şablonun etkin onaylı revizyonu yok.',true);return;}
+ if(!confirm('ÖNCEKİ ONAYLI MASKEYE DÖN: bu revizyonun yerine eski onaylı maskeyi gelecek üretimler için etkinleştireceğiz. İki sürüm de silinmeyecek. Onaylıyor musun?'))return;
+ try{
+  const data=await api('/api/petek/restore-approved-revision',{
+    name:s.name,uid:s.revisesUid,base_uid:s.baseUid,source_sha:s.sha,
+    confirm:'RESTORE_PREVIOUS_APPROVED_PETEK'});
+  await reload(data.active_uid);notice('Önceki PETEK onaylı maske yeniden etkin. Diğer sürümler korunuyor.');
+ }catch(e){notice('Geri dönüş yapılamadı: '+e.message,true);}
+}
+async function activateApprovedRevision(){
+ if(s.status!=='APPROVED'||!s.revisesUid||s.isCurrent)return;
+ if(!confirm('Bu onaylı maskeyi, önceki onaylı maskeyi silmeden GELECEK ÜRETİMLER İÇİN GÜNCEL yapalım mı?'))return;
+ try{
+  await api('/api/petek/activate-approved-revision',{
+    name:s.name,uid:s.uid,source_sha:s.sha,previous_uid:s.revisesUid,
+    confirm:'ACTIVATE_REVISED_PETEK_AND_KEEP_OLD'});
+  await reload(s.uid);notice('Yeni onaylı PETEK revizyonu etkinleştirildi.');
+ }catch(e){notice('Etkinleştirilemedi: '+e.message,true);}
 }
 function pointerDown(e){
  if(!s.img)return;
@@ -569,7 +715,7 @@ function pointerDown(e){
    }
    snapshot();s.quad.push(p);s.dirty=true;draw();
    notice('Köşeler: '+s.quad.length+'/4'+(s.quad.length===4?' · Noktaları şimdi sürükleyerek düzeltebilirsin.':''));
- }else if(s.mode==='wood'||s.mode==='protect'){
+ }else if(s.mode==='wood'||s.mode==='protect'||s.mode==='erasewood'){
    if(s.quad.length!==4){notice('Önce dört köşe gerekir.',true);return;}
    s.painting=true;paintAt(e,true);
  }else if(s.mode==='top'||s.mode==='bottom'){
@@ -647,6 +793,7 @@ function init(){
    reload();
  });
  $('petekV477Search').addEventListener('input',listVisual);
+ document.addEventListener('v499:status-filter',()=>{if(s.active)listVisual();});
  $('petekV484BulkMode').addEventListener('click',()=>{
    if(s.bulkActive)return;
    s.bulkMode=!s.bulkMode;
@@ -662,6 +809,10 @@ function init(){
  }
  $('petekV484BulkDetect').addEventListener('click',()=>runBulkPetek(false));
  $('petekV484BulkSave').addEventListener('click',()=>runBulkPetek(true));
+ $('petekV498BulkApprove').addEventListener('click',beginBulkPetekApproval);
+ /* Obsolete per-template review dialog disabled: single confirmation lives in PETEK bulk panel. */
+ $('petekV498ListView').addEventListener('click',()=>{s.compactList=!s.compactList;
+    $('petekV498ListView').textContent=s.compactList?'☷ Kompakt liste: Açık':'▧ Fotoğraflı liste: Açık';listVisual();});
  $('petekV484BulkStop').addEventListener('click',()=>{s.bulkStop=true;
    $('petekV484BulkStatus').textContent='Durdurma istendi. İçinde bulunulan sekizli grup bitecek.';});
  $('petekV484BulkReport').addEventListener('click',showBulkReport);
@@ -675,9 +826,23 @@ function init(){
    if(!s.active||!s.img)return;e.preventDefault();setZoom(s.zoom+(e.deltaY<0?.2:-.2));
  },{passive:false});
  $('petekV477Canvas').addEventListener('contextmenu',e=>e.preventDefault());
- document.addEventListener('keydown',e=>{if(e.code==='Space'&&!['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName))s.spaceHeld=true;});
+ document.addEventListener('keydown',e=>{
+   if(!s.active || ['INPUT','TEXTAREA','SELECT','BUTTON'].includes(e.target.tagName) || e.target.isContentEditable) return;
+   if(['ArrowRight','ArrowLeft'].includes(e.key)){
+     if(s.bulkActive||s.dirty){notice('Önce açık maske değişikliklerini kaydet veya bırak; ondan sonra şablon değiştir.',true);e.preventDefault();e.stopImmediatePropagation();return;}
+     e.preventDefault();e.stopImmediatePropagation();chooseRelative(e.key==='ArrowRight'?1:-1);return;
+   }
+   if(e.code==='Space')s.spaceHeld=true;
+ },true);
  document.addEventListener('keyup',e=>{if(e.code==='Space')s.spaceHeld=false;});
- $('petekV477Preview').addEventListener('click',previewArtwork);
+ $('petekV477Preview').addEventListener('click',()=>previewArtwork(false));
+ $('petekV493Preview').addEventListener('click',()=>previewArtwork(true));
+ $('petekV493Before').addEventListener('click',()=>{
+   if(s.previewBefore){s.preview=s.previewBefore;s.previewMode=true;draw();notice('PETEK 15 ızgara — ÖNCE (orijinal maske + baskı)');}
+ });
+ $('petekV493After').addEventListener('click',()=>{
+   if(s.previewAfter){s.preview=s.previewAfter;s.previewMode=true;draw();notice('PETEK 15 ızgara — SONRA (geometri katmanı)');}
+ });
  $('petekV477Original').addEventListener('click',backToOriginal);
  $('petekV477Reset').addEventListener('click',resetUncommitted);
  $('petekV477ResetCorners').addEventListener('click',resetCorners);
@@ -700,6 +865,8 @@ function init(){
  $('petekV477Save').addEventListener('click',save);
  $('petekV477Approve').addEventListener('click',approve);
  $('petekV477Revision').addEventListener('click',newRevision);
+ $('petekV499Restore').addEventListener('click',restorePreviousApproved);
+ $('petekV499Activate').addEventListener('click',activateApprovedRevision);
  $('petekV477Canvas').addEventListener('pointerdown',pointerDown);
  $('petekV477Canvas').addEventListener('pointermove',pointerMove);
  $('petekV477Canvas').addEventListener('pointerup',pointerUp);
@@ -721,5 +888,5 @@ function init(){
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);
 else init();
-window.PetekV477={start,exit,reload};
+window.PetekV477={start,exit,reload,isActive:()=>s.active,isDirty:()=>s.dirty};
 })();

@@ -1,0 +1,17 @@
+GORSEL URETIM MERKEZI V4.10.0 — GUVENLI WINDOWS ADAY
+
+1) ZIP'i eski kod, OneDrive çalışma havuzu veya veri klasörünün üstüne AÇMA.
+2) Yeni, boş, OneDrive dışı klasöre çıkart.
+3) GORSEL_V46_CANDIDATE\V4100_DOGRULA_WINDOWS.bat çalıştır.
+4) GORSEL_V46_CANDIDATE\V4100_BASLAT_WINDOWS.bat çalıştır.
+5) Ana çalışma klasörün eski gerçek veri dizini olarak kalsın; şablon/orijinal onay/yedekleri koru.
+6) Seri Üretim > Mağaza Profilleri / Şablon Atama.
+   ÖNCE mağaza, SONRA kategori, onaylı mockup fotoğraf ve durum listesi.
+   Mavi uygun, yeşil bu mağazada, kırmızı başka mağazada, turuncu onay/SHA değişmiş.
+   İstediğin şablonları işaretle; tek atama önizleme/onayı. Otomatik seçim YOK.
+   Aynı HAM baskı tasarımı farklı mağazalarda farklı mockuplarla kullanılabilir.
+   Aynı kaynak mockup SHA başka mağazaya tahsis edilemez.
+7) Test Merkezi > STORE-ASSIGN-EXPLICIT-V4100 kabul kartını tamamla.
+
+Windows canlı kabul, Flask HTTP, GPU ve gerçek mağaza Excel yükleme testleri bu ortamda
+DOĞRULANMADI. Paket kullanıcı verisi içermez, mevcut kayıtları otomatik taşımaz/overwrite etmez.

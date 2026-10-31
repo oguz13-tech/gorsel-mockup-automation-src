@@ -5,6 +5,7 @@
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='4' fill='%23007acc'/><text x='16' y='23' text-anchor='middle' font-size='20' fill='white'>S</text></svg>">
     <title>Şablon İnceleme Merkezi</title>
     <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/premium_v489.css?v=489">
 </head>
 <body>
 <script src="/static/js/loopback_csrf_v47.js"></script>
@@ -48,6 +49,16 @@
         </div>
     </div>
 
+
+    <fieldset id="v499StatusPanel" class="v499-status-filter" aria-label="Şablon durum filtreleri">
+      <legend>7 Kategori · Duruma Göre Filtrele</legend>
+      <label class="v499-state-new"><input type="checkbox" data-v499-state="NEW" checked> Yeni</label>
+      <label class="v499-state-approved"><input type="checkbox" data-v499-state="APPROVED" checked> Onaylı</label>
+      <label class="v499-state-draft"><input type="checkbox" data-v499-state="DRAFT" checked> Taslak</label>
+      <label class="v499-state-error"><input type="checkbox" data-v499-state="ERROR" checked> Hatalı</label>
+      <div class="v499-filter-help">Filtreler tüm kategorilerde geçerlidir; tik kaldırılan durum listede gizlenir, kayıtlar değişmez.</div>
+    </fieldset>
+
     <div id="categories" style="flex:1; overflow-y:auto;">
         <button id="petekV477Nav" type="button" class="category-title petek-v477-nav"
                 title="PETEK fotoğraf, delik, kavis ve maske incelemesi aynı ekranda">
@@ -56,7 +67,7 @@
     </div>
 
     <div class="status-legend">
-        <b>Durumlar:</b> ✅ Onaylı · 📝 Kontrol bekliyor · ⚠️ Şüpheli · ⛔ Eski/uyumsuz
+        <b>Durumlar:</b> 🔵 Yeni · 🟢 Onaylı · 🟡 Taslak · 🔴 Hatalı (sebebi dosya ayrıntısında)
     </div>
 
     <div id="help-sidebar" style="display:none; position:absolute; left:360px; top:60px; background:rgba(0,0,0,0.94); padding:15px; border-radius:8px; z-index:9999; border:1px solid #555; box-shadow:0 4px 15px rgba(0,0,0,0.5);">
@@ -247,6 +258,14 @@
     </div>
     <button type="button" id="petekV477Close">Altı kategoriye dön</button>
   </div>
+  <dialog id="petekV4101ErrorDialog" class="petek-v498-review-dialog" aria-label="PETEK hata ve çözüm uyarısı">
+    <h3>⚠️ PETEK İşlemi Tamamlanamadı</h3>
+    <div id="petekV4101ErrorText" style="white-space:pre-wrap;color:#ffcacd"></div>
+    <h4>Ne yapmalıyım?</h4>
+    <p id="petekV4101ErrorAdvice" style="white-space:pre-wrap"></p>
+    <button type="button" id="petekV4101ErrorAction" hidden>Gerekli Adıma Git</button>
+    <button type="button" onclick="document.getElementById('petekV4101ErrorDialog').close()">Anladım / Kapat</button>
+  </dialog>
   <div id="petekV477Workspace" class="petek-v477-workspace">
     <aside id="petekV477ListPane" class="petek-v477-list-pane" aria-label="PETEK şablonlarının dikey listesi">
       <strong>Petek Şablonları</strong>
@@ -256,10 +275,11 @@
       <div id="petekV484Summary" class="petek-v484-summary" aria-live="polite">Şablon durumları yükleniyor...</div>
       <div class="petek-v484-legend">📁 Çalışma · 🗄️ Ham · 🎭 Maske · ✅ Onay · 📝 Taslak · ⚠️ Kontrol</div>
       <button type="button" id="petekV484BulkMode">☑️ PETEK Toplu Seçim</button>
+      <button type="button" id="petekV498ListView" title="Kompakt satır / fotoğraflı görünüm">☷ Kompakt liste: Açık</button>
       <select id="petekV477Select" aria-label="PETEK mevcut şablon seçimi" hidden></select>
       <div id="petekV477List" role="listbox" aria-label="PETEK şablon listesi"></div>
       <div id="petekV484BulkPanel" class="petek-v484-bulk" hidden>
-        <div id="petekV484BulkCount">0 şablon seçildi</div>
+        <div id="petekV484BulkCount">0 şablon seçildi</div><div class="petek-v499-bulk-hint">Tüm taslakları onaylamak için satır satır işaretleme gerekmiyor. Yalnızca <b>GÖRÜNEN</b> taslaklar için tek onay sorulur. Filtreleri kaldırırsanız tüm taslaklar işlenir.</div>
         <div class="petek-v484-bulk-row">
           <button type="button" id="petekV484BulkAll">Görünenleri Seç</button>
           <button type="button" id="petekV484BulkNew">Yalnız Yenileri Seç</button>
@@ -269,9 +289,10 @@
         </div>
         <button type="button" id="petekV484BulkDetect" class="petek-v484-primary">🧭 Seçilenlerde TOPLU OTOMATİK 4 KÖŞE TESPİT ET (Önizleme, kaydetmez)</button>
         <button type="button" id="petekV484BulkSave">📝 Seçilen YENİ PETEK'lere Toplu Köşe + Maske TASLAĞI Kaydet (Onaylamaz)</button>
-        <button type="button" id="petekV484BulkStop">⏹ Taramayı Durdur (Mevcut 8 bitince)</button>
+        <button type="button" id="petekV498BulkApprove" class="petek-v498-approve">✅ GÖRÜNEN TÜM TASLAKLARI TEK ONAYLA — Tikleme Yok · Sınırsız</button>
+        <button type="button" id="petekV484BulkStop">⏹ Toplu İşlemi Durdur</button>
         <button type="button" id="petekV484BulkReport">📋 Toplu İşlem Sonuçlarını Kopyala</button>
-        <pre id="petekV484BulkStatus" aria-live="polite">Hazır. En fazla 8 fotoğraf / istek, büyük seçimlerde otomatik gruplar hâlinde devam eder.</pre>
+        <pre id="petekV484BulkStatus" aria-live="polite">Hazır. Toplu onay için tek tek seçim veya sekizli kullanıcı onayı gerekmez; maskeler sunucuda ayrı ayrı doğrulanır.</pre>
       </div>
     </aside>
     <div class="petek-v477-stage">
@@ -296,6 +317,18 @@
       <label for="petekV477Artwork">Baskı tasarımını seç (PNG / JPG / WEBP)</label>
       <input id="petekV477Artwork" type="file" accept="image/png,image/jpeg,image/webp">
       <button type="button" id="petekV477Preview" class="petek-v477-full">🎨 Gerçek Tasarımla Önizle</button>
+      <section class="petek-v493-compare" aria-label="PETEK 15 ızgara karşılaştırma">
+        <h3>15 Izgara Kilidi — Önce / Sonra Test</h3>
+        <label for="petekV493Strength">Koyu ızgara yoğunluğu</label>
+        <select id="petekV493Strength"><option value="hafif">Hafif</option><option value="orta" selected>Orta</option><option value="guclu">Güçlü</option></select>
+        <label class="petek-v477-confirm"><input id="petekV493Pink" type="checkbox" checked> Dört kenar / alt köşeler / 15 ızgara pembe kalıntılarını temizle (önizleme)</label>
+        <button type="button" id="petekV493Preview" class="petek-v477-full">15 Izgara A/B Testi — Çalıştır</button>
+        <div class="petek-v477-actionrow">
+          <button type="button" id="petekV493Before" disabled>ÖNCE</button>
+          <button type="button" id="petekV493After" disabled>SONRA</button>
+        </div>
+        <div class="petek-v477-note" id="petekV493Result" role="status">Kaydetmez. Onaylı maskeyi ve gerçek fotoğrafı değiştirmez. 15 ızgara konumu perspektiften türetilir; fotoğrafını görsel olarak incele.</div>
+      </section>
       <button type="button" id="petekV477Original" class="petek-v477-full">📷 Ham Şablona / Maskeye Dön</button>
       <div class="petek-v477-note">PETEK V3 gerçek baskı motoru kullanılır. Dikey ızgara yarıkları, üst-alt kavis boşlukları, yanlar ve zemin orijinalinden korunur. Magenta sahnelerde pembe çizgi bırakmayan kenar geçişi kullanılır. Önizleme dosya veya maske kaydetmez.</div>
       <h3>Şablon Araçları — Ortak</h3>
@@ -318,6 +351,7 @@
       <h3>Ahşap, Delikler ve Yan Yüzler</h3>
       <div class="petek-v477-actionrow">
         <button type="button" data-petek-mode="wood">Ahşabı Boya</button>
+        <button type="button" data-petek-mode="erasewood" title="Boyadığın maske alanını siyaha geri döndürür; orijinal fotoğrafa dokunmaz.">Ahşap Boyasını Sil</button>
         <button type="button" data-petek-mode="protect">Delikleri Koru</button>
       </div>
       <label for="petekV477Brush">Fırça (gerçek fotoğraf pikseli)</label>
@@ -343,17 +377,23 @@
         Dikey yarıkları, üst-alt kavisleri, yan yüzleri ve zemini kontrol edeceğim; onay düğmesi ayrıca açık teyit ister.
       </label>
       <button type="button" id="petekV477Approve" class="petek-v477-full success">4. PETEK Maskesini İnsan Onayıyla Kilitle</button>
-      <button type="button" id="petekV477Revision" class="petek-v477-full" disabled>Onaylı Maskeden Yeni Revizyon Taslağı (_r2) Aç</button>
-      <div class="petek-v477-note">Onaylı maske değiştirilemez. Yeni UID/revizyon açılınca önceki maske kilitli ve değişmez kalır. Eski 45 başarılı PETEK üretim görseli ve kayıtları korunur.</div>
+      <button type="button" id="petekV477Revision" class="petek-v477-full" disabled>🔓 Onaylı Maskeyi Yeniden Düzenle / 4 Köşe (Güvenli Revizyon)</button>
+      <button type="button" id="petekV499Activate" class="petek-v477-full" disabled>✅ Onaylı Düzeltilmiş Maskeyi Güncel Yap</button>
+      <button type="button" id="petekV499Restore" class="petek-v477-full" disabled>↩ Önceki Onaylı Sürüme Dön (Yedekten)</button>
+      <div class="petek-v477-note">Düzenleme önce yeni TASLAK revizyon açar; orijinal onaylı maske korunur. Taslağı yeniden onaylayabilirsin. Yeni revizyon insan onayıyla birlikte gelecek üretimler için etkinleştirilir. Önceki onaylı maskeler silinmez; geri dönüş imkânı vardır.</div>
     </div>
   </div>
 </section>
 
-<link rel="stylesheet" href="/static/css/petek_editor_v477.css?v=488-legible">
+<link rel="stylesheet" href="/static/css/petek_editor_v477.css?v=498-bulk">
+<link rel="stylesheet" href="/static/css/premium_petek_v489.css?v=489">
+<link rel="stylesheet" href="/static/css/v499_anthracite.css?v=4101">
+<link rel="stylesheet" href="/static/css/v4101_unified.css?v=4101">
 <script src="/static/js/petek_quad_drag_v481.js?v=482-sidebar"></script>
-<script src="/static/js/petek_editor_v477.js?v=488-legible"></script>
+<script src="/static/js/v499_status_filter.js?v=4101"></script>
+<script src="/static/js/petek_editor_v477.js?v=4101-fixed-checkbox"></script>
 <script src="/static/js/edge_angles_v46.js"></script>
-<script src="/static/js/main.js?v=488-legible"></script>
+<script src="/static/js/main.js?v=499-keyfocus"></script>
 <script src="/static/js/review_v46.js"></script>
 
 </body>
