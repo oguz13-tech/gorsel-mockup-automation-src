@@ -1,4 +1,4 @@
-"""Photo-measured 15-slot geometry for the PETEK VNext non-destructive finish.
+"""Photo-measured variable-count vent geometry for PETEK non-destructive finish.
 
 MEASURE from the ORIGINAL source raster and the current approved/draft mask,
 never from artwork or a fabricated regularly spaced grille. Rectify with the
@@ -17,6 +17,8 @@ from . import engine
 
 RECT_W = 900
 RECT_H = 690
+MIN_REAL_VENTS = 13
+MAX_REAL_VENTS = 16
 
 
 def _source_peaks(profile: np.ndarray) -> list[tuple[float, float]]:
@@ -58,64 +60,59 @@ def _mask_peaks(rect_mask: np.ndarray) -> list[float]:
     return peaks
 
 
-def _plausible(points: list[float] | np.ndarray, *, count: int=15) -> bool:
-    if len(points)!=count:return False
+def _plausible(points: list[float] | np.ndarray, *, count: int | None=None) -> bool:
+    """Only validate *observed* physical positions; count is not assumed 15."""
+    if count is not None and len(points) != count:
+        return False
+    if not (MIN_REAL_VENTS <= len(points) <= MAX_REAL_VENTS):
+        return False
     d=np.diff(np.asarray(points,float))
+    # Perspective was rectified: local spacing changes slightly, but no
+    # consecutive physical vents should collapse or jump to a second grille.
     return bool(np.all(d>18) and np.all(d<92) and
                 np.std(d)/max(1.,np.mean(d))<.36)
 
 
-def _fit_source_fifteen(peaks: list[tuple[float,float]], profile: np.ndarray):
-    """Choose exactly 15 *observed* peaks; a grid is only an outlier filter.
+def _fit_source_vents(peaks: list[tuple[float,float]], profile: np.ndarray):
+    """Select 13..16 positions actually detected in the ORIGINAL photo.
 
-    The fitted pitch is never used to replace a measurable vent center. Only
-    if a maximum of two detections are interrupted, interpolate from measured
-    neighbours and check for local ORIGINAL source-line evidence.
+    Candidate lattice pitch is used ONLY to reject spurious dark-artwork peaks.
+    We never return interpolated or fabricated positions. Physical count is
+    selected from the photo; the old 15-hole assumption is not an input.
     """
-    if len(peaks)==15 and _plausible([p[0] for p in peaks]):
-        return np.asarray([p[0] for p in peaks],float),0
-    if len(peaks)<13:
-        return None,0
+    if len(peaks) < MIN_REAL_VENTS:
+        return None, 0
     xs=np.asarray([p[0] for p in peaks],float)
     strengths=np.asarray([p[1] for p in peaks],float)
+    # Full evidence already present: still test grid alternatives when an
+    # unrelated vertical artwork stroke looks like an extra vent.
     best=None
-    # A planar physical product has near-constant rectified pitch, but every
-    # final position comes from the actual source dark-line response.
-    for anchor in xs[xs < RECT_W*.29]:
-        for pitch in np.arange(39.,66.,.8):
-            expected=anchor+pitch*np.arange(15)
-            if expected[-1]>RECT_W*.97:
-                continue
-            distances=np.abs(expected[:,None]-xs[None,:])
-            assignments=np.argmin(distances,axis=1)
-            residual=distances[np.arange(15),assignments]
-            keep=residual<min(11.,pitch*.24)
-            if len(set(assignments[keep].tolist()))!=int(np.count_nonzero(keep)):
-                continue
-            count=int(np.count_nonzero(keep))
-            if count<13:continue
-            # Use per-pixel evidence, not uniform spacing or the strongest
-            # unrelated horse/woodgrain texture stripe.
-            strength=float(np.sum(np.log1p(strengths[assignments[keep]])))
-            score=100.*count - 3.*float(np.sum(residual[keep])) +strength
-            if best is None or score>best[0]:
-                best=(score,expected,assignments,keep)
+    for count in range(MIN_REAL_VENTS,MAX_REAL_VENTS+1):
+        for anchor in xs[xs < RECT_W*.29]:
+            for pitch in np.arange(36.,76.,.8):
+                expected=anchor+pitch*np.arange(count)
+                if expected[-1]>RECT_W*.975:continue
+                distances=np.abs(expected[:,None]-xs[None,:])
+                assignments=np.argmin(distances,axis=1)
+                residual=distances[np.arange(count),assignments]
+                tolerance=min(11.,pitch*.23)
+                # Every slot must have independent ORIGINAL pixel evidence.
+                if np.any(residual >= tolerance):continue
+                if len(set(assignments.tolist()))!=count:continue
+                observed=xs[assignments]
+                if not _plausible(observed,count=count):continue
+                if observed[0] < RECT_W*.025 or observed[-1] > RECT_W*.98:continue
+                # Score rewards observed slots, penalizes superfluous dark
+                # stripes and deviations; no '15' bias whatsoever.
+                unused=np.ones(len(xs),bool)
+                unused[assignments]=False
+                dark_bonus=float(np.sum(np.log1p(strengths[assignments])))
+                score=(135.*count - 46.*np.count_nonzero(unused)
+                       - 3.8*float(np.sum(residual)) + dark_bonus)
+                if best is None or score>best[0]:
+                    best=(score,observed.copy())
     if best is None:return None,0
-    _,expected,assignments,keep=best
-    out=expected.copy()
-    out[keep]=xs[assignments[keep]]
-    # Missing source peaks must still have a small but REAL dark source trace.
-    # No ungrounded empty-space construction is permitted.
-    missing=np.flatnonzero(~keep)
-    smooth=cv2.GaussianBlur(profile[None].astype(np.float32),(0,0),2.0)[0]
-    for idx in missing:
-        x=int(round(expected[idx]));a=max(0,x-8);b=min(RECT_W,x+9)
-        patch=smooth[a:b]
-        if len(patch)<3 or float(patch.max())<max(5.,float(np.median(smooth)) + 3.0):
-            return None,0
-        out[idx]=a+int(np.argmax(patch))
-    if not _plausible(out):return None,0
-    return out,len(missing)
+    return best[1],0
 
 
 def _longest_run(presence: np.ndarray):
@@ -192,13 +189,12 @@ def _trace_one(center: float, contrast: np.ndarray, rect_mask: np.ndarray,
             'width':round(width,2),'path':track}
 
 
-def measure_fifteen_vents(source: np.ndarray, mask: np.ndarray, quad):
-    """Return *measured* source-coordinates of 15 real, perspective-aligned slots.
+def measure_real_vents(source: np.ndarray, mask: np.ndarray, quad):
+    """Return 13..16 physically detected, perspective-aligned real openings.
 
-    If the source and approved mask together do not provide enough geometry,
-    this requests a local/manual review rather than fabricating a second grille.
-    In the normal case, it measures all 15 from the original photo, even when
-    several protected holes are absent in the existing mask.
+    Never adds missing slots to reach an assumed target. Where the original
+    image is ambiguous, a complete reviewed mask with plausible 13..16 holes
+    is a fallback. Unreliable records are kept for manual review, unchanged.
     """
     q=engine.validated_quad(quad,source.shape)
     engine.mask_check(mask,source,q)
@@ -214,32 +210,34 @@ def measure_fifteen_vents(source: np.ndarray, mask: np.ndarray, quad):
     profile=contrast[int(RECT_H*.25):int(RECT_H*.74)].mean(axis=0)
     source_peaks=_source_peaks(profile)
     masked_centers=_mask_peaks(rect_mask)
-    measured,inferred=_fit_source_fifteen(source_peaks,profile)
+    measured,inferred=_fit_source_vents(source_peaks,profile)
     source_measured=measured is not None
     if measured is None and _plausible(masked_centers):
         measured=np.asarray(masked_centers,dtype=float)
     if measured is None:
-        raise engine.MaskError('PETEK_IZGARA_KONUMU_BELIRSIZ: PETEK_15_KAYNAK_GEOMETRI_INCELEME_GEREKLI: '
+        raise engine.MaskError('PETEK_IZGARA_KONUMU_BELIRSIZ: PETEK_KAYNAK_GEOMETRI_INCELEME_GEREKLI: '
             f'orijinal fotograf {len(source_peaks)} dikey koyu cizgi, '
             f'maske {len(masked_centers)} korunan delik gosteriyor. '
-            '15 fiziksel izgara kaynaktan olculmeden tahmini cizgi cizilmez; '
+            '13..16 gercek yarik kaynaktan/maske kaydindan olculmeden cizgi cizilmez; '
             '4 kose / maske duzeltmesini ve kaynak goruntusunu inceleyin.')
     if not _plausible(measured):
-        raise engine.MaskError('PETEK_15_KAYNAK_IZGARA_ARALIKLARI_TUTARSIZ')
+        raise engine.MaskError('PETEK_KAYNAK_IZGARA_ARALIKLARI_TUTARSIZ')
     slots=[]
     for cx in measured:
         slot=_trace_one(float(cx),contrast,rect_mask,has_source=source_measured)
         if slot is None:
             # Narrow mask/source interruptions are resolved from neighbouring
             # *measured* tracks, not a fixed full-height artificial stripe.
-            raise engine.MaskError('PETEK_15_YARIK_BOYLARI_INCELEME_GEREKLI')
+            raise engine.MaskError('PETEK_YARIK_BOYLARI_INCELEME_GEREKLI')
         slots.append(slot)
     spacings=np.diff(measured)
     mask_offset=None
-    if len(masked_centers)==15:
+    if len(masked_centers)==len(measured):
         mask_offset=[round(float(a-b),2) for a,b in zip(measured,masked_centers)]
-    return slots,{'status':'KAYNAK_15_OLCULDU',
-        'alignment':'SOURCE_PHOTO_15' if source_measured else 'APPROVED_MASK_15',
+    n=len(slots)
+    return slots,{'status':'KAYNAK_YARIKLAR_OLCULDU',
+        'count':n,
+        'alignment':f'SOURCE_PHOTO_{n}' if source_measured else f'APPROVED_MASK_{n}',
         'mask_evidence_count':len(masked_centers),
         'source_evidence_count':len(source_peaks),
         'inferred_source_slots':inferred,
@@ -249,3 +247,8 @@ def measure_fifteen_vents(source: np.ndarray, mask: np.ndarray, quad):
         'widths_rectified_900':[slot['width'] for slot in slots],
         'mask_source_center_delta':mask_offset,
         'homography':cv2.getPerspectiveTransform(target,np.float32(q))}
+
+
+def measure_fifteen_vents(source: np.ndarray, mask: np.ndarray, quad):
+    """Backward-compatible old call name; NEVER forces a count of fifteen."""
+    return measure_real_vents(source,mask,quad)
