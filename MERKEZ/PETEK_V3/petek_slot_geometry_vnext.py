@@ -231,11 +231,11 @@ def measure_real_vents(source: np.ndarray, mask: np.ndarray, quad):
     median_start=float(np.median(starts));median_end=float(np.median(ends))
     median_length=max(1.,median_end-median_start)
     # Use a generous 8% tolerance; no blind lengthening of real short vents.
-    tolerance=max(20.,float(RECT_H)*.055)
+    tolerance=max(14.,float(RECT_H)*.033)
     for r in slots:
         y0=max(int(r['y0']),int(round(median_start-tolerance)))
         y1=min(int(r['y1']),int(round(median_end+tolerance)))
-        if y1-y0 < median_length*.68:
+        if y1-y0 < median_length*.82:
             raise engine.MaskError('PETEK_IZGARA_BOY_TUTARSIZ: bu fotoğraftaki delik başlangıç/bitişlerini maske ekranında inceleyin.')
         r['y0'],r['y1']=y0,y1
         r['path']=[(r['center'],float(y0)),(r['center'],float(y1))]
