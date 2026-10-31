@@ -12,7 +12,8 @@ const s={
   img:null,mask:null,base:null,mode:'corners',painting:false,
   dragCorner:-1,dragChanged:false,dirty:false,needsCurveApply:false,
   fitScale:1,zoom:1,preview:null,previewMode:false,entries:[],spaceHeld:false,panning:false,undoStack:[],listHost:null,
-  bulkMode:false,bulkSelected:new Set(),bulkActive:false,bulkStop:false,bulkRows:[],bulkReport:[],compactList:true
+  bulkMode:false,bulkSelected:new Set(),bulkActive:false,bulkStop:false,bulkRows:[],bulkReport:[],compactList:true,
+  hoverBrush:null
 };
 const names={corners:'Dört köşe',wood:'Baskı ahşabını boya',erasewood:'Ahşap boyasını sil',protect:'Delik / yan yüzü koru',top:'Üst kavis',bottom:'Alt kavis'};
 const errorSolutions=[
@@ -108,7 +109,7 @@ function fit(){
  canvas.height=Math.max(1,Math.round(s.height*s.scale));
  $('petekV477ZoomLabel').textContent=Math.round(s.zoom*100)+'%';
  $('petekV477Zoom').value=String(Math.round(s.zoom*100));
- draw();
+ draw();updateBrushCursor();
 }
 function setZoom(value){
  s.zoom=Math.max(.4,Math.min(5,Math.round(Number(value)*10)/10));
@@ -400,6 +401,68 @@ function point(event){
  return [Math.max(0,Math.min(s.width-1,(event.clientX-r.left)*s.width/r.width)),
          Math.max(0,Math.min(s.height-1,(event.clientY-r.top)*s.height/r.height))];
 }
+// UI-only preview cursor: true source-photo brush diameter, scaled by zoom.
+// Fixed to the mouse, so CSS flex/scroll cannot move the ring off the brush.
+function brushMode(){return ['wood','erasewood','protect'].includes(s.mode);}
+function brushCursor(){
+ let ring=$('petekV477BrushCursor');
+ if(!ring){
+   ring=document.createElement('div');ring.id='petekV477BrushCursor';
+   ring.setAttribute('aria-hidden','true');
+   document.body.appendChild(ring);
+ }
+ return ring;
+}
+function updateBrushCursor(event){
+ const ring=brushCursor(), canvas=$('petekV477Canvas');
+ if(!s.active||!s.img||!canvas||!brushMode()||s.previewMode||s.panning){
+   ring.hidden=true; if(canvas)canvas.style.cursor='crosshair';return;
+ }
+ if(event){s.hoverBrush=[event.clientX,event.clientY];}
+ if(!s.hoverBrush){ring.hidden=true;return;}
+ const rect=canvas.getBoundingClientRect();
+ const [x,y]=s.hoverBrush;
+ if(x<rect.left||x>rect.right||y<rect.top||y>rect.bottom){
+   ring.hidden=true;canvas.style.cursor='crosshair';return;
+ }
+ const diameter=Number($('petekV477Brush').value)||24;
+ const size=diameter*rect.width/Math.max(1,s.width);
+ ring.style.width=size+'px';ring.style.height=size+'px';
+ ring.style.left=x+'px';ring.style.top=y+'px';
+ ring.hidden=false;canvas.style.cursor='none';
+ const label=$('petekV477BrushSize');if(label)label.textContent=diameter+' px';
+}
+function hideBrushCursor(){
+ s.hoverBrush=null;const ring=$('petekV477BrushCursor');if(ring)ring.hidden=true;
+ const canvas=$('petekV477Canvas');if(canvas)canvas.style.cursor='crosshair';
+}
+
+// Only WHITE wood paint is restricted, and only in the explicitly drawn
+// top/bottom curve X spans. No global quad shrinkage, no side-edge changes.
+function clipWoodPaintAtCurves(ctx){
+ for(const kind of ['top','bottom']){
+   const pts=(s.curves[kind]||[]).slice().sort((a,b)=>a[0]-b[0]);
+   if(pts.length<3)continue;
+   const x0=Math.max(0,Math.min(s.width,pts[0][0]));
+   const xn=Math.max(0,Math.min(s.width,pts[pts.length-1][0]));
+   if(xn-x0<2)continue;
+   const top=kind==='top';
+   ctx.beginPath();
+   if(top){
+      ctx.moveTo(0,s.height);ctx.lineTo(0,0);ctx.lineTo(x0,0);
+      ctx.lineTo(x0,Math.min(s.height,pts[0][1]+1));
+      for(let i=1;i<pts.length;i++)ctx.lineTo(pts[i][0],Math.min(s.height,pts[i][1]+1));
+      ctx.lineTo(xn,0);ctx.lineTo(s.width,0);ctx.lineTo(s.width,s.height);
+   }else{
+      ctx.moveTo(0,0);ctx.lineTo(0,s.height);ctx.lineTo(x0,s.height);
+      ctx.lineTo(x0,Math.max(0,pts[0][1]-1));
+      for(let i=1;i<pts.length;i++)ctx.lineTo(pts[i][0],Math.max(0,pts[i][1]-1));
+      ctx.lineTo(xn,s.height);ctx.lineTo(s.width,s.height);ctx.lineTo(s.width,0);
+   }
+   ctx.closePath();ctx.clip();
+ }
+}
+
 function paintAt(event,first){
  const p=point(event),c=s.base||s.mask,ctx=c.getContext('2d',{willReadFrequently:true});
  ctx.lineCap='round';ctx.lineJoin='round';
@@ -408,6 +471,7 @@ function paintAt(event,first){
  ctx.save();ctx.beginPath();
  s.quad.forEach((q,i)=>i?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1]));
  ctx.closePath();ctx.clip();
+ if(s.mode==='wood')clipWoodPaintAtCurves(ctx);
  const brush=Math.max(2,Number($('petekV477Brush').value)||20);
  ctx.lineWidth=brush;ctx.strokeStyle=s.mode==='wood'?'#ffffff':'#000000';
  if(first){ctx.beginPath();ctx.arc(p[0],p[1],brush/2,0,Math.PI*2);ctx.fillStyle=ctx.strokeStyle;ctx.fill();s.lastPoint=p;}
@@ -431,6 +495,7 @@ function setMode(mode){
  // Switching to corner mode must NEVER discard an auto-detected quad.
  // Drag a red handle; use explicit Reset only when starting from scratch.
  s.mode=mode;
+ updateBrushCursor();
  $('petekV477Mode').textContent='Mod: '+names[mode];
  notice(mode==='corners'?(s.quad.length===4?'Dört köşe hazır. Kırmızı noktayı fareyle sürükle; zoom + Ctrl+Z kullanılabilir.':'Köşeleri sol üst, sağ üst, sağ alt, sol alt sırasıyla işaretle.'):
        mode==='wood'?'Yeşil boyanacak ön ahşabı boya. Dikey yarıklara ve zemine taşırma.':
@@ -535,7 +600,7 @@ async function previewArtwork(isFifteen=false){
  if(!printable){
    const msg='DÖRT KÖŞE BULUNDU, ancak OTOMATİK MASKE TASLAĞI henüz oluşturulmadı.\n\n'
        +'Çözüm: Sağ panelde 2. Otomatik Maske Taslağı düğmesine bas. '
-       +'Sonra yeşil baskı alanını, 15 yarığı ve üst-alt kavisi kontrol ederek önizlemeyi yeniden aç.';
+       +'Sonra yeşil baskı alanını, fotoğrafta gerçekten bulunan yarıkları ve üst-alt kavisi kontrol ederek önizlemeyi yeniden aç.';
    notice(msg,true);alert(msg);return;
  }
 
@@ -572,11 +637,11 @@ async function previewArtwork(isFifteen=false){
     $('petekV493Before').disabled=false;$('petekV493After').disabled=false;
     const qa=data.slot_qa;
     const gaps=qa.spacings_rectified_900||[];
-    const spacing=gaps.length?' • Kaynakta ölçülen 14 aralık: '+
+    const spacing=gaps.length?' • Kaynakta ölçülen '+gaps.length+' aralık: '+
       Math.min(...gaps).toFixed(1)+'–'+Math.max(...gaps).toFixed(1)+' px (perspektifi düzeltilmiş)':'';
-    const source=qa.alignment==='SOURCE_PHOTO_15'?'orijinal fotoğraftan ölçüldü':
-      qa.alignment==='EXISTING_MASK_15'?'onaylı maske geometrisinden ölçüldü':'kaynak geometrisi kontrol edildi';
-    $('petekV493Result').textContent='15 / 15 gerçek yarık '+source+spacing+
+    const source=String(qa.alignment||'').startsWith('SOURCE_PHOTO_')?'orijinal fotoğraftan ölçüldü':
+      String(qa.alignment||'').startsWith('EXISTING_MASK_')?'onaylı maske geometrisinden ölçüldü':'kaynak geometrisi kontrol edildi';
+    $('petekV493Result').textContent=qa.count+' / '+qa.count+' gerçek yarık '+source+spacing+
       ' • Değişen piksel: '+qa.changed_pixels+
       ' • Dört kenar / ızgara temizliği: '+data.pink_qa.status+
       ' · Kalan yüksek doygunluklu pembe: '+(data.pink_qa.remaining_pixels||0)+
@@ -814,6 +879,7 @@ function pointerDown(e){
  }
 }
 function pointerMove(e){
+ updateBrushCursor(e);
  if(s.panning){e.preventDefault();const area=$('petekV477Drawing');
    area.scrollLeft=s.scrollStart[0]-(e.clientX-s.panStart[0]);
    area.scrollTop=s.scrollStart[1]-(e.clientY-s.panStart[1]);return;
@@ -927,10 +993,10 @@ function init(){
  $('petekV477Preview').addEventListener('click',()=>previewArtwork(false));
  $('petekV493Preview').addEventListener('click',()=>previewArtwork(true));
  $('petekV493Before').addEventListener('click',()=>{
-   if(s.previewBefore){s.preview=s.previewBefore;s.previewMode=true;draw();notice('PETEK 15 ızgara — ÖNCE (orijinal maske + baskı)');}
+   if(s.previewBefore){s.preview=s.previewBefore;s.previewMode=true;draw();notice('PETEK gerçek ızgaralar — ÖNCE (orijinal maske + baskı)');}
  });
  $('petekV493After').addEventListener('click',()=>{
-   if(s.previewAfter){s.preview=s.previewAfter;s.previewMode=true;draw();notice('PETEK 15 ızgara — SONRA (geometri katmanı)');}
+   if(s.previewAfter){s.preview=s.previewAfter;s.previewMode=true;draw();notice('PETEK gerçek ızgaralar — SONRA (geometri katmanı)');}
  });
  $('petekV477Original').addEventListener('click',backToOriginal);
  $('petekV477Reset').addEventListener('click',resetUncommitted);
@@ -958,6 +1024,8 @@ function init(){
  $('petekV499Activate').addEventListener('click',activateApprovedRevision);
  $('petekV477Canvas').addEventListener('pointerdown',pointerDown);
  $('petekV477Canvas').addEventListener('pointermove',pointerMove);
+ $('petekV477Canvas').addEventListener('pointerleave',hideBrushCursor);
+ $('petekV477Brush').addEventListener('input',()=>updateBrushCursor());
  $('petekV477Canvas').addEventListener('pointerup',pointerUp);
  $('petekV477Canvas').addEventListener('pointercancel',pointerUp);
  $('petekV477Canvas').addEventListener('lostpointercapture',pointerUp);
