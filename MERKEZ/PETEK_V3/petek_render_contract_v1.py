@@ -14,9 +14,10 @@ import numpy as np
 from . import engine
 from .petek_finish_v492 import despill_lower_left_geometry_v493
 from .petek_source_marker_fringe_vnext import (marker_fringe_candidates,
-                                               restore_source_marker_fringe)
+                                               restore_source_marker_fringe,
+                                               restore_source_marker_vent_interiors)
 from .petek_slot_geometry_vnext import (RECT_H, RECT_W, _fit_source_vents,
-    _source_peaks)
+    _source_peaks, measure_real_vents)
 
 
 def digest_frame(frame):
@@ -77,7 +78,8 @@ class StageAudit:
 
 def source_repair_reference(scene, printed_inside, mask, quad, *,
                             pink_cleanup, lighting, material_effect,
-                            shadow_style='corner',corner_side='right',include_pre=True):
+                            shadow_style='classic',corner_side='right',include_pre=True,
+                            g3_asset=False):
     """Replay exact *authorized* outside-mask photo processing independently.
 
     Reconstruct outside from the original source, not from the possibly-tampered
@@ -93,19 +95,27 @@ def source_repair_reference(scene, printed_inside, mask, quad, *,
     expected[mask>0]=printed_inside[mask>0]
     expected,fringeqa=restore_source_marker_fringe(scene,expected,mask,quad,
                                                     enabled=pink_cleanup)
+    before_vent=expected.copy()
+    expected,ventqa=restore_source_marker_vent_interiors(
+        scene,expected,mask,quad,enabled=pink_cleanup)
+    ventchanges=np.any(expected!=before_vent,axis=2)&(mask==0)
     prechanges=np.any(before!=scene,axis=2)&(mask==0)
     if pink_cleanup:
         # 14px ordinary fringe OR exact 3..19px source-derived pre-repair.
         ordinary=marker_fringe_candidates(scene,mask,quad)
-        allowed=ordinary|prechanges
+        allowed=ordinary|prechanges|ventchanges
     else:
         allowed=np.zeros(mask.shape,bool)
     beforewall=expected.copy()
-    if material_effect and lighting=='strong':
+    if material_effect and lighting=='strong' and not g3_asset:
         from .wall_window_shadows_vnext import apply_wall_window_shadows
         expected,_=apply_wall_window_shadows(scene,expected,mask,quad,lighting='strong',
                           shadow_style=shadow_style,corner_side=corner_side)
     wallchanges=np.any(expected!=beforewall,axis=2)&(mask==0)
+    if material_effect and lighting=='strong' and g3_asset:
+        from .petek_effect_assets import apply_g3_wall_asset
+        expected,_=apply_g3_wall_asset(scene,expected,mask,quad)
+        wallchanges=np.any(expected!=beforewall,axis=2)&(mask==0)
     repairchanges=np.any(beforewall!=scene,axis=2)&(mask==0)
     if np.any(repairchanges&~allowed):
         raise engine.MaskError('PETEK_SOURCE_REPAIR_OUTSIDE_POLICY')
@@ -114,6 +124,7 @@ def source_repair_reference(scene, printed_inside, mask, quad, *,
         'authorized_wall_shadow_pixels':int(wallchanges.sum()),
         'pre_despill_pixels':int(prechanges.sum()),
         'fringe_repair_pixels':int(fringeqa.get('repaired_pixels',0)),
+        'vent_repair_pixels':int(ventqa.get('repaired_pixels',0)),
         'pre_despill_status':preqa.get('status'),
     }
 
@@ -195,27 +206,27 @@ def _source_protected_preview_mask(scene, mask, quad):
                               borderValue=(230,230,230))
     rect_mask=cv2.warpPerspective(mask,M,(RECT_W,RECT_H),
                                   flags=cv2.INTER_NEAREST,borderValue=255)
-    gray=cv2.cvtColor(photo,cv2.COLOR_BGR2GRAY)
-    blackhat=cv2.morphologyEx(gray,cv2.MORPH_BLACKHAT,
-                              cv2.getStructuringElement(cv2.MORPH_RECT,(31,3)))
-    profile=blackhat[int(RECT_H*.25):int(RECT_H*.74)].mean(axis=0)
-    peaks=_source_peaks(profile)
-    centers,_=_fit_source_vents(peaks,profile)
-    if centers is None:
+    slots, vent_qa=measure_real_vents(scene,mask,q)
+    if len(slots) not in (14,15,16):
         raise engine.MaskError('PETEK_DIAGNOSTIC_PHYSICAL_VENTS_UNCERTAIN')
     protected=rect_mask.copy()
-    y0,y1=int(RECT_H*.28),int(RECT_H*.70)
-    supports=[]
-    for center in centers:
-        x=int(round(center))
-        line=blackhat[y0:y1,x-2:x+3]
-        threshold=max(8.,float(profile[x])*.23)
-        rows=np.max(line,axis=1)>threshold
-        supports.append(float(rows.mean()))
-        rows=cv2.morphologyEx(np.uint8(rows)[:,None],
-                              cv2.MORPH_CLOSE,np.ones((9,1),np.uint8))[:,0]>0
-        protected[y0:y1,x-5:x+6][rows,:]=0
-    if min(supports)<.38:
+    for slot in slots:
+        x=int(round(slot['center']))
+        half=max(2,int(round(float(slot['width'])/2.0)))
+        if slot.get('effect_eligible'):
+            y0=int(slot['y0'])
+            y1=int(slot['y1'])
+        else:
+            # A single source trace can include the upper curved edge. Use
+            # the measured slot consensus endpoints, never that outlier.
+            y0=int(round(vent_qa['median_top_rectified_690']))
+            y1=int(round(vent_qa['median_bottom_rectified_690']))
+        y0=max(0,y0)
+        y1=min(RECT_H-1,y1)
+        if y1-y0 < int(RECT_H*.28):
+            raise engine.MaskError('PETEK_DIAGNOSTIC_PHYSICAL_VENTS_UNCERTAIN')
+        protected[y0:y1+1,max(0,x-half):min(RECT_W,x+half+1)]=0
+    if np.count_nonzero(protected==0) <= 0:
         raise engine.MaskError('PETEK_DIAGNOSTIC_PHYSICAL_VENTS_UNCERTAIN')
     inverse=cv2.getPerspectiveTransform(target,np.float32(q))
     source_protected=cv2.warpPerspective(protected,inverse,
@@ -227,11 +238,13 @@ def _source_protected_preview_mask(scene, mask, quad):
         raise engine.MaskError('PETEK_DIAGNOSTIC_PHYSICAL_VENTS_UNCERTAIN')
     return temporary_mask,{
         'kind':'TEMPORARY_SOURCE_EVIDENCE_PRINT_MASK',
-        'source_vent_count':len(centers),
+        'source_vent_count':len(slots),
         'source_verified':True,
         'removed_unsafe_print_pixels':int(np.count_nonzero(
             (mask>0)&(temporary_mask==0))),
-        'minimum_source_support':round(min(supports),4),
+        'measured_slot_widths':[float(slot['width']) for slot in slots],
+        'measured_slot_spans':[[int(slot['y0']),int(slot['y1'])] for slot in slots],
+        'vent_measurement_qa':vent_qa,
         'mask_raster_sha256':digest_frame(temporary_mask),
         **proof,
     }

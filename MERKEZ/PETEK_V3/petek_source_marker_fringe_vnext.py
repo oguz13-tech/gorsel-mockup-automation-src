@@ -79,3 +79,57 @@ def restore_source_marker_fringe(scene, printed, mask, quad, *, enabled):
     return out, {'status':'DAR_SACAK_ONARILDI','repaired_pixels':count,
                  'marker_pixels_detected':int(candidate.sum()),
                  'protected_black_pictures_unchanged':True,'render_only':True}
+
+
+def restore_source_marker_vent_interiors(scene, printed, mask, quad, *, enabled):
+    """Repair source marker pixels only inside enclosed, measured vent islands."""
+    if scene.shape != printed.shape or scene.dtype != np.uint8:
+        raise engine.MaskError('PETEK_VENT_SOURCE_SHAPE_MISMATCH')
+    if not enabled:
+        return printed.copy(), {'status': 'KAPALI', 'repaired_pixels': 0}
+    strict, loose = _source_marker(scene)
+    hsv = cv2.cvtColor(scene, cv2.COLOR_BGR2HSV)
+    b, g, r = (scene[:, :, i].astype(np.int16) for i in range(3))
+    dark_marker = ((hsv[:, :, 0] >= 120) & (hsv[:, :, 0] <= 179) &
+                   (hsv[:, :, 1] >= 80) & (hsv[:, :, 2] >= 35) &
+                   (b > g + 4) & (r > g + 4))
+    source_marker = strict | loose | dark_marker
+    zero = (mask == 0).astype(np.uint8)
+    _, labels = cv2.connectedComponents(zero, connectivity=8)
+    border_labels = np.unique(np.concatenate((
+        labels[0, :], labels[-1, :], labels[:, 0], labels[:, -1])))
+    enclosed = (zero > 0) & ~np.isin(labels, border_labels[border_labels != 0])
+    target = source_marker & enclosed
+    if not np.any(target):
+        return printed.copy(), {'status': 'TEMIZ', 'repaired_pixels': 0,
+                                'vent_marker_pixels_detected': 0}
+    gray = cv2.cvtColor(scene, cv2.COLOR_BGR2GRAY)
+    dark = gray < 130
+    usable = cv2.dilate(dark.astype(np.uint8), np.ones((11, 11), np.uint8)) > 0
+    eligible = target & usable
+    if not np.any(eligible):
+        return printed.copy(), {'status': 'INCELEME_GEREKLI',
+                                'repaired_pixels': 0,
+                                'vent_marker_pixels_detected': int(target.sum())}
+    out = printed.copy()
+    ys, xs = np.where(eligible)
+    repaired = np.zeros(eligible.shape, dtype=bool)
+    for y, x in zip(ys, xs):
+        y0, y1 = max(0, y - 7), min(scene.shape[0], y + 8)
+        x0, x1 = max(0, x - 7), min(scene.shape[1], x + 8)
+        local = dark[y0:y1, x0:x1] & enclosed[y0:y1, x0:x1]
+        if int(local.sum()) < 5:
+            continue
+        values = gray[y0:y1, x0:x1][local].astype(np.float32)
+        level = int(np.clip(np.percentile(values, 18), 8, 92))
+        out[y, x] = (level, level, level)
+        repaired[y, x] = True
+    count = int(repaired.sum())
+    return out, {
+        'status': 'VENT_MAGENTA_TEMIZLENDI' if count else 'INCELEME_GEREKLI',
+        'repaired_pixels': count,
+        'vent_marker_pixels_detected': int(target.sum()),
+        'protected_black_pictures_unchanged': True,
+        'source_linked_cleanup': True,
+        'render_only': True,
+    }

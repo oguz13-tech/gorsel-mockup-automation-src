@@ -19,9 +19,14 @@ from .cutout_paste import render_with_cutout_paste
 from .grille_guard_v482 import recommended_edge_feather
 from .petek_finish_v492 import draw_fifteen_slots,despill_lower_left_geometry_v493
 from .final_cleanup_v495 import cleanup_petek_magenta
-from .petek_source_marker_fringe_vnext import (marker_fringe_candidates, restore_source_marker_fringe)
+from .petek_source_marker_fringe_vnext import (
+    marker_fringe_candidates, restore_source_marker_fringe,
+    restore_source_marker_vent_interiors)
 from .geometry_qa_v47 import inspect_print_safety
 from .wall_window_shadows_vnext import wall_region,apply_wall_window_shadows,choose_corner_side
+from .petek_effect_assets import manifest as effect_asset_manifest
+from .petek_effect_assets import apply_g3_wall_asset
+from .petek_master_grid import apply_master_grid, verify_master_grid
 
 
 @lru_cache(maxsize=1)
@@ -53,7 +58,8 @@ def _load_material_finish():
 
 def verify_petek_source_protection(scene, result, mask, quad, *, pink_cleanup=False,
                                    shadow_style='classic', corner_side='right',
-                                   lighting=None, material_effect=True):
+                                   lighting=None, material_effect=True,
+                                   g3_asset=False, master_grid=None):
     """Independently replay expected outside pixels from the ORIGINAL photo.
 
     This is more rigorous than geometric marker whitelists: a random (1,2,3)
@@ -72,7 +78,10 @@ def verify_petek_source_protection(scene, result, mask, quad, *, pink_cleanup=Fa
         expected,proof=source_repair_reference(scene,result,mask,quad,
             pink_cleanup=pink_cleanup,lighting=mode,
             material_effect=material_effect, shadow_style=shadow_style,
-            corner_side=corner_side,include_pre=include_pre)
+            corner_side=corner_side,include_pre=include_pre,
+            g3_asset=g3_asset)
+        if master_grid is not None:
+            expected,_=apply_master_grid(scene,expected,mask,master_grid)
         if np.array_equal(result[outside],expected[outside]):
             verified=proof
             break
@@ -89,6 +98,8 @@ def verify_petek_source_protection(scene, result, mask, quad, *, pink_cleanup=Fa
 def render_petek_visual(scene, artwork, quad, mask, physical_aspect, *,
                         placement='cover', lighting='natural', material_effect=True,
                         slot_mode='orta', pink_cleanup=True,
+                        g3_asset=False, y3_asset=False, l1_asset=False,
+                        master_grid=None,
                         render_fn=None, material_fn=None, slot_fn=None,
                         cleanup_fn=None, safety_fn=None, despill_fn=None):
     """One exact render order, shared between preview and production.
@@ -103,6 +114,12 @@ def render_petek_visual(scene, artwork, quad, mask, physical_aspect, *,
         raise ValueError('PETEK_IZGARA_MODU_GECERSIZ')
     if not isinstance(pink_cleanup,bool):
         raise ValueError('PETEK_PEMBE_TEMIZLIK_BOOL_REQUIRED')
+    if master_grid is not None and (not isinstance(master_grid,np.ndarray) or
+                                    master_grid.shape[:2] != scene.shape[:2] or
+                                    master_grid.ndim != 3 or master_grid.shape[2] != 4):
+        raise ValueError('PETEK_MASTER_GRID_RGBA_REQUIRED')
+    if not all(isinstance(value, bool) for value in (g3_asset, y3_asset, l1_asset)):
+        raise ValueError('PETEK_EFFECT_ASSET_FLAGS_BOOL_REQUIRED')
     if render_fn is None:render_fn=render_with_cutout_paste
     if material_fn is None and material_effect and lighting!='off':
         # Avoid top-level URETIM_V4 imports in Flask: the package initializer
@@ -159,23 +176,25 @@ def render_petek_visual(scene, artwork, quad, mask, physical_aspect, *,
     render_options={'marketplace':False,'placement':placement,
                     'lighting':lighting,'edge_feather_px':edge_px}
     if render_fn is render_with_cutout_paste:
-        render_options.update(shadow_style='corner',corner_side=shadow_corner)
+        render_options.update(shadow_style='classic',corner_side=shadow_corner)
     picture,_,qa=render_fn(render_scene,artwork,quad,mask,physical_aspect,
                            **render_options)
     audit.record('PRINT_COMPOSITE',render_scene,picture)
-    # Immutable, already-printed artwork before optional sunlight/vent layers.
-    # Used ONLY to differentiate intentional pink artwork from fresh leaked
-    # chroma-key marker after effects; never edits files or mask approval.
-    print_reference=picture.copy() if pink_cleanup else None
     if material_effect and lighting!='off':
         before=picture
-        picture=material_fn(render_scene,picture,mask,quad,'06_Petek_Kapama',enabled=True)
+        picture=material_fn(render_scene,picture,mask,quad,'06_Petek_Kapama',
+                            enabled=True, g3_asset=g3_asset, y3_asset=y3_asset,
+                            l1_asset=l1_asset)
         audit.record('MATERIAL_AND_LIGHT',before,picture)
     slot_qa={'status':'KAPALI','count':0,'changed_pixels':0}
     if slot_mode!='off':
         before=picture
         picture,slot_qa=slot_fn(render_scene,picture,mask,quad,mode=slot_mode)
         audit.record('PHYSICAL_VENT_LIPS',before,picture)
+    # Compare cleanup against the actual post-material print. This prevents a
+    # legitimate artwork hue from being mistaken for a newly created marker
+    # after the PETEK material/light pass.
+    print_reference=picture.copy() if pink_cleanup else None
     # Always compare against the actual unmodified photograph, not a working
     # copy: protects from future pre-render stages reintroducing this bug.
     protection=safety_fn(render_scene,picture,mask,quad)
@@ -201,29 +220,49 @@ def render_petek_visual(scene, artwork, quad, mask, physical_aspect, *,
     picture,fringe_qa=restore_source_marker_fringe(
         scene,picture,mask,quad,enabled=pink_cleanup)
     audit.record('SOURCE_MARKER_FRINGE_REPAIR',before,picture,allow_outside=True)
+    before=picture
+    picture,vent_qa=restore_source_marker_vent_interiors(
+        scene,picture,mask,quad,enabled=pink_cleanup)
+    audit.record('SOURCE_MARKER_VENT_REPAIR',before,picture,allow_outside=True)
+    master_qa={'status':'OFF','changed_pixels':0}
+    if master_grid is not None:
+        before=picture
+        picture,master_qa=apply_master_grid(scene,picture,mask,master_grid)
+        audit.record('LOCKED_MASTER_GRID',before,picture,allow_outside=True)
+        master_qa.update(verify_master_grid(scene,picture,mask,master_grid))
     if not np.array_equal(scene,original) or not np.array_equal(mask,approved_mask):
         raise engine.MaskError('PETEK_IMMUTABLE_SOURCE_OR_MASK_CHANGED')
     # Shadow continuation across the real wall is the FINAL output-only step.
     # The original source and approved mask remain immutable. The independent
     # verifier below only permits exact source-derived neutral-wall darkening.
     wall_qa={'status':'OFF','wall_shadow_pixels':0,'shadow_bands':2}
-    if material_effect and lighting=='strong':
+    if material_effect and lighting=='strong' and not g3_asset:
         before=picture
         picture,wall_qa=apply_wall_window_shadows(scene,picture,mask,quad,lighting=lighting,
-                        shadow_style='corner',corner_side=shadow_corner)
+                        shadow_style='classic',corner_side=shadow_corner)
         audit.record('TRUSTED_WALL_SHADOW',before,picture,allow_outside=True)
+    if material_effect and lighting=='strong' and g3_asset:
+        before=picture
+        picture,wall_qa=apply_g3_wall_asset(scene,picture,mask,quad)
+        audit.record('BUNDLED_G3_WALL_ASSET',before,picture,allow_outside=True)
     # Validate output against VERIFIED source marker repair, not against a
     # blanket allowance to change protected pixels. Physical slots remain
     # pixel-exact relative to the photo; only narrow source-magenta fringe may
     # use the in-memory replacement photo. No other outside-mask effect allowed.
     verification=verify_petek_source_protection(scene,picture,mask,quad,
-                         pink_cleanup=pink_cleanup,shadow_style='corner',
+                         pink_cleanup=pink_cleanup,shadow_style='classic',
                          corner_side=shadow_corner,lighting=lighting,
-                         material_effect=bool(material_effect))
+                         material_effect=bool(material_effect),
+                         g3_asset=g3_asset, master_grid=master_grid)
 
     return picture,{'slot_qa':slot_qa,'pink_qa':pink_qa,
-                    'pre_pink_qa':pre_pink,'fringe_qa':fringe_qa,'lighting':lighting,
+                    'pre_pink_qa':pre_pink,                    'fringe_qa':fringe_qa,'vent_qa':vent_qa,'lighting':lighting,
                     'material_effect':bool(material_effect),
+                    'master_grid':master_qa,
+                    'effect_assets': {
+                        'files': effect_asset_manifest(),
+                        'enabled': {'G3': g3_asset, 'Y3': y3_asset, 'L1': l1_asset},
+                    },
                     'protected_pixels_unchanged':(verification['authorized_marker_fringe_pixels']==0 and verification['authorized_wall_shadow_pixels']==0),
                     'authorized_pink_fringe_pixels':verification['authorized_marker_fringe_pixels'],
                     'protected_nonfringe_pixels_unchanged':verification['authorized_wall_shadow_pixels']==0,

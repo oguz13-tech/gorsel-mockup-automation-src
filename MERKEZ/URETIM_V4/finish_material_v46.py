@@ -7,6 +7,12 @@ quads, metadata, sources, PETEK vents/holes or background. Deterministic.
 from __future__ import annotations
 import cv2
 import numpy as np
+from pathlib import Path
+
+try:
+    from MERKEZ.PETEK_V3.petek_effect_assets import load_fields, manifest
+except ModuleNotFoundError:
+    from PETEK_V3.petek_effect_assets import load_fields, manifest
 
 GLASS = frozenset(('02_Cam_Tablo_Dikey','02_Cam_Tablo_Yatay',
                    '04_Cam_Dograma','05_Ocak_Arkasi'))
@@ -50,10 +56,13 @@ def _local_layers(category, width=400, height=400):
         dark=.25*np.exp(-2*((u-.43)/.05)**2)*np.exp(-.8*((v-.33)/.40)**2)
         bright=np.clip(bright,0,1)
     elif category=='06_Petek_Kapama':
-        # Long window bars are already painted into the PETEK artwork by the
-        # shared realism engine. No separate blurry blobs or glare here.
-        bright=np.zeros_like(bright)
-        dark=np.zeros_like(dark)
+        # PETEK needs only a broad matte panel response. Physical vents remain
+        # protected by the caller's mask and never receive this layer.
+        bright=.22*np.exp(-1.35*(((u-.58)/.64)**2+((v-.30)/.58)**2))
+        bright+=.07*np.exp(-2.2*(((u-.88)/.24)**2+((v-.12)/.22)**2))
+        dark=.045*np.exp(-1.6*(((u-.18)/.55)**2+((v-.78)/.42)**2))
+        bright=np.clip(cv2.GaussianBlur(bright,(0,0),10),0,1)
+        dark=np.clip(cv2.GaussianBlur(dark,(0,0),12),0,1)
     elif category in DAYLIGHT:
         # User reference: broad diagonal *matte* shafts of window daylight;
         # no hard glass bars, no shiny specular white band.
@@ -67,7 +76,8 @@ def _local_layers(category, width=400, height=400):
     return bright,dark
 
 
-def apply_material_finish(scene, printed, mask, quad, category, *, enabled=True):
+def apply_material_finish(scene, printed, mask, quad, category, *, enabled=True,
+                          g3_asset=False, y3_asset=False, l1_asset=False):
     """Return full-size BGR image, preserving all pixels where mask==0 byte-exact."""
     if not enabled or category not in GLASS|DAYLIGHT:
         return printed
@@ -97,6 +107,7 @@ def apply_material_finish(scene, printed, mask, quad, category, *, enabled=True)
     detail=cv2.GaussianBlur(np.clip(magnitude/reference,0,1),(0,0),1.5)
     protect=1.0-.66*detail
     base=printed.astype(np.float32)
+    asset_fields=load_fields((W,H)) if category=='06_Petek_Kapama' else {}
     if category in GLASS:
         # Screen-style illumination and dark mullions on white panels.
         inc=(glow*protect*.26)[:,:,None]*(255.-base)
@@ -105,6 +116,16 @@ def apply_material_finish(scene, printed, mask, quad, category, *, enabled=True)
         # Diffuse warm daylight and gentle matte shadow; low contrast.
         inc=(glow*protect*.13)[:,:,None]*(np.float32([250,249,245])-base)
         dec=(shadow*protect*.09)[:,:,None]*base
+        if y3_asset:
+            texture=asset_fields["Y3"].astype(np.float32)/255.
+            texture=(texture-.5)*.045
+            dec += texture[:,:,None]*base*.28
+        if l1_asset:
+            sunlight=asset_fields["L1"].astype(np.float32)/255.
+            inc += sunlight[:,:,None]*protect[:,:,None]*.10*(255.-base)
+        if g3_asset:
+            frame=asset_fields["G3"].astype(np.float32)/255.
+            dec += frame[:,:,None]*protect[:,:,None]*.13*base
     effect=np.uint8(np.clip(base+inc-dec+.5,0,255))
     out=printed.copy()
     out[mask>0]=effect[mask>0]
