@@ -1,0 +1,9 @@
+V4.9.2 ÖZET: PETEK için kaynakta görünen 15 dar karanlık yarık üzerinden isteğe
+bağlı kenar koyulaştırması (hafif/orta/güçlü); güven düşükse pas geçer. Alt sol
+magenta sızıntısı yalnız küçük piksel alanında yakın temiz orijinal piksellerle
+onarılır, kaynak fotoğrafa dokunulmaz. Seri üretim filtre + çoklu seçim hafızası
++ dikey scroll. 4K resmi kurulum/GPU test düğmesi. Önizleme onayı olmadan yeni
+PETEK tarifi seri üretimde çalışmaz. V491 güvenlik düzeltmeleri korunmuştur.
+Not: PNG'si daha önce üretilmiş kayıtları değiştirmez; açık 4K ve bulut izni
+varsayılan kapalıdır. Tek şablon A/B onayı diğer perspektiflerin aynı kalitede
+olduğunu kanıtlamaz. Windows kabulü ve gerçek görsel QA beklenir.

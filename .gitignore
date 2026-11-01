@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+runtime/
+SABLON_V2_MIMARI/ayarlar.db
+store_profiles_v47.json
+v4_ortak_uretim.sqlite3
+PetekV3/
+uretilen_gorseller/

@@ -1,0 +1,36 @@
+/* Appended after V4.8.8 PETEK CSS. Visibility and geometry remain intact. */
+.petek-v477-editor{background:#111624;color:#f7f4ff;font-size:14px;}
+.petek-v477-head{background:#262039;border-bottom:1px solid #4b416b;padding:17px 20px;}
+.petek-v477-head strong{font-size:19px;color:#f8f4ff;}
+.petek-v477-selectrow{background:#212439;border-bottom:1px solid #4c4665;}
+.petek-v477-list-pane{background:#171e2e;border-right:1px solid #403b57;}
+.petek-v477-list-pane.in-sidebar{background:#171d2b;border-bottom-color:#443a5d;}
+.petek-v477-list-pane .petek-v484-name{font-size:14px;font-weight:650;}
+#petekV477List .petek-v477-list-item{font-size:14px;min-height:56px;line-height:1.42;color:#f6f2ff;}
+#petekV477List .petek-v484-item-wrap{border-radius:9px;}
+#petekV477List .petek-status-approved{background:#143c36;border-color:#34d399;}
+#petekV477List .petek-status-pending{background:#534322;border-color:#fac65b;}
+#petekV477List .petek-status-error{background:#5b2435;border-color:#ff6579;}
+#petekV477List .petek-v484-item-wrap.petek-v484-selected{outline-color:#b28aff;}
+.petek-v477-stage{background:#121523;}
+#petekV477Drawing{background:#0a0e16;}
+#petekV477Canvas{border:1px solid #5c5778;}
+.petek-v477-tools{background:#1d2133;border-left:1px solid #474259;width:372px;max-width:46vw;}
+.petek-v477-tools h3{font-size:17px;line-height:1.4;color:#e9d8ff;border-bottom:1px solid #564568;}
+.petek-v477-tools label{font-size:14px;line-height:1.5;color:#dcd9ec;}
+.petek-v477-note,.petek-v484-summary,.petek-v484-legend,#petekV477Count,#petekV484BulkStatus{font-size:13px;line-height:1.6;color:#d3cfe4;}
+.petek-v477-tools input[type=number],.petek-v477-tools input[type=text],.petek-v477-selectrow select{background:#13192a;border-color:#635c81;font-size:14px;min-height:39px;}
+.petek-v477-viewport-bar{background:#22273a;}
+.petek-v477-notice{background:#1e263d;border-top:1px solid #474262;font-size:14px;}
+.petek-v477-legend{font-size:13px;color:#95ecc8;}
+.petek-v477-actionrow button,.petek-v477-full,.petek-v484-bulk-row button{border-radius:9px;font-size:14px;line-height:1.45;min-height:41px;}
+.petek-v477-confirm{background:#28213b;border:1px solid #5e507a;border-radius:9px;font-size:14px!important;}
+#petekV477Name{font-size:15px;color:#f6eaff;}
+@media(max-width:1050px){.petek-v477-tools{max-width:none;width:100%;}}
+
+/* V4.9.3 readable inline A/B test panel: no collision with saved mask controls. */
+.petek-v493-compare {margin:14px 0;padding:14px;border:1px solid #7445b8;border-radius:12px;background:#211b36;color:#f8f5ff;}
+.petek-v493-compare h3{font:700 17px 'Segoe UI',sans-serif;margin:4px 0 12px;}
+.petek-v493-compare label{font-size:14px;display:block;margin:9px 0 5px;}
+.petek-v493-compare select{padding:10px;color:#fff;background:#403461;border:1px solid #78669e;border-radius:6px;font-size:14px;width:100%;}
+.petek-v493-compare button{font-size:14px;min-height:42px;}

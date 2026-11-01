@@ -1,0 +1,38 @@
+{
+  "package_version": "2.2",
+  "version": "NUMBER_GUARD_V2",
+  "base_commit": "37831c73eaf04cc729628ea5cff3ba45bb9d44df",
+  "required_fill_sha256": "123785ea3ab3ff16d780eaebf3d4a76279716a74972b768c8b9b5a1ca55f802c",
+  "files": [
+    {
+      "path": "SABLON_V2_MIMARI/core/file_safety.py",
+      "before_git_blob": null,
+      "before_normalized_sha256": null,
+      "after_sha256": "d7ff04b163db177caa274a582791b7072321721e521f031b9bfcdaeec8191fd8"
+    },
+    {
+      "path": "SABLON_V2_MIMARI/core/template_identity.py",
+      "before_git_blob": "4ca0ee9b77296a146d8a5f4af19da3290ff2a957",
+      "before_normalized_sha256": "468e4708464ff16534057d3d542b2edb3d5d5d059febc8fa687f9f3b04584e22",
+      "after_sha256": "f57261ed8ee87d448102eb42f69067cd3e28c0cdaa204787c9ed79d3a6f6f025"
+    },
+    {
+      "path": "SABLON_V2_MIMARI/tools_runner.py",
+      "before_git_blob": "0f1b48f074513ce81fd068fdbcd78dfb43ac9d3f",
+      "before_normalized_sha256": "596652e677f789a0ad71983944119a1bd99851ddc091905fa3387323261a73c6",
+      "after_sha256": "3916e422fff4e16e060e71cae2de98704abaa68a12456ca5835a90f530ca9c7e"
+    },
+    {
+      "path": "99_SISTEM_MOTORLARI_VE_KODLAR/SISTEM_MOTORU/sablon_oto_izleyici.py",
+      "before_git_blob": "79fe3123d23e03802750253ee0edf4fca70c74de",
+      "before_normalized_sha256": "358068a2d5d6830823d643189c1f7221d2e5c236615a85d4983ec260c9c45f64",
+      "after_sha256": "42cd363949dca00a4dd14c37cd825acde89f0df3dbd527ba8222265cceaa56c7"
+    },
+    {
+      "path": "V2_KONTROL_MERKEZI/app.py",
+      "before_git_blob": "b7325d993194d8c48f193afd908cc2c27b6462b0",
+      "before_normalized_sha256": "358faf59b0316259a15b899e42f8728e1e0f27c189a8b63451d54f3d51e09745",
+      "after_sha256": "52d8950ea78befc15f3aebfa5de0ad0f035ddfbab75c958fd65ee858aa055aa1"
+    }
+  ]
+}
