@@ -185,6 +185,58 @@ def ensure_source_vent_mask_consensus(scene,mask,quad):
             'independent_core_check':True}
 
 
+def _source_protected_preview_mask(scene, mask, quad):
+    """Build an unsaved mask from independently measured dark source cores."""
+    q=engine.validated_quad(quad,scene.shape)
+    engine.mask_check(mask,scene,q)
+    target=np.float32([[0,0],[RECT_W-1,0],[RECT_W-1,RECT_H-1],[0,RECT_H-1]])
+    M=cv2.getPerspectiveTransform(np.float32(q),target)
+    photo=cv2.warpPerspective(scene,M,(RECT_W,RECT_H),flags=cv2.INTER_LINEAR,
+                              borderValue=(230,230,230))
+    rect_mask=cv2.warpPerspective(mask,M,(RECT_W,RECT_H),
+                                  flags=cv2.INTER_NEAREST,borderValue=255)
+    gray=cv2.cvtColor(photo,cv2.COLOR_BGR2GRAY)
+    blackhat=cv2.morphologyEx(gray,cv2.MORPH_BLACKHAT,
+                              cv2.getStructuringElement(cv2.MORPH_RECT,(31,3)))
+    profile=blackhat[int(RECT_H*.25):int(RECT_H*.74)].mean(axis=0)
+    peaks=_source_peaks(profile)
+    centers,_=_fit_source_vents(peaks,profile)
+    if centers is None:
+        raise engine.MaskError('PETEK_DIAGNOSTIC_PHYSICAL_VENTS_UNCERTAIN')
+    protected=rect_mask.copy()
+    y0,y1=int(RECT_H*.28),int(RECT_H*.70)
+    supports=[]
+    for center in centers:
+        x=int(round(center))
+        line=blackhat[y0:y1,x-2:x+3]
+        threshold=max(8.,float(profile[x])*.23)
+        rows=np.max(line,axis=1)>threshold
+        supports.append(float(rows.mean()))
+        rows=cv2.morphologyEx(np.uint8(rows)[:,None],
+                              cv2.MORPH_CLOSE,np.ones((9,1),np.uint8))[:,0]>0
+        protected[y0:y1,x-5:x+6][rows,:]=0
+    if min(supports)<.38:
+        raise engine.MaskError('PETEK_DIAGNOSTIC_PHYSICAL_VENTS_UNCERTAIN')
+    inverse=cv2.getPerspectiveTransform(target,np.float32(q))
+    source_protected=cv2.warpPerspective(protected,inverse,
+                                         (scene.shape[1],scene.shape[0]),
+                                         flags=cv2.INTER_NEAREST,borderValue=255)
+    temporary_mask=cv2.min(mask,source_protected)
+    proof=ensure_source_vent_mask_consensus(scene,temporary_mask,q)
+    if proof.get('status')!='SOURCE_MASK_CONSISTENT':
+        raise engine.MaskError('PETEK_DIAGNOSTIC_PHYSICAL_VENTS_UNCERTAIN')
+    return temporary_mask,{
+        'kind':'TEMPORARY_SOURCE_EVIDENCE_PRINT_MASK',
+        'source_vent_count':len(centers),
+        'source_verified':True,
+        'removed_unsafe_print_pixels':int(np.count_nonzero(
+            (mask>0)&(temporary_mask==0))),
+        'minimum_source_support':round(min(supports),4),
+        'mask_raster_sha256':digest_frame(temporary_mask),
+        **proof,
+    }
+
+
 def temporary_photo_protected_preview_mask(scene, mask, quad):
     """Conservative, unsaved print mask for a *diagnostic artwork preview*.
 
@@ -198,23 +250,15 @@ def temporary_photo_protected_preview_mask(scene, mask, quad):
             scene.ndim != 3 or scene.shape[2] != 3 or mask.shape != scene.shape[:2]):
         raise engine.MaskError('PETEK_DIAGNOSTIC_INPUT_SHAPE_INVALID')
     try:
-        photo_mask, candidate_qa = engine.auto_mask_candidate(scene, quad)
+        temporary_mask,proof=_source_protected_preview_mask(scene,mask,quad)
     except engine.MaskError as exc:
         raise engine.MaskError('PETEK_DIAGNOSTIC_PHYSICAL_VENTS_UNCERTAIN: '
                                + str(exc)) from exc
-    if photo_mask.shape != mask.shape or photo_mask.dtype != np.uint8:
-        raise engine.MaskError('PETEK_DIAGNOSTIC_MASK_INVALID')
-    # The temporary mask NEVER enlarges the original requested print region.
-    temporary_mask = cv2.min(mask, photo_mask)
     original_print = int(np.count_nonzero(mask > 0))
     remaining_print = int(np.count_nonzero(temporary_mask > 0))
     if (original_print == 0 or remaining_print < original_print * .55 or
             remaining_print < 100):
         raise engine.MaskError('PETEK_DIAGNOSTIC_PRINT_AREA_UNCERTAIN')
-    # Independently certify that the photographed vent cores remain excluded.
-    proof = ensure_source_vent_mask_consensus(scene, temporary_mask, quad)
-    if not proof.get('source_verified') or proof.get('status') != 'SOURCE_MASK_CONSISTENT':
-        raise engine.MaskError('PETEK_DIAGNOSTIC_PHYSICAL_VENTS_UNCERTAIN')
     return temporary_mask, {
         'kind':'TEMPORARY_PHOTO_PROTECTED_PRINT_MASK',
         'removed_unsafe_print_pixels':int(np.count_nonzero(
@@ -222,7 +266,7 @@ def temporary_photo_protected_preview_mask(scene, mask, quad):
         'print_area_retained_fraction':round(remaining_print/original_print,4),
         'source_vent_count':int(proof['source_count']),
         'source_verified':True,
-        'auto_mask_status':candidate_qa.get('status'),
+        'auto_mask_status':'SOURCE_EVIDENCE',
         'not_saved':True,
         'not_approved':True,
     }
