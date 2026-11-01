@@ -235,6 +235,41 @@
         "bytes":  1917
     },
     {
+        "path":  "MERKEZ/__pycache__/dark_theme_v42.cpython-311.pyc",
+        "sha256":  "341b964e5826691d788c57e6790aaf0619ca8021b996683aa5fbe9531e2ddb30",
+        "bytes":  8702
+    },
+    {
+        "path":  "MERKEZ/__pycache__/error_advisor_v498.cpython-311.pyc",
+        "sha256":  "deac4b30e0470adaeba648099ae7441756c03f06988aeb57a4ecc341ee22bed2",
+        "bytes":  4511
+    },
+    {
+        "path":  "MERKEZ/__pycache__/help_v42.cpython-311.pyc",
+        "sha256":  "3b87327387879cc00e04d3a122f1c88c447b03000f191f6f1036917b0bd4142a",
+        "bytes":  7776
+    },
+    {
+        "path":  "MERKEZ/__pycache__/petek_folders_v46.cpython-311.pyc",
+        "sha256":  "9ae537f2054ca2b2facee33142aca766d70673e8ae62c4ae9fe7ebf3f92ce8e2",
+        "bytes":  5636
+    },
+    {
+        "path":  "MERKEZ/__pycache__/ui_layout_v498.cpython-311.pyc",
+        "sha256":  "15b9e1c631447f208a8c4a702e6307b5b73a704caea7131251328a7e0a583321",
+        "bytes":  31505
+    },
+    {
+        "path":  "MERKEZ/__pycache__/version_v45.cpython-311.pyc",
+        "sha256":  "759f41b51117a239a8276058457ebbe3c0f648115e6722005d5a139471a4e182",
+        "bytes":  543
+    },
+    {
+        "path":  "MERKEZ/__pycache__/version_v47.cpython-311.pyc",
+        "sha256":  "8c5c0aa342ba20d0226a4134cf8ec5886cb5433c0a23294905cd1ab57242471c",
+        "bytes":  726
+    },
+    {
         "path":  "MERKEZ/bakim_merkezi_v472.py",
         "sha256":  "c246b9634dedf5f2f721991a179297dcea06b6363793d60ced29fe373e5c6fd6",
         "bytes":  18746
@@ -398,6 +433,86 @@
         "path":  "MERKEZ/PETEK_V3/__init__.py",
         "sha256":  "98c9683f022d3e558e6ceec83b6fcb6ecba97e860d7ae63d343c424d4b9e772f",
         "bytes":  79
+    },
+    {
+        "path":  "MERKEZ/PETEK_V3/__pycache__/__init__.cpython-311.pyc",
+        "sha256":  "e62be9fb5dd64db9408a82c3cf08141a2fe94c6ac74a662f8bcd95e6f8987fad",
+        "bytes":  389
+    },
+    {
+        "path":  "MERKEZ/PETEK_V3/__pycache__/cutout_paste.cpython-311.pyc",
+        "sha256":  "91bf2794d772cc52fd3f3a15ec970879880a7962b61fe37ab8409b7e743b7eb3",
+        "bytes":  9904
+    },
+    {
+        "path":  "MERKEZ/PETEK_V3/__pycache__/engine.cpython-311.pyc",
+        "sha256":  "2df30dbe5c81933514c365f76832921cd12ffe289361263eee64cc477f46a2bc",
+        "bytes":  40656
+    },
+    {
+        "path":  "MERKEZ/PETEK_V3/__pycache__/excel_links_v42.cpython-311.pyc",
+        "sha256":  "cb7aede222c15c2d0ddc6c12c660d8bda28ee73761b83833f262b20586033c85",
+        "bytes":  3274
+    },
+    {
+        "path":  "MERKEZ/PETEK_V3/__pycache__/final_cleanup_v495.cpython-311.pyc",
+        "sha256":  "922529badaaaffca4fb93146e626da0ea87e80eb20576b511a85fb523462c711",
+        "bytes":  10519
+    },
+    {
+        "path":  "MERKEZ/PETEK_V3/__pycache__/geometry_qa_v47.cpython-311.pyc",
+        "sha256":  "7fa8d97ef60c38e86cd68e47e7145356c46ccb954a1568ce2377444456204967",
+        "bytes":  4099
+    },
+    {
+        "path":  "MERKEZ/PETEK_V3/__pycache__/grille_guard_v482.cpython-311.pyc",
+        "sha256":  "2d9b9faea039bb8fdd8bd8c9e437e709a263b58019f561ef7644ec4e37e18d87",
+        "bytes":  5110
+    },
+    {
+        "path":  "MERKEZ/PETEK_V3/__pycache__/petek_finish_v492.cpython-311.pyc",
+        "sha256":  "6aa3aa3a65bcdffdd6e68028f925e6d200ab03f7ce29f9bea738acb30bb97494",
+        "bytes":  29111
+    },
+    {
+        "path":  "MERKEZ/PETEK_V3/__pycache__/petek_render_contract_v1.cpython-311.pyc",
+        "sha256":  "b4eebf4c1dbe0f0e4429afca8e47754900aebcf2fb67c9b1ca3e6dd0aeb2fad8",
+        "bytes":  18147
+    },
+    {
+        "path":  "MERKEZ/PETEK_V3/__pycache__/petek_slot_geometry_vnext.cpython-311.pyc",
+        "sha256":  "712ea9521921e4c5dfca9681b053e4f583ca34e986b0eb2538784eca59a3487a",
+        "bytes":  28126
+    },
+    {
+        "path":  "MERKEZ/PETEK_V3/__pycache__/petek_source_marker_fringe_vnext.cpython-311.pyc",
+        "sha256":  "3c07cb1db0ed285d45112226d2b2d5843246cdf6abee17e2ccbe7cba62f0cf8c",
+        "bytes":  6338
+    },
+    {
+        "path":  "MERKEZ/PETEK_V3/__pycache__/petek_visual_pipeline_vnext.cpython-311.pyc",
+        "sha256":  "b6992b388ee08ea623832c380d2bbc09d6bc5f4ad0fb4e75dcbcfe856965e89e",
+        "bytes":  13801
+    },
+    {
+        "path":  "MERKEZ/PETEK_V3/__pycache__/realism.cpython-311.pyc",
+        "sha256":  "ada296b416918fe0a6ef2d2f26cc5a88ed740aca55e4d503be391936c5d3c912",
+        "bytes":  19809
+    },
+    {
+        "path":  "MERKEZ/PETEK_V3/__pycache__/registry.cpython-311.pyc",
+        "sha256":  "0d9fc27066a9ad734b38ae1d1ff33dd25ab9bc464338d75e50d2dac909ca2253",
+        "bytes":  24697
+    },
+    {
+        "path":  "MERKEZ/PETEK_V3/__pycache__/safety_audit.cpython-311.pyc",
+        "sha256":  "7cf505a1271d981b279df28aa867bde39a1ce80d88153999566ac432b92cec08",
+        "bytes":  8030
+    },
+    {
+        "path":  "MERKEZ/PETEK_V3/__pycache__/wall_window_shadows_vnext.cpython-311.pyc",
+        "sha256":  "788a61e90f5e0a7629c6fd1515c40f52b5de552d7f49b547d113e7cc7b69f897",
+        "bytes":  10630
     },
     {
         "path":  "MERKEZ/PETEK_V3/batch.py",
@@ -568,6 +683,111 @@
         "path":  "MERKEZ/URETIM_V4/__init__.py",
         "sha256":  "d95f73a581e073d4356e9f3aeb51a81c8238a0714db7d907ad69935b9a99dbb1",
         "bytes":  790
+    },
+    {
+        "path":  "MERKEZ/URETIM_V4/__pycache__/__init__.cpython-311.pyc",
+        "sha256":  "3199175e03771a58faa092a3150cc54aa20bc27d7a0542b7f5b8a1d8edca1c46",
+        "bytes":  1083
+    },
+    {
+        "path":  "MERKEZ/URETIM_V4/__pycache__/cloud_excel_v43.cpython-311.pyc",
+        "sha256":  "222949a806c28f250d919523c05cd710e294563f39f082aa3c2e0816ea313c89",
+        "bytes":  22502
+    },
+    {
+        "path":  "MERKEZ/URETIM_V4/__pycache__/crash_recovery.cpython-311.pyc",
+        "sha256":  "2fa7139ef1bfa890ecb2ed061db686c3123672af65d0d7b4628ab96e9af9c971",
+        "bytes":  12270
+    },
+    {
+        "path":  "MERKEZ/URETIM_V4/__pycache__/design_proxy_v43.cpython-311.pyc",
+        "sha256":  "9ccafd4671abe9dbd5fedadfae756e4bdeea287c9a4205af1c4fd9112ee2a322",
+        "bytes":  10813
+    },
+    {
+        "path":  "MERKEZ/URETIM_V4/__pycache__/finish_material_v46.cpython-311.pyc",
+        "sha256":  "09e787d13277527f704f093a91b71325abb45b74e66677f6aed5faa53833ad27",
+        "bytes":  9366
+    },
+    {
+        "path":  "MERKEZ/URETIM_V4/__pycache__/finish_v42.cpython-311.pyc",
+        "sha256":  "c6a08bfe6d580d4fd60a26afd78b5d165cd747fde63b35b6e0a186e024cb1a27",
+        "bytes":  8127
+    },
+    {
+        "path":  "MERKEZ/URETIM_V4/__pycache__/gui_v4.cpython-311.pyc",
+        "sha256":  "017f481f9b465613b61a6841725b9c6247f315646e412724091dda2b132295c1",
+        "bytes":  134367
+    },
+    {
+        "path":  "MERKEZ/URETIM_V4/__pycache__/manual_geometry.cpython-311.pyc",
+        "sha256":  "c5423547b2866123c91157c283c52685a02ff0008f1dfbaf556ac298ad4e7826",
+        "bytes":  4563
+    },
+    {
+        "path":  "MERKEZ/URETIM_V4/__pycache__/on_demand_4k_v495.cpython-311.pyc",
+        "sha256":  "0109e88d36f8e411dc4265bf195f82b9f3f335916917dbcb9b628031ce9b0b92",
+        "bytes":  6598
+    },
+    {
+        "path":  "MERKEZ/URETIM_V4/__pycache__/optical_qa_v47.cpython-311.pyc",
+        "sha256":  "12f29015b23a77672a3c2921d08130328389761a726b9fa4f187f27f00c4de7b",
+        "bytes":  3283
+    },
+    {
+        "path":  "MERKEZ/URETIM_V4/__pycache__/resume_checkpoint_v47.cpython-311.pyc",
+        "sha256":  "2e4e323cdc2c6bc55b34bef89a1363010370373bc048aabb33addb7f3fb8f204",
+        "bytes":  9392
+    },
+    {
+        "path":  "MERKEZ/URETIM_V4/__pycache__/scene_daylight_vnext.cpython-311.pyc",
+        "sha256":  "82865696cc0e688c2f7ff228613519c8d4aaf185be34532fbb6ac1f305a32279",
+        "bytes":  8621
+    },
+    {
+        "path":  "MERKEZ/URETIM_V4/__pycache__/store_assignment_ui_v410.cpython-311.pyc",
+        "sha256":  "47b9f6d6a9affd082b31f09969a0737b86c9de1e5f9f41a46da3670a27cd4e16",
+        "bytes":  61860
+    },
+    {
+        "path":  "MERKEZ/URETIM_V4/__pycache__/store_assignment_v410.cpython-311.pyc",
+        "sha256":  "f5ccdb65b58fb110ecfa1a20022afbdb6c7aeaf8260b61bb7a25b8d38803cba0",
+        "bytes":  5495
+    },
+    {
+        "path":  "MERKEZ/URETIM_V4/__pycache__/store_identity_v485.cpython-311.pyc",
+        "sha256":  "85e5d8ff584c2b7fc32ff8b751d6a1da2cf0c0e00718f77b4680bb33cf7e44b6",
+        "bytes":  4757
+    },
+    {
+        "path":  "MERKEZ/URETIM_V4/__pycache__/store_profiles_v47.cpython-311.pyc",
+        "sha256":  "67573e6784ff1e655f7e3666278870297b1e1382086e76ca9983f80253bd4a17",
+        "bytes":  22058
+    },
+    {
+        "path":  "MERKEZ/URETIM_V4/__pycache__/store_selection_diagnostic_vnext.cpython-311.pyc",
+        "sha256":  "7088390478e0e4289dc3fde540af97a3739af0006ffd881ca320993cd769e1f2",
+        "bytes":  16636
+    },
+    {
+        "path":  "MERKEZ/URETIM_V4/__pycache__/template_filter_v492.cpython-311.pyc",
+        "sha256":  "16ff5dcec74f2bd605e1f19eb02ca89b1413906e1c136de4e1583c8c31252fb3",
+        "bytes":  2941
+    },
+    {
+        "path":  "MERKEZ/URETIM_V4/__pycache__/unified_batch.cpython-311.pyc",
+        "sha256":  "5278b97643206a42a937e330a656cf9e47e96b32fdec01b5cdd05a48d2eda510",
+        "bytes":  68536
+    },
+    {
+        "path":  "MERKEZ/URETIM_V4/__pycache__/unlimited_selection.cpython-311.pyc",
+        "sha256":  "75446a06955945958d9f65ebdae9d3c930dae01750c63f9501db7d4fe4c39d92",
+        "bytes":  19477
+    },
+    {
+        "path":  "MERKEZ/URETIM_V4/__pycache__/upscale4k_v44.cpython-311.pyc",
+        "sha256":  "6005a9f20e54862ec743979c039ac1cc1251e578defff45534cd68acd14ba7c8",
+        "bytes":  17988
     },
     {
         "path":  "MERKEZ/URETIM_V4/chroma_render_v46.py",
@@ -741,8 +961,8 @@
     },
     {
         "path":  "PETEK_ISOLATED_TEST_RAPORU_20261101.md",
-        "sha256":  "1f0956b484cb8635b76f663e31bdc34f923546a56cd3db0565529c118fd089cf",
-        "bytes":  2082
+        "sha256":  "671574a3a7d6a211bf820b6bf74987432e8b6e5fddecc882704e7d6c7c64023e",
+        "bytes":  2262
     },
     {
         "path":  "SABLON_V2_MIMARI/app.py",
@@ -1475,6 +1695,11 @@
         "bytes":  2190
     },
     {
+        "path":  "tests/__pycache__/test_v4100_store_assignment.cpython-311-pytest-9.0.2.pyc",
+        "sha256":  "388cbaa4e7a5df2b032d49527efc010ab087b0e23f3ee6ccf11518949f0d2626",
+        "bytes":  57872
+    },
+    {
         "path":  "tests/__pycache__/test_vnext_petek_8080_html_json_guard_20261101.cpython-311-pytest-9.0.2.pyc",
         "sha256":  "177377409a5a14782edff44d157f99bcf7de6a600bf567946d8a662abb34c5f5",
         "bytes":  17040
@@ -1483,6 +1708,11 @@
         "path":  "tests/__pycache__/test_vnext_petek_dynamic_preview_ui.cpython-311-pytest-9.0.2.pyc",
         "sha256":  "a73353974184d739f246ea5bfc2fbd635d122b334a7489e54e0f5b7dd5c3f94d",
         "bytes":  18210
+    },
+    {
+        "path":  "tests/__pycache__/test_vnext_store_preflight_p0.cpython-311-pytest-9.0.2.pyc",
+        "sha256":  "16bbb58972fab119ad9d316b7d1f744b4b13b8e6465b64432cf2cd840e1d093e",
+        "bytes":  69076
     },
     {
         "path":  "tests/js/test_edge_angles_v46.cjs",

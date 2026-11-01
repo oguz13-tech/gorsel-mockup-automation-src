@@ -24,7 +24,9 @@ mağaza profili, üretim ledger'ı ve müşteri tasarımı paketlenmemiştir.
 | PETEK kontrat, 422 fallback, dinamik yarık, preview parity testleri | 23 passed |
 | İzole toplu-preview UI kontratı | PASS |
 | İzole JavaScript `node --check` | PASS |
+| Salt mağaza UID/SHA preflight testleri | 12 passed, 1 skipped |
 | Preview browser/API contract suite | 2 skipped (Playwright/runtime bağımlılığı bu sandbox'ta yok) |
+| GUI mağaza assignment testleri | ÇALIŞTIRILAMADI: headless `tkinter.wait_window` native fatal exception |
 | Gerçek Windows runtime/API/ledger/mağaza verisi | ÇALIŞTIRILAMADI |
 
 Gerçek runtime kanıtı bu sandbox oturumunda mevcut değildi:
