@@ -38,7 +38,15 @@ def marker_fringe_candidates(scene: np.ndarray, mask: np.ndarray, quad) -> np.nd
     panel=engine.polygon_mask(scene.shape,engine.validated_quad(quad,scene.shape))
     physical=cv2.dilate(np.uint8(panel>0),cv2.getStructuringElement(
          cv2.MORPH_ELLIPSE,(2*MAX_FRINGE_WIDTH_PX+1,)*2))>0
-    candidate=(mask==0)&near&physical&marker
+    # A source-protected vent is an enclosed zero island inside the printable
+    # face. It is not an outside fringe and must never be treated as a repair
+    # target merely because the RAM mask protects its full measured width.
+    zero=(mask==0).astype(np.uint8)
+    nlabels,labels=cv2.connectedComponents(zero, connectivity=8)
+    border_labels=np.unique(np.concatenate((
+        labels[0,:], labels[-1,:], labels[:,0], labels[:,-1])))
+    exterior=np.isin(labels,border_labels[border_labels!=0])
+    candidate=exterior&near&physical&marker
     # If source marker occupies an unusually broad area, fail closed: it may
     # indicate a bad human mask instead of an anti-aliased 1..8 px fringe.
     n=int(np.count_nonzero(candidate))
