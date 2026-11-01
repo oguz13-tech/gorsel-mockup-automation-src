@@ -961,8 +961,8 @@
     },
     {
         "path":  "PETEK_ISOLATED_TEST_RAPORU_20261101.md",
-        "sha256":  "671574a3a7d6a211bf820b6bf74987432e8b6e5fddecc882704e7d6c7c64023e",
-        "bytes":  2262
+        "sha256":  "fb63e0befa18e046ab9a109bcc158ce5880a645b3ba009a1a00aaa61da757218",
+        "bytes":  2617
     },
     {
         "path":  "SABLON_V2_MIMARI/app.py",
@@ -1151,8 +1151,8 @@
     },
     {
         "path":  "SABLON_V2_MIMARI/static/js/petek_editor_v477.js",
-        "sha256":  "efe1012f17db95c08477f73d2b8302540b0a011b15dab1a04d0f2bfb5363e925",
-        "bytes":  67552
+        "sha256":  "e8e6a2e442d84e758a86fb0cd9407088f776bba19ca866c8b8aba31d46af1f50",
+        "bytes":  67851
     },
     {
         "path":  "SABLON_V2_MIMARI/static/js/petek_quad_drag_v481.js",
@@ -1695,9 +1695,19 @@
         "bytes":  2190
     },
     {
+        "path":  "tests/__pycache__/test_final_petek_contract_20261101.cpython-311-pytest-9.0.2.pyc",
+        "sha256":  "1485c787203be159110ce8a834ac15b6b4409cfc279b0b7b51c1d11dde6c6e9a",
+        "bytes":  24026
+    },
+    {
         "path":  "tests/__pycache__/test_v4100_store_assignment.cpython-311-pytest-9.0.2.pyc",
         "sha256":  "388cbaa4e7a5df2b032d49527efc010ab087b0e23f3ee6ccf11518949f0d2626",
         "bytes":  57872
+    },
+    {
+        "path":  "tests/__pycache__/test_v4112_http_fallback_guard.cpython-311-pytest-9.0.2.pyc",
+        "sha256":  "84420d99b75a0e80de2133329901a863adea867df190d6c12fc5370a2e72bfe4",
+        "bytes":  13784
     },
     {
         "path":  "tests/__pycache__/test_vnext_petek_8080_html_json_guard_20261101.cpython-311-pytest-9.0.2.pyc",
@@ -1705,9 +1715,34 @@
         "bytes":  17040
     },
     {
+        "path":  "tests/__pycache__/test_vnext_petek_dynamic_photo_count.cpython-311-pytest-9.0.2.pyc",
+        "sha256":  "5d88e3b35b748bfba84c829dceba885476d61127e3dd5a16a7e0c31c45413b3d",
+        "bytes":  18955
+    },
+    {
         "path":  "tests/__pycache__/test_vnext_petek_dynamic_preview_ui.cpython-311-pytest-9.0.2.pyc",
         "sha256":  "a73353974184d739f246ea5bfc2fbd635d122b334a7489e54e0f5b7dd5c3f94d",
         "bytes":  18210
+    },
+    {
+        "path":  "tests/__pycache__/test_vnext_petek_pink409_source_linked_20261101.cpython-311-pytest-9.0.2.pyc",
+        "sha256":  "bce7042cb2d4dbb328a395d2a37f087a00a0220020a42108f7e96b55241f8625",
+        "bytes":  21915
+    },
+    {
+        "path":  "tests/__pycache__/test_vnext_petek_preview_parity_and_recovery_20261101.cpython-311-pytest-9.0.2.pyc",
+        "sha256":  "ea415920d893aa752a5ab3f4ce66b13abfc8cd7ce18e031131df3121d49a5cf4",
+        "bytes":  28515
+    },
+    {
+        "path":  "tests/__pycache__/test_vnext_petek_protected_409_original_source_20261101.cpython-311-pytest-9.0.2.pyc",
+        "sha256":  "83d8166c1113f692e8987928fb46951296372d2ebe7cdbfd248272fb6f88838d",
+        "bytes":  21560
+    },
+    {
+        "path":  "tests/__pycache__/test_vnext_petek_two_wall_shadows.cpython-311-pytest-9.0.2.pyc",
+        "sha256":  "0a993fecbff8f0c48efd7a3830fdef3a21bff25608cb445ed0f85a74bc2197fa",
+        "bytes":  47086
     },
     {
         "path":  "tests/__pycache__/test_vnext_store_preflight_p0.cpython-311-pytest-9.0.2.pyc",
@@ -1721,8 +1756,8 @@
     },
     {
         "path":  "tests/js/test_petek_batch_preview_isolation.cjs",
-        "sha256":  "d4d9af7d60258f537d568c0d0597fbe77e2167700b99b2adf1c102a9246b6a05",
-        "bytes":  964
+        "sha256":  "2de1f3ae8c80c04f65decd4aa5b323d9fd14b5eb969ab5986f0003f13f2cb5c9",
+        "bytes":  1088
     },
     {
         "path":  "tests/js/test_petek_quad_drag_v481.cjs",

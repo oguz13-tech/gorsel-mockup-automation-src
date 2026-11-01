@@ -9,6 +9,8 @@ const html = fs.readFileSync(path.join(root, 'SABLON_V2_MIMARI', 'templates', 'i
 assert.ok(js.includes('async function previewAllArtwork()'));
 assert.ok(js.includes("api('/api/petek/preview-artwork',payload)"));
 assert.ok(js.includes("view.card.classList.add('failed')"));
+assert.ok(js.includes("view.image.src=photoUrl(item.name)"));
+assert.ok(js.includes('Görsel kalite kararı verilmedi'));
 assert.ok(js.includes('diagnostic_preview'));
 assert.ok(html.includes('id="petekV477PreviewAll"'));
 assert.ok(html.includes('id="petekV477BatchPreviewGrid"'));

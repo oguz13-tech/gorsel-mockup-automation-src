@@ -173,8 +173,12 @@ async function previewAllArtwork(){
        if(isDiagnostic)diagnostic++;else passed++;
      }catch(error){
        failed++;view.card.classList.add('failed');
-       view.status.textContent='KONTROL GEREKİYOR — bu şablon atlandı';
-       view.detail.textContent=String(error.message||error);
+       view.image.src=photoUrl(item.name);
+       view.image.alt=item.name+' kaynak teşhis görüntüsü; gerçek artwork uygulanmadı';
+       view.image.hidden=false;
+       view.status.textContent='TEKNİK KONTROL GEREKİYOR — kaynak görüntüsü gösteriliyor; artwork uygulanmadı';
+       view.detail.textContent='ÜRETİM/ONAY YOK. Görsel kalite kararı verilmedi.\n'+
+         'Teknik neden: '+String(error.message||error);
      }
      completed++;update();
      await new Promise(resolve=>setTimeout(resolve,0));

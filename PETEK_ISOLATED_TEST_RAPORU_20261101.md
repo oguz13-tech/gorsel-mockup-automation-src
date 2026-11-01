@@ -14,6 +14,8 @@ mağaza profili, üretim ledger'ı ve müşteri tasarımı paketlenmemiştir.
   bağımsız detail + preview çağrısı; tek hata diğer kartları durdurmaz.
   `diagnostic_preview` sonuçları açıkça güvenli teşhis olarak gösterilir.
 - `SABLON_V2_MIMARI/static/css/petek_editor_v477.css`: kart/grid görünümü.
+- Teknik hata alan kartlar kaynak teşhis görüntüsünü göstermeye devam eder;
+  artwork uygulanmadığı ve üretim/onay olmadığı açıkça yazılır.
 - Renderer, kaynak fotoğraf–maske güvenlik guard'ı, onay ve batch üretim
   kodu değiştirilmedi.
 
@@ -40,7 +42,10 @@ ortak ticari output SHA için PASS iddiası yapılmamıştır.
 - Fiziksel yarık guard'ı kapatılmadı.
 - Geçici maskeler yalnız RAM'de kalır; onay veya üretim anlamına gelmez.
 - Preview endpoint'i üretim ledger'ına yazmaz.
-- Hatalı template kartı `KONTROL GEREKİYOR` olarak kalır.
+- Hatalı template kartı kaynak teşhis görüntüsüyle `TEKNİK KONTROL GEREKİYOR`
+  olarak kalır.
+- Estetik, renk, ışık, gölge veya doğallık hakkında otomatik kabul/reddetme
+  kararı verilmez; son görsel karar kullanıcıya bırakılır.
 
 ## Geri dönüş
 
