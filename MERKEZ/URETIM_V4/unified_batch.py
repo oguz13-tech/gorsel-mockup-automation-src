@@ -1015,6 +1015,44 @@ class UnifiedV4Batch:
     def export(self) -> tuple[Path, Path, int]:
         """Export SHA-verified CSV and XLSX commercial product lists across all 7 categories."""
         rows = self.ledger.successful()
+        verified_rows = []
+        rejected_rows = []
+        for row in rows:
+            path = Path(row["output"])
+            if (
+                path.is_symlink()
+                or not path.is_file()
+                or petek_engine.digest(path) != row["output_sha"]
+            ):
+                rejected_rows.append(
+                    {
+                        "key": row["key"],
+                        "category": row["category"],
+                        "uid": row["uid"],
+                        "art_name": row["art_name"],
+                        "output": row["output"],
+                        "receipt_sha": row["output_sha"],
+                        "reason": "OUTPUT_MISSING_OR_SHA_MISMATCH",
+                    }
+                )
+                continue
+            verified_rows.append(row)
+        rows = verified_rows
+        if rejected_rows:
+            report = self.reports / "ORTAK_7_KATEGORI_SHA_INCELEME.json"
+            petek_engine.atomic_new_file(
+                report,
+                json.dumps(
+                    {
+                        "status": "REVIEW_REQUIRED",
+                        "verified_export_rows": len(rows),
+                        "rejected_rendered_rows": rejected_rows,
+                        "outputs_not_marked_pass": True,
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                ).encode("utf-8"),
+            )
         fingerprint = hashlib.sha256(
             "|".join(r["key"] + r["output_sha"] for r in rows).encode("utf-8")
         ).hexdigest()[:18]
@@ -1041,13 +1079,6 @@ class UnifiedV4Batch:
                     row["output_sha"],
                 )
             ]
-
-        for row in rows:
-            path = Path(row["output"])
-            if path.is_symlink() or not path.is_file() or petek_engine.digest(path) != row["output_sha"]:
-                raise petek_engine.MaskError(
-                    "Ortak ticari liste için çıktı SHA doğrulanamadı: " + row["key"]
-                )
 
         if not csv_path.exists():
             text = StringIO(newline="")
