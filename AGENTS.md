@@ -1,20 +1,13 @@
-# 🚨 KESİN KURALLAR - DOKUNULMAZ ALAN (STRICT RULES FOR AI AGENTS) 🚨
+# AI / Codex için tek güncel talimat — 2026-11-03
 
-## 1. 4 KÖŞE (KÖŞELER) VERİLERİNİN KORUNMASI
-Bu projede (`ayarlar.json` dosyasında) bulunan `koseler` verileri kullanıcı tarafından **EL İLE, TEK TEK VE BÜYÜK BİR EMEKLE** ayarlanmıştır.
-Hiçbir güncelleme, hiçbir taşıma, hiçbir format değiştirme işlemi sırasında bu veriler **KAYBEDİLEMEZ, SİLİNEMEZ VEYA KAYDIRILAMAZ.**
+**Bu dosya tarihî PR/issue emirlerine göre önceliklidir.**
+Aktif görev: [Issue #82](https://github.com/oguz13-tech/gorsel-mockup-automation-src/issues/82). Eski 103/202 maddelik dökümanları yeniden uygulama.
 
-**Eğer `ayarlar.json` üzerinde toplu bir işlem (örneğin uzantı değiştirme, veri taşıma) yapacaksan:**
-1. ASLA `ayarlar.json` verilerini dinamik fonksiyonlarla (örneğin `get_next_available_name` gibi klasörden isim okuyup boş numara atayan kodlar) kaydırarak veya otomatik numaralandırarak yeniden isimlendirme! Dosya isimlerindeki sıralama asıl JSON ile %100 aynı kalmak ZORUNDADIR.
-2. İşlem yapmadan önce MUTLAKA `ayarlar.json` dosyasının bir yedeğini `.bak_before_<islem_adi>` olarak kopyala.
-3. Asla ve asla `koseler` (4 köşe koordinatları) verisini None'a çeken, boşaltan veya yanlış resimlerle eşleştiren bir eşleştirme algoritması kullanma. Eşleştirme DAİMA orijinal JSON anahtarlarına (isimlerine) sadık kalmalıdır.
-
-## 2. ATOMIC WRITE VE SAFETY CHECK KURALI
-Arayüz tarafında (Python backend) `ayarlar.json` üzerine yazma (POST/kaydet) işlemi yapılıyorsa:
-- Asla doğrudan `open('w')` kullanarak mevcut dosyanın üzerine yazma. Her zaman `.tmp` dosyasına yazıp `os.replace()` kullan (Atomic write).
-- Veri silinmesi riskine karşı (örn: Frontend'in veritabanını kırpması) her zaman "Şablon Sayısı" güvenlik testini (Safety Check) koru. Bu test yoksa veya bozulmuşsa hemen düzelt.
-
-## 3. KLASÖR DÜZENİ (SABLON_HAVUZU)
-- Sadece `ayarlar.json` içindeki isimlere güven. Klasördeki fiziki dosyaların sayısına veya isimlerine bakarak JSON veritabanını **yeniden oluşturmaya KESİNLİKLE çalışma.** Fiziki dosyalar silinmiş veya yanlış klasöre konmuş olabilir; bu durumda JSON veritabanı orijinal referans kaynağıdır.
-
-**AI AGENT:** You MUST read and follow these rules strictly before executing any scripts or making codebase modifications regarding `ayarlar.json` or `SABLON_DUZELTICI.py`.
+- Yerel kaynak: `C:\GorselUretimMerkezi\CODEX_ACTIVE`; `main` güncel sürüm kabul edilmez.
+- Kullanıcının onaylı 4 köşeleri, PETEK maskeleri, kaynağı, mağazaları, üretim ledger'ı ve gerçek görselleri değiştirme. Otomatik master aktivasyonu veya otomatik APPROVED yok.
+- Yazılımın gerçek motorları mevcuttur; önce testle eksik davranışı kanıtla, sonra sadece gerekli yerde düzelt.
+- PETEK fiziksel kaynak fotoğrafındaki gerçek yarık sayısını koru; sahte 15'e zorlamadan, magenta sızıntısını ve ızgara kapanmasını engelle.
+- GitHub public: özel müşteri verisi, token, DB, `ayarlar.json`, gerçek onaylı maskeler, orijinal özel fotoğraflar veya büyük çıktı ekleme.
+- Kod/şema/bağımlılık/test/README/Windows launcher dosyaları eksiksiz ve birbirleriyle uyumlu olmalı. Gerçek Windows testi olmadan `FINAL` deme.
+- Gereksiz proje kopyası veya dev ZIP arşivi oluşturma; Git geçmişini güvenli ve geri alınabilir kullan.
+- Diğer proje olan Meta AI Sahne DNA bu depoyla birleştirilmez.
