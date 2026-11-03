@@ -88,6 +88,57 @@ class TestSQLiteBootstrap(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
+    def test_old_recipe_failure_does_not_block_current_product_completion(self):
+        from SISTEM_MOTORU.pc_master_factory import StateManager
+
+        sm = StateManager(db_path=self.db_path)
+        with sm.conn:
+            sm.conn.execute(
+                """INSERT INTO masters (
+                       master_id, theme_id, theme_title, style_key,
+                       horizontal_path, vertical_path
+                   ) VALUES (?, ?, ?, ?, ?, ?)""",
+                ("M00001", 1, "Tema", "style", "H.png", "V.png"),
+            )
+            sm.conn.execute(
+                """INSERT INTO products (
+                       sku, master_id, kategori_key, barkod, model_kodu, status
+                   ) VALUES (?, ?, ?, ?, ?, ?)""",
+                ("sg-M00001", "M00001", "01_Wifi_Kutusu", "sg-M00001", "M-sg-M00001", "UPLOADED_PENDING_EXCEL"),
+            )
+            sm.conn.execute(
+                """INSERT INTO render_artifacts (
+                       artifact_key, sku, status
+                   ) VALUES (?, ?, ?)""",
+                ("old_source_01_Wifi_Kutusu_old_template_v2_old", "sg-M00001", "UPLOAD_FAILED"),
+            )
+            sm.conn.execute(
+                """INSERT INTO render_artifacts (
+                       artifact_key, sku, status
+                   ) VALUES (?, ?, ?)""",
+                ("new_source_01_Wifi_Kutusu_new_template_v3_epic3_20261005_r2", "sg-M00001", "UPLOADED_PENDING_EXCEL"),
+            )
+
+        sm.mark_artifacts_completed(
+            ["new_source_01_Wifi_Kutusu_new_template_v3_epic3_20261005_r2"],
+            recipe_version="v3_epic3_20261005_r2",
+        )
+
+        row = sm.conn.execute(
+            "SELECT status FROM products WHERE sku=?",
+            ("sg-M00001",),
+        ).fetchone()
+        self.assertEqual(row["status"], "COMPLETED")
+
+        old = sm.conn.execute(
+            "SELECT status FROM render_artifacts WHERE artifact_key LIKE 'old_source%'"
+        ).fetchone()
+        self.assertEqual(
+            old["status"],
+            "UPLOAD_FAILED",
+            "Historical recipe evidence must remain unchanged for audit/recovery",
+        )
+
     def test_state_manager_creates_db(self):
         sm = StateManager(db_path=self.db_path)
         
@@ -102,14 +153,248 @@ class TestSQLiteBootstrap(unittest.TestCase):
         is_completed = sm.is_artifact_completed("art-001")
         self.assertFalse(is_completed, "UPLOAD_FAILED must not be treated as completed by StateManager")
         
-        # Simulate successful upload
+        # Upload success alone is not end-to-end completion. The Excel row must
+        # be durably flushed before the artifact becomes COMPLETED.
         sm.save_render_artifact({
             "artifact_key": "art-001",
             "upload_url": "http://test.url",
-            "status": "UPLOADED"
+            "status": "UPLOADED_PENDING_EXCEL"
         })
-        is_completed2 = sm.is_artifact_completed("art-001")
-        self.assertTrue(is_completed2, "UPLOADED should be treated as completed")
+        self.assertFalse(
+            sm.is_artifact_completed("art-001"),
+            "Upload-only state must not be treated as completed",
+        )
+        sm.mark_artifacts_completed(["art-001"])
+        self.assertTrue(
+            sm.is_artifact_completed("art-001"),
+            "Only COMPLETED proves render + upload + Excel finished",
+        )
+
+
+
+class TestStableTemplateAssignment(unittest.TestCase):
+    def test_persisted_template_name_wins_even_if_pool_order_changes(self):
+        from SISTEM_MOTORU.pc_master_factory import (
+            choose_stable_template_record,
+        )
+
+        records = [
+            {"name": "Template_C.png"},
+            {"name": "Template_A.png"},
+            {"name": "Template_B.png"},
+        ]
+        chosen = choose_stable_template_record(
+            records,
+            sequence_number=2,
+            persisted_name="Template_C.png",
+        )
+        self.assertEqual(chosen["name"], "Template_C.png")
+
+    def test_new_assignment_is_name_sorted_and_deterministic(self):
+        from SISTEM_MOTORU.pc_master_factory import (
+            choose_stable_template_record,
+        )
+
+        records_a = [
+            {"name": "Template_C.png"},
+            {"name": "Template_A.png"},
+            {"name": "Template_B.png"},
+        ]
+        records_b = list(reversed(records_a))
+        chosen_a = choose_stable_template_record(records_a, 2)
+        chosen_b = choose_stable_template_record(records_b, 2)
+        self.assertEqual(chosen_a["name"], "Template_B.png")
+        self.assertEqual(chosen_b["name"], "Template_B.png")
+
+
+class TestArtifactCompletionRequiresLocalFile(unittest.TestCase):
+    def test_completed_db_record_without_file_is_not_reusable(self):
+        from SISTEM_MOTORU.pc_master_factory import artifact_record_is_complete_on_disk
+
+        self.assertFalse(
+            artifact_record_is_complete_on_disk({
+                "status": "COMPLETED",
+                "local_output_path": str(Path(tempfile.gettempdir()) / "missing-render.jpg"),
+            })
+        )
+
+    def test_completed_db_record_with_file_is_reusable(self):
+        from SISTEM_MOTORU.pc_master_factory import artifact_record_is_complete_on_disk
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "render.jpg"
+            path.write_bytes(b"ok")
+            self.assertTrue(
+                artifact_record_is_complete_on_disk({
+                    "status": "COMPLETED",
+                    "local_output_path": str(path),
+                })
+            )
+
+
+class TestForegroundAIDependencyPreflight(unittest.TestCase):
+    def test_missing_sam2_symbols_are_reported(self):
+        from types import SimpleNamespace
+        from SISTEM_MOTORU.pc_master_factory import foreground_ai_dependency_status
+
+        fake_transformers = SimpleNamespace(
+            AutoProcessor=object(),
+            AutoModelForZeroShotObjectDetection=object(),
+        )
+
+        with patch(
+            "SISTEM_MOTORU.pc_master_factory.importlib.util.find_spec",
+            return_value=object(),
+        ), patch(
+            "SISTEM_MOTORU.pc_master_factory.importlib.import_module",
+            return_value=fake_transformers,
+        ):
+            status = foreground_ai_dependency_status()
+
+        self.assertTrue(status["torch"])
+        self.assertTrue(status["transformers"])
+        self.assertFalse(status["transformers_required_symbols"])
+        self.assertIn("transformers.Sam2Processor", status["missing"])
+        self.assertIn("transformers.Sam2Model", status["missing"])
+
+    def test_complete_transformers_api_passes_symbol_check(self):
+        from types import SimpleNamespace
+        from SISTEM_MOTORU.pc_master_factory import foreground_ai_dependency_status
+
+        fake_transformers = SimpleNamespace(
+            AutoProcessor=object(),
+            AutoModelForZeroShotObjectDetection=object(),
+            Sam2Processor=object(),
+            Sam2Model=object(),
+        )
+
+        with patch(
+            "SISTEM_MOTORU.pc_master_factory.importlib.util.find_spec",
+            return_value=object(),
+        ), patch(
+            "SISTEM_MOTORU.pc_master_factory.importlib.import_module",
+            return_value=fake_transformers,
+        ):
+            status = foreground_ai_dependency_status()
+
+        self.assertTrue(status["transformers_required_symbols"])
+        self.assertEqual(status["missing"], [])
+
+
+class TestDuplicateProfileIdentityGuard(unittest.TestCase):
+    def test_duplicate_profile_uids_returns_only_repeated_nonempty_ids(self):
+        from SISTEM_MOTORU.pc_master_factory import duplicate_profile_uids
+
+        rows = [
+            {"template_uid": "A"},
+            {"template_uid": "B"},
+            {"template_uid": "A"},
+            {"template_uid": ""},
+            {"template_uid": None},
+            {"template_uid": "C"},
+            {"template_uid": "C"},
+        ]
+        self.assertEqual(duplicate_profile_uids(rows), ["A", "C"])
+
+
+class TestForegroundPlanSemantics(unittest.TestCase):
+    def test_default_review_plan_is_not_occlusion_evidence(self):
+        from SISTEM_MOTORU.pc_master_factory import (
+            foreground_plan_has_positive_selection,
+            foreground_is_required,
+        )
+
+        default_plan = {
+            "object_boxes": [],
+            "feather": 1.2,
+            "grabcut_iterations": 5,
+        }
+        self.assertFalse(foreground_plan_has_positive_selection(default_plan))
+        self.assertFalse(foreground_is_required({"has_occlusion": False}, default_plan))
+
+    def test_positive_object_plan_or_profile_requires_foreground(self):
+        from SISTEM_MOTORU.pc_master_factory import (
+            foreground_plan_has_positive_selection,
+            foreground_is_required,
+        )
+
+        positive_plan = {
+            "object_boxes": [[10, 10, 30, 30]],
+        }
+        self.assertTrue(foreground_plan_has_positive_selection(positive_plan))
+        self.assertTrue(foreground_is_required({"has_occlusion": False}, positive_plan))
+        self.assertTrue(foreground_is_required({"has_occlusion": True}, {}))
+
+    def test_non_object_metadata_is_not_positive_evidence(self):
+        from SISTEM_MOTORU.pc_master_factory import foreground_plan_has_positive_selection
+
+        self.assertFalse(
+            foreground_plan_has_positive_selection({
+                "object_boxes": [],
+                "feather": 2.0,
+                "grabcut_iterations": 5,
+            })
+        )
+
+
+class TestForegroundCacheTrust(unittest.TestCase):
+    def test_required_foreground_rejects_empty_cache(self):
+        from SISTEM_MOTORU.pc_master_factory import cached_foreground_mask_usable
+        import numpy as np
+
+        self.assertFalse(
+            cached_foreground_mask_usable(
+                np.zeros((10, 10), dtype=np.uint8),
+                True,
+            )
+        )
+        mask = np.zeros((10, 10), dtype=np.uint8)
+        mask[3:6, 3:6] = 255
+        self.assertTrue(cached_foreground_mask_usable(mask, True))
+
+    def test_optional_foreground_allows_empty_cache(self):
+        from SISTEM_MOTORU.pc_master_factory import cached_foreground_mask_usable
+        import numpy as np
+
+        self.assertTrue(
+            cached_foreground_mask_usable(
+                np.zeros((10, 10), dtype=np.uint8),
+                False,
+            )
+        )
+
+
+class TestRuntimeWorkspaceSeparation(unittest.TestCase):
+    def test_runtime_workspace_override_is_explicit_and_resolved(self):
+        from SISTEM_MOTORU.pc_master_factory import resolve_runtime_workspace
+
+        with tempfile.TemporaryDirectory() as source_tmp, tempfile.TemporaryDirectory() as runtime_tmp:
+            source = Path(source_tmp)
+            runtime = Path(runtime_tmp)
+            with patch.dict(
+                os.environ,
+                {"MOCKUP_RUNTIME_WORKSPACE": str(runtime)},
+                clear=False,
+            ):
+                resolved = resolve_runtime_workspace(source)
+
+            self.assertEqual(resolved, runtime.resolve())
+            self.assertNotEqual(resolved, source.resolve())
+
+    def test_runtime_workspace_defaults_to_source_for_backward_compatibility(self):
+        from SISTEM_MOTORU.pc_master_factory import resolve_runtime_workspace
+
+        with tempfile.TemporaryDirectory() as source_tmp:
+            source = Path(source_tmp)
+            with patch.dict(
+                os.environ,
+                {"MOCKUP_RUNTIME_WORKSPACE": ""},
+                clear=False,
+            ):
+                self.assertEqual(
+                    resolve_runtime_workspace(source),
+                    source.resolve(),
+                )
 
 
 class TestENVFallbackBehavior(unittest.TestCase):
@@ -185,6 +470,581 @@ class TestExcelFlushNoDeadlock(unittest.TestCase):
         wb2.close()
 
 
+    def test_transient_threshold_flush_keeps_rows_for_final_retry(self):
+        manager = FastExcelManager(file_path=Path(self.tmp))
+
+        def row_data(i):
+            return {
+                "Stok Kodu": f"SKU-{i:04d}",
+                "Barkod": f"BRK-{i}",
+                "Model Kodu": "MODEL1",
+                "Kategori": "TestKategori",
+                "Ham Baskı Dosyası": "a.jpg",
+                "Mağaza Grubu": "GRUP",
+                "Ürün Adı": "Urun",
+                "Açıklama": "Aciklama",
+                "Mockup Dosya Adı": f"m-{i}.jpg",
+                "Resim Linki": "http://x",
+                "Eklenme Zamanı": "now",
+            }
+
+        for i in range(49):
+            self.assertTrue(manager.append_row(row_data(i)))
+
+        with patch.object(manager, "flush", return_value=False):
+            accepted = manager.append_row(row_data(49))
+
+        self.assertTrue(
+            accepted,
+            "A row already queued in memory must remain pending even if the "
+            "threshold flush is transiently unsuccessful",
+        )
+        self.assertEqual(len(manager._buffer), 50)
+
+        self.assertTrue(manager.flush(), "Final run-level flush should retry buffer")
+        import openpyxl
+        wb = openpyxl.load_workbook(self.tmp)
+        try:
+            self.assertEqual(wb.active.max_row, 51)
+        finally:
+            wb.close()
+
+
+class TestDetailPreservingRealism(unittest.TestCase):
+    def test_quality_render_scale_supersamples_small_templates(self):
+        from SISTEM_MOTORU.pc_master_factory import MockupRenderer
+
+        scale = MockupRenderer.compute_quality_render_scale(
+            1200, 1600, 2400, 3200, max_scale=2.5
+        )
+        self.assertAlmostEqual(scale, 2.0, places=5)
+
+    def test_quality_render_scale_does_not_downscale_large_templates(self):
+        from SISTEM_MOTORU.pc_master_factory import MockupRenderer
+
+        scale = MockupRenderer.compute_quality_render_scale(
+            3000, 4000, 2400, 3200, max_scale=2.5
+        )
+        self.assertEqual(scale, 1.0)
+
+    def test_microdetail_restoration_preserves_shape_and_dtype(self):
+        import numpy as np
+        from SISTEM_MOTORU.pc_master_factory import MockupRenderer
+
+        base = np.full((80, 80, 3), 100, dtype=np.uint8)
+        art = base.copy()
+        art[20:60, 39:41] = 240
+        mask = np.zeros((80, 80), dtype=np.float32)
+        mask[10:70, 10:70] = 1.0
+
+        restored = MockupRenderer.restore_artwork_microdetail(
+            base, art, mask, strength=0.5
+        )
+        self.assertEqual(restored.shape, base.shape)
+        self.assertEqual(restored.dtype, np.uint8)
+        self.assertGreater(int(restored[40, 40, 0]), int(base[40, 40, 0]))
+
+
+
+class TestEdgeSafeMasterQuality(unittest.TestCase):
+    def test_modest_aspect_mismatch_uses_crop_without_stretch(self):
+        import numpy as np
+        from SISTEM_MOTORU.pc_master_factory import MockupRenderer
+
+        image = np.zeros((896, 1200, 3), dtype=np.uint8)
+        # Horizontal bands let us prove the remaining pixels were cropped,
+        # not resized/interpolated.
+        image[:, :, 0] = np.arange(896, dtype=np.uint16)[:, None] % 256
+        prepared = MockupRenderer.prepare_artwork_for_nominal_aspect(
+            image,
+            1.42857143,
+        )
+        self.assertEqual(prepared.shape, (840, 1200, 3))
+        expected = image[28:868, :, :]
+        self.assertTrue(np.array_equal(prepared, expected))
+        self.assertAlmostEqual(
+            prepared.shape[1] / prepared.shape[0],
+            1.42857143,
+            places=3,
+        )
+
+    def test_larger_accepted_mismatch_uses_bleed_and_preserves_core(self):
+        import numpy as np
+        from SISTEM_MOTORU.pc_master_factory import MockupRenderer
+
+        image = np.zeros((1200, 896, 3), dtype=np.uint8)
+        image[:] = (20, 30, 40)
+        image[0, :, :] = (250, 5, 5)
+        image[-1, :, :] = (5, 250, 5)
+        image[120:1080, 100:796] = (180, 120, 60)
+
+        prepared = MockupRenderer.prepare_artwork_for_nominal_aspect(
+            image,
+            2.0 / 3.0,
+        )
+
+        self.assertEqual(prepared.shape, (1344, 896, 3))
+        self.assertAlmostEqual(
+            prepared.shape[1] / prepared.shape[0],
+            2.0 / 3.0,
+            places=3,
+        )
+        # The original is centered at y=72. Stay well clear of the seam.
+        self.assertTrue(
+            np.array_equal(
+                prepared[72 + 40:72 + 1160, 40:856],
+                image[40:1160, 40:856],
+            )
+        )
+        # Bleed exists, but it is not a sharp copy of the first source row.
+        self.assertFalse(
+            np.array_equal(prepared[0], image[0])
+        )
+
+    def test_large_aspect_mismatch_is_rejected(self):
+        import numpy as np
+        from SISTEM_MOTORU.pc_master_factory import MockupRenderer
+
+        image = np.zeros((1000, 1000, 3), dtype=np.uint8)
+        with self.assertRaises(ValueError):
+            MockupRenderer.prepare_artwork_for_nominal_aspect(
+                image,
+                2.0,
+            )
+
+    def test_final_master_quality_preserves_flat_regions(self):
+        import numpy as np
+        from SISTEM_MOTORU.pc_master_factory import MockupRenderer
+
+        image = np.full((160, 160, 3), 128, dtype=np.uint8)
+        enhanced = MockupRenderer.final_master_quality_pass(image)
+        self.assertEqual(enhanced.shape, image.shape)
+        self.assertEqual(enhanced.dtype, np.uint8)
+        self.assertLessEqual(
+            int(np.abs(enhanced.astype(np.int16) - image.astype(np.int16)).max()),
+            1,
+        )
+
+    def test_final_master_quality_keeps_values_bounded(self):
+        import numpy as np
+        from SISTEM_MOTORU.pc_master_factory import MockupRenderer
+
+        image = np.zeros((160, 160, 3), dtype=np.uint8)
+        image[:, 80:, :] = 255
+        enhanced = MockupRenderer.final_master_quality_pass(image)
+        self.assertGreaterEqual(int(enhanced.min()), 0)
+        self.assertLessEqual(int(enhanced.max()), 255)
+
+
+
+class TestR6AdaptiveRealism(unittest.TestCase):
+    def test_subtle_glass_streak_is_small_and_low_opacity(self):
+        import numpy as np
+        from SISTEM_MOTORU.pc_master_factory import MockupRenderer
+
+        streak = MockupRenderer.generate_subtle_glass_streak(
+            400, 300, intensity=0.075
+        )
+        self.assertEqual(streak.shape, (300, 400, 3))
+        self.assertGreater(float(streak.max()), 0.0)
+        self.assertLessEqual(float(streak.max()), 0.12 + 1e-6)
+        active_fraction = float(np.mean(streak[:, :, 0] > 0.01))
+        self.assertLess(active_fraction, 0.35)
+
+    def test_detail_aware_reflection_preserves_some_reflection(self):
+        import numpy as np
+        from SISTEM_MOTORU.pc_master_factory import MockupRenderer
+
+        art = np.zeros((120, 160, 3), dtype=np.uint8)
+        art[:, 80:, :] = 230
+        art[20:100:4, 20:75, :] = 255
+        reflection = np.full((120, 160, 3), 0.20, dtype=np.float32)
+        mask = np.ones((120, 160), dtype=np.float32)
+
+        protected = MockupRenderer.protect_artwork_detail_from_reflection(
+            reflection,
+            art,
+            mask,
+            min_reflection_fraction=0.30,
+        )
+        self.assertEqual(protected.shape, reflection.shape)
+        self.assertGreater(float(protected.max()), 0.0)
+        self.assertLess(float(np.mean(protected[:, 90:, :])), 0.20)
+        self.assertGreaterEqual(float(protected.min()), 0.0)
+
+    def test_smart_marketplace_focus_returns_exact_canvas(self):
+        import numpy as np
+        from SISTEM_MOTORU.pc_master_factory import MockupRenderer
+
+        image = np.full((600, 1000, 3), 110, dtype=np.uint8)
+        image[180:430, 230:800, :] = 180
+        quad = [[230, 180], [800, 180], [800, 430], [230, 430]]
+
+        result = MockupRenderer.prepare_marketplace_canvas(
+            image,
+            target_width=600,
+            target_height=800,
+            product_quad=quad,
+            smart_product_focus=True,
+        )
+        self.assertEqual(result.shape, (800, 600, 3))
+        self.assertEqual(result.dtype, np.uint8)
+
+
+
+
+class TestRoundedGlassSurfaceMask(unittest.TestCase):
+    def test_rounded_glass_mask_preserves_center_and_rounds_corners(self):
+        import cv2
+        import numpy as np
+        from SISTEM_MOTORU.pc_master_factory import MockupRenderer
+
+        width = 240
+        height = 160
+        src_pts = np.float32(
+            [[0, 0], [width, 0], [width, height], [0, height]]
+        )
+        dst_pts = src_pts.copy()
+        matrix = cv2.getPerspectiveTransform(src_pts, dst_pts)
+
+        mask = MockupRenderer.create_perspective_rounded_mask(
+            height,
+            width,
+            width,
+            height,
+            matrix,
+            radius_fraction=0.04,
+            feather_px=0.8,
+        )
+
+        self.assertEqual(mask.shape, (height, width))
+        self.assertGreater(float(mask[height // 2, width // 2]), 0.98)
+        self.assertLess(float(mask[0, 0]), 0.20)
+        self.assertGreater(float(mask[height // 2, 1]), 0.90)
+        self.assertGreater(float(mask[1, width // 2]), 0.90)
+        self.assertGreater(float(np.mean(mask)), 0.90)
+        self.assertLess(float(np.mean(mask)), 1.0)
+
+
+class TestR8SceneRealism(unittest.TestCase):
+    def _scene(self):
+        import numpy as np
+
+        h, w = 480, 720
+        y, x = np.mgrid[0:h, 0:w]
+        base = (92 + 26 * (x / float(w)) + 18 * (y / float(h))).astype(
+            np.uint8
+        )
+        scene = np.stack(
+            [base, np.clip(base + 8, 0, 255), np.clip(base + 15, 0, 255)],
+            axis=-1,
+        )
+        scene[160:330, 260:470] = (70, 90, 135)
+        return scene
+
+    def test_scene_realism_is_deterministic(self):
+        import numpy as np
+        from SISTEM_MOTORU.pc_master_factory import MockupRenderer
+
+        scene = self._scene()
+        quad = [[260, 160], [470, 160], [470, 330], [260, 330]]
+        a, meta_a = MockupRenderer.apply_scene_realism_layer(
+            scene,
+            quad,
+            "03_Ahsap_Tablo",
+            "same-template-key",
+            return_metadata=True,
+        )
+        b, meta_b = MockupRenderer.apply_scene_realism_layer(
+            scene,
+            quad,
+            "03_Ahsap_Tablo",
+            "same-template-key",
+            return_metadata=True,
+        )
+        self.assertTrue(np.array_equal(a, b))
+        self.assertEqual(meta_a["anchor"], meta_b["anchor"])
+        self.assertEqual(meta_a["angle_deg"], meta_b["angle_deg"])
+
+    def test_scene_realism_protects_product_more_than_surroundings(self):
+        import cv2
+        import numpy as np
+        from SISTEM_MOTORU.pc_master_factory import MockupRenderer
+
+        scene = self._scene()
+        quad = np.asarray(
+            [[260, 160], [470, 160], [470, 330], [260, 330]],
+            dtype=np.float32,
+        )
+        result, meta = MockupRenderer.apply_scene_realism_layer(
+            scene,
+            quad,
+            "03_Ahsap_Tablo",
+            "protection-test",
+            return_metadata=True,
+        )
+        self.assertTrue(meta["applied"])
+        self.assertLess(meta["product_delta_mean"], 4.5)
+        self.assertLess(meta["scene_delta_mean"], 14.0)
+        self.assertGreater(meta["scene_delta_mean"], 0.02)
+
+        delta = np.mean(
+            np.abs(
+                result.astype(np.float32)
+                - scene.astype(np.float32)
+            ),
+            axis=2,
+        )
+        mask = np.zeros(scene.shape[:2], dtype=np.uint8)
+        cv2.fillConvexPoly(mask, quad.astype(np.int32), 1)
+        product_delta = float(np.mean(delta[mask == 1]))
+        scene_delta = float(np.mean(delta[mask == 0]))
+        self.assertLess(product_delta, scene_delta)
+
+    def test_room_sunlight_is_deterministic(self):
+        import numpy as np
+        from SISTEM_MOTORU.pc_master_factory import MockupRenderer
+
+        scene = self._scene()
+        quad = [[260, 160], [470, 160], [470, 330], [260, 330]]
+        a, meta_a = MockupRenderer.apply_room_sunlight_layer(
+            scene,
+            quad,
+            "03_Ahsap_Tablo",
+            "same-room-key",
+            return_metadata=True,
+        )
+        b, meta_b = MockupRenderer.apply_room_sunlight_layer(
+            scene,
+            quad,
+            "03_Ahsap_Tablo",
+            "same-room-key",
+            return_metadata=True,
+        )
+        self.assertTrue(np.array_equal(a, b))
+        self.assertEqual(meta_a["anchor"], meta_b["anchor"])
+        self.assertEqual(meta_a["angle_deg"], meta_b["angle_deg"])
+
+    def test_room_sunlight_prefers_scene_over_product(self):
+        import cv2
+        import numpy as np
+        from SISTEM_MOTORU.pc_master_factory import MockupRenderer
+
+        scene = self._scene()
+        quad = np.asarray(
+            [[260, 160], [470, 160], [470, 330], [260, 330]],
+            dtype=np.float32,
+        )
+        result, meta = MockupRenderer.apply_room_sunlight_layer(
+            scene,
+            quad,
+            "03_Ahsap_Tablo",
+            "room-protection-test",
+            return_metadata=True,
+        )
+        self.assertTrue(meta["applied"])
+        self.assertLess(meta["product_delta_mean"], 5.0)
+        self.assertLess(meta["scene_delta_mean"], 22.0)
+        self.assertGreater(meta["scene_delta_mean"], 0.03)
+
+        delta = np.mean(
+            np.abs(
+                result.astype(np.float32)
+                - scene.astype(np.float32)
+            ),
+            axis=2,
+        )
+        mask = np.zeros(scene.shape[:2], dtype=np.uint8)
+        cv2.fillConvexPoly(mask, quad.astype(np.int32), 1)
+        self.assertLess(
+            float(np.mean(delta[mask == 1])),
+            float(np.mean(delta[mask == 0])),
+        )
+
+    def test_room_sunlight_detects_bright_left_source(self):
+        import numpy as np
+        from SISTEM_MOTORU.pc_master_factory import MockupRenderer
+
+        scene = self._scene()
+        scene[:, :90, :] = 245
+        scene[:, -90:, :] = 70
+        quad = [[260, 160], [470, 160], [470, 330], [260, 330]]
+
+        _, meta = MockupRenderer.apply_room_sunlight_layer(
+            scene,
+            quad,
+            "03_Ahsap_Tablo",
+            "left-source-test",
+            return_metadata=True,
+        )
+        self.assertEqual(meta["light_source_side"], "left")
+        self.assertGreater(meta["changed_scene_fraction"], 0.05)
+
+    def test_all_production_categories_have_conservative_profiles(self):
+        from SISTEM_MOTORU.pc_master_factory import MockupRenderer
+
+        categories = [
+            "01_Wifi_Kutusu",
+            "02_Cam_Tablo_Dikey",
+            "02_Cam_Tablo_Yatay",
+            "03_Ahsap_Tablo",
+            "04_Cam_Dograma",
+            "05_Ocak_Arkasi",
+        ]
+        for category in categories:
+            profile = MockupRenderer._scene_realism_profile(category)
+            self.assertLessEqual(float(profile["light"]), 0.06)
+            self.assertLessEqual(float(profile["shadow"]), 0.05)
+            self.assertLessEqual(float(profile["room_light"]), 0.12)
+            self.assertLessEqual(float(profile["room_shadow"]), 0.09)
+            self.assertGreaterEqual(
+                float(profile["product_protection"]),
+                0.94,
+            )
+
+
+class TestFinalMarketplaceQA(unittest.TestCase):
+    def _textured_image(self, width=600, height=800):
+        import numpy as np
+
+        y, x = np.mgrid[0:height, 0:width]
+        base = ((x * 3 + y * 5) % 180 + 35).astype(np.uint8)
+        return np.stack(
+            [base, np.roll(base, 3, axis=1), np.roll(base, 5, axis=0)],
+            axis=-1,
+        )
+
+    def test_final_qa_accepts_valid_marketplace_image(self):
+        from SISTEM_MOTORU.pc_master_factory import QualityInspector
+
+        image = self._textured_image()
+        quad = [[80, 160], [520, 160], [520, 560], [80, 560]]
+        valid, message = QualityInspector.inspect_final_output(
+            image,
+            expected_width=600,
+            expected_height=800,
+            product_quad=quad,
+            smart_product_focus=True,
+            foreground_fill_fraction=0.85,
+        )
+        self.assertTrue(valid, message)
+
+    def test_final_qa_rejects_product_cropped_outside_canvas(self):
+        from SISTEM_MOTORU.pc_master_factory import QualityInspector
+
+        image = self._textured_image()
+        quad = [[-20, 120], [520, 120], [520, 560], [-20, 560]]
+        valid, message = QualityInspector.inspect_final_output(
+            image,
+            expected_width=600,
+            expected_height=800,
+            product_quad=quad,
+        )
+        self.assertFalse(valid)
+        self.assertIn("kırpılmış", message)
+
+    def test_final_qa_rejects_excessive_smart_focus_letterboxing(self):
+        from SISTEM_MOTORU.pc_master_factory import QualityInspector
+
+        image = self._textured_image()
+        quad = [[80, 160], [520, 160], [520, 560], [80, 560]]
+        valid, message = QualityInspector.inspect_final_output(
+            image,
+            expected_width=600,
+            expected_height=800,
+            product_quad=quad,
+            smart_product_focus=True,
+            foreground_fill_fraction=0.40,
+        )
+        self.assertFalse(valid)
+        self.assertIn("yeterince dolduramadı", message)
+
+    def test_smart_canvas_trims_large_uniform_white_bands(self):
+        import numpy as np
+        from SISTEM_MOTORU.pc_master_factory import MockupRenderer
+
+        image = np.full((800, 600, 3), 252, dtype=np.uint8)
+        image[180:620, :, :] = 120
+        image[260:520, 70:530, :] = 70
+        quad = [[70, 260], [530, 260], [530, 520], [70, 520]]
+
+        result, meta = MockupRenderer.prepare_marketplace_canvas(
+            image,
+            target_width=600,
+            target_height=800,
+            product_quad=quad,
+            smart_product_focus=True,
+            return_metadata=True,
+        )
+
+        self.assertEqual(result.shape, (800, 600, 3))
+        self.assertGreater(meta.get("trimmed_top", 0), 0)
+        self.assertGreater(meta.get("trimmed_bottom", 0), 0)
+        self.assertLess(float(np.mean(result[:80])), 248.0)
+        self.assertLess(float(np.mean(result[-80:])), 248.0)
+
+    def test_smart_canvas_metadata_tracks_product_inside_frame(self):
+        import numpy as np
+        from SISTEM_MOTORU.pc_master_factory import MockupRenderer
+
+        image = np.full((600, 1000, 3), 110, dtype=np.uint8)
+        image[180:430, 230:800, :] = 180
+        quad = [[230, 180], [800, 180], [800, 430], [230, 430]]
+
+        result, meta = MockupRenderer.prepare_marketplace_canvas(
+            image,
+            target_width=600,
+            target_height=800,
+            product_quad=quad,
+            smart_product_focus=True,
+            return_metadata=True,
+        )
+        self.assertEqual(result.shape, (800, 600, 3))
+        self.assertGreater(meta["foreground_fill_fraction"], 0.55)
+        out_quad = np.asarray(meta["product_quad_output"], dtype=np.float32)
+        self.assertGreaterEqual(float(out_quad[:, 0].min()), -1.0)
+        self.assertGreaterEqual(float(out_quad[:, 1].min()), -1.0)
+        self.assertLessEqual(float(out_quad[:, 0].max()), 600.0)
+        self.assertLessEqual(float(out_quad[:, 1].max()), 800.0)
+
+
+class TestPrintMaskAlphaSemantics(unittest.TestCase):
+    def test_fully_opaque_alpha_does_not_hide_artwork(self):
+        import numpy as np
+        from SISTEM_MOTORU.pc_master_factory import MockupRenderer
+
+        quad = np.zeros((100, 100), dtype=np.float32)
+        quad[10:90, 10:90] = 1.0
+        opaque_alpha = np.full((100, 100), 255, dtype=np.uint8)
+
+        resolved = MockupRenderer.resolve_print_mask(
+            quad,
+            opaque_alpha,
+            100,
+            100,
+        )
+        self.assertGreater(np.count_nonzero(resolved > 0.05), 6000)
+        self.assertTrue(np.allclose(resolved, quad))
+
+    def test_meaningful_transparent_hole_restricts_quad(self):
+        import numpy as np
+        from SISTEM_MOTORU.pc_master_factory import MockupRenderer
+
+        quad = np.zeros((100, 100), dtype=np.float32)
+        quad[10:90, 10:90] = 1.0
+        alpha = np.full((100, 100), 255, dtype=np.uint8)
+        alpha[25:75, 25:75] = 0
+
+        resolved = MockupRenderer.resolve_print_mask(
+            quad,
+            alpha,
+            100,
+            100,
+        )
+        self.assertGreater(np.count_nonzero(resolved > 0.05), 2000)
+        self.assertLess(np.count_nonzero(resolved > 0.05), np.count_nonzero(quad > 0.05))
+
+
 class TestQAFailStopsProduction(unittest.TestCase):
     """Verify QA failure returns False (quarantine), not just a warning."""
     
@@ -200,7 +1060,7 @@ class TestQAFailStopsProduction(unittest.TestCase):
         
         # Mock dependencies to reach QA logic safely
         mock_fromfile.return_value = np.array([])
-        mock_imdecode.return_value = np.zeros((10, 10, 3), dtype=np.uint8)
+        mock_imdecode.return_value = np.zeros((10, 20, 3), dtype=np.uint8)
         mock_render.return_value = np.zeros((10, 10, 3), dtype=np.uint8)
         mock_qa.return_value = (False, "Mocked QA fail")
         mock_imencode.return_value = (True, np.array([1]))
@@ -222,7 +1082,13 @@ class TestQAFailStopsProduction(unittest.TestCase):
             # So we don't need the file to exist on disk!
             with patch("SISTEM_MOTORU.pc_master_factory.Path.exists", return_value=True):
                 # Run process_mockup
-                result = MockupRenderer.process_mockup(raw_path, template_path, {}, False, output_path)
+                result = MockupRenderer.process_mockup(
+                    raw_path,
+                    template_path,
+                    {"profile_orientation": "H", "nominal_aspect": 2.0},
+                    False,
+                    output_path,
+                )
                 
                 # QA should fail and cause process_mockup to return False
                 self.assertFalse(result, "process_mockup should return False on QA failure")
@@ -277,16 +1143,52 @@ class TestNextRunRetryAcceptance(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)
 
+    def test_seo_title_is_stable_for_same_product_identity(self):
+        from SISTEM_MOTORU.pc_master_factory import SeoEngine
+
+        seo = SeoEngine()
+        first = seo.generate_title(
+            "01_Wifi_Kutusu",
+            "Tema_A",
+            identity_seed="sg-M00001",
+        )
+
+        # Disturb global randomness to prove title generation is independent.
+        import random
+        for _ in range(10):
+            random.random()
+
+        second = seo.generate_title(
+            "01_Wifi_Kutusu",
+            "Tema_A",
+            identity_seed="sg-M00001",
+        )
+        self.assertEqual(first, second)
+
     def test_factory_next_run_retry(self):
         from SISTEM_MOTORU.pc_master_factory import PCMasterFactory, StateManager
         
+        def approved_pool(prod_key):
+            if prod_key != "01_Wifi_Kutusu":
+                return []
+            return [(
+                "tmpl1.png",
+                self.sablon_dir / "01_Wifi_Kutusu" / "tmpl1.png",
+                {"profile_orientation": "H", "nominal_aspect": 4.0 / 3.0},
+            )]
+
         with patch("SISTEM_MOTORU.pc_master_factory.FACTORY_DIR", new=self.factory_dir), \
              patch("SISTEM_MOTORU.pc_master_factory.SABLON_DIR", new=self.sablon_dir), \
              patch("SISTEM_MOTORU.pc_master_factory.OUTPUT_DIR", new=self.out_dir), \
              patch("SISTEM_MOTORU.pc_master_factory.DB_PATH", new=self.db_path), \
              patch("SISTEM_MOTORU.pc_master_factory.EXCEL_DIR", new=Path(self.tmp)), \
              patch("SISTEM_MOTORU.pc_master_factory.MockupRenderer.process_mockup") as mock_render, \
-             patch("SISTEM_MOTORU.pc_master_factory.AsyncCloudUploader.upload_sync") as mock_upload:
+             patch("SISTEM_MOTORU.pc_master_factory.AsyncCloudUploader.upload_sync") as mock_upload, \
+             patch.object(
+                 PCMasterFactory,
+                 "get_template_pool",
+                 side_effect=approved_pool,
+             ):
              
             def fake_submit(fn, *args, **kwargs):
                 class FakeFuture:
@@ -331,7 +1233,11 @@ class TestNextRunRetryAcceptance(unittest.TestCase):
                 sm2 = StateManager(db_path=self.db_path)
                 artifacts_run2 = sm2.conn.execute("SELECT * FROM render_artifacts").fetchall()
                 self.assertEqual(len(artifacts_run2), 1, "Should not create duplicate artifact")
-                self.assertEqual(artifacts_run2[0]["status"], "UPLOADED", "Retry should update status")
+                self.assertEqual(
+                    artifacts_run2[0]["status"],
+                    "COMPLETED",
+                    "Successful retry must finish upload + Excel transaction",
+                )
                 
                 meta_run2 = sm2.conn.execute("SELECT value FROM system_meta WHERE key LIKE 'sku_%'").fetchall()
                 self.assertEqual(len(meta_run2), 1)

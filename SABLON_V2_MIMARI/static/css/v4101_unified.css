@@ -1,0 +1,61 @@
+/* V4.10.1 — shared seven-category list design and PETEK bulk row layout fix.
+ * Pure presentation: no writes to template registry, mask or approved corners. */
+:root{color-scheme:dark;--ui-bg:#252b32;--ui-side:#2b323b;--ui-surface:#353e48;--ui-panel:#3b444f;
+ --ui-fg:#f5f7fc;--ui-muted:#ced7e4;--ui-border:#657080;--ui-primary:#8565c8;}
+body,#main,#petekV477Editor{background:var(--ui-bg)!important;color:var(--ui-fg)!important}
+#sidebar,.petek-v477-list-pane.in-sidebar{background:var(--ui-side)!important}
+#petekV477List{width:100%;min-width:0;box-sizing:border-box}
+/* The inherited '.petek-v477-list-pane input{width:100%}' caused checkbox to occupy
+ * entire flex row and squeeze the actual filename to zero. Fix input width
+ * and ALL flex item constraints rather than hiding the visual symptom. */
+#petekV477List .petek-v484-line{display:grid!important;
+ grid-template-columns: minmax(0,1fr);align-items:center!important;gap:6px!important;
+ width:100%;min-width:0;box-sizing:border-box;}
+#petekV477List .petek-v484-line:has(> input.petek-v484-check){
+ grid-template-columns:20px minmax(0,1fr)!important;}
+#petekV477List:not(.petek-v498-compact) .petek-v484-line{
+ grid-template-columns:58px minmax(0,1fr)!important;}
+#petekV477List:not(.petek-v498-compact) .petek-v484-line:has(> input.petek-v484-check){
+ grid-template-columns:20px 58px minmax(0,1fr)!important;}
+#petekV477List input.petek-v484-check,
+.petek-v477-list-pane.in-sidebar #petekV477List input[type=checkbox].petek-v484-check{
+ width:17px!important;min-width:17px!important;max-width:17px!important;
+ height:17px!important;min-height:17px!important;max-height:17px!important;
+ padding:0!important;margin:0!important;flex:0 0 17px!important;
+ accent-color:#32d19e;justify-self:center;box-sizing:border-box!important;}
+#petekV477List button.petek-v477-list-item.petek-v484-name{
+ width:100%!important;min-width:0!important;max-width:100%!important;
+ display:block!important;box-sizing:border-box!important;justify-self:stretch;
+ padding:6px 8px!important;margin:0!important;text-align:left!important;
+ overflow:hidden!important;text-overflow:ellipsis!important;
+ white-space:nowrap!important;line-height:1.4!important;
+ font:600 13px/1.45 'Segoe UI',system-ui,sans-serif!important;
+ color:#f8fafc!important;background:transparent!important;border:0!important;
+ visibility:visible!important;opacity:1!important;min-height:29px!important;}
+#petekV477List .petek-v484-thumb{min-width:52px!important;max-width:52px!important;width:52px!important;justify-self:start}
+#petekV477List.petek-v498-compact .petek-v484-thumb{display:none!important}
+#petekV477List .petek-v484-item-wrap{width:100%;min-width:0;box-sizing:border-box;
+ border-radius:7px!important;margin:3px 0!important;padding:3px 6px!important;
+ overflow:hidden;box-shadow:none!important;}
+#petekV477List .petek-v484-pictos{display:block;overflow:hidden;text-overflow:ellipsis;
+ white-space:nowrap;font-size:11px!important;color:#dae2ef!important}
+#petekV477List .v499-status-new,#categories .template-item.v499-status-new{
+ background:#243d59!important;border:1px solid #4e91e5!important;color:#ecf4ff!important}
+#petekV477List .v499-status-draft,#categories .template-item.v499-status-draft{
+ background:#47391d!important;border:1px solid #e3b647!important;color:#fff2cf!important}
+#petekV477List .v499-status-approved,#categories .template-item.v499-status-approved{
+ background:#214237!important;border:1px solid #39bb8d!important;color:#e6fff3!important}
+#petekV477List .v499-status-error,#categories .template-item.v499-status-error{
+ background:#532d33!important;border:1px solid #f27783!important;color:#ffe6e8!important}
+#categories .template-item{box-sizing:border-box;display:flex;gap:6px;align-items:center;
+ margin:3px 0!important;border-radius:7px!important;min-height:36px;padding:6px 8px}
+#categories .template-item-label{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+ color:inherit!important;font:600 13px/1.45 'Segoe UI',system-ui,sans-serif}
+#categories .template-item[hidden]{display:none!important}
+#petekV477List .petek-v484-selected,
+#categories .template-item.bulk-selected{outline:2px solid #b99cff!important;outline-offset:-2px}
+#petekV477List button:hover,#categories .template-item:hover{filter:brightness(1.13)}
+.petek-v477-head,.petek-v477-selectrow,#toolbar{background:#36404b!important}
+.v499-status-filter{background:#333c47!important}
+.v499-status-filter label{color:inherit!important}
+button:focus-visible{outline:3px solid #d3b7ff!important;outline-offset:2px}

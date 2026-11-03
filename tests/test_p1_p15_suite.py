@@ -32,11 +32,47 @@ class TestP1_P15Acceptance(unittest.TestCase):
                 nominal_aspect TEXT
             )
         ''')
+        conn.execute('''
+            CREATE TABLE templates (
+                category_id TEXT,
+                filename TEXT,
+                data TEXT
+            )
+        ''')
         conn.commit()
         conn.close()
 
     def tearDown(self):
         shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    def test_path_within_root_rejects_prefix_collision(self):
+        import app
+
+        root = os.path.join(self.temp_dir, "safe")
+        inside = os.path.join(root, "cat", "image.png")
+        prefix_collision = os.path.join(self.temp_dir, "safe_evil", "image.png")
+
+        self.assertTrue(app._path_within_root(root, inside))
+        self.assertFalse(app._path_within_root(root, prefix_collision))
+        self.assertFalse(app._path_within_root(root, os.path.join(root, "..", "escape.png")))
+
+    def test_catch_all_route_does_not_serve_config_or_source_files(self):
+        import app
+
+        secret_path = os.path.join(self.temp_dir, "ayarlar.json")
+        image_path = os.path.join(self.temp_dir, "preview.png")
+        with open(secret_path, "w", encoding="utf-8") as handle:
+            handle.write('{"secret": "do-not-serve"}')
+        cv2.imwrite(image_path, np.zeros((8, 8, 3), dtype=np.uint8))
+
+        app.app.config["TESTING"] = True
+        client = app.app.test_client()
+        with patch("app.BASE_DIR", self.temp_dir):
+            blocked = client.get("/ayarlar.json")
+            allowed = client.get("/preview.png")
+
+        self.assertEqual(blocked.status_code, 403)
+        self.assertEqual(allowed.status_code, 200)
 
     def test_p1_source_file_bytes_hash_unchanged_after_profile_analyze(self):
         from core.template_intelligence import TemplateAnalyzer
@@ -162,6 +198,102 @@ class TestP1_P15Acceptance(unittest.TestCase):
         self.assertEqual(res["outer_quad"], manual_prior["outer_quad"])
         self.assertNotEqual(res["surface_quad"], res["outer_quad"])
 
+    def test_p8b_invalid_manual_prior_falls_back_to_auto_candidates(self):
+        from core.template_intelligence import CandidateGenerators, TemplateAnalyzer
+
+        img_path = os.path.join(self.temp_dir, "invalid_prior_fallback.png")
+        img = np.zeros((200, 200, 3), dtype=np.uint8)
+        cv2.imwrite(img_path, img)
+
+        auto_quad = np.array(
+            [[40, 40], [160, 40], [160, 160], [40, 160]],
+            dtype=np.float32,
+        )
+        invalid_prior = {
+            "surface_quad": [[10, 10], [10, 10], [20, 20], [30, 30]],
+            "outer_quad": [[20, 20], [180, 20], [180, 180], [20, 180]],
+        }
+
+        with patch.object(
+            CandidateGenerators,
+            "generate_canny_contours",
+            return_value=[auto_quad],
+        ), patch.object(
+            CandidateGenerators,
+            "generate_hough_lines_quad",
+            return_value=[],
+        ), patch.object(
+            CandidateGenerators,
+            "generate_color_region_quad",
+            return_value=[],
+        ):
+            res = TemplateAnalyzer().analyze(
+                img_path,
+                "02_Cam_Tablo_Dikey",
+                manual_geometry_prior=invalid_prior,
+            )
+
+        self.assertEqual(res["provenance"], "AUTO")
+        self.assertEqual(res["review_status"], "REVIEW_REQUIRED")
+        self.assertIsNotNone(res["surface_quad"])
+        self.assertNotIn("outer_quad", res)
+        self.assertEqual(
+            np.asarray(res["surface_quad"], dtype=np.float32).tolist(),
+            auto_quad.tolist(),
+        )
+
+    def test_p8c_fixed_category_uses_physical_orientation_not_projected_quad(self):
+        from core.template_intelligence import TemplateAnalyzer
+
+        img_path = os.path.join(self.temp_dir, "fixed_orientation.png")
+        cv2.imwrite(img_path, np.zeros((220, 320, 3), dtype=np.uint8))
+
+        # Deliberately wide projected quad for a physically vertical product.
+        prior = {
+            "surface_quad": [[20, 80], [300, 80], [280, 160], [40, 160]]
+        }
+        res = TemplateAnalyzer().analyze(
+            img_path,
+            "02_Cam_Tablo_Dikey",
+            manual_geometry_prior=prior,
+        )
+
+        self.assertEqual(res["orientation"], "V")
+        self.assertEqual(res["projected_orientation"], "H")
+        self.assertAlmostEqual(float(res["nominal_aspect"]), 5.0 / 7.0, places=6)
+
+    def test_p8d_mixed_category_does_not_infer_physical_orientation_from_quad(self):
+        from core.template_intelligence import TemplateAnalyzer
+
+        img_path = os.path.join(self.temp_dir, "mixed_orientation.png")
+        cv2.imwrite(img_path, np.zeros((220, 320, 3), dtype=np.uint8))
+        surface = [[20, 80], [300, 80], [280, 160], [40, 160]]
+
+        without_physical = TemplateAnalyzer().analyze(
+            img_path,
+            "04_Cam_Dograma",
+            manual_geometry_prior={"surface_quad": surface},
+        )
+        self.assertEqual(without_physical["orientation"], "UNKNOWN")
+        self.assertEqual(without_physical["projected_orientation"], "H")
+        self.assertEqual(without_physical["nominal_aspect"], "UNKNOWN")
+
+        with_physical = TemplateAnalyzer().analyze(
+            img_path,
+            "04_Cam_Dograma",
+            manual_geometry_prior={
+                "surface_quad": surface,
+                "physical_orientation": "V",
+            },
+        )
+        self.assertEqual(with_physical["orientation"], "V")
+        self.assertEqual(with_physical["projected_orientation"], "H")
+        self.assertAlmostEqual(
+            float(with_physical["nominal_aspect"]),
+            3.0 / 4.0,
+            places=6,
+        )
+
     def test_p9_glass_wall_art_print_policy_full_bleed(self):
         from core.template_intelligence import CategoryRuleEngine
         rule = CategoryRuleEngine.get_rule_by_folder("02_Cam_Tablo_Dikey")
@@ -204,63 +336,255 @@ class TestP1_P15Acceptance(unittest.TestCase):
             self.assertNotEqual(row[0], "APPROVED")
 
     def test_p12_explicit_approve_endpoint_persists(self):
+        import hashlib
         import sys
         sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "SABLON_V2_MIMARI"))
         from app import app
         from core.template_intelligence import save_template_profile
-        
-        # Save UNANALYZED
+
+        category = "02_Cam_Tablo_Dikey"
+        filename = "tmpl2.png"
+        uid = f"{category}_{filename}"
+
+        # Approval is source-hash-bound and requires real, valid geometry.
+        img_dir = os.path.join(self.temp_dir, "2_SABLON_HAVUZU", category)
+        os.makedirs(img_dir, exist_ok=True)
+        img_path = os.path.join(img_dir, filename)
+        cv2.imwrite(img_path, np.zeros((120, 100, 3), dtype=np.uint8))
+        with open(img_path, "rb") as handle:
+            source_hash = hashlib.sha256(handle.read()).hexdigest()
+
         profile_data = {
-            "template_uid": "test_uid2", "category": "cat2", "source_relative_path": "cat2/tmpl2.png",
-            "source_asset_sha256": "hash2", "analyzer_version": "v1.3", "orientation": "V",
+            "template_uid": uid,
+            "category": category,
+            "source_relative_path": f"{category}/{filename}",
+            "source_asset_sha256": source_hash,
+            "analyzer_version": "v2.3",
+            "orientation": "V",
+            "nominal_aspect": "0.71428571",
+            "surface_quad": [[10, 10], [90, 10], [90, 110], [10, 110]],
             "review_status": "REVIEW_REQUIRED",
         }
         save_template_profile(self.db_path, profile_data)
-        
+
         app.testing = True
         client = app.test_client()
-        # Mock BASE_DIR inside app so it uses our temp db
+        # Mock BASE_DIR inside app so approval resolves the exact test source.
         with patch('app.BASE_DIR', self.temp_dir):
             os.makedirs(os.path.join(self.temp_dir, "SABLON_V2_MIMARI"), exist_ok=True)
-            shutil.copy2(self.db_path, os.path.join(self.temp_dir, "SABLON_V2_MIMARI", "ayarlar.db"))
-            resp = client.post('/api/templates/approve', json={"template_uid": "test_uid2"})
+            shutil.copy2(
+                self.db_path,
+                os.path.join(self.temp_dir, "SABLON_V2_MIMARI", "ayarlar.db"),
+            )
+            resp = client.post('/api/templates/approve', json={"template_uid": uid})
             self.assertEqual(resp.status_code, 200)
-            
+
             # Check db
             conn = sqlite3.connect(os.path.join(self.temp_dir, "SABLON_V2_MIMARI", "ayarlar.db"))
-            row = conn.execute("SELECT review_status, manually_verified FROM template_profiles WHERE template_uid='test_uid2' AND is_active=1").fetchone()
+            row = conn.execute(
+                "SELECT review_status, manually_verified, orientation "
+                "FROM template_profiles WHERE template_uid=? AND is_active=1",
+                (uid,),
+            ).fetchone()
             self.assertEqual(row[0], "APPROVED")
             self.assertEqual(row[1], 1)
+            self.assertEqual(row[2], "V")
 
     def test_p13_review_overlay_does_not_modify_source(self):
         from app import app
-        img_dir = os.path.join(self.temp_dir, "2_SABLON_HAVUZU", "cat3")
+        import hashlib
+
+        cat = "02_Cam_Tablo_Dikey"
+        tmpl = "tmpl3.png"
+        uid = f"{cat}_{tmpl}"
+        img_dir = os.path.join(self.temp_dir, "2_SABLON_HAVUZU", cat)
         os.makedirs(img_dir, exist_ok=True)
-        img_path = os.path.join(img_dir, "tmpl3.png")
+        img_path = os.path.join(img_dir, tmpl)
         cv2.imwrite(img_path, np.zeros((100, 100, 3), dtype=np.uint8))
         with open(img_path, "rb") as f:
             orig = f.read()
-        import hashlib
         orig_hash = hashlib.sha256(orig).hexdigest()
-        
-        # Insert active profile
+
+        # Insert a realistic source-hash-bound active proposal.
         conn = sqlite3.connect(self.db_path)
-        conn.execute("INSERT INTO template_profiles (template_uid, is_active, review_status) VALUES ('cat3_tmpl3.png', 1, 'REVIEW_REQUIRED')")
+        conn.execute(
+            """INSERT INTO template_profiles (
+                   template_uid, category, source_relative_path,
+                   source_asset_sha256, orientation, nominal_aspect,
+                   is_active, review_status
+               ) VALUES (?, ?, ?, ?, ?, ?, 1, 'REVIEW_REQUIRED')""",
+            (
+                uid,
+                cat,
+                f"{cat}/{tmpl}",
+                orig_hash,
+                "V",
+                str(5.0 / 7.0),
+            ),
+        )
+        conn.execute(
+            "INSERT INTO templates (category_id, filename, data) VALUES (?, ?, ?)",
+            (cat, tmpl, json.dumps({"tip": "perspektif"})),
+        )
         conn.commit()
         conn.close()
-        
+
         app.testing = True
         client = app.test_client()
         with patch('app.BASE_DIR', self.temp_dir):
             os.makedirs(os.path.join(self.temp_dir, "SABLON_V2_MIMARI"), exist_ok=True)
-            shutil.copy2(self.db_path, os.path.join(self.temp_dir, "SABLON_V2_MIMARI", "ayarlar.db"))
-            
-            resp = client.post('/api/templates/update_corners', json={"template_uid": "cat3_tmpl3.png", "corners": [[10,10],[90,10],[90,90],[10,90]]})
+            shutil.copy2(
+                self.db_path,
+                os.path.join(self.temp_dir, "SABLON_V2_MIMARI", "ayarlar.db"),
+            )
+
+            resp = client.post(
+                '/api/templates/update_corners',
+                json={
+                    "template_uid": uid,
+                    "corners": [[10,10],[90,10],[90,90],[10,90]],
+                },
+            )
             self.assertEqual(resp.status_code, 200)
         
         with open(img_path, "rb") as f:
             new_hash = hashlib.sha256(f.read()).hexdigest()
         self.assertEqual(orig_hash, new_hash, "Calibration/Update endpoint must not modify source file")
+
+    def test_p13a_manual_corner_approval_preserves_known_occlusion(self):
+        from app import app
+        import hashlib
+
+        cat = "02_Cam_Tablo_Dikey"
+        tmpl = "occluded.png"
+        uid = f"{cat}_{tmpl}"
+        img_dir = os.path.join(self.temp_dir, "2_SABLON_HAVUZU", cat)
+        os.makedirs(img_dir, exist_ok=True)
+        img_path = os.path.join(img_dir, tmpl)
+        cv2.imwrite(img_path, np.zeros((120, 100, 3), dtype=np.uint8))
+        with open(img_path, "rb") as handle:
+            source_hash = hashlib.sha256(handle.read()).hexdigest()
+
+        conn = sqlite3.connect(self.db_path)
+        conn.execute(
+            """INSERT INTO template_profiles (
+                   template_uid, category, source_relative_path,
+                   source_asset_sha256, is_active, review_status,
+                   has_occlusion
+               ) VALUES (?, ?, ?, ?, 1, 'REVIEW_REQUIRED', 1)""",
+            (uid, cat, f"{cat}/{tmpl}", source_hash),
+        )
+        conn.execute(
+            "INSERT INTO templates (category_id, filename, data) VALUES (?, ?, ?)",
+            (cat, tmpl, json.dumps({"tip": "perspektif"})),
+        )
+        conn.commit()
+        conn.close()
+
+        target_db_dir = os.path.join(self.temp_dir, "SABLON_V2_MIMARI")
+        os.makedirs(target_db_dir, exist_ok=True)
+        target_db = os.path.join(target_db_dir, "ayarlar.db")
+        shutil.copy2(self.db_path, target_db)
+
+        app.testing = True
+        client = app.test_client()
+        with patch('app.BASE_DIR', self.temp_dir):
+            approved = client.post(
+                '/api/templates/update_corners',
+                json={
+                    "template_uid": uid,
+                    "corners": [[10, 10], [90, 10], [90, 110], [10, 110]],
+                },
+            )
+            self.assertEqual(approved.status_code, 200)
+
+        conn = sqlite3.connect(target_db)
+        try:
+            row = conn.execute(
+                """SELECT has_occlusion, review_status
+                   FROM template_profiles
+                   WHERE template_uid=? AND is_active=1""",
+                (uid,),
+            ).fetchone()
+        finally:
+            conn.close()
+
+        self.assertEqual(row[0], 1)
+        self.assertEqual(row[1], "APPROVED")
+
+    def test_p13b_mixed_category_requires_explicit_physical_orientation(self):
+        from app import app
+        import hashlib
+
+        cat = "04_Cam_Dograma"
+        tmpl = "mixed.png"
+        uid = f"{cat}_{tmpl}"
+        img_dir = os.path.join(self.temp_dir, "2_SABLON_HAVUZU", cat)
+        os.makedirs(img_dir, exist_ok=True)
+        img_path = os.path.join(img_dir, tmpl)
+        cv2.imwrite(img_path, np.zeros((120, 160, 3), dtype=np.uint8))
+        with open(img_path, "rb") as handle:
+            source_hash = hashlib.sha256(handle.read()).hexdigest()
+
+        conn = sqlite3.connect(self.db_path)
+        conn.execute(
+            """INSERT INTO template_profiles (
+                   template_uid, category, source_relative_path,
+                   source_asset_sha256, is_active, review_status
+               ) VALUES (?, ?, ?, ?, 1, 'REVIEW_REQUIRED')""",
+            (uid, cat, f"{cat}/{tmpl}", source_hash),
+        )
+        conn.execute(
+            "INSERT INTO templates (category_id, filename, data) VALUES (?, ?, ?)",
+            (cat, tmpl, json.dumps({"tip": "perspektif"})),
+        )
+        conn.commit()
+        conn.close()
+
+        target_db_dir = os.path.join(self.temp_dir, "SABLON_V2_MIMARI")
+        os.makedirs(target_db_dir, exist_ok=True)
+        target_db = os.path.join(target_db_dir, "ayarlar.db")
+        shutil.copy2(self.db_path, target_db)
+
+        app.testing = True
+        client = app.test_client()
+        payload = {
+            "template_uid": uid,
+            "category": cat,
+            "template": tmpl,
+            "corners": [[15, 40], [145, 40], [140, 90], [20, 90]],
+        }
+        with patch('app.BASE_DIR', self.temp_dir):
+            missing = client.post('/api/templates/update_corners', json=payload)
+            self.assertEqual(missing.status_code, 422)
+            self.assertEqual(
+                missing.get_json().get("code"),
+                "PHYSICAL_ORIENTATION_REQUIRED",
+            )
+
+            payload["physical_orientation"] = "V"
+            approved = client.post('/api/templates/update_corners', json=payload)
+            self.assertEqual(approved.status_code, 200)
+            body = approved.get_json()
+            self.assertEqual(body["orientation"], "V")
+            self.assertEqual(body["projected_orientation"], "H")
+
+        conn = sqlite3.connect(target_db)
+        row = conn.execute(
+            """SELECT orientation, nominal_aspect, review_status,
+                      manually_verified, component_confidences
+               FROM template_profiles
+               WHERE template_uid=? AND is_active=1""",
+            (uid,),
+        ).fetchone()
+        conn.close()
+        self.assertEqual(row[0], "V")
+        self.assertAlmostEqual(float(row[1]), 3.0 / 4.0, places=6)
+        self.assertEqual(row[2], "APPROVED")
+        self.assertEqual(row[3], 1)
+        evidence = json.loads(row[4])
+        self.assertEqual(evidence["physical_orientation_verified"], 1.0)
+        self.assertEqual(evidence["physical_orientation_source"], "human_review")
 
     def test_p14_selector_selects_approved_compatible(self):
         from core.template_intelligence import TemplateSelector
@@ -273,6 +597,24 @@ class TestP1_P15Acceptance(unittest.TestCase):
         res = selector.select_template('V', '02_Cam_Tablo_Dikey')
         self.assertEqual(res['status'], 'SELECTED')
         
+    def test_p14b_strict_category_rejects_unknown_template_orientation(self):
+        from core.template_intelligence import TemplateSelector
+        conn = sqlite3.connect(self.db_path)
+        conn.execute(
+            """INSERT INTO template_profiles (
+                   category, orientation, review_status, is_active,
+                   confidence_total
+               ) VALUES (
+                   '02_Cam_Tablo_Dikey', 'UNKNOWN', 'APPROVED', 1, 0.99
+               )"""
+        )
+        conn.commit()
+        conn.close()
+
+        selector = TemplateSelector(db_path=self.db_path)
+        res = selector.select_template('V', '02_Cam_Tablo_Dikey')
+        self.assertEqual(res['status'], 'SKIPPED_ORIENTATION_MISMATCH')
+
     def test_p15_no_compatible_approved_template(self):
         from core.template_intelligence import TemplateSelector
         conn = sqlite3.connect(self.db_path)
@@ -314,6 +656,83 @@ class TestP1_P15Acceptance(unittest.TestCase):
         import json
         saved_quad = json.loads(row[1])
         self.assertEqual(saved_quad, [[1,1], [9,1], [9,9], [1,9]])
+
+    def test_p16b_duplicate_active_profiles_are_normalized_safely(self):
+        from core.template_intelligence import save_template_profile
+
+        conn = sqlite3.connect(self.db_path)
+        conn.execute(
+            """INSERT INTO template_profiles (
+                   template_uid, category, source_relative_path,
+                   source_asset_sha256, analyzer_version, orientation,
+                   review_status, manually_verified, is_active,
+                   confidence_total, updated_at
+               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, CURRENT_TIMESTAMP)""",
+            (
+                "dup_uid",
+                "cat1",
+                "cat1/tmpl.png",
+                "same_hash",
+                "manual-v1",
+                "V",
+                "APPROVED",
+                1,
+                1.0,
+            ),
+        )
+        conn.execute(
+            """INSERT INTO template_profiles (
+                   template_uid, category, source_relative_path,
+                   source_asset_sha256, analyzer_version, orientation,
+                   review_status, manually_verified, is_active,
+                   confidence_total, updated_at
+               ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, CURRENT_TIMESTAMP)""",
+            (
+                "dup_uid",
+                "cat1",
+                "cat1/tmpl.png",
+                "old_hash",
+                "v1.3",
+                "H",
+                "REVIEW_REQUIRED",
+                0,
+                0.5,
+            ),
+        )
+        conn.commit()
+        conn.close()
+
+        save_template_profile(
+            self.db_path,
+            {
+                "template_uid": "dup_uid",
+                "category": "cat1",
+                "source_relative_path": "cat1/tmpl.png",
+                "source_asset_sha256": "same_hash",
+                "analyzer_version": "v1.3",
+                "orientation": "V",
+                "review_status": "REVIEW_REQUIRED",
+                "manually_verified": False,
+                "surface_quad": [[1, 1], [9, 1], [9, 9], [1, 9]],
+            },
+        )
+
+        conn = sqlite3.connect(self.db_path)
+        rows = conn.execute(
+            """SELECT source_asset_sha256, review_status,
+                      manually_verified, is_active
+               FROM template_profiles
+               WHERE template_uid=?
+               ORDER BY id""",
+            ("dup_uid",),
+        ).fetchall()
+        conn.close()
+
+        active = [row for row in rows if row[3] == 1]
+        self.assertEqual(len(active), 1)
+        self.assertEqual(active[0][0], "same_hash")
+        self.assertEqual(active[0][1], "APPROVED")
+        self.assertEqual(active[0][2], 1)
 
     def test_p17_endpoint_uses_matching_persisted_manual_prior_without_overwrite(self):
         from app import app
@@ -464,6 +883,1013 @@ class TestP1_P15Acceptance(unittest.TestCase):
         self.assertEqual(rows[1][1], 1)
         self.assertEqual(rows[1][3], 0)
         self.assertNotEqual(rows[1][2], "APPROVED")
+
+
+    def test_legacy_profile_schema_without_id_supports_approval_flow(self):
+        import hashlib
+        from app import app
+        from core.template_intelligence import save_template_profile
+
+        runtime_root = os.path.join(self.temp_dir, 'legacy_runtime_no_id')
+        db_dir = os.path.join(runtime_root, 'SABLON_V2_MIMARI')
+        category = '02_Cam_Tablo_Dikey'
+        filename = 'legacy_profile.png'
+        uid = category + '_' + filename
+        img_dir = os.path.join(runtime_root, '2_SABLON_HAVUZU', category)
+        os.makedirs(db_dir, exist_ok=True)
+        os.makedirs(img_dir, exist_ok=True)
+        img_path = os.path.join(img_dir, filename)
+        cv2.imwrite(img_path, np.zeros((120, 100, 3), dtype=np.uint8))
+        with open(img_path, 'rb') as handle:
+            source_hash = hashlib.sha256(handle.read()).hexdigest()
+
+        legacy_db = os.path.join(db_dir, 'ayarlar.db')
+        conn = sqlite3.connect(legacy_db)
+        conn.execute('''CREATE TABLE templates (
+            category_id TEXT, filename TEXT, data TEXT,
+            PRIMARY KEY (category_id, filename)
+        )''')
+        conn.execute('''CREATE TABLE template_profiles (
+            template_uid TEXT, category TEXT, source_relative_path TEXT,
+            source_asset_sha256 TEXT, profile_version TEXT, analyzer_version TEXT,
+            product_class TEXT, orientation TEXT, geometry_type TEXT,
+            print_policy TEXT, surface_quad TEXT, outer_quad TEXT,
+            surface_mask_path TEXT, material TEXT, has_frame INTEGER,
+            has_mat INTEGER, has_reflection INTEGER, has_occlusion INTEGER,
+            confidence_total REAL, component_confidences TEXT, review_status TEXT,
+            manually_verified INTEGER, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            nominal_aspect TEXT, is_active INTEGER DEFAULT 1
+        )''')
+        conn.execute(
+            'INSERT INTO templates (category_id, filename, data) VALUES (?, ?, ?)',
+            (category, filename, json.dumps({
+                'tip': 'perspektif',
+                'koseler': [[10, 10], [90, 10], [90, 110], [10, 110]],
+            })),
+        )
+        conn.commit()
+        columns = [row[1] for row in conn.execute(
+            'PRAGMA table_info(template_profiles)'
+        ).fetchall()]
+        conn.close()
+        self.assertNotIn('id', columns)
+
+        app.testing = True
+        client = app.test_client()
+        payload = {
+            'template_uid': uid,
+            'category': category,
+            'template': filename,
+            'corners': [[10, 10], [90, 10], [90, 110], [10, 110]],
+            'physical_orientation': '',
+            'on_plan': {},
+        }
+        with patch('app.BASE_DIR', runtime_root):
+            approved = client.post('/api/templates/update_corners', json=payload)
+            self.assertEqual(approved.status_code, 200, approved.get_json())
+
+            reapproved = client.post(
+                '/api/templates/approve',
+                json={'template_uid': uid},
+            )
+            self.assertEqual(reapproved.status_code, 200, reapproved.get_json())
+
+            # Reject is intentionally no longer part of the end-user
+            # workflow. Wrong proposals are corrected/re-detected instead.
+            rejected = client.post(
+                '/api/templates/reject',
+                json={'template_uid': uid},
+            )
+            self.assertEqual(rejected.status_code, 405)
+
+        # Exercise save_template_profile's existing-row path against the
+        # same legacy schema: row identity must use SQLite rowid, not id.
+        save_template_profile(legacy_db, {
+            'template_uid': uid,
+            'category': category,
+            'source_relative_path': category + '/' + filename,
+            'source_asset_sha256': 'new-hash-for-rowid-regression',
+            'analyzer_version': 'legacy-rowid-test',
+            'orientation': 'V',
+            'nominal_aspect': str(5.0 / 7.0),
+            'surface_quad': [[10, 10], [90, 10], [90, 110], [10, 110]],
+            'review_status': 'REVIEW_REQUIRED',
+            'manually_verified': False,
+        })
+
+        conn = sqlite3.connect(legacy_db)
+        rows = conn.execute('''SELECT source_asset_sha256, review_status, is_active
+                               FROM template_profiles
+                               WHERE template_uid=?
+                               ORDER BY rowid''', (uid,)).fetchall()
+        conn.close()
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0][1], 'STALE_SOURCE_CHANGED')
+        self.assertEqual(rows[0][2], 0)
+        self.assertEqual(rows[1][0], 'new-hash-for-rowid-regression')
+        self.assertEqual(rows[1][1], 'REVIEW_REQUIRED')
+        self.assertEqual(rows[1][2], 1)
+
+
+class TestOrphanTemplateRetirement(unittest.TestCase):
+    def test_missing_working_source_can_be_retired_and_undone_safely(self):
+        import app
+
+        with tempfile.TemporaryDirectory() as runtime_root:
+            category = "02_Cam_Tablo_Dikey"
+            filename = "CamTabloDikey_009.png"
+            db_dir = os.path.join(runtime_root, "SABLON_V2_MIMARI")
+            backup_dir = os.path.join(
+                runtime_root,
+                "2_SABLON_HAVUZU_ORIJINAL_YEDEK",
+                category,
+            )
+            os.makedirs(db_dir, exist_ok=True)
+            os.makedirs(backup_dir, exist_ok=True)
+
+            backup_path = os.path.join(backup_dir, filename)
+            cv2.imwrite(
+                backup_path,
+                np.full((24, 24, 3), 32, dtype=np.uint8),
+            )
+
+            db_path = os.path.join(db_dir, "ayarlar.db")
+            conn = sqlite3.connect(db_path)
+            conn.execute(
+                """CREATE TABLE templates (
+                    category_id TEXT,
+                    filename TEXT,
+                    data TEXT,
+                    PRIMARY KEY (category_id, filename)
+                )"""
+            )
+            conn.execute(
+                """CREATE TABLE template_profiles (
+                    template_uid TEXT,
+                    category TEXT,
+                    source_relative_path TEXT,
+                    source_asset_sha256 TEXT,
+                    review_status TEXT,
+                    manually_verified INTEGER,
+                    is_active INTEGER,
+                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )"""
+            )
+            conf = {
+                "tip": "perspektif",
+                "koseler": [[1, 1], [20, 1], [20, 20], [1, 20]],
+            }
+            conn.execute(
+                "INSERT INTO templates (category_id, filename, data) VALUES (?, ?, ?)",
+                (category, filename, json.dumps(conf)),
+            )
+            conn.execute(
+                """INSERT INTO template_profiles (
+                    template_uid, category, source_relative_path,
+                    source_asset_sha256, review_status,
+                    manually_verified, is_active
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    category + "_" + filename,
+                    category,
+                    category + "/" + filename,
+                    "missing-active-source-hash",
+                    "REVIEW_REQUIRED",
+                    0,
+                    1,
+                ),
+            )
+            conn.commit()
+            conn.close()
+
+            fake_settings = {
+                "kategoriler": {
+                    category: {
+                        "sablonlar": {
+                            filename: conf,
+                        }
+                    }
+                }
+            }
+
+            with (
+                patch("app.BASE_DIR", runtime_root),
+                patch("app.get_all_ayarlar", return_value=fake_settings),
+                patch("app.reserve_number"),
+            ):
+                retired = app._retire_template_safely(
+                    category,
+                    filename,
+                )
+
+                self.assertTrue(retired["source_was_missing"])
+                self.assertTrue(retired["orphan_retired"])
+                self.assertTrue(retired["backup_archived"])
+                self.assertFalse(os.path.exists(backup_path))
+
+                trash_dir = os.path.join(
+                    runtime_root,
+                    "SILINEN_SABLONLAR_COP_KUTUSU",
+                )
+                meta_files = [
+                    name
+                    for name in os.listdir(trash_dir)
+                    if name.endswith("_meta.json")
+                ]
+                self.assertEqual(len(meta_files), 1)
+
+                with open(
+                    os.path.join(trash_dir, meta_files[0]),
+                    "r",
+                    encoding="utf-8",
+                ) as handle:
+                    meta = json.load(handle)
+                self.assertTrue(meta["source_was_missing"])
+                self.assertIsNone(meta["trash_image_name"])
+                self.assertTrue(meta["backup_trash_name"])
+
+                conn = sqlite3.connect(db_path)
+                template_count = conn.execute(
+                    "SELECT COUNT(*) FROM templates WHERE category_id=? AND filename=?",
+                    (category, filename),
+                ).fetchone()[0]
+                active_profile_count = conn.execute(
+                    "SELECT COUNT(*) FROM template_profiles WHERE category=? AND is_active=1",
+                    (category,),
+                ).fetchone()[0]
+                conn.close()
+                self.assertEqual(template_count, 0)
+                self.assertEqual(active_profile_count, 0)
+
+                app.app.config["TESTING"] = True
+                client = app.app.test_client()
+                undone = client.post("/api/sablon_sil_geri_al")
+                self.assertEqual(
+                    undone.status_code,
+                    200,
+                    undone.get_json(),
+                )
+                payload = undone.get_json()
+                self.assertTrue(payload["restored_as_orphan"])
+                self.assertFalse(payload["source_restored"])
+                self.assertTrue(payload["backup_restored"])
+                self.assertTrue(os.path.isfile(backup_path))
+
+                working_path = os.path.join(
+                    runtime_root,
+                    "2_SABLON_HAVUZU",
+                    category,
+                    filename,
+                )
+                self.assertFalse(os.path.exists(working_path))
+
+                conn = sqlite3.connect(db_path)
+                template_count = conn.execute(
+                    "SELECT COUNT(*) FROM templates WHERE category_id=? AND filename=?",
+                    (category, filename),
+                ).fetchone()[0]
+                active_profile_count = conn.execute(
+                    "SELECT COUNT(*) FROM template_profiles WHERE category=? AND is_active=1",
+                    (category,),
+                ).fetchone()[0]
+                conn.close()
+                self.assertEqual(template_count, 1)
+                self.assertEqual(active_profile_count, 0)
+
+
+class TestTemplateAssetHealth(unittest.TestCase):
+    def test_health_scan_classifies_missing_and_flat_assets_without_deleting(self):
+        import app
+
+        with tempfile.TemporaryDirectory() as runtime_root:
+            working_root = os.path.join(runtime_root, "2_SABLON_HAVUZU")
+            backup_root = os.path.join(
+                runtime_root,
+                "2_SABLON_HAVUZU_ORIJINAL_YEDEK",
+            )
+            category = "02_Cam_Tablo_Dikey"
+            os.makedirs(
+                os.path.join(working_root, category),
+                exist_ok=True,
+            )
+            os.makedirs(
+                os.path.join(backup_root, category),
+                exist_ok=True,
+            )
+
+            settings = {
+                "kategoriler": {
+                    category: {
+                        "sablonlar": {
+                            "ok.png": {},
+                            "missing_work.png": {},
+                            "both_missing.png": {},
+                            "flat.png": {},
+                        }
+                    }
+                }
+            }
+
+            normal = np.zeros((48, 64, 3), dtype=np.uint8)
+            normal[:, :32] = (30, 80, 160)
+            normal[:, 32:] = (220, 180, 90)
+            flat = np.full((48, 64, 3), 12, dtype=np.uint8)
+
+            cv2.imwrite(
+                os.path.join(working_root, category, "ok.png"),
+                normal,
+            )
+            cv2.imwrite(
+                os.path.join(backup_root, category, "ok.png"),
+                normal,
+            )
+            cv2.imwrite(
+                os.path.join(backup_root, category, "missing_work.png"),
+                normal,
+            )
+            cv2.imwrite(
+                os.path.join(working_root, category, "flat.png"),
+                flat,
+            )
+            cv2.imwrite(
+                os.path.join(backup_root, category, "flat.png"),
+                flat,
+            )
+            cv2.imwrite(
+                os.path.join(working_root, category, "extra.png"),
+                normal,
+            )
+
+            with (
+                patch("app.BASE_DIR", runtime_root),
+                patch("app.get_all_ayarlar", return_value=settings),
+            ):
+                report = app._template_asset_health_report(deep=True)
+
+            items = report["templates"][category]
+            self.assertEqual(items["ok.png"]["severity"], "OK")
+            self.assertEqual(
+                items["missing_work.png"]["code"],
+                "WORKING_MISSING",
+            )
+            self.assertTrue(
+                items["missing_work.png"]["can_restore_from_backup"]
+            )
+            self.assertEqual(
+                items["both_missing.png"]["code"],
+                "WORKING_AND_BACKUP_MISSING",
+            )
+            self.assertEqual(
+                items["both_missing.png"]["severity"],
+                "CRITICAL",
+            )
+
+            # Near-uniform black/white-like images are review-only, never
+            # auto-declared broken and never deleted by this scanner.
+            self.assertEqual(
+                items["flat.png"]["code"],
+                "VISUAL_REVIEW_REQUIRED",
+            )
+            self.assertEqual(
+                items["flat.png"]["severity"],
+                "WARNING",
+            )
+            self.assertTrue(report["read_only"])
+            self.assertEqual(report["auto_deleted"], 0)
+
+            extras = {
+                (item["category"], item["filename"])
+                for item in report["filesystem_only_working"]
+            }
+            self.assertIn((category, "extra.png"), extras)
+
+    def test_manual_health_scan_persists_and_quick_refresh_does_not_overwrite(self):
+        import app
+
+        with tempfile.TemporaryDirectory() as runtime_root:
+            category = "01_Wifi_Kutusu"
+            filename = "Wifi_Kutusu_001.png"
+            working_dir = os.path.join(
+                runtime_root,
+                "2_SABLON_HAVUZU",
+                category,
+            )
+            backup_dir = os.path.join(
+                runtime_root,
+                "2_SABLON_HAVUZU_ORIJINAL_YEDEK",
+                category,
+            )
+            os.makedirs(working_dir, exist_ok=True)
+            os.makedirs(backup_dir, exist_ok=True)
+
+            image = np.zeros((32, 48, 3), dtype=np.uint8)
+            image[:, :24] = (25, 80, 150)
+            image[:, 24:] = (210, 170, 90)
+            cv2.imwrite(os.path.join(working_dir, filename), image)
+            cv2.imwrite(os.path.join(backup_dir, filename), image)
+
+            manual_settings = {
+                "kategoriler": {
+                    category: {
+                        "sablonlar": {
+                            filename: {},
+                        }
+                    }
+                }
+            }
+            empty_settings = {"kategoriler": {}}
+
+            app.app.config["TESTING"] = True
+            client = app.app.test_client()
+
+            with (
+                patch("app.BASE_DIR", runtime_root),
+                patch(
+                    "app.get_all_ayarlar",
+                    return_value=manual_settings,
+                ),
+            ):
+                saved_response = client.get(
+                    "/api/template-health?deep=1&save=1"
+                )
+
+            self.assertEqual(
+                saved_response.status_code,
+                200,
+                saved_response.get_json(),
+            )
+            saved_payload = saved_response.get_json()
+            self.assertTrue(saved_payload["saved_report"])
+            self.assertTrue(saved_payload["saved_at"])
+            self.assertEqual(
+                saved_payload["summary"]["total_records"],
+                1,
+            )
+
+            saved_path = os.path.join(
+                runtime_root,
+                "SABLON_V2_MIMARI",
+                "reports",
+                "son_ham_dosya_saglik_raporu.json",
+            )
+            self.assertTrue(os.path.isfile(saved_path))
+
+            # Automatic/lightweight live refresh must never replace the
+            # user's last completed manual full report.
+            with (
+                patch("app.BASE_DIR", runtime_root),
+                patch(
+                    "app.get_all_ayarlar",
+                    return_value=empty_settings,
+                ),
+            ):
+                quick_response = client.get(
+                    "/api/template-health?deep=0&save=0"
+                )
+                last_response = client.get(
+                    "/api/template-health/last"
+                )
+
+            self.assertEqual(
+                quick_response.status_code,
+                200,
+                quick_response.get_json(),
+            )
+            self.assertEqual(
+                quick_response.get_json()["summary"]["total_records"],
+                0,
+            )
+            self.assertEqual(
+                last_response.status_code,
+                200,
+                last_response.get_json(),
+            )
+            last_payload = last_response.get_json()
+            self.assertEqual(
+                last_payload["summary"]["total_records"],
+                1,
+            )
+            self.assertEqual(
+                last_payload["saved_at"],
+                saved_payload["saved_at"],
+            )
+
+    def test_review_js_refreshes_from_working_image_not_backup_first_route(self):
+        js_path = os.path.join(
+            BASE_DIR,
+            "SABLON_V2_MIMARI",
+            "static",
+            "js",
+            "main.js",
+        )
+        with open(js_path, "r", encoding="utf-8") as handle:
+            js = handle.read()
+
+        self.assertIn(
+            "'/working-image/' +",
+            js,
+        )
+        self.assertNotIn(
+            "tempImg.src = '/image/'",
+            js,
+        )
+        self.assertIn(
+            "batchAnalyzeExternalPause",
+            js,
+        )
+        self.assertIn(
+            "runTemplateHealthScan",
+            js,
+        )
+        self.assertIn(
+            "&save=",
+            js,
+        )
+        self.assertIn(
+            "openLastTemplateHealthReport",
+            js,
+        )
+        self.assertIn(
+            "/api/template-health/last",
+            js,
+        )
+
+
+class TestFastBatchCornerScan(unittest.TestCase):
+    def test_matching_human_approved_source_is_skipped_before_heavy_analysis(self):
+        import app
+
+        with tempfile.TemporaryDirectory() as runtime_root:
+            category = "01_Wifi_Kutusu"
+            template = "Wifi_Kutusu_001.png"
+            working_dir = os.path.join(
+                runtime_root,
+                "2_SABLON_HAVUZU",
+                category,
+            )
+            db_dir = os.path.join(runtime_root, "SABLON_V2_MIMARI")
+            os.makedirs(working_dir, exist_ok=True)
+            os.makedirs(db_dir, exist_ok=True)
+
+            image_path = os.path.join(working_dir, template)
+            cv2.imwrite(
+                image_path,
+                np.full((40, 60, 3), 100, dtype=np.uint8),
+            )
+            source_hash = app._sha256_file(image_path)
+
+            db_path = os.path.join(db_dir, "ayarlar.db")
+            conn = sqlite3.connect(db_path)
+            conn.execute(
+                """CREATE TABLE template_profiles (
+                    template_uid TEXT,
+                    source_asset_sha256 TEXT,
+                    review_status TEXT,
+                    manually_verified INTEGER,
+                    is_active INTEGER,
+                    updated_at DATETIME
+                )"""
+            )
+            conn.execute(
+                """INSERT INTO template_profiles (
+                    template_uid, source_asset_sha256,
+                    review_status, manually_verified,
+                    is_active, updated_at
+                ) VALUES (?, ?, 'APPROVED', 1, 1, CURRENT_TIMESTAMP)""",
+                (category + "_" + template, source_hash),
+            )
+            conn.commit()
+            conn.close()
+
+            settings = {
+                "kategoriler": {
+                    category: {
+                        "sablonlar": {
+                            template: {},
+                        }
+                    }
+                }
+            }
+
+            app.app.config["TESTING"] = True
+            client = app.app.test_client()
+            with (
+                patch("app.BASE_DIR", runtime_root),
+                patch("app.get_all_ayarlar", return_value=settings),
+                patch(
+                    "app._analyze_template_for_batch",
+                    side_effect=AssertionError(
+                        "APPROVED source must not enter heavy analysis"
+                    ),
+                ),
+            ):
+                response = client.post(
+                    "/api/templates/batch_analyze",
+                    json={
+                        "category": category,
+                        "templates": [template],
+                        "workers": 2,
+                    },
+                )
+
+            self.assertEqual(
+                response.status_code,
+                200,
+                response.get_json(),
+            )
+            payload = response.get_json()
+            self.assertEqual(
+                payload["results"][0]["status"],
+                "SKIPPED_APPROVED",
+            )
+            self.assertEqual(
+                payload["approved_preserved_count"],
+                1,
+            )
+            self.assertEqual(
+                payload["quality_algorithm"],
+                "UNCHANGED",
+            )
+            self.assertEqual(
+                payload["db_writes"],
+                "SEQUENTIAL",
+            )
+
+    def test_unapproved_batch_keeps_analysis_stage_and_serial_profile_saves(self):
+        import app
+
+        with tempfile.TemporaryDirectory() as runtime_root:
+            category = "01_Wifi_Kutusu"
+            templates = [
+                "Wifi_Kutusu_010.png",
+                "Wifi_Kutusu_011.png",
+            ]
+            working_dir = os.path.join(
+                runtime_root,
+                "2_SABLON_HAVUZU",
+                category,
+            )
+            db_dir = os.path.join(runtime_root, "SABLON_V2_MIMARI")
+            os.makedirs(working_dir, exist_ok=True)
+            os.makedirs(db_dir, exist_ok=True)
+
+            for name in templates:
+                cv2.imwrite(
+                    os.path.join(working_dir, name),
+                    np.full((30, 50, 3), 80, dtype=np.uint8),
+                )
+
+            db_path = os.path.join(db_dir, "ayarlar.db")
+            conn = sqlite3.connect(db_path)
+            conn.execute(
+                """CREATE TABLE template_profiles (
+                    template_uid TEXT,
+                    source_asset_sha256 TEXT,
+                    review_status TEXT,
+                    manually_verified INTEGER,
+                    is_active INTEGER,
+                    updated_at DATETIME
+                )"""
+            )
+            conn.commit()
+            conn.close()
+
+            settings = {
+                "kategoriler": {
+                    category: {
+                        "sablonlar": {
+                            name: {}
+                            for name in templates
+                        }
+                    }
+                }
+            }
+
+            fake_analysis = {
+                "source_asset_sha256": "",
+                "analyzer_version": "same-quality-engine",
+                "rule": {
+                    "product_class": "test",
+                    "print_policy": "full_bleed",
+                },
+                "orientation": "H",
+                "nominal_aspect": "1.5",
+                "surface_quad": [
+                    [1, 1], [20, 1], [20, 20], [1, 20]
+                ],
+                "outer_quad": None,
+                "confidence_total": 0.75,
+                "component_confidences": {},
+                "review_status": "REVIEW_REQUIRED",
+            }
+            worker_results = {
+                name: {
+                    "template": name,
+                    "status": "ANALYZED",
+                    "analysis": dict(fake_analysis),
+                }
+                for name in templates
+            }
+            saved = []
+
+            def fake_worker(cat, name):
+                self.assertEqual(cat, category)
+                item = dict(worker_results[name])
+                analysis = dict(item["analysis"])
+                analysis["source_asset_sha256"] = app._sha256_file(
+                    os.path.join(working_dir, name)
+                )
+                item["analysis"] = analysis
+                return item
+
+            def fake_save(path, profile):
+                self.assertEqual(path, db_path)
+                saved.append(profile["template_uid"])
+
+            app.app.config["TESTING"] = True
+            client = app.app.test_client()
+            with (
+                patch("app.BASE_DIR", runtime_root),
+                patch("app.get_all_ayarlar", return_value=settings),
+                patch(
+                    "app._analyze_template_for_batch",
+                    side_effect=fake_worker,
+                ),
+                patch(
+                    "app.save_template_profile",
+                    side_effect=fake_save,
+                ),
+            ):
+                response = client.post(
+                    "/api/templates/batch_analyze",
+                    json={
+                        "category": category,
+                        "templates": templates,
+                        "workers": 2,
+                    },
+                )
+
+            self.assertEqual(
+                response.status_code,
+                200,
+                response.get_json(),
+            )
+            payload = response.get_json()
+            self.assertEqual(payload["analyzed_count"], 2)
+            self.assertEqual(payload["workers_used"], 2)
+            self.assertEqual(
+                payload["quality_algorithm"],
+                "UNCHANGED",
+            )
+            self.assertEqual(
+                payload["db_writes"],
+                "SEQUENTIAL",
+            )
+            self.assertEqual(
+                saved,
+                [
+                    category + "_" + templates[0],
+                    category + "_" + templates[1],
+                ],
+            )
+
+    def test_fast_scan_frontend_uses_persistent_job_engine(self):
+        js_path = os.path.join(
+            BASE_DIR,
+            "SABLON_V2_MIMARI",
+            "static",
+            "js",
+            "main.js",
+        )
+        with open(js_path, "r", encoding="utf-8") as handle:
+            js = handle.read()
+
+        self.assertIn("BATCH_CORNER_SCAN", js)
+        self.assertIn("monitorBatchAnalyzeJob", js)
+        self.assertIn("resumePersistentJobs", js)
+        self.assertIn("'/api/jobs'", js)
+        self.assertIn("approvedProtectedCount", js)
+
+        app_path = os.path.join(
+            BASE_DIR,
+            "SABLON_V2_MIMARI",
+            "app.py",
+        )
+        with open(app_path, "r", encoding="utf-8") as handle:
+            app_source = handle.read()
+        self.assertIn("chunk_size = 4", app_source)
+        self.assertIn("workers=2", app_source)
+        self.assertIn('"db_writes": "SEQUENTIAL"', app_source)
+
+
+class TestOriginalRestoreExactBackupSelection(unittest.TestCase):
+    def test_restore_prefers_exact_png_over_same_stem_jpg(self):
+        import app
+
+        with tempfile.TemporaryDirectory() as runtime_root:
+            category = "03_Ahsap_Tablo"
+            template = "AhsapTablo_015.png"
+            backup_dir = os.path.join(
+                runtime_root,
+                "2_SABLON_HAVUZU_ORIJINAL_YEDEK",
+                category,
+            )
+            working_dir = os.path.join(
+                runtime_root,
+                "2_SABLON_HAVUZU",
+                category,
+            )
+            os.makedirs(backup_dir, exist_ok=True)
+            os.makedirs(working_dir, exist_ok=True)
+
+            # Old alternate-format backup: red.
+            jpg = np.zeros((32, 48, 3), dtype=np.uint8)
+            jpg[:, :] = (0, 0, 255)
+            cv2.imwrite(
+                os.path.join(
+                    backup_dir,
+                    "AhsapTablo_015.jpg",
+                ),
+                jpg,
+            )
+
+            # Newly replaced exact-name PNG: green.
+            png = np.zeros((32, 48, 3), dtype=np.uint8)
+            png[:, :] = (0, 255, 0)
+            cv2.imwrite(
+                os.path.join(
+                    backup_dir,
+                    template,
+                ),
+                png,
+            )
+
+            # Existing working copy intentionally blue.
+            working = np.zeros((32, 48, 3), dtype=np.uint8)
+            working[:, :] = (255, 0, 0)
+            cv2.imwrite(
+                os.path.join(
+                    working_dir,
+                    template,
+                ),
+                working,
+            )
+
+            with (
+                patch("app.BASE_DIR", runtime_root),
+                patch(
+                    "app.YEDEK_IMG_DIR",
+                    os.path.join(
+                        runtime_root,
+                        "2_SABLON_HAVUZU_ORIJINAL_YEDEK",
+                    ),
+                ),
+                patch(
+                    "app._invalidate_stale_profiles_for_source",
+                    return_value=1,
+                ),
+            ):
+                with app.app.test_request_context(
+                    "/api/orijinal_yukle",
+                    method="POST",
+                    headers={
+                        "X-Active-Category": category,
+                        "X-Active-Template": template,
+                    },
+                ):
+                    response = (
+                        app.api_orijinal_yukle.__wrapped__()
+                    )
+
+            self.assertEqual(response.status_code, 200)
+            payload = response.get_json()
+            self.assertTrue(payload["success"])
+            self.assertTrue(
+                payload["backup_source_exact_name"]
+            )
+            self.assertEqual(
+                payload["backup_source_file"],
+                category + "/" + template,
+            )
+            self.assertEqual(
+                payload["source_root"],
+                "2_SABLON_HAVUZU_ORIJINAL_YEDEK",
+            )
+
+            restored = cv2.imread(
+                os.path.join(
+                    working_dir,
+                    template,
+                ),
+            )
+            self.assertIsNotNone(restored)
+            # Exact PNG is green; old JPG is red and old working copy blue.
+            b, g, r = [
+                int(x)
+                for x in restored[16, 24]
+            ]
+            self.assertGreater(g, 240)
+            self.assertLess(b, 10)
+            self.assertLess(r, 10)
+            self.assertTrue(payload["png_byte_exact_restore"])
+            self.assertEqual(
+                payload["backup_source_sha256"],
+                payload["destination_after_sha256"],
+            )
+
+    def test_restore_preserves_png_alpha_byte_for_byte(self):
+        import app
+
+        with tempfile.TemporaryDirectory() as runtime_root:
+            category = "03_Ahsap_Tablo"
+            template = "AhsapTablo_016.png"
+            backup_dir = os.path.join(
+                runtime_root,
+                "2_SABLON_HAVUZU_ORIJINAL_YEDEK",
+                category,
+            )
+            working_dir = os.path.join(
+                runtime_root,
+                "2_SABLON_HAVUZU",
+                category,
+            )
+            os.makedirs(backup_dir, exist_ok=True)
+            os.makedirs(working_dir, exist_ok=True)
+
+            rgba = np.zeros((20, 30, 4), dtype=np.uint8)
+            rgba[:, :, 0] = 10
+            rgba[:, :, 1] = 120
+            rgba[:, :, 2] = 230
+            rgba[:, :, 3] = np.tile(
+                np.arange(30, dtype=np.uint8),
+                (20, 1),
+            ) * 8
+            source_path = os.path.join(backup_dir, template)
+            cv2.imwrite(source_path, rgba)
+
+            working = np.full((20, 30, 3), 77, dtype=np.uint8)
+            cv2.imwrite(
+                os.path.join(working_dir, template),
+                working,
+            )
+
+            with (
+                patch("app.BASE_DIR", runtime_root),
+                patch(
+                    "app.YEDEK_IMG_DIR",
+                    os.path.join(
+                        runtime_root,
+                        "2_SABLON_HAVUZU_ORIJINAL_YEDEK",
+                    ),
+                ),
+                patch(
+                    "app._invalidate_stale_profiles_for_source",
+                    return_value=1,
+                ),
+            ):
+                with app.app.test_request_context(
+                    "/api/orijinal_yukle",
+                    method="POST",
+                    headers={
+                        "X-Active-Category": category,
+                        "X-Active-Template": template,
+                    },
+                ):
+                    response = (
+                        app.api_orijinal_yukle.__wrapped__()
+                    )
+
+            self.assertEqual(response.status_code, 200)
+            payload = response.get_json()
+            self.assertTrue(payload["png_byte_exact_restore"])
+            self.assertEqual(
+                payload["backup_source_sha256"],
+                payload["destination_after_sha256"],
+            )
+
+            restored_path = os.path.join(
+                working_dir,
+                template,
+            )
+            with open(source_path, "rb") as source_handle:
+                source_bytes = source_handle.read()
+            with open(restored_path, "rb") as restored_handle:
+                restored_bytes = restored_handle.read()
+            self.assertEqual(source_bytes, restored_bytes)
+
+            restored = cv2.imread(
+                restored_path,
+                cv2.IMREAD_UNCHANGED,
+            )
+            self.assertIsNotNone(restored)
+            self.assertEqual(restored.shape[2], 4)
+            self.assertTrue(
+                np.array_equal(
+                    restored[:, :, 3],
+                    rgba[:, :, 3],
+                )
+            )
+
 
 
 if __name__ == "__main__":

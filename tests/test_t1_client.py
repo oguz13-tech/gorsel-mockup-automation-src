@@ -9,11 +9,16 @@ import hashlib
 import unittest
 import tempfile
 import shutil
+from unittest.mock import patch
 
 # Add parent to path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "SABLON_V2_MIMARI")))
 
-from app import app
+from app import (
+    app,
+    occlusion_plan_has_objects,
+    resolve_reviewed_occlusion,
+)
 import core.db as db_core
 
 class TestT1DeleteUndoIntegrity(unittest.TestCase):
@@ -131,8 +136,20 @@ class TestT1DeleteUndoIntegrity(unittest.TestCase):
         # Verify physical file is gone
         self.assertFalse(os.path.exists(self.img_path), "Physical image file should be moved/deleted")
         
-        # Verify physical file is in trash
-        trash_path = os.path.join(self.test_dir, "SILINEN_SABLONLAR_COP_KUTUSU", "test_tmpl.png")
+        # Verify physical file is in trash through the durable recovery
+        # metadata returned by the endpoint. Trash filenames are intentionally
+        # collision-safe and therefore are not the original filename.
+        trash_dir = os.path.join(
+            self.test_dir,
+            "SILINEN_SABLONLAR_COP_KUTUSU",
+        )
+        trash_record = data.get("trash_record")
+        self.assertTrue(trash_record, "Delete must return a recovery record")
+        meta_path = os.path.join(trash_dir, trash_record)
+        self.assertTrue(os.path.isfile(meta_path), "Recovery metadata should exist")
+        with open(meta_path, "r", encoding="utf-8") as handle:
+            recovery = json.load(handle)
+        trash_path = os.path.join(trash_dir, recovery["trash_image_name"])
         self.assertTrue(os.path.exists(trash_path), "Physical file should be in trash")
 
         # Step 3: Undo via Flask Endpoint (re-insert with original data)
@@ -156,6 +173,243 @@ class TestT1DeleteUndoIntegrity(unittest.TestCase):
         self.assertEqual(restored_file_sha, self.file_sha, "Physical file SHA mismatch after undo!")
         
         conn.close()
+
+    def test_missing_source_is_retired_as_recoverable_orphan(self):
+        os.remove(self.img_path)
+
+        res = self.client.post('/api/sablon_sil', headers={
+            "X-Active-Category": "test_cat",
+            "X-Active-Template": "test_tmpl.png",
+        })
+
+        self.assertEqual(res.status_code, 200, res.get_json())
+        payload = res.get_json()
+        self.assertTrue(payload.get("success"))
+        self.assertTrue(payload.get("source_was_missing"))
+        self.assertTrue(payload.get("orphan_retired"))
+
+        conn = db_core.get_db_connection()
+        try:
+            row = conn.execute(
+                "SELECT data FROM templates WHERE category_id=? AND filename=?",
+                ("test_cat", "test_tmpl.png"),
+            ).fetchone()
+            self.assertIsNone(
+                row,
+                "Orphan record should leave the active template list",
+            )
+        finally:
+            conn.close()
+
+        trash_dir = os.path.join(
+            self.test_dir,
+            "SILINEN_SABLONLAR_COP_KUTUSU",
+        )
+        meta_path = os.path.join(trash_dir, payload["trash_record"])
+        self.assertTrue(os.path.isfile(meta_path))
+        with open(meta_path, "r", encoding="utf-8") as handle:
+            recovery = json.load(handle)
+        self.assertTrue(recovery.get("source_was_missing"))
+        self.assertIsNone(recovery.get("trash_image_name"))
+
+        restored = self.client.post('/api/sablon_sil_geri_al')
+        self.assertEqual(restored.status_code, 200, restored.get_json())
+        restored_payload = restored.get_json()
+        self.assertTrue(restored_payload.get("restored_as_orphan"))
+        self.assertFalse(restored_payload.get("source_restored"))
+
+        conn = db_core.get_db_connection()
+        try:
+            row = conn.execute(
+                "SELECT data FROM templates WHERE category_id=? AND filename=?",
+                ("test_cat", "test_tmpl.png"),
+            ).fetchone()
+            self.assertIsNotNone(
+                row,
+                "Undo should restore the orphan metadata record",
+            )
+        finally:
+            conn.close()
+
+    def test_undo_blocks_when_trash_image_is_missing(self):
+        deleted = self.client.post('/api/sablon_sil', headers={
+            "X-Active-Category": "test_cat",
+            "X-Active-Template": "test_tmpl.png",
+        })
+        self.assertEqual(deleted.status_code, 200)
+        body = deleted.get_json()
+        trash_dir = os.path.join(
+            self.test_dir,
+            "SILINEN_SABLONLAR_COP_KUTUSU",
+        )
+        meta_path = os.path.join(trash_dir, body["trash_record"])
+        with open(meta_path, "r", encoding="utf-8") as handle:
+            recovery = json.load(handle)
+        trash_path = os.path.join(trash_dir, recovery["trash_image_name"])
+        os.remove(trash_path)
+
+        restored = self.client.post('/api/sablon_sil_geri_al')
+        self.assertEqual(restored.status_code, 409)
+        self.assertEqual(
+            restored.get_json().get("code"),
+            "TRASH_IMAGE_MISSING",
+        )
+        self.assertTrue(
+            os.path.isfile(meta_path),
+            "Recovery metadata must remain for investigation/manual recovery",
+        )
+
+        conn = db_core.get_db_connection()
+        try:
+            row = conn.execute(
+                "SELECT data FROM templates WHERE category_id=? AND filename=?",
+                ("test_cat", "test_tmpl.png"),
+            ).fetchone()
+            self.assertIsNone(
+                row,
+                "Undo must not recreate a DB row without its source image",
+            )
+        finally:
+            conn.close()
+
+    def test_undo_keeps_old_approval_inactive_if_trash_bytes_changed(self):
+        conn = db_core.get_db_connection()
+        try:
+            conn.execute(
+                """INSERT INTO template_profiles (
+                       template_uid, category, source_relative_path,
+                       source_asset_sha256, review_status,
+                       manually_verified, is_active
+                   ) VALUES (?, ?, ?, ?, 'APPROVED', 1, 1)""",
+                (
+                    "test_cat_test_tmpl.png",
+                    "test_cat",
+                    "test_cat/test_tmpl.png",
+                    self.file_sha,
+                ),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        deleted = self.client.post('/api/sablon_sil', headers={
+            "X-Active-Category": "test_cat",
+            "X-Active-Template": "test_tmpl.png",
+        })
+        self.assertEqual(deleted.status_code, 200)
+        body = deleted.get_json()
+        self.assertEqual(body.get("deactivated_profiles"), 1)
+
+        conn = db_core.get_db_connection()
+        try:
+            active = conn.execute(
+                """SELECT is_active FROM template_profiles
+                   WHERE template_uid=?""",
+                ("test_cat_test_tmpl.png",),
+            ).fetchone()
+            self.assertIsNotNone(active)
+            self.assertEqual(active["is_active"], 0)
+        finally:
+            conn.close()
+        trash_dir = os.path.join(
+            self.test_dir,
+            "SILINEN_SABLONLAR_COP_KUTUSU",
+        )
+        meta_path = os.path.join(trash_dir, body["trash_record"])
+        with open(meta_path, "r", encoding="utf-8") as handle:
+            recovery = json.load(handle)
+        trash_path = os.path.join(trash_dir, recovery["trash_image_name"])
+
+        with open(trash_path, "ab") as handle:
+            handle.write(b"-modified-after-delete")
+
+        restored = self.client.post('/api/sablon_sil_geri_al')
+        self.assertEqual(restored.status_code, 200)
+        self.assertEqual(
+            restored.get_json().get("reactivated_profiles"),
+            0,
+        )
+
+        conn = db_core.get_db_connection()
+        try:
+            row = conn.execute(
+                """SELECT review_status, manually_verified, is_active
+                   FROM template_profiles
+                   WHERE template_uid=?""",
+                ("test_cat_test_tmpl.png",),
+            ).fetchone()
+            self.assertIsNotNone(row)
+            self.assertEqual(row["review_status"], "APPROVED")
+            self.assertEqual(row["manually_verified"], 1)
+            self.assertEqual(
+                row["is_active"],
+                0,
+                "Modified trash bytes must require a fresh review.",
+            )
+        finally:
+            conn.close()
+
+
+class TestBulkDeleteEndpoint(unittest.TestCase):
+    def setUp(self):
+        app.config["TESTING"] = True
+        self.client = app.test_client()
+
+    def test_bulk_delete_uses_single_endpoint_and_returns_counts(self):
+        def fake_retire(category, template):
+            return {
+                "category": category,
+                "template": template,
+                "trash_record": template + ".json",
+                "deactivated_profiles": 1,
+                "backup_archived": True,
+            }
+
+        with patch("app._retire_template_safely", side_effect=fake_retire) as retire:
+            response = self.client.post(
+                "/api/sablon_sil_toplu",
+                json={
+                    "items": [
+                        {"category": "cat", "template": "a.png"},
+                        {"category": "cat", "template": "b.png"},
+                    ]
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.get_json()
+        self.assertTrue(data["success"])
+        self.assertEqual(data["deleted_count"], 2)
+        self.assertEqual(data["failed_count"], 0)
+        self.assertEqual(retire.call_count, 2)
+
+
+class TestOcclusionReviewSemantics(unittest.TestCase):
+    def test_empty_object_plan_is_not_positive_evidence(self):
+        self.assertFalse(
+            occlusion_plan_has_objects({
+                "object_boxes": [],
+            })
+        )
+
+    def test_human_review_can_clear_old_false_positive(self):
+        self.assertFalse(
+            resolve_reviewed_occlusion(
+                True,
+                {"object_boxes": []},
+                occlusion_reviewed=True,
+            )
+        )
+
+    def test_human_review_preserves_automatic_object_selection(self):
+        self.assertTrue(
+            resolve_reviewed_occlusion(
+                False,
+                {"object_boxes": [[1, 1, 10, 10]]},
+                occlusion_reviewed=True,
+            )
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
