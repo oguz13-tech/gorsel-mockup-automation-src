@@ -1,0 +1,17 @@
+# SONRAKİ AJAN — BAŞLANGIÇ TALİMATI / KOTA SONRASI SIFIR KAYIP
+
+1. Önce `docs/WORK_HANDOFF_CURRENT.md` ve `docs/RELEASE_ACCEPTANCE_MATRIX.md` dosyalarını tamamen oku. Ana görev GitHub **issue #36**; test kabul **#35**. Son güncel kaynak dalı `handoff/v422-complete-20261023`, **main değil**.
+2. GitHub dalında `MERKEZ/`, `SABLON_V2_MIMARI/`, `TESTLER/`, `tests/`, `BAGIMSIZ_ARACLAR/`, `99_SISTEM_MOTORLARI_VE_KODLAR/`, `LEGACY_REFERANS_KOD/` ve `scripts/` içeriklerini tara. Public dalda eksik olan orijinal tarihî/JSON/ayarlar/manuel geometri kayıtlarını doldurmak için **sıfırdan oluşturma**.
+3. ChatGPT Library `/Gorsel-Uretim-Merkezi/V4.2.2/` altında şu özel kaynaklar saklıdır:
+   - `GORSEL_URETIM_MERKEZI_V422_GRUP1_GRUP2_FACTORY_DOCTOR_GUVENLI_FINAL_WINDOWS.zip` (379 dosya; SHA256 `ad33e3219c5e2c6e1f6185a2b726730276eb9e2386abd6a78d49b97df566f7ee`).
+   - `V422_FULL_PACKAGE_FILE_MANIFEST.csv`, `.json` (tam dosya bazlı hash).
+   Bunları Library üzerinden materialize edip ZIP hash / üye envanteri doğrula. **Public repo'ya ZIP'in kendisini push etme**; içinde `ayarlar.json` ve benzeri tarihî ayarlar/referans veri olabilir.
+4. Önce `git status --short`, HEAD SHA, PR base/head, dalın source kapsamı, git diff, kontrollü çalışacak test komutlarını kayda geçir. Kodları ilk etapta kullanıcı Windows'una yazma. Kod değişikliği yaparsan küçük, bağımsız commit + draft PR + ilgili issue kayıtlarıyla ilerle.
+5. Çalıştırılabilir ilk kalite kapıları (yalnız izolasyon / sentetik geçici dizinlerde): `python -m compileall -q MERKEZ SABLON_V2_MIMARI TESTLER tests`; ardından ayrı pytest/unittest/Xvfb grupları. Varsayarak PASS yazma. Flask HTTP, Windows Tk, Excel hyperlink ve GPU davranışını gerçek sistemde ayrıca test et.
+6. **Production değişiklik yasakları:** Live `ayarlar.db`, WAL/SHM, JSON `koseler`, APPROVED geometri, PETEK onaylı maskesi, ham orijinal arşiv, eski SKU/Excel/CSV, müşteri görselleri, kullanıcı dosya isimleri ve `.venv` otomatik silinemez/yer değiştirilemez. No `git push --force`, no auto merge, no destructive reset/clean, no public user data.
+7. İlk Windows kabul sırası: (a) kullanıcıdan kaydedilmemiş dört köşe işini bitirdiği teyidi, (b) **ayrı klasöre** V4.2.2 açılışı, (c) yeni program eski 8080'le eşzamanlı değil, (d) 1 güvenli örnek içeri alma/numara, (e) tek 4 köşe/onay, (f) 7 kategoriden örnek render, (g) PETEK maske ve gerçek Excel hyperlink, (h) create-only/restore/no overwrite, (i) backup+rollback, (j) yüksek hacimli crash-resume.
+8. Açık uyarılar: Python 3.11 expected / 3.14 current, NumPy 2.4.6 / 2.5.4, Torch 2.5.1+cu121 baseline / None, transformers 5.17.0 / None, CUDA 12.1 / None; OneDrive SQLite sync ve master aspect bleed. Factory Doctor bunları Türkçe açıklar; **uyarı kapansın diye lock, GPU baseline veya SQLite taşımaya girişme**.
+9. Kullanıcı 7 kategori isimlendirici son kullanılan numara; Ocak Arkası `WORKING_PNG_NOT_FOUND_OR_UNSAFE` düzeltmesi ve arayüz gözle kabulünü özellikle istedi. Ayrı test et.
+10. Her kota sonunda dosya bazında `tamam/eksik/kanıt`, branch HEAD, draft PR linki, exact test commands/result, source archive SHA, blocked Windows kullanıcı adımları ve sonraki tek komut `docs/NEXT_AGENT_TASK.md` içinde güncel kalmalı.
+
+**İlk yeni ajanın görevi:** Kod üretmek yerine önce `handoff/v422-complete-20261023` ile **kanonik ZIP** arasındaki 379-dosya farkını ve branch CI durumunu doğrula; sonra 7 kategorili Windows gerçek kabul için güvenli bir kontrol listesi hazırla. Sahte tamamlandı/GO bildirimi verme.

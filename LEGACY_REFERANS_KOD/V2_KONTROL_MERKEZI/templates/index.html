@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🚀 Mockup Ana Kontrol Merkezi</title>
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0d1117;
+            --panel-bg: rgba(22, 27, 34, 0.7);
+            --accent: #2ea043;
+            --accent-hover: #3fb950;
+            --text-main: #c9d1d9;
+            --text-muted: #8b949e;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            font-family: 'Inter', sans-serif;
+            overflow-x: hidden;
+            background-image: radial-gradient(circle at top right, #1f2937, #0d1117);
+            min-height: 100vh;
+        }
+
+        /* Glassmorphism Panels */
+        .glass-panel {
+            background: var(--panel-bg);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 15px;
+            padding: 20px;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .glass-panel:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 40px 0 rgba(0, 0, 0, 0.5);
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        /* Left Workflow Steps */
+        .workflow-step {
+            display: flex;
+            align-items: center;
+            margin-bottom: 25px;
+            cursor: pointer;
+            text-decoration: none;
+            color: var(--text-main);
+        }
+        
+        .workflow-step:hover .step-number {
+            background: var(--accent);
+            color: white;
+            box-shadow: 0 0 15px var(--accent);
+        }
+
+        .step-number {
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            background: #21262d;
+            border: 2px solid var(--accent);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            font-weight: 800;
+            margin-right: 20px;
+            transition: all 0.3s;
+            flex-shrink: 0;
+        }
+
+        .step-details h3 {
+            margin: 0;
+            font-size: 1.2rem;
+            font-weight: 600;
+        }
+
+        .step-details p {
+            margin: 0;
+            font-size: 0.9rem;
+            color: var(--text-muted);
+        }
+
+        /* Right Tools Sidebar */
+        .tools-sidebar {
+            position: fixed;
+            top: 0;
+            right: -400px;
+            width: 400px;
+            height: 100vh;
+            background: rgba(13, 17, 23, 0.95);
+            backdrop-filter: blur(20px);
+            border-left: 1px solid rgba(255,255,255,0.1);
+            transition: right 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            z-index: 1050;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        .tools-sidebar.open {
+            right: 0;
+        }
+
+        .sidebar-toggle {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1060;
+            background: var(--accent);
+            border: none;
+            border-radius: 50%;
+            width: 60px;
+            height: 60px;
+            color: white;
+            font-size: 1.5rem;
+            cursor: pointer;
+            box-shadow: 0 0 20px rgba(46, 160, 67, 0.4);
+            transition: transform 0.3s;
+        }
+        
+        .sidebar-toggle:hover {
+            transform: scale(1.1) rotate(90deg);
+        }
+
+        /* Tools List */
+        .tool-item {
+            background: #21262d;
+            border: 1px solid rgba(255,255,255,0.05);
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            transition: background 0.2s;
+            cursor: pointer;
+        }
+
+        .tool-item:hover {
+            background: #30363d;
+            border-color: var(--accent);
+        }
+
+        .tool-icon {
+            font-size: 2rem;
+            color: var(--accent);
+            margin-right: 15px;
+            width: 40px;
+            text-align: center;
+        }
+
+        .main-header {
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            padding-bottom: 15px;
+            margin-bottom: 30px;
+        }
+        
+        /* Custom Checkbox / Toggle for Watermark */
+        .form-switch .form-check-input {
+            width: 3em;
+            height: 1.5em;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Toggle Button for Tools Sidebar -->
+    <button class="sidebar-toggle" onclick="toggleSidebar()" title="Araç Kutusunu Aç">
+        <i class="fas fa-toolbox"></i>
+    </button>
+
+    <div class="container mt-5">
+        <div class="row">
+            <div class="col-12 main-header text-center">
+                <h1 class="fw-bold"><i class="fa-solid fa-rocket text-success"></i> Ana Kontrol Merkezi</h1>
+                <p class="text-muted">Görsel Üretim Fabrikanızın Kalbi. Lütfen adımları sırayla takip edin.</p>
+            </div>
+        </div>
+
+        <div class="row">
+            <!-- Left Side: Main Workflow -->
+            <div class="col-lg-8 offset-lg-2">
+                <div class="glass-panel">
+                    <h2 class="h4 mb-4 border-bottom border-secondary pb-2"><i class="fas fa-route text-success"></i> Kusursuz Üretim Akışı</h2>
+                    
+                    <!-- Step 1 -->
+                    <div class="workflow-step" onclick="openFolder('SABLON_YUKLE')">
+                        <div class="step-number">1</div>
+                        <div class="step-details">
+                            <h3>Ham Şablonları Yükle</h3>
+                            <p>Sisteme yeni eklenecek boş bardak/tablo fotoğraflarını klasöre bırakın.</p>
+                        </div>
+                        <div class="ms-auto"><i class="fas fa-folder-open text-muted fa-2x"></i></div>
+                    </div>
+
+                    <!-- Step 2 -->
+                    <div class="workflow-step" onclick="openTemplateCenter('')">
+                        <div class="step-number">2</div>
+                        <div class="step-details">
+                            <h3>Şablon İnceleme Merkezini Aç</h3>
+                            <p>Otomatik geometri önerilerini görün, gerekirse köşeleri düzeltin ve yalnızca doğruladıklarınızı APPROVED yapın.</p>
+                        </div>
+                        <div class="ms-auto"><i class="fas fa-crop-simple text-muted fa-2x"></i></div>
+                    </div>
+
+                    <!-- Step 3: Kaggle -->
+                    <div class="workflow-step" onclick="openTemplateCenter('?kaggle=1')" style="background: rgba(0, 122, 204, 0.1); border-radius: 10px; padding: 10px;">
+                        <div class="step-number" style="background:#007acc; color:white; border-color:#007acc;">3</div>
+                        <div class="step-details">
+                            <h3 style="color:#00e5ff;">🚀 Kaggle Matbaası Onay Odası</h3>
+                            <p>Kaggle baskılarını üretime girmeden önce seçin/eleyin. Merkez kapalıysa otomatik başlatılır.</p>
+                        </div>
+                        <div class="ms-auto"><i class="fas fa-microchip" style="color:#00e5ff; font-size:2em;"></i></div>
+                    </div>
+
+                    <!-- Step 4 -->
+                    <div class="workflow-step" onclick="openFolder('GELEN_MASTER')">
+                        <div class="step-number">4</div>
+                        <div class="step-details">
+                            <h3>Onaylı H/V Master Baskıları</h3>
+                            <p>Fabrikanın okuyacağı manifest ve yatay/dikey master dosyalarını kontrol edin.</p>
+                        </div>
+                        <div class="ms-auto"><i class="fas fa-image text-muted fa-2x"></i></div>
+                    </div>
+
+                    <!-- Step 5 -->
+                    <div class="workflow-step" style="background: rgba(46, 160, 67, 0.1); border-radius: 10px; padding: 15px;" onclick="runAutomaticFactory()">
+                        <div class="step-number" style="background: var(--accent); color: white; border-color: white;">5</div>
+                        <div class="step-details">
+                            <h3 class="text-success fw-bold">⚡ Otomatik Üretimi Başlat</h3>
+                            <p>Yalnızca source-valid APPROVED şablonlarla mockup, SEO, yükleme ve Excel akışını çalıştırır.</p>
+                        </div>
+                        <div class="ms-auto"><i class="fas fa-play-circle text-success fa-3x"></i></div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right Sidebar: Growth Hacker Tools -->
+    <div class="tools-sidebar" id="toolsSidebar">
+        <h3 class="border-bottom border-secondary pb-3 mb-4"><i class="fas fa-screwdriver-wrench"></i> Profesyonel Araçlar</h3>
+        
+        <!-- Tool 1 -->
+        <div class="tool-item" onclick="runTool('watermark')">
+            <div class="tool-icon"><i class="fas fa-copyright"></i></div>
+            <div class="flex-grow-1">
+                <h5 class="mb-1">Otomatik Filigran</h5>
+                <p class="text-muted small mb-0">Seçtiğiniz logoyu görsellere basar.</p>
+            </div>
+        </div>
+
+        <!-- Tool 2 -->
+        <div class="tool-item" onclick="runTool('rename_images')">
+            <div class="tool-icon"><i class="fas fa-signature"></i></div>
+            <div>
+                <h5 class="mb-1">Görsel İsimlendirici</h5>
+                <p class="text-muted small mb-0">Örn: Tablo_001, Tablo_002 yapar.</p>
+            </div>
+        </div>
+
+        <!-- Tool 3 -->
+        <div class="tool-item" onclick="runTool('format_convert')">
+            <div class="tool-icon"><i class="fas fa-file-export"></i></div>
+            <div>
+                <h5 class="mb-1">Format Çevirici - png-jpg</h5>
+                <p class="text-muted small mb-0">Tümünü PNG veya JPG yapar.</p>
+            </div>
+        </div>
+
+        <!-- Tool 4 -->
+        <div class="tool-item" onclick="runTool('ai_enhancer')">
+            <div class="tool-icon"><i class="fas fa-wand-magic-sparkles"></i></div>
+            <div>
+                <h5 class="mb-1">Görsel Kalite Artırıcı Ai</h5>
+                <p class="text-muted small mb-0">Düşük çözünürlüklü fotoğrafları 4K yapar.</p>
+            </div>
+        </div>
+
+        <!-- Tool 5 -->
+        <div class="tool-item" onclick="runTool('image_to_excel')">
+            <div class="tool-icon"><i class="fas fa-link"></i></div>
+            <div>
+                <h5 class="mb-1">Görselleri Link Dönüştürücü</h5>
+                <p class="text-muted small mb-0">Toplu yükleme için isimleri Excel'e çeker.</p>
+            </div>
+        </div>
+
+        <!-- Tool 6 -->
+        <div class="tool-item" onclick="runTool('seo_generator')">
+            <div class="tool-icon"><i class="fas fa-tags"></i></div>
+            <div>
+                <h5 class="mb-1">Seo Uyumlu Ürün Adı Üretici</h5>
+                <p class="text-muted small mb-0">Etsy/Trendyol için özel başlıklar yazar.</p>
+            </div>
+        </div>
+
+        <!-- Tool 7 -->
+        <div class="tool-item" onclick="runTool('seo_generator')">
+            <div class="tool-icon"><i class="fas fa-pen-nib"></i></div>
+            <div>
+                <h5 class="mb-1">Seo Uyumlu Açıklama Üretici</h5>
+                <p class="text-muted small mb-0">Ürünlere özel uzun metinler yazar.</p>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <script>
+        function toggleSidebar() {
+            document.getElementById('toolsSidebar').classList.toggle('open');
+        }
+
+        async function openFolder(folderName) {
+            try {
+                const response = await fetch('/api/open_folder', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ folder_name: folderName })
+                });
+                const data = await response.json();
+                console.log(data.message);
+            } catch (err) {
+                console.error("Hata:", err);
+            }
+        }
+
+        async function runScript(scriptId, extra = {}) {
+            try {
+                const response = await fetch('/api/run_script', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ script_id: scriptId, ...extra })
+                });
+                const data = await response.json();
+                if (!response.ok || data.status === 'error') {
+                    throw new Error(data.message || 'Başlatma hatası');
+                }
+                return data;
+            } catch (err) {
+                console.error("Hata:", err);
+                alert("Başlatılamadı: " + err.message);
+                return null;
+            }
+        }
+
+        async function openTemplateCenter(queryString = '') {
+            const data = await runScript('SABLON_V2');
+            if (!data) return;
+
+            const baseUrl = data.url || 'http://127.0.0.1:8080/';
+            const targetUrl = baseUrl.replace(/\?[^#]*$/, '') + queryString;
+
+            // Flask ilk kez açılıyorsa portun dinlemeye başlaması için kısa
+            // kontrollü bekleme yap; zaten açıksa hemen geçer.
+            const deadline = Date.now() + 12000;
+            while (Date.now() < deadline) {
+                try {
+                    await fetch(baseUrl, {mode: 'no-cors'});
+                    window.open(targetUrl, '_blank');
+                    return;
+                } catch (e) {
+                    await new Promise(resolve => setTimeout(resolve, 350));
+                }
+            }
+            alert('Şablon merkezi başlatıldı ancak 8080 portu henüz yanıt vermiyor. Birkaç saniye sonra tekrar deneyin.');
+        }
+
+        async function runAutomaticFactory() {
+            // Production is never started blindly. The read-only preflight
+            // verifies manifest/master sources, approved source hashes,
+            // orientations and writable outputs first.
+            let preflight;
+            try {
+                const preflightResponse = await fetch('/api/factory_preflight');
+                preflight = await preflightResponse.json();
+                if (!preflightResponse.ok || !preflight.ready) {
+                    const errors = Array.isArray(preflight.errors)
+                        ? preflight.errors.join('\n• ')
+                        : 'Bilinmeyen hazırlık hatası';
+                    const warnings = Array.isArray(preflight.warnings) && preflight.warnings.length
+                        ? '\n\nUyarılar:\n• ' + preflight.warnings.join('\n• ')
+                        : '';
+                    alert(
+                        'Üretim başlatılmadı. Ön kontrol düzeltme istiyor:\n\n• '
+                        + errors + warnings
+                    );
+                    return;
+                }
+            } catch (err) {
+                alert('Ön kontrol çalıştırılamadı: ' + err.message);
+                return;
+            }
+
+            const warnings = Array.isArray(preflight.warnings) && preflight.warnings.length
+                ? '\n\nUyarılar:\n• ' + preflight.warnings.join('\n• ')
+                : '';
+
+            const mode = confirm(
+                'Ön kontrol BAŞARILI.\n\n' +
+                'ÇOKLU modda tüm uygun onaylı şablonlar üretilsin mi?\n\n' +
+                'Tamam = Çoklu\nİptal = Döngüsel (tek şablon)' + warnings
+            ) ? 'coklu' : 'dongusel';
+
+            if (!confirm(
+                'Otomatik üretim başlatılacak. Yalnızca APPROVED ve kaynak hash\'i geçerli şablonlar kullanılacak. Devam?'
+            )) return;
+
+            const data = await runScript('OTOMATIK_URETIM', {mode});
+            if (data) {
+                alert(data.message + '\nMod: ' + mode);
+            }
+        }
+        async function runTool(toolEndpoint) {
+            try {
+                // Determine format/prefix defaults or we could add modals later.
+                let bodyData = {};
+                if(toolEndpoint === 'format_convert') {
+                    const format = prompt("Hangi formata çevrilecek? (JPG veya PNG yazın):", "JPG");
+                    if(!format) return; // cancelled
+                    bodyData.format = format.toUpperCase();
+                } else if(toolEndpoint === 'rename_images') {
+                    const prefix = prompt("Görseller hangi kelime ile başlasın? (Örn: Tablo_):", "Gorsel_");
+                    if(!prefix) return; // cancelled
+                    bodyData.prefix = prefix;
+                } else if(toolEndpoint === 'watermark') {
+                    alert("Açılacak ilk pencereden LOGO DOSYASINI (.png), ikinci pencereden basılacak GÖRSELLERİ seçin.");
+                } else if(toolEndpoint === 'image_to_excel') {
+                    alert("Açılacak pencereden Excel'e yazılacak görselleri seçin.");
+                } else if(toolEndpoint === 'seo_generator') {
+                    const adet = prompt("Kaç adet SEO uyumlu isim/açıklama üretilsin?", "10");
+                    if(!adet) return;
+                    bodyData.adet = parseInt(adet);
+                } else if(toolEndpoint === 'ai_enhancer') {
+                    const kat = prompt("Görseller kaç kat büyütülsün? (Varsayılan: 4)\nBüyük sayılar işlemi yavaşlatabilir.", "4");
+                    if(!kat) return;
+                    bodyData.kat = kat;
+                } else {
+                    alert("Lütfen açılacak pencereden işlem yapılacak GÖRSELLERİ seçin.");
+                }
+                
+                const response = await fetch('/api/tools/' + toolEndpoint, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(bodyData)
+                });
+                const data = await response.json();
+                alert(data.message);
+                
+            } catch (err) {
+                console.error("Hata:", err);
+                alert("İşlem başlatılamadı!");
+            }
+        }
+    </script>
+</body>
+</html>

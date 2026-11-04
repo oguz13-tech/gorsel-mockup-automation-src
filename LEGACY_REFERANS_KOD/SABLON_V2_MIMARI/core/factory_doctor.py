@@ -1,0 +1,955 @@
+"""Read-only integrity doctor for the mockup production workspace.
+
+The doctor never edits templates, approvals, databases, outputs, or manifests.
+It is intentionally separate from repair actions: first observe, then decide.
+"""
+
+from __future__ import annotations
+
+import hashlib
+import importlib.metadata
+import json
+import os
+import re
+import shutil
+import sqlite3
+import sys
+import time
+from collections import Counter, defaultdict
+from pathlib import Path
+from typing import Any
+
+from PIL import Image
+
+from .template_intelligence import CategoryRuleEngine
+
+
+PRODUCTION_CATEGORIES = (
+    "01_Wifi_Kutusu",
+    "02_Cam_Tablo_Dikey",
+    "02_Cam_Tablo_Yatay",
+    "03_Ahsap_Tablo",
+    "04_Cam_Dograma",
+    "05_Ocak_Arkasi",
+)
+IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".webp", ".avif")
+
+
+def _installed_version(name: str):
+    try:
+        return importlib.metadata.version(name)
+    except importlib.metadata.PackageNotFoundError:
+        return None
+
+
+def _runtime_lock_snapshot(source_root: Path, runtime_root: Path) -> dict:
+    lock_path = source_root / "SABLON_V2_MIMARI" / "runtime_lock.json"
+    result = {
+        "lock_path": str(lock_path),
+        "lock_exists": lock_path.is_file(),
+        "expected": {},
+        "actual": {},
+        "mismatches": [],
+        "gpu_baseline": None,
+        "gpu_changes": [],
+    }
+    if not lock_path.is_file():
+        return result
+
+    try:
+        lock = json.loads(lock_path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        result["lock_error"] = str(exc)
+        return result
+
+    result["expected"] = lock
+    actual = {
+        "python": ".".join(map(str, sys.version_info[:2])),
+        "Flask": _installed_version("Flask"),
+        "numpy": _installed_version("numpy"),
+        "Pillow": _installed_version("Pillow"),
+        "openpyxl": _installed_version("openpyxl"),
+        "requests": _installed_version("requests"),
+    }
+    try:
+        import cv2
+        actual["cv2"] = str(cv2.__version__)
+    except Exception:
+        actual["cv2"] = None
+    result["actual"] = actual
+
+    expected_python = str(lock.get("python") or "")
+    if expected_python and actual["python"] != expected_python:
+        result["mismatches"].append({
+            "component": "python",
+            "expected": expected_python,
+            "actual": actual["python"],
+        })
+
+    expected_packages = lock.get("packages") or {}
+    for component in (
+        "Flask",
+        "numpy",
+        "cv2",
+        "Pillow",
+        "openpyxl",
+        "requests",
+    ):
+        expected = str(expected_packages.get(component) or "")
+        current = actual.get(component)
+        if expected and str(current or "") != expected:
+            result["mismatches"].append({
+                "component": component,
+                "expected": expected,
+                "actual": current,
+            })
+
+    baseline_path = (
+        runtime_root
+        / "SABLON_V2_MIMARI"
+        / "runtime_ai_baseline.json"
+    )
+    if baseline_path.is_file():
+        try:
+            baseline = json.loads(
+                baseline_path.read_text(encoding="utf-8")
+            )
+            result["gpu_baseline"] = baseline
+            current_gpu = {
+                "torch": _installed_version("torch"),
+                "transformers": _installed_version("transformers"),
+            }
+            try:
+                import torch
+                current_gpu["torch_cuda"] = getattr(
+                    torch.version,
+                    "cuda",
+                    None,
+                )
+            except Exception:
+                current_gpu["torch_cuda"] = None
+
+            for key in ("torch", "transformers", "torch_cuda"):
+                before = baseline.get(key)
+                now = current_gpu.get(key)
+                if before != now:
+                    result["gpu_changes"].append({
+                        "component": key,
+                        "baseline": before,
+                        "actual": now,
+                    })
+        except Exception as exc:
+            result["gpu_baseline_error"] = str(exc)
+
+    return result
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _readonly_sqlite(path: Path) -> sqlite3.Connection:
+    uri = f"file:{path.resolve().as_posix()}?mode=ro"
+    conn = sqlite3.connect(uri, uri=True, timeout=5)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA query_only=ON")
+    conn.execute("PRAGMA busy_timeout=5000")
+    return conn
+
+
+def _safe_relative(root: Path, relative: str) -> Path | None:
+    try:
+        root_resolved = root.resolve()
+        candidate = (root_resolved / str(relative)).resolve()
+        if candidate == root_resolved or root_resolved in candidate.parents:
+            return candidate
+    except Exception:
+        pass
+    return None
+
+
+def _backup_for_template(
+    backup_root: Path,
+    category: str,
+    template_path: Path,
+) -> Path | None:
+    stem = template_path.stem
+    cat_dir = backup_root / category
+    for ext in IMAGE_EXTS:
+        candidate = cat_dir / f"{stem}{ext}"
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _json_dict(value: Any) -> dict:
+    if isinstance(value, dict):
+        return value
+    if not value:
+        return {}
+    try:
+        parsed = json.loads(value)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _positive_on_plan(plan: Any) -> bool:
+    if not isinstance(plan, dict):
+        return False
+    return bool(plan.get("object_boxes") or plan.get("add_brush"))
+
+
+def _read_current_recipe_version(source_root: Path) -> str:
+    factory_path = (
+        source_root
+        / "99_SISTEM_MOTORLARI_VE_KODLAR"
+        / "SISTEM_MOTORU"
+        / "pc_master_factory.py"
+    )
+    try:
+        text = factory_path.read_text(encoding="utf-8")
+    except Exception:
+        return ""
+    match = re.search(
+        r'^RECIPE_VERSION\s*=\s*["\']([^"\']+)["\']',
+        text,
+        flags=re.MULTILINE,
+    )
+    return match.group(1).strip() if match else ""
+
+
+def _looks_like_test_artifact_key(key: str) -> bool:
+    lowered = str(key or "").casefold()
+    return (
+        lowered.startswith("test_")
+        or lowered.startswith("test-")
+        or lowered.startswith("t5_")
+        or lowered.startswith("t1_")
+        or "fixture" in lowered
+    )
+
+
+def run_factory_doctor(
+    runtime_root: str | os.PathLike,
+    source_root: str | os.PathLike | None = None,
+    *,
+    deep: bool = True,
+) -> dict:
+    """Return a structured, read-only integrity report."""
+    runtime = Path(runtime_root).expanduser().resolve()
+    source = (
+        Path(source_root).expanduser().resolve()
+        if source_root is not None
+        else runtime
+    )
+
+    errors: list[dict] = []
+    warnings: list[dict] = []
+    info: list[dict] = []
+    checks: dict[str, Any] = {}
+
+    def add_error(code: str, message: str, **details):
+        errors.append({"code": code, "message": message, **details})
+
+    def add_warning(code: str, message: str, **details):
+        warnings.append({"code": code, "message": message, **details})
+
+    def add_info(code: str, message: str, **details):
+        info.append({"code": code, "message": message, **details})
+
+    checks["runtime_root"] = str(runtime)
+    checks["source_root"] = str(source)
+
+    runtime_versions = _runtime_lock_snapshot(source, runtime)
+    checks["runtime_versions"] = runtime_versions
+    if not runtime_versions.get("lock_exists"):
+        add_warning(
+            "RUNTIME_LOCK_MISSING",
+            "runtime_lock.json bulunamadı; bağımlılık sürümleri doğrulanamıyor.",
+        )
+    elif runtime_versions.get("lock_error"):
+        add_warning(
+            "RUNTIME_LOCK_INVALID",
+            "runtime_lock.json okunamadı: "
+            + str(runtime_versions.get("lock_error")),
+        )
+    else:
+        for mismatch in runtime_versions.get("mismatches", []):
+            add_warning(
+                "RUNTIME_VERSION_DRIFT",
+                (
+                    f"{mismatch['component']} sürümü kilitten farklı: "
+                    f"beklenen={mismatch['expected']} "
+                    f"mevcut={mismatch['actual']}"
+                ),
+                **mismatch,
+            )
+        for change in runtime_versions.get("gpu_changes", []):
+            add_warning(
+                "GPU_RUNTIME_DRIFT",
+                (
+                    f"{change['component']} ilk çalışan baseline'dan değişmiş: "
+                    f"baseline={change['baseline']} "
+                    f"mevcut={change['actual']}"
+                ),
+                **change,
+            )
+
+    if not runtime.is_dir():
+        add_error(
+            "RUNTIME_MISSING",
+            f"Runtime workspace bulunamadı: {runtime}",
+        )
+        return {
+            "ready": False,
+            "error_count": len(errors),
+            "warning_count": len(warnings),
+            "errors": errors,
+            "warnings": warnings,
+            "info": info,
+            "checks": checks,
+        }
+
+    required_dirs = {
+        "masters": runtime / "1_GELEN_KAGGLE_BASKILARI",
+        "templates": runtime / "2_SABLON_HAVUZU",
+        "template_backups": runtime / "2_SABLON_HAVUZU_ORIJINAL_YEDEK",
+        "outputs": runtime / "3_URETILEN_MOCKUPLAR",
+        "excel": runtime / "4_EXCEL_YUKLEME_LISTELERI",
+        "review": runtime / "SABLON_V2_MIMARI",
+    }
+    dir_state = {}
+    for key, path in required_dirs.items():
+        exists = path.is_dir()
+        dir_state[key] = {"path": str(path), "exists": exists}
+        if not exists:
+            severity = add_error if key in {
+                "masters",
+                "templates",
+                "template_backups",
+                "review",
+            } else add_warning
+            severity(
+                "REQUIRED_DIR_MISSING",
+                f"Gerekli klasör yok: {path}",
+                component=key,
+            )
+    checks["directories"] = dir_state
+
+    lowered = str(runtime).casefold()
+    if any(token in lowered for token in (
+        "onedrive",
+        "dropbox",
+        "google drive",
+        "google\drive",
+    )):
+        add_warning(
+            "SYNCED_RUNTIME_DB_RISK",
+            "Runtime workspace senkronize bir bulut klasöründe görünüyor. "
+            "Görseller burada kalabilir; ancak canlı SQLite DB/WAL dosyaları "
+            "uzun vadede yerel senkronize-olmayan bir klasöre taşınırsa "
+            "kilit/senkron çakışması riski azalır.",
+        )
+
+    try:
+        usage = shutil.disk_usage(runtime)
+        free_gb = usage.free / (1024 ** 3)
+        checks["disk_free_gb"] = round(free_gb, 2)
+        if free_gb < 2.0:
+            add_error(
+                "LOW_DISK_SPACE",
+                f"Boş disk alanı kritik: {free_gb:.2f} GB",
+            )
+        elif free_gb < 10.0:
+            add_warning(
+                "LOW_DISK_SPACE",
+                f"Boş disk alanı düşük: {free_gb:.2f} GB",
+            )
+    except Exception as exc:
+        add_warning("DISK_CHECK_FAILED", f"Disk alanı okunamadı: {exc}")
+
+    # ------------------------------------------------------------------
+    # Manifest / master artwork
+    # ------------------------------------------------------------------
+    factory_dir = required_dirs["masters"]
+    manifest_path = factory_dir / "manifest.json"
+    manifest_summary = {
+        "path": str(manifest_path),
+        "item_count": 0,
+        "missing_sources": [],
+        "duplicate_master_ids": [],
+        "aspect_fit_warnings": [],
+    }
+    if not manifest_path.is_file():
+        add_error("MANIFEST_MISSING", f"manifest.json yok: {manifest_path}")
+    else:
+        try:
+            payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+            items = payload.get("items", []) if isinstance(payload, dict) else []
+            if not isinstance(items, list) or not items:
+                add_error("MANIFEST_EMPTY", "manifest items boş/geçersiz.")
+                items = []
+            manifest_summary["item_count"] = len(items)
+
+            master_ids = [
+                str(item.get("master_id") or "")
+                for item in items
+                if isinstance(item, dict)
+            ]
+            duplicate_ids = sorted([
+                mid
+                for mid, count in Counter(master_ids).items()
+                if mid and count > 1
+            ])
+            manifest_summary["duplicate_master_ids"] = duplicate_ids
+            if duplicate_ids:
+                add_error(
+                    "DUPLICATE_MASTER_ID",
+                    "Manifest içinde tekrar eden master_id var: "
+                    + ", ".join(duplicate_ids),
+                )
+
+            for index, item in enumerate(items, start=1):
+                if not isinstance(item, dict):
+                    add_error(
+                        "MANIFEST_ITEM_INVALID",
+                        f"Manifest item#{index} nesne değil.",
+                    )
+                    continue
+                master_id = str(item.get("master_id") or f"item#{index}")
+                for orientation, fallback_key in (
+                    ("horizontal", "horizontal_path"),
+                    ("vertical", "vertical_path"),
+                ):
+                    node = item.get(orientation)
+                    raw = (
+                        node.get("file", "")
+                        if isinstance(node, dict)
+                        else ""
+                    ) or item.get(fallback_key, "")
+                    if not raw:
+                        manifest_summary["missing_sources"].append(
+                            f"{master_id}:{orientation}"
+                        )
+                        continue
+                    raw_path = Path(str(raw))
+                    candidate = (
+                        raw_path
+                        if raw_path.is_absolute()
+                        else factory_dir / raw_path
+                    )
+                    if not candidate.is_file() or candidate.stat().st_size <= 0:
+                        manifest_summary["missing_sources"].append(
+                            f"{master_id}:{orientation}:{candidate}"
+                        )
+                        continue
+
+                    # One generic H/V master is currently fitted into several
+                    # physical product ratios. Quantify that geometry risk
+                    # explicitly instead of letting it remain invisible.
+                    try:
+                        with Image.open(candidate) as image:
+                            source_w, source_h = image.size
+                        source_aspect = source_w / float(max(source_h, 1))
+                        source_orientation = (
+                            "H" if orientation == "horizontal" else "V"
+                        )
+                        for category in PRODUCTION_CATEGORIES:
+                            nominal = (
+                                CategoryRuleEngine.NOMINAL_ASPECTS
+                                .get(category, {})
+                                .get(source_orientation)
+                            )
+                            if nominal is None:
+                                continue
+                            rel_error = abs(
+                                source_aspect - float(nominal)
+                            ) / float(nominal)
+                            if rel_error > 0.03:
+                                record = {
+                                    "master_id": master_id,
+                                    "source_orientation": source_orientation,
+                                    "category": category,
+                                    "source_aspect": round(
+                                        source_aspect, 6
+                                    ),
+                                    "nominal_aspect": round(
+                                        float(nominal), 6
+                                    ),
+                                    "relative_error": round(
+                                        rel_error, 6
+                                    ),
+                                }
+                                manifest_summary[
+                                    "aspect_fit_warnings"
+                                ].append(record)
+                    except Exception as exc:
+                        add_warning(
+                            "MASTER_DIMENSIONS_UNREADABLE",
+                            f"Master boyutları okunamadı: {candidate}: {exc}",
+                        )
+
+            if manifest_summary["missing_sources"]:
+                add_error(
+                    "MASTER_SOURCE_MISSING",
+                    "Manifestte eksik/boş H-V master kaynakları var.",
+                    examples=manifest_summary["missing_sources"][:10],
+                )
+
+            if manifest_summary["aspect_fit_warnings"]:
+                ordered = sorted(
+                    manifest_summary["aspect_fit_warnings"],
+                    key=lambda item: item["relative_error"],
+                    reverse=True,
+                )
+                bleed_cases = [
+                    item
+                    for item in ordered
+                    if item["relative_error"] > 0.075
+                ]
+                crop_cases = [
+                    item
+                    for item in ordered
+                    if 0.03 < item["relative_error"] <= 0.075
+                ]
+                if bleed_cases:
+                    add_warning(
+                        "MASTER_ASPECT_BLEED_ADAPTATION",
+                        "Bazı H/V masterlar fiziksel ürün oranından belirgin "
+                        "farklı. r7 bunları geometrik olarak ESNETMEZ; tam "
+                        "tasarımı koruyup yalnız gerekli dış bölgede yumuşak "
+                        "bleed üretir. En kusursuz uzun vadeli çözüm yine ürün "
+                        "oranına özel master kaynağıdır.",
+                        examples=bleed_cases[:10],
+                    )
+                if crop_cases:
+                    add_info(
+                        "MASTER_ASPECT_SAFE_CROP",
+                        "Bazı H/V masterlarda küçük oran farkı var. r7 bu "
+                        "durumlarda yeniden ölçeklemek yerine küçük merkez "
+                        "crop kullanarak tasarım geometrisini korur.",
+                        examples=crop_cases[:10],
+                    )
+        except Exception as exc:
+            add_error(
+                "MANIFEST_UNREADABLE",
+                f"manifest.json okunamadı: {exc}",
+            )
+    checks["manifest"] = manifest_summary
+
+    # ------------------------------------------------------------------
+    # Review DB / approved-template integrity
+    # ------------------------------------------------------------------
+    review_db = required_dirs["review"] / "ayarlar.db"
+    template_root = required_dirs["templates"]
+    backup_root = required_dirs["template_backups"]
+    review_summary = {
+        "path": str(review_db),
+        "quick_check": None,
+        "approved_by_category": {},
+        "duplicate_active_approved_uids": [],
+        "missing_sources": 0,
+        "stale_hashes": 0,
+        "missing_backups": 0,
+        "invalid_geometry_records": 0,
+        "stale_on_plan_records": 0,
+    }
+
+    if not review_db.is_file():
+        add_error("REVIEW_DB_MISSING", f"Review DB yok: {review_db}")
+    else:
+        conn = None
+        try:
+            conn = _readonly_sqlite(review_db)
+            quick = conn.execute("PRAGMA quick_check").fetchone()
+            quick_value = str(quick[0] if quick else "unknown")
+            review_summary["quick_check"] = quick_value
+            if quick_value.lower() != "ok":
+                add_error(
+                    "REVIEW_DB_CORRUPT",
+                    f"Review DB quick_check başarısız: {quick_value}",
+                )
+
+            table_names = {
+                row[0]
+                for row in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                ).fetchall()
+            }
+            needed = {"template_profiles", "templates", "categories"}
+            missing_tables = sorted(needed - table_names)
+            if missing_tables:
+                add_error(
+                    "REVIEW_DB_SCHEMA_MISSING",
+                    "Review DB tabloları eksik: "
+                    + ", ".join(missing_tables),
+                )
+            else:
+                rows = conn.execute(
+                    """SELECT rowid AS profile_rowid, template_uid, category,
+                              source_relative_path, source_asset_sha256,
+                              orientation, nominal_aspect, surface_quad,
+                              has_occlusion, review_status, is_active
+                       FROM template_profiles
+                       WHERE review_status='APPROVED' AND is_active=1"""
+                ).fetchall()
+
+                by_category = Counter(str(row["category"]) for row in rows)
+                review_summary["approved_by_category"] = dict(by_category)
+                for category in PRODUCTION_CATEGORIES:
+                    if by_category.get(category, 0) <= 0:
+                        add_error(
+                            "NO_APPROVED_TEMPLATE",
+                            f"{category}: source-valid kontrolüne aday "
+                            "aktif APPROVED profil yok.",
+                            category=category,
+                        )
+
+                uid_counts = Counter(
+                    str(row["template_uid"] or "") for row in rows
+                )
+                duplicate_uids = sorted([
+                    uid
+                    for uid, count in uid_counts.items()
+                    if uid and count > 1
+                ])
+                review_summary[
+                    "duplicate_active_approved_uids"
+                ] = duplicate_uids
+                if duplicate_uids:
+                    add_error(
+                        "DUPLICATE_APPROVED_UID",
+                        "Birden fazla aktif APPROVED profile sahip UID var.",
+                        examples=duplicate_uids[:10],
+                    )
+
+                legacy_rows = conn.execute(
+                    "SELECT category_id, filename, data FROM templates"
+                ).fetchall()
+                legacy = {
+                    (str(row["category_id"]), str(row["filename"])): _json_dict(
+                        row["data"]
+                    )
+                    for row in legacy_rows
+                }
+
+                for row in rows:
+                    category = str(row["category"] or "")
+                    relative = str(row["source_relative_path"] or "")
+                    source_path = _safe_relative(template_root, relative)
+                    if source_path is None or not source_path.is_file():
+                        review_summary["missing_sources"] += 1
+                        add_error(
+                            "APPROVED_SOURCE_MISSING",
+                            f"APPROVED kaynak yok/güvensiz: {relative}",
+                            template_uid=row["template_uid"],
+                        )
+                        continue
+
+                    if deep:
+                        try:
+                            actual_sha = _sha256_file(source_path)
+                        except Exception as exc:
+                            add_error(
+                                "APPROVED_HASH_READ_FAILED",
+                                f"Şablon hash okunamadı: {source_path}: {exc}",
+                            )
+                            continue
+                        expected_sha = str(
+                            row["source_asset_sha256"] or ""
+                        )
+                        if not expected_sha or actual_sha != expected_sha:
+                            review_summary["stale_hashes"] += 1
+                            add_error(
+                                "APPROVED_SOURCE_STALE",
+                                "APPROVED profil farklı kaynak bytes'ına bağlı.",
+                                template_uid=row["template_uid"],
+                                path=str(source_path),
+                            )
+
+                    backup = _backup_for_template(
+                        backup_root,
+                        category,
+                        source_path,
+                    )
+                    if backup is None:
+                        review_summary["missing_backups"] += 1
+                        add_warning(
+                            "ORIGINAL_BACKUP_MISSING",
+                            f"Orijinal yedek bulunamadı: "
+                            f"{category}/{source_path.stem}",
+                        )
+
+                    try:
+                        quad = json.loads(row["surface_quad"] or "null")
+                        valid_quad = (
+                            isinstance(quad, list)
+                            and len(quad) == 4
+                            and all(
+                                isinstance(point, list)
+                                and len(point) == 2
+                                and all(
+                                    isinstance(value, (int, float))
+                                    for value in point
+                                )
+                                for point in quad
+                            )
+                        )
+                    except Exception:
+                        valid_quad = False
+                    if not valid_quad:
+                        review_summary["invalid_geometry_records"] += 1
+                        add_error(
+                            "APPROVED_GEOMETRY_INVALID",
+                            f"APPROVED quad bozuk: {row['template_uid']}",
+                        )
+
+                    orientation = str(row["orientation"] or "").upper()
+                    if orientation not in {"H", "V"}:
+                        add_error(
+                            "APPROVED_ORIENTATION_INVALID",
+                            f"Fiziksel yön geçersiz: {row['template_uid']} "
+                            f"({orientation or 'EMPTY'})",
+                        )
+
+                    try:
+                        nominal = float(row["nominal_aspect"])
+                        if nominal <= 0:
+                            raise ValueError
+                    except (TypeError, ValueError):
+                        add_error(
+                            "APPROVED_NOMINAL_ASPECT_INVALID",
+                            f"Nominal aspect geçersiz: {row['template_uid']}",
+                        )
+
+                    legacy_cfg = legacy.get(
+                        (category, source_path.name),
+                        {},
+                    )
+                    plan = legacy_cfg.get("on_plan")
+                    if _positive_on_plan(plan):
+                        bound_sha = str(
+                            legacy_cfg.get("on_plan_source_sha256")
+                            or (
+                                plan.get("source_asset_sha256")
+                                if isinstance(plan, dict)
+                                else ""
+                            )
+                            or ""
+                        )
+                        expected_sha = str(
+                            row["source_asset_sha256"] or ""
+                        )
+                        if not bound_sha or bound_sha != expected_sha:
+                            review_summary["stale_on_plan_records"] += 1
+                            add_warning(
+                                "STALE_ON_PLAN",
+                                "Pozitif ön-plan maskesi kaynak hash'ine "
+                                "bağlı değil veya stale.",
+                                template_uid=row["template_uid"],
+                            )
+        except Exception as exc:
+            add_error(
+                "REVIEW_DB_READ_FAILED",
+                f"Review DB taranamadı: {exc}",
+            )
+        finally:
+            if conn is not None:
+                conn.close()
+
+    checks["review_db"] = review_summary
+
+    # ------------------------------------------------------------------
+    # Production state / artifact integrity
+    # ------------------------------------------------------------------
+    commerce_db = (
+        runtime
+        / "99_SISTEM_MOTORLARI_VE_KODLAR"
+        / "SISTEM_MOTORU"
+        / "commerce_state.db"
+    )
+    current_recipe = _read_current_recipe_version(source)
+    state_summary = {
+        "path": str(commerce_db),
+        "quick_check": None,
+        "status_counts": {},
+        "current_recipe": current_recipe or None,
+        "completed_missing_local_files": 0,
+        "current_recipe_missing_local_files": 0,
+        "historical_missing_local_files": 0,
+        "test_residue_missing_local_files": 0,
+    }
+    if commerce_db.is_file():
+        conn = None
+        try:
+            conn = _readonly_sqlite(commerce_db)
+            quick = conn.execute("PRAGMA quick_check").fetchone()
+            quick_value = str(quick[0] if quick else "unknown")
+            state_summary["quick_check"] = quick_value
+            if quick_value.lower() != "ok":
+                add_error(
+                    "STATE_DB_CORRUPT",
+                    f"Commerce DB quick_check başarısız: {quick_value}",
+                )
+
+            table_names = {
+                row[0]
+                for row in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                ).fetchall()
+            }
+            if "render_artifacts" in table_names:
+                rows = conn.execute(
+                    """SELECT artifact_key, local_output_path, status
+                       FROM render_artifacts"""
+                ).fetchall()
+                state_summary["status_counts"] = dict(
+                    Counter(str(row["status"] or "UNKNOWN") for row in rows)
+                )
+                missing_completed = []
+                missing_current = []
+                missing_historical = []
+                missing_test = []
+                for row in rows:
+                    if str(row["status"]) != "COMPLETED":
+                        continue
+                    local = Path(str(row["local_output_path"] or ""))
+                    if local.is_file():
+                        continue
+
+                    key = str(row["artifact_key"] or "")
+                    missing_completed.append(key)
+                    if _looks_like_test_artifact_key(key):
+                        missing_test.append(key)
+                    elif current_recipe and key.endswith(
+                        "_" + current_recipe
+                    ):
+                        missing_current.append(key)
+                    else:
+                        missing_historical.append(key)
+
+                state_summary[
+                    "completed_missing_local_files"
+                ] = len(missing_completed)
+                state_summary[
+                    "current_recipe_missing_local_files"
+                ] = len(missing_current)
+                state_summary[
+                    "historical_missing_local_files"
+                ] = len(missing_historical)
+                state_summary[
+                    "test_residue_missing_local_files"
+                ] = len(missing_test)
+
+                if missing_current:
+                    add_warning(
+                        "CURRENT_ARTIFACT_FILE_MISSING",
+                        f"{len(missing_current)} mevcut recipe artifact'ının "
+                        "yerel dosyası yok. Factory bunları yeniden render eder.",
+                        examples=missing_current[:5],
+                    )
+                if missing_historical:
+                    add_info(
+                        "HISTORICAL_ARTIFACT_FILE_MISSING",
+                        f"{len(missing_historical)} eski recipe COMPLETED kaydı "
+                        "yerel dosya olmadan audit geçmişinde duruyor. "
+                        "Bu normaldir ve güncel üretimi engellemez.",
+                        examples=missing_historical[:5],
+                    )
+                if missing_test:
+                    add_info(
+                        "TEST_ARTIFACT_RESIDUE",
+                        f"{len(missing_test)} test/fixture artifact kaydı "
+                        "commerce_state geçmişinde bulundu.",
+                        examples=missing_test[:5],
+                    )
+        except Exception as exc:
+            add_error(
+                "STATE_DB_READ_FAILED",
+                f"Commerce state DB taranamadı: {exc}",
+            )
+        finally:
+            if conn is not None:
+                conn.close()
+    else:
+        add_info(
+            "STATE_DB_NOT_YET_CREATED",
+            "commerce_state.db henüz yok; ilk üretimde oluşabilir.",
+        )
+    checks["commerce_state"] = state_summary
+
+    # ------------------------------------------------------------------
+    # Temp/crash residue and outputs
+    # ------------------------------------------------------------------
+    staging_root = runtime / "YENI-BOS MOCKUP SABLON HAVUZU"
+    stale_processing = []
+    if staging_root.is_dir():
+        now = time.time()
+        for path in staging_root.rglob("*.processing"):
+            try:
+                if now - path.stat().st_mtime > 300:
+                    stale_processing.append(str(path))
+            except OSError:
+                continue
+    checks["stale_processing_files"] = stale_processing
+    if stale_processing:
+        add_warning(
+            "STALE_PROCESSING_FILE",
+            "Yarım kalmış watcher .processing dosyaları bulundu.",
+            examples=stale_processing[:10],
+        )
+
+    output_root = required_dirs["outputs"]
+    partial_outputs = []
+    zero_byte_outputs = []
+    if output_root.is_dir():
+        for path in output_root.rglob("*"):
+            if not path.is_file():
+                continue
+            if path.name.endswith(".writing"):
+                partial_outputs.append(str(path))
+            elif path.suffix.lower() in {".jpg", ".jpeg", ".png"}:
+                try:
+                    if path.stat().st_size <= 0:
+                        zero_byte_outputs.append(str(path))
+                except OSError:
+                    pass
+    checks["partial_outputs"] = partial_outputs
+    checks["zero_byte_outputs"] = zero_byte_outputs
+    if partial_outputs:
+        add_warning(
+            "PARTIAL_OUTPUT_FILES",
+            "Yarım kalmış .writing çıktı dosyaları bulundu.",
+            examples=partial_outputs[:10],
+        )
+    if zero_byte_outputs:
+        add_error(
+            "ZERO_BYTE_OUTPUT",
+            "0-byte üretim çıktıları bulundu.",
+            examples=zero_byte_outputs[:10],
+        )
+
+    ready = not errors
+    add_info(
+        "DOCTOR_COMPLETE",
+        (
+            "Doctor kritik hata bulmadı."
+            if ready
+            else f"Doctor {len(errors)} kritik problem buldu."
+        ),
+    )
+    return {
+        "ready": ready,
+        "deep": bool(deep),
+        "error_count": len(errors),
+        "warning_count": len(warnings),
+        "errors": errors,
+        "warnings": warnings,
+        "info": info,
+        "checks": checks,
+    }

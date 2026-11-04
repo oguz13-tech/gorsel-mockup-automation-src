@@ -1,30 +1,49 @@
 @echo off
-title Ana Kontrol Merkezi (V2)
+chcp 65001 > nul
+title JARVIS Mockup - Şablon İnceleme Merkezi
 color 0A
 
-echo ===================================================
-echo 🚀 GORSEL URETIM FABRIKASI - ANA KONTROL MERKEZI
-echo ===================================================
+echo ================================================================
+echo   JARVIS MOCKUP - AKTIF ŞABLON İNCELEME MERKEZİ
+echo ================================================================
 echo.
-echo Gerekli sistem kontrol ediliyor...
 
-:: Check if flask is installed
-python -c "import flask" >nul 2>&1
-if %errorlevel% neq 0 (
-    echo Flask bulunamadi, otomatik kuruluyor... lutfen bekleyin.
-    pip install flask
+if not defined MOCKUP_RUNTIME_WORKSPACE (
+    echo Runtime workspace bu terminalde tanımlı değil.
+    echo Görsellerinizin ve SABLON_V2_MIMARI\ayarlar.db dosyasının
+    echo bulunduğu ana klasörün tam yolunu yapıştırın.
+    echo.
+    set /p "MOCKUP_RUNTIME_WORKSPACE=Runtime klasörü: "
 )
 
+if not defined MOCKUP_RUNTIME_WORKSPACE (
+    echo HATA: Runtime workspace belirtilmedi.
+    pause
+    exit /b 2
+)
+
+if not exist "%MOCKUP_RUNTIME_WORKSPACE%\SABLON_V2_MIMARI\ayarlar.db" (
+    echo HATA: Seçilen runtime içinde SABLON_V2_MIMARI\ayarlar.db yok:
+    echo %MOCKUP_RUNTIME_WORKSPACE%
+    pause
+    exit /b 2
+)
+
+python -c "import flask, cv2, numpy" >nul 2>&1
+if errorlevel 1 (
+    echo HATA: Gerekli Python paketleri eksik. Otomatik ve kontrolsüz kurulum
+    echo yapılmadı. Proje ortamını/venv'i açıp tekrar deneyin.
+    pause
+    exit /b 2
+)
+
+echo Runtime: %MOCKUP_RUNTIME_WORKSPACE%
+echo Aktif uygulama: SABLON_V2_MIMARI\app.py
+echo Adres: http://127.0.0.1:8080
 echo.
-echo Ana Kontrol Merkezi calistiriliyor... Lutfen bu siyah ekrani KAPATMAYIN!
-echo Tarayiciniz otomatik olarak acilacaktir...
-echo.
+echo Bu pencere açık kalmalıdır.
 
-:: Sunucuyu baslat
-start "Motor" cmd /k "python V2_KONTROL_MERKEZI\app.py"
-
-:: 3 Saniye bekle ve tarayiciyi ac
-timeout /t 3 /nobreak >nul
-start http://127.0.0.1:5000
-
-exit
+start "JARVIS Review Server" cmd /k "set MOCKUP_RUNTIME_WORKSPACE=%MOCKUP_RUNTIME_WORKSPACE%&& cd /d "%~dp0"&& python SABLON_V2_MIMARI\app.py"
+timeout /t 2 /nobreak >nul
+start http://127.0.0.1:8080
+exit /b 0

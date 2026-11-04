@@ -26,8 +26,16 @@ if sys.platform == "win32":
         pass
 
 # Ana motor modülünü dahil et
-BASE_DIR = Path(__file__).resolve().parent.parent.parent
-sys.path.insert(0, str(BASE_DIR / "99_SISTEM_MOTORLARI_VE_KODLAR" / "SISTEM_MOTORU"))
+SOURCE_ROOT = Path(__file__).resolve().parent.parent.parent
+# A direct script launch must not silently use checkout as mutable runtime.
+if __name__ == "__main__" and not os.environ.get("MOCKUP_RUNTIME_WORKSPACE"):
+    raise SystemExit("BLOCKED: MOCKUP_RUNTIME_WORKSPACE zorunlu.")
+BASE_DIR = Path(os.environ.get("MOCKUP_RUNTIME_WORKSPACE") or SOURCE_ROOT).resolve()
+sys.path.insert(0, str(SOURCE_ROOT / "99_SISTEM_MOTORLARI_VE_KODLAR" / "SISTEM_MOTORU"))
+sys.path.insert(0, str(SOURCE_ROOT))
+from SABLON_V2_MIMARI.core.manual_production_guard import (
+    SourceApprovalBlocked, verify_approved_source,
+)
 
 from pc_master_factory import (
     PRODUCT_CATALOG,
@@ -79,7 +87,23 @@ def get_template_pool(prod_key: str) -> list[tuple[str, Path, dict]]:
                     s_path = cand
                     break
         if s_path.exists():
-            pool.append((s_name, s_path, s_conf))
+            try:
+                review = verify_approved_source(BASE_DIR, prod_key, s_path)
+                if review["orientation"] != prod_def.orientation:
+                    raise SourceApprovalBlocked("PHYSICAL_ORIENTATION_MISMATCH")
+                # Human-approved corners override legacy mutable JSON settings.
+                secure = dict(s_conf)
+                secure.update({
+                    "koseler": review["quad"],
+                    "profile_orientation": review["orientation"],
+                    "nominal_aspect": review["nominal_aspect"],
+                    "has_occlusion": False,
+                    "auto_foreground": False,
+                    "on_plan": None,
+                })
+                pool.append((s_name, s_path, secure))
+            except SourceApprovalBlocked as exc:
+                logger.warning("MANUAL_RENDER_BLOCKED %s/%s: %s", prod_key, s_name, exc)
 
     return pool
 

@@ -6,13 +6,124 @@ import glob
 import json
 import ctypes
 import time
+import sqlite3
 from PIL import Image
 from flask import Flask, render_template, request, jsonify
 import tkinter as tk
 
-# Base Directory Setup
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SYS_MOTORS_DIR = os.path.join(BASE_DIR, "99_SISTEM_MOTORLARI_VE_KODLAR", "SISTEM_MOTORU")
+# Source code and mutable production data are intentionally separable.
+SOURCE_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_runtime_override = str(os.environ.get("MOCKUP_RUNTIME_WORKSPACE") or "").strip()
+BASE_DIR = os.path.abspath(
+    os.path.expanduser(_runtime_override)
+) if _runtime_override else SOURCE_ROOT
+
+# Propagate the resolved runtime root to imported helpers and child processes.
+os.environ["MOCKUP_RUNTIME_WORKSPACE"] = BASE_DIR
+
+SYS_MOTORS_DIR = os.path.join(
+    SOURCE_ROOT,
+    "99_SISTEM_MOTORLARI_VE_KODLAR",
+    "SISTEM_MOTORU",
+)
+TEMPLATE_CENTER_DIR = os.path.join(SOURCE_ROOT, "SABLON_V2_MIMARI")
+RUNTIME_TEMPLATE_CENTER_DIR = os.path.join(BASE_DIR, "SABLON_V2_MIMARI")
+
+RUNNING_PROCESSES = {}
+PROCESS_LOCK = threading.RLock()
+
+
+def load_cloud_settings():
+    """Load cloud upload settings without hard-coding credentials.
+
+    Primary source is the shared SABLON_V2_MIMARI SQLite settings table. Legacy
+    ayarlar.json is read only as a compatibility fallback. Environment variables
+    may supply a FreeImage key without persisting it to disk.
+    """
+    settings = {}
+    db_path = os.path.join(RUNTIME_TEMPLATE_CENTER_DIR, "ayarlar.db")
+    try:
+        conn = sqlite3.connect(db_path)
+        try:
+            row = conn.execute(
+                "SELECT value FROM settings WHERE key='bulut_ayarlari'"
+            ).fetchone()
+            if row and row[0]:
+                payload = json.loads(row[0])
+                if isinstance(payload, dict):
+                    settings.update(payload)
+        finally:
+            conn.close()
+    except Exception:
+        pass
+
+    if not settings:
+        legacy_path = os.path.join(BASE_DIR, "ayarlar.json")
+        try:
+            with open(legacy_path, "r", encoding="utf-8") as handle:
+                payload = json.load(handle)
+            legacy = payload.get("bulut_ayarlari", {})
+            if isinstance(legacy, dict):
+                settings.update(legacy)
+        except Exception:
+            pass
+
+    env_freeimage = os.environ.get("FREEIMAGE_KEY")
+    if env_freeimage and not settings.get("freeimage_key"):
+        settings["freeimage_key"] = env_freeimage
+
+    keys = settings.get("imgbb_keys", [])
+    if not isinstance(keys, list):
+        keys = []
+    settings["imgbb_keys"] = [
+        str(key).strip() for key in keys if str(key).strip()
+    ]
+    return settings
+
+
+def collision_safe_path(path):
+    """Return a non-existing sibling path; never overwrite a user file."""
+    candidate = os.fspath(path)
+    if not os.path.exists(candidate):
+        return candidate
+    root, ext = os.path.splitext(candidate)
+    suffix = 1
+    while True:
+        candidate = f"{root}__{suffix}{ext}"
+        if not os.path.exists(candidate):
+            return candidate
+        suffix += 1
+
+
+def safe_two_phase_rename(files, prefix):
+    """One naming policy for both panels; no legacy overwrite path."""
+    if not files:
+        return []
+    if not prefix or "/" in prefix or "\\" in prefix or prefix in {".", ".."}:
+        raise ValueError("Dosya adı öneki klasör yolu içeremez.")
+    if SOURCE_ROOT not in sys.path:
+        sys.path.insert(0, SOURCE_ROOT)
+    from pathlib import Path
+    from SABLON_V2_MIMARI.tools_runner import rename_images
+    return [str(path) for path in rename_images(
+        [Path(path) for path in files], prefix, runtime_root=Path(BASE_DIR), _allow_non_images=True,
+    )]
+
+def safe_format_conversion(files, target_format):
+    if SOURCE_ROOT not in sys.path:
+        sys.path.insert(0, SOURCE_ROOT)
+    from pathlib import Path
+    from SABLON_V2_MIMARI.tools_runner import convert_images
+    return convert_images([Path(p) for p in files], target_format, runtime_root=Path(BASE_DIR))
+
+
+def safe_watermark_conversion(logo, files):
+    if SOURCE_ROOT not in sys.path:
+        sys.path.insert(0, SOURCE_ROOT)
+    from pathlib import Path
+    from SABLON_V2_MIMARI.tools_runner import watermark_images
+    return watermark_images(Path(logo), [Path(p) for p in files], runtime_root=Path(BASE_DIR))
+
 
 def show_colored_popup(task_name, display_name, start_time):
     duration = time.time() - start_time
@@ -32,9 +143,14 @@ def show_colored_popup(task_name, display_name, start_time):
             with open(PERFORMANCE_FILE, "r") as f:
                 data = json.load(f)
         data[task_name] = duration
-        with open(PERFORMANCE_FILE, "w") as f:
-            json.dump(data, f)
-    except: pass
+        tmp_path = PERFORMANCE_FILE + ".tmp"
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, PERFORMANCE_FILE)
+    except Exception:
+        pass
 
     dk = int(duration // 60)
     sn = int(duration % 60)
@@ -86,43 +202,235 @@ def open_folder():
     target_path = BASE_DIR
     if folder_name == "SABLON_YUKLE":
         target_path = os.path.join(BASE_DIR, "2_SABLON_HAVUZU")
-    elif folder_name == "TASARIM_YUKLE":
-        target_path = os.path.join(BASE_DIR, "1_TASARIMLAR")
+    elif folder_name in ("TASARIM_YUKLE", "GELEN_MASTER"):
+        # Production factory consumes approved Kaggle H/V masters from here.
+        target_path = os.path.join(BASE_DIR, "1_GELEN_KAGGLE_BASKILARI")
+    elif folder_name == "URETILEN_MOCKUP":
+        target_path = os.path.join(BASE_DIR, "3_URETILEN_MOCKUPLAR")
         
     if os.path.exists(target_path):
         os.startfile(target_path)
         return jsonify({"status": "success", "message": "Klasör açıldı."})
     return jsonify({"status": "error", "message": "Klasör bulunamadı."}), 404
 
+def _factory_preflight_payload():
+    """Run the read-only production readiness gate.
+
+    This helper is used both by the UI preflight endpoint and by the actual
+    OTOMATIK_URETIM launch path so a direct API call cannot bypass safety.
+    """
+    script_path = os.path.join(SYS_MOTORS_DIR, "pc_master_factory.py")
+    if not os.path.isfile(script_path):
+        return {
+            "status": "error",
+            "ready": False,
+            "errors": ["pc_master_factory.py bulunamadı."],
+            "exit_code": None,
+        }, 404
+
+    try:
+        completed = subprocess.run(
+            [sys.executable, script_path, "--preflight"],
+            cwd=BASE_DIR,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=90,
+        )
+    except subprocess.TimeoutExpired:
+        return {
+            "status": "error",
+            "ready": False,
+            "errors": ["Preflight 90 saniyede tamamlanamadı."],
+            "exit_code": None,
+        }, 504
+    except Exception as exc:
+        return {
+            "status": "error",
+            "ready": False,
+            "errors": [f"Preflight başlatılamadı: {exc}"],
+            "exit_code": None,
+        }, 500
+
+    payload = None
+    for line in reversed((completed.stdout or "").splitlines()):
+        if line.startswith("PREFLIGHT_JSON="):
+            try:
+                payload = json.loads(line.split("=", 1)[1])
+            except json.JSONDecodeError:
+                payload = None
+            break
+
+    if not isinstance(payload, dict):
+        return {
+            "status": "error",
+            "ready": False,
+            "errors": ["Preflight çıktısı okunamadı."],
+            "exit_code": completed.returncode,
+            "stderr": (completed.stderr or "")[-4000:],
+        }, 500
+
+    payload["status"] = "success" if payload.get("ready") else "blocked"
+    payload["exit_code"] = completed.returncode
+
+    # The factory process itself returns non-zero when a hard preflight error is
+    # present. Treat either signal as blocking; never launch on disagreement.
+    if completed.returncode != 0 or not payload.get("ready"):
+        payload["ready"] = False
+        payload["status"] = "blocked"
+        return payload, 409
+
+    return payload, 200
+
+
 @app.route('/api/run_script', methods=['POST'])
 def run_script():
-    """İstenilen Python scriptini çalıştırır"""
-    data = request.json
-    script_id = data.get('script_id')
-    
-    script_path = None
-    cwd = BASE_DIR
-    
-    if script_id == "SABLON_DUZELTICI":
-        script_path = os.path.join(BASE_DIR, "SABLON_DUZELTICI.py")
-    elif script_id == "MANUEL_URETIM":
-        script_path = os.path.join(SYS_MOTORS_DIR, "manuel_mockup_motoru.py")
-        cwd = SYS_MOTORS_DIR
-        
-    # TODO: Diğer toollar buraya eklenecek (Watermark, İsimlendirici vs.)
-        
-    if script_path and os.path.exists(script_path):
-        # Scripti arka planda başlat (UI'yi dondurmamak için)
-        def run_proc():
-            start_time = time.time()
-            subprocess.run([sys.executable, script_path], cwd=cwd)
-            display_name = "Şablon Motoru" if script_id == "SABLON_DUZELTICI" else "Manuel Mockup Üretimi"
-            show_colored_popup(script_id, display_name, start_time)
-            
-        threading.Thread(target=run_proc).start()
-        return jsonify({"status": "success", "message": f"{script_id} başlatıldı."})
-        
-    return jsonify({"status": "error", "message": "Script bulunamadı."}), 404
+    """Start only explicitly-whitelisted local tools.
+
+    Long-running Flask/tool processes are tracked so repeated UI clicks cannot
+    accidentally launch duplicate factories or duplicate template servers.
+    """
+    data = request.get_json(silent=True) or {}
+    script_id = str(data.get('script_id') or '').strip()
+    mode = str(data.get('mode') or 'dongusel').strip().lower()
+    if mode not in ('dongusel', 'coklu'):
+        mode = 'dongusel'
+
+    specs = {
+        "SABLON_DUZELTICI": {
+            "path": os.path.join(SOURCE_ROOT, "SABLON_DUZELTICI.py"),
+            "cwd": BASE_DIR,
+            "args": [],
+            "display": "Şablon Motoru (Legacy)",
+            "server": False,
+        },
+        "MANUEL_URETIM": {
+            "path": os.path.join(SYS_MOTORS_DIR, "manuel_mockup_motoru.py"),
+            "cwd": SYS_MOTORS_DIR,
+            "args": [],
+            "display": "Manuel Mockup Üretimi",
+            "server": False,
+        },
+        "SABLON_V2": {
+            "path": os.path.join(TEMPLATE_CENTER_DIR, "app.py"),
+            "cwd": TEMPLATE_CENTER_DIR,
+            "args": [],
+            "display": "Şablon İnceleme Merkezi",
+            "server": True,
+            "url": "http://127.0.0.1:8080/",
+        },
+        "OTOMATIK_URETIM": {
+            "path": os.path.join(SYS_MOTORS_DIR, "pc_master_factory.py"),
+            "cwd": BASE_DIR,
+            "args": ["--mod", mode],
+            "display": "Otomatik Mockup Fabrikası",
+            "server": False,
+        },
+    }
+
+    spec = specs.get(script_id)
+    if spec is None:
+        return jsonify({
+            "status": "error",
+            "message": "Bilinmeyen veya izin verilmeyen script kimliği.",
+        }), 400
+
+    if script_id == "OTOMATIK_URETIM":
+        preflight, preflight_status = _factory_preflight_payload()
+        if preflight_status != 200 or not preflight.get("ready"):
+            return jsonify({
+                "status": "blocked",
+                "message": "Otomatik üretim preflight nedeniyle başlatılmadı.",
+                "preflight": preflight,
+            }), preflight_status
+
+    script_path = spec["path"]
+    if not os.path.exists(script_path):
+        return jsonify({
+            "status": "error",
+            "message": f"Script bulunamadı: {os.path.basename(script_path)}",
+        }), 404
+
+    with PROCESS_LOCK:
+        existing = RUNNING_PROCESSES.get(script_id)
+        if existing is not None and existing.poll() is None:
+            response = {
+                "status": "already_running",
+                "message": f"{spec['display']} zaten çalışıyor.",
+            }
+            if spec.get("url"):
+                response["url"] = spec["url"]
+            return jsonify(response)
+
+        command = [sys.executable, script_path] + list(spec.get("args", []))
+
+        if spec.get("server"):
+            # Keep the server process alive independently of the request.
+            proc = subprocess.Popen(
+                command,
+                cwd=spec["cwd"],
+                creationflags=(
+                    subprocess.CREATE_NEW_PROCESS_GROUP
+                    if os.name == "nt"
+                    else 0
+                ),
+            )
+            RUNNING_PROCESSES[script_id] = proc
+            return jsonify({
+                "status": "success",
+                "message": f"{spec['display']} başlatıldı.",
+                "url": spec.get("url"),
+            })
+
+        # One-shot jobs run in a worker thread, but duplicate starts are still
+        # prevented by storing the live Popen handle immediately.
+        proc = subprocess.Popen(command, cwd=spec["cwd"])
+        RUNNING_PROCESSES[script_id] = proc
+
+    def wait_for_job():
+        start_time = time.time()
+        return_code = proc.wait()
+        with PROCESS_LOCK:
+            if RUNNING_PROCESSES.get(script_id) is proc:
+                RUNNING_PROCESSES.pop(script_id, None)
+
+        if return_code == 0:
+            try:
+                show_colored_popup(
+                    script_id,
+                    spec["display"],
+                    start_time,
+                )
+            except Exception as exc:
+                print(f"Tamamlanma bildirimi açılamadı: {exc}")
+        else:
+            print(
+                f"{spec['display']} hata koduyla sonlandı: {return_code}"
+            )
+
+    threading.Thread(target=wait_for_job, daemon=True).start()
+    return jsonify({
+        "status": "success",
+        "message": f"{spec['display']} başlatıldı.",
+    })
+
+
+@app.route('/api/process_status', methods=['GET'])
+def process_status():
+    with PROCESS_LOCK:
+        status = {
+            key: bool(proc is not None and proc.poll() is None)
+            for key, proc in RUNNING_PROCESSES.items()
+        }
+    return jsonify({"status": "success", "processes": status})
+
+
+@app.route('/api/factory_preflight', methods=['GET'])
+def factory_preflight():
+    """Expose the same server-side readiness gate used by production launch."""
+    payload, status_code = _factory_preflight_payload()
+    return jsonify(payload), status_code
 
 # --- ARAÇLAR (Tools) APILERI ---
 
@@ -145,24 +453,13 @@ def format_convert():
         
     def process():
         start_time = time.time()
-        folder_path = os.path.dirname(files[0]) if files else ""
-        for file in files:
-            try:
-                if target_format == 'JPG' and file.lower().endswith('.png'):
-                    img = Image.open(file)
-                    rgb_im = img.convert('RGB')
-                    rgb_im.save(file.replace('.png', '.jpg'), quality=95)
-                elif target_format == 'PNG' and file.lower().endswith(('.jpg', '.jpeg')):
-                    img = Image.open(file)
-                    img.save(file.rsplit('.', 1)[0] + '.png')
-            except Exception as e:
-                print(f"Hata: {e}")
-                
-        # İşlem bitince klasörü aç ve bilgi ver
-        if folder_path:
-            os.startfile(folder_path)
+        try:
+            output_dir, outputs = safe_format_conversion(files, target_format)
+            os.startfile(str(output_dir))
             show_colored_popup("format_convert", f"Format Çevirici ({target_format})", start_time)
-                
+        except Exception as e:
+            print(f"Format işlemi durdu; orijinaller korundu: {e}")
+
     threading.Thread(target=process).start()
     return jsonify({"status": "success", "message": f"Arka planda tüm görseller {target_format} formatına çevriliyor. Bittiğinde klasör otomatik açılacak!"})
 
@@ -184,16 +481,14 @@ def rename_images():
         
     def process():
         start_time = time.time()
-        # Filtreleme veya klasör bulma
+        # Two-phase rename prevents swaps/collisions and never overwrites
+        # an existing user file.
         folder_path = os.path.dirname(files[0]) if files else ""
-        for idx, file in enumerate(files, 1):
-            ext = os.path.splitext(file)[1]
-            new_name = f"{prefix}{idx:03d}{ext}"
-            new_path = os.path.join(folder_path, new_name)
-            try:
-                os.rename(file, new_path)
-            except Exception as e:
-                print(f"Hata: {e}")
+        try:
+            safe_two_phase_rename(files, prefix)
+        except Exception as e:
+            print(f"Toplu isimlendirme hatası: {e}")
+            return
                 
         # İşlem bitince klasörü aç ve bilgi ver
         if folder_path:
@@ -224,41 +519,12 @@ def watermark():
     
     def process():
         start_time = time.time()
-        folder_path = os.path.dirname(files[0]) if files else ""
-        out_dir = os.path.join(folder_path, "Filigranli_Gorseller")
-        if not os.path.exists(out_dir): os.makedirs(out_dir)
-        
         try:
-            watermark_img = Image.open(logo_path).convert("RGBA")
-            for file in files:
-                img = Image.open(file)
-                if img.mode != 'RGBA':
-                    img = img.convert('RGBA')
-                    
-                # Logoyu resmin %20'si boyutuna ayarla
-                wm_width = int(img.width * 0.20)
-                wm_ratio = wm_width / watermark_img.width
-                wm_height = int(watermark_img.height * wm_ratio)
-                wm_resized = watermark_img.resize((wm_width, wm_height), Image.Resampling.LANCZOS)
-                
-                # Pozisyon: Sağ Alt (Kenarlardan %5 boşluk)
-                padding_x = int(img.width * 0.05)
-                padding_y = int(img.height * 0.05)
-                position = (img.width - wm_width - padding_x, img.height - wm_height - padding_y)
-                
-                img.paste(wm_resized, position, wm_resized)
-                
-                out_path = os.path.join(out_dir, os.path.basename(file))
-                if file.lower().endswith(('.jpg', '.jpeg')):
-                    img.convert('RGB').save(out_path, quality=100, subsampling=0)
-                else:
-                    img.save(out_path)
-        except Exception as e:
-            print(f"Hata: {e}")
-            
-        if folder_path:
-            os.startfile(out_dir)
+            output_dir, outputs = safe_watermark_conversion(logo_path, files)
+            os.startfile(str(output_dir))
             show_colored_popup("watermark", "Filigran Motoru", start_time)
+        except Exception as e:
+            print(f"Filigran işlemi durdu; orijinaller korundu: {e}")
 
     threading.Thread(target=process).start()
     return jsonify({"status": "success", "message": "Logo ve görseller alındı. Filigran basılıyor..."})
@@ -279,18 +545,18 @@ def image_to_excel():
         import base64, requests, pandas as pd
         folder_path = os.path.dirname(files[0]) if files else ""
         
-        # Load API keys from ayarlar.json
-        ayarlar_path = os.path.join(BASE_DIR, "ayarlar.json")
-        imgbb_keys = []
-        try:
-            with open(ayarlar_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                imgbb_keys = data.get("bulut_ayarlari", {}).get("imgbb_keys", [])
-        except Exception as e:
-            print(f"Hata: ayarlar.json okunamadı. ({e})")
+        # Use the same cloud settings source as the production factory.
+        # Credential values are never logged or embedded in source.
+        cloud_settings = load_cloud_settings()
+        imgbb_keys = cloud_settings.get("imgbb_keys", [])
             
         if not imgbb_keys:
-            ctypes.windll.user32.MessageBoxW(0, "ayarlar.json dosyasında 'imgbb_keys' (API Anahtarı) bulunamadı! İşlem iptal edildi.", "Anahtar Eksik", 0x10)
+            ctypes.windll.user32.MessageBoxW(
+                0,
+                "Bulut ayarlarında ImgBB anahtarı bulunamadı. İşlem iptal edildi.",
+                "Anahtar Eksik",
+                0x10,
+            )
             return
             
         def upload_to_imgbb(image_path, api_keys):
@@ -335,7 +601,7 @@ def seo_generator():
     except (ValueError, TypeError):
         adet = 10
     
-    script_dir = os.path.join(BASE_DIR, "ÜRÜN ADI YAZDIRMA BOTU")
+    script_dir = os.path.join(SOURCE_ROOT, "ÜRÜN ADI YAZDIRMA BOTU")
     script_path = os.path.join(script_dir, "Benzersiz-ürün-adlari-yaz.py")
     
     if not os.path.exists(script_path):
@@ -370,7 +636,7 @@ def ai_enhancer():
     if not kat or not str(kat).isdigit():
         kat = "4"
         
-    script_dir = os.path.join(BASE_DIR, "AI_Kalite_Artirici")
+    script_dir = os.path.join(SOURCE_ROOT, "AI_Kalite_Artirici")
     script_path = os.path.join(script_dir, "kalite_motoru.py")
     
     if not os.path.exists(script_path):
@@ -399,4 +665,6 @@ except Exception as e:
 
 if __name__ == '__main__':
     print("\n--- ANA KONTROL MERKEZI BASLATILIYOR (http://127.0.0.1:5000) ---")
-    app.run(host='127.0.0.1', port=5000, debug=True, use_reloader=False)
+    debug_enabled = str(os.environ.get("MOCKUP_FLASK_DEBUG", "")).strip().lower() in {"1", "true", "yes", "on"}
+    app.run(host='127.0.0.1', port=5000, debug=debug_enabled, use_reloader=False)
+

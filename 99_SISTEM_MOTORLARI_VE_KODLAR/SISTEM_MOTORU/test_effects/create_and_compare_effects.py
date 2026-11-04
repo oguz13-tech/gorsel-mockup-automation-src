@@ -5,9 +5,9 @@ import os
 import numpy as np
 from pathlib import Path
 
-BASE_DIR = Path(r"C:\Users\oguzc\OneDrive\Masaüstü\GörselÜretme-ve-Mockup Otomasyonu")
+BASE_DIR = Path(os.environ.get("MOCKUP_RUNTIME_WORKSPACE") or Path(__file__).resolve().parents[3]).resolve()
 OUTPUT_DIR = BASE_DIR / "SISTEM_MOTORU" / "test_effects"
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+ # P0: no writes on import; caller must explicitly prepare isolated output.
 
 def create_subpixel_antialiased_mask(h_bg: int, w_bg: int, dst_pts: np.ndarray, feather_px: float = 1.8) -> np.ndarray:
     """

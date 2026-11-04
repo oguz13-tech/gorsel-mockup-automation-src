@@ -11,50 +11,28 @@ SABLON_DIR = BASE_DIR / "2_SABLON_HAVUZU"
 AYARLAR_PATH = BASE_DIR / "99_SISTEM_MOTORLARI_VE_KODLAR" / "SISTEM_MOTORU" / "ayarlar.json"
 
 def clean_ayarlar():
-    if not AYARLAR_PATH.exists():
-        logger.error("ayarlar.json bulunamadı!")
-        return
+    """Read-only diagnostic: missing cloud-backed files NEVER delete profiles.
 
-    with open(AYARLAR_PATH, "r", encoding="utf-8") as f:
-        ayarlar = json.load(f)
+    Intentional P0 rule: automated cleanup of ayarlar.json is permanently
+    disabled. An absent OneDrive placeholder is not evidence of deletion.
+    """
+    if not AYARLAR_PATH.is_file():
+        logger.warning("ayarlar.json bulunamadı; hiçbir dosya değiştirilmedi.")
+        return {"missing": [], "status": "NO_CONFIG", "mutated": False}
+    with open(AYARLAR_PATH, "r", encoding="utf-8") as handle:
+        ayarlar = json.load(handle)
+    missing = []
+    for category, entry in ayarlar.get("kategoriler", {}).items():
+        for name in entry.get("sablonlar", {}):
+            source = SABLON_DIR / category / name
+            if source.is_file():
+                continue
+            if not any((source.parent / (source.stem + ext)).is_file()
+                       for ext in (".png", ".jpg", ".jpeg", ".webp", ".avif", ".bmp")):
+                missing.append({"category": category, "template": name})
+    logger.warning("P0 SALT-OKUNUR: %s olası eksik kayit; otomatik silme YOK.", len(missing))
+    return {"missing": missing, "status": "REVIEW_REQUIRED", "mutated": False}
 
-    kategoriler = ayarlar.get("kategoriler", {})
-    silinen_toplam = 0
-
-    for cat_key, cat_data in kategoriler.items():
-        sablonlar = cat_data.get("sablonlar", {})
-        cat_dir = SABLON_DIR / cat_key
-        
-        # Silinecek anahtarları topluyoruz
-        silinecek_anahtarlar = []
-        for sablon_name in sablonlar.keys():
-            s_path = cat_dir / sablon_name
-            
-            # Ana uzantı yoksa alternatif uzantıları da kontrol et
-            if not s_path.exists():
-                found = False
-                for alt_ext in [".webp", ".jpg", ".jpeg", ".png", ".avif", ".bmp"]:
-                    cand = cat_dir / (Path(sablon_name).stem + alt_ext)
-                    if cand.exists():
-                        found = True
-                        break
-                if not found:
-                    silinecek_anahtarlar.append(sablon_name)
-
-        # Bulunamayanları JSON'dan sil
-        for key in silinecek_anahtarlar:
-            del sablonlar[key]
-            silinen_toplam += 1
-            logger.info(f"🗑️ Silindi (Klasörde Yok): [{cat_key}] -> {key}")
-
-    if silinen_toplam > 0:
-        tmp_path = AYARLAR_PATH.with_suffix('.json.tmp')
-        with open(tmp_path, "w", encoding="utf-8") as f:
-            json.dump(ayarlar, f, ensure_ascii=False, indent=4)
-        os.replace(tmp_path, AYARLAR_PATH)
-        logger.info(f"✅ Temizlik Tamamlandı! Toplam {silinen_toplam} adet hayalet kayıt ayarlar.json'dan silindi.")
-    else:
-        logger.info("✅ Her şey tertemiz! ayarlar.json içinde hayalet kayıt bulunamadı.")
 
 if __name__ == "__main__":
     clean_ayarlar()

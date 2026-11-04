@@ -1,0 +1,200 @@
+name: EPIC-3 Archive Safety Checks
+
+on:
+  push:
+    branches:
+      - safety/epic3-archive-guardrails-20261010
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic-archive-guards:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact tested SHA
+        uses: actions/checkout@v4
+      - name: Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install locked dependencies for lifecycle safety tests
+        run: |
+          python -m pip install -r requirements-core.lock.txt
+      - name: Syntax check of safety modules and tests
+        run: |
+          python -m py_compile \
+            SABLON_V2_MIMARI/core/template_identity.py \
+            SABLON_V2_MIMARI/core/template_intelligence.py \
+            scripts/factory_doctor.py \
+            tests/test_epic3_doctor_windows_encoding.py \
+            tests/test_epic3_archive_guards_readonly.py \
+            tests/test_template_identity.py \
+            tests/test_template_identity_extensions.py \
+            tests/test_epic3_lifecycle_no_overwrite.py \
+            scripts/epic3_six_template_smoke.py \
+            tests/test_epic3_six_template_smoke.py \
+            scripts/epic3_real_artwork_pilot.py \
+            tests/test_epic3_real_artwork_pilot.py \
+            scripts/epic3_validation_bundle.py \
+            tests/test_epic3_release_checkout_guard.py
+      - name: Read-only DB and identity safety regressions
+        env:
+          PYTHONUTF8: "1"
+        run: |
+          python -m unittest -v \
+            tests/test_epic3_archive_guards_readonly.py \
+            tests/test_template_identity.py \
+            tests/test_template_identity_extensions.py \
+            tests/test_epic3_lifecycle_no_overwrite.py
+
+  full-existing-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact tested SHA
+        uses: actions/checkout@v4
+      - name: Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install deterministic core test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-core.lock.txt
+      - name: Full existing EPIC-3 suite plus new archive safety tests
+        env:
+          PYTHONUTF8: "1"
+        run: |
+          python -m unittest -v \
+            tests/test_p0_regressions.py \
+            tests/test_p1_p15_suite.py \
+            tests/test_t1_client.py \
+            tests/test_benchmark_metrics.py \
+            tests/test_geometry_diagnostics.py \
+            tests/test_epic3_validation_bundle.py \
+            tests/test_epic3_benchmark.py \
+            tests/test_control_center_file_ops.py \
+            tests/test_runtime_workspace_routing.py \
+            tests/test_template_profile_schema_migration.py \
+            tests/test_watcher_safety.py \
+            tests/test_template_identity.py \
+            tests/test_factory_doctor.py \
+            tests/test_epic3_doctor_windows_encoding.py \
+            tests/test_quality_power_tool.py \
+            tests/test_runtime_infrastructure.py \
+            tests/test_workspace_consistency.py \
+            tests/test_lifecycle_reconciliation.py \
+            tests/test_user_tools.py \
+            tests/test_runtime_migration.py \
+            tests/test_template_identity_extensions.py \
+            tests/test_epic3_archive_guards_readonly.py \
+            tests/test_epic3_lifecycle_no_overwrite.py \
+            tests/test_epic3_six_template_smoke.py \
+            tests/test_epic3_real_artwork_pilot.py \
+            tests/test_epic3_release_checkout_guard.py
+
+  windows-readonly-db:
+    runs-on: windows-latest
+    timeout-minutes: 12
+    steps:
+      - name: Checkout exact tested SHA
+        uses: actions/checkout@v4
+      - name: Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install locked dependencies for synthetic smoke on Windows
+        shell: pwsh
+        run: |
+          python -m pip install -r requirements-core.lock.txt
+      - name: Verify temporary DB and render smoke isolation on Windows
+        shell: pwsh
+        env:
+          PYTHONUTF8: "1"
+        run: |
+          python -m unittest -v tests.test_epic3_archive_guards_readonly tests.test_epic3_six_template_smoke tests.test_epic3_real_artwork_pilot tests.test_epic3_doctor_windows_encoding
+
+  visual-candidate-sheets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout exact tested SHA
+        uses: actions/checkout@v4
+      - name: Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install locked preview test dependencies
+        run: |
+          python -m pip install -r requirements-core.lock.txt
+      - name: Validate read-only candidate sheets and complete inventory
+        env:
+          PYTHONUTF8: "1"
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          python -m unittest -v tests.test_epic3_visual_candidate_sheets
+
+  geometry-surface-regressions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+      - name: Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install locked dependencies
+        run: python -m pip install -r requirements-core.lock.txt
+      - name: Run previously omitted surface-mode regressions
+        env:
+          PYTHONUTF8: "1"
+          PYTHONPATH: SABLON_V2_MIMARI
+        run: |
+          python -m unittest -v tests.test_surface_mode_detection
+
+  isolated-real-render-fixture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact tested SHA
+        uses: actions/checkout@v4
+      - name: Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install locked render dependencies
+        run: |
+          python -m pip install -r requirements-core.lock.txt
+      - name: Run real renderer on six disposable synthetic template fixtures
+        env:
+          PYTHONUTF8: "1"
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: |
+          python -m unittest -v tests.test_epic3_six_template_real_renderer
+
+  ocak-surface-regressions:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact tested SHA
+        uses: actions/checkout@v4
+      - name: Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install locked OpenCV geometry dependencies
+        run: python -m pip install -r requirements-core.lock.txt
+      - name: Regression-test Ocak Arkası white panel and surface modes
+        env:
+          PYTHONPATH: SABLON_V2_MIMARI
+          PYTHONUTF8: "1"
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: python -m unittest -v tests.test_surface_mode_detection

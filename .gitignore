@@ -1,7 +1,36 @@
+# Read-only/public-safe checkout only. Historical tracked paths may still be present in Git history.
+.venv/
 venv/
-__pycache__/
-*.db
+**/.venv/
+**/__pycache__/
+*.pyc
 .env
+.env.*
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.sqlite-wal
+*.sqlite-shm
 *.jpg
+*.jpeg
 *.png
-**/logs/*.log
+*.webp
+*.psd
+*.xlsx
+*.csv
+*.zip
+*.log
+**/logs/
+ayarlar.json
+**/ayarlar.json
+**/ayarlar.db
+**/reference_quads.json
+**/BATCH_SELECTION.json
+2_SABLON_HAVUZU_ORIJINAL_YEDEK/
+YENI-BOS MOCKUP SABLON HAVUZU/
+ORNEK_PETEK_MOCKUPLARI/
+KONTROL_GEREKENLER/
+AI_BACKUPS/
+# Explicit tracked manifest exception (prepared from private release WITHOUT user content)
+!docs/V422_FULL_PACKAGE_FILE_MANIFEST.csv
