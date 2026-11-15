@@ -176,3 +176,11 @@ TESTLER/v488_home_readability                   2 failed, 1 passed
 - Değişen davranışın testi değiştirmeden sonuca ulaşmaması; büyük sonuç şüpheli testlerde **kırmızı → yeşil** yerine **rapor** tercih edilmesi önerilir.
 - Codex `AGENTS.md` kapsamındaki çalışma kürelerini (`scripts/`, `SABLON_V2_MIMARI/`) kullanır; bana veya diğer ajanlara düşen: kapsamı git'e kaydetmek (`git status`); canlı `ayarlar.json`, `SABLON_DUZELTICI.py`, `99_SISTEM_MOTORLARI/` ve `%LOCALAPPDATA%\GorselMockup\**` dışı değişiklik yok.
 - Başarısız kategori sınırları belli: (1) Eksik Legacy İzolasyonu, (2) Canlı port çakışması (8080/8999), (3) Eksik canlı veri/Tk ekranı. Bu üç sınıf dışındaki hatalar gerçek kod kusurudur; Codex kendi çalışma iznim dahilinde inceler.
+
+## Harness GitHub senkronizasyonu (2026-11-15)
+
+- Dal: `harness/github-sync-20261114` (public repo, orphan snapshot) · Snapshot: `430f360` (431 dosya, 93.585 ekleme) · Test sözleşme düzeltmesi: `c3da6db` · Takip issue: #86 (Refs #82, Relates #83)
+- Kapsanmayanlar: maskeler (`PETEK_MASTER_REVISIONS/`), kullanıcı görselleri (`Kalite_Kontrol_Gorselleri/`, `REVIEW_ARTIFACTS/`), canlı DB/mağaza profilleri, `ayarlar.local.json`, SHA manifestleri, `scripts/` ve `tools/` (AGENTS.md dikkatli bölge), `requirements.txt` local pywebview değişikliği (onay bekliyor; public dala baseline sürüm gitti).
+- Arayüz taşıma envanteri: `docs/ARAYUZ_TASIMA_ENVANTERI.md` — 816 madde (TAM 0 · KISMİ 76 · EKSİK 652 · TEST BEKLİYOR 88; BOZUK modüller bölümsel listelenir). Talimattaki "714" referansı diskte bulunamadı; sayı zorlanmadı, koddan üretildi.
+- Test sonucu: tam suite bu ortamda %27'de askıda kaldı (8 dk sert timeout; bilinen port/GUI/legacy sınıflar); görünen 344 testten 260 geçti, 72 başarısız (hepsi belgelenmiş çevresel), 3 atlandı. Odaklı yeni-modül seti (28 dosya): 177 geçti / 1 başarısız; başarısız `TESTLER/test_v487_ham_designs.py::test_gui_and_watcher_wired_to_one_working_root` idi (eski literal assertion), yapısal garantiye yükseltildi → 14/14 geçti.
+- Yerel durum: `epic/template-intelligence-v1` @ `cea4e8b` ve `main` @ `153b60d` dokunulmadı; eski `main` ile değiştirme yapılmadı; Codex'ın yerel çalışması korundu.
