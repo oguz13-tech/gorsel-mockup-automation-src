@@ -1,0 +1,49 @@
+GÖRSEL ÜRETİM MERKEZİ — WINDOWS V4 HATA DÜZELTMESİ
+2 Kasım 2026
+
+KURULUM
+1. Çalışan eski uygulamayı kapatın.
+2. ZIP'i yeni bir klasöre çıkarın; eski program klasörünün üzerine açmayın.
+3. KURULUM.bat dosyasını bir kez çalıştırın (Python 3.11 veya 3.12).
+4. BASLAT.bat ile açın. Yerel kullanıcı kayıtları aynı konumdan okunur.
+   ZIP, canlı üretim veritabanınızı veya eski çıktı dosyalarınızı içermez.
+
+DÜZELTİLENLER
+- İnceleme raporunun aynı adla yeniden yazılması nedeniyle üretimin durması.
+- Dosyası hiç oluşmamış, makbuzu bulunmayan başarısız işlerin yeniden denenememesi.
+  Önceki hata retry_history tablosunda korunur. Mevcut/yarım dosyalar ezilmez.
+- Geometri hatalarının her tasarım için başarısız üretim kaydı oluşturması.
+- Fotoğrafta gerçekten 10, 11 veya 12 yarık varken 13–16 şartıyla reddedilmesi.
+- Windows kesinti kontrolünün çalışan sürece sinyal göndermesi.
+- Pembe denetiminin efekt sonrası görüntüyü referans alıp yeni lekeleri kaçırması.
+- Kurtarma ekranının REVIEW_REQUIRED kayıtlarını göstermesine rağmen kurtarmaya katmaması.
+- Eski Windows başlatma kısayolları için eksik uyumluluk girişleri.
+
+HATA VEREN GEMINI (2) ŞABLONU İÇİN
+Kaynak fotoğrafında 10 yarık var; mevcut maske bunları yeterince korumuyor.
+Sadece ızgara efektini kapatmak bu maske sorununu çözmez.
+
+PETEK_10_YARIK_ONAR.bat dosyasını çalıştırın. Araç, fotoğraftaki gerçek yarıklardan
+yeni bir maske taslağı hazırlar ve düzenleyicide açar. Eski onaylı profil değişmez.
+3. adımla gerçek deseninizi önizleyin. Delik, üst/alt kavis ve zemini kontrol edin.
+4. adımla taslağı kaydedin; inceleyen adınızı yazıp kontrol kutusunu işaretleyerek
+5. adımla üretime açın. Yeni kimlik: Gemini_Generated_Image_65hptp65hptp65hp__2__r_v4_...
+Üretim listesini yenileyip yeni şablonu seçin; mağazalı üretimde mağazaya atayın.
+Eski hatalı şablonu aynı üretim seçiminde bırakmayın.
+Bu araç yalnız kaynak SHA'sı doğrulanan, bildirilen Gemini fotoğrafı içindir.
+Taslak otomatik onaylanmaz ve otomatik aktif revizyon yapılmaz.
+
+ESKİ YARIM DOSYALAR
+Dosyası hiç oluşmamış işler yeni üretim turunda otomatik tekrar denenir.
+Dosya oluşmuşsa Yarım İş / Kilit Kurtarma (Onaylı) ekranından inceleyin.
+Kurtarmayı seçerseniz yarım/incelemelik dosyalar KARANTINA_KESINTI'ye taşınır;
+doğrulanmış tamamlanmış çıktılar korunur. Sonrasında yeni üretim başlatın.
+Yeni URETIM_INCELEME_*.json dosyaları atlanan işlerin nedenlerini içerir.
+
+DOĞRULAMA SINIRI
+Windows Python 3.11 üzerinde ilgili otomatik testler ve gerçek görsel motoru
+denemeleri yapıldı. Üç master şablon doğrudan; Gemini (2), düzeltilmiş taslak
+maskeyle başarıyla render edildi. Kaynak fotoğraf, onaylı maske ve profil
+dosyalarının hash'leri değişmedi. Gemini taslağı görsel onayınızı bekler.
+Tüm olası veri/eklenti/ağ/4K senaryolarının hatasız olduğu iddia edilmez.
+V3 tarihli raporlar önceki sürüme aittir. Güncel rapor: WINDOWS_V4_TEST_REPORT.json.
