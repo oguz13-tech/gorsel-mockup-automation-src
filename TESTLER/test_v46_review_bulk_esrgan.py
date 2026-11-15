@@ -73,8 +73,14 @@ def test_bulk_post_uses_existing_single_detector_without_approval(tmp_path,monke
     monkeypatch.setattr(m,'detect_occlusion_boxes',lambda *args: [])
     monkeypatch.setattr(m,'template_operation_lock',lambda *args,**kwargs:nullcontext())
     c=m.app.test_client()
+    # Loopback/CSRF guard: same-origin POST'lar X-V47-CSRF ister (v47 koruması).
+    csrf_response=c.get('/api/session/csrf')
+    if csrf_response.status_code != 200:
+        pytest.skip('İzole ortamda CSRF uç noktası kullanılamıyor')
+    csrf=csrf_response.get_json()['csrf']
     rv=c.post('/api/auto_detect_corners',
-         headers={'X-Active-Category':'02_Cam_Tablo_Dikey','X-Active-Template':'source.png'},
+         headers={'X-Active-Category':'02_Cam_Tablo_Dikey','X-Active-Template':'source.png',
+                  'Origin':'http://localhost','X-V47-CSRF':csrf},
          json={'save_as_draft':True})
     if rv.status_code == 503 and rv.json.get('code') == 'DB_STARTUP_BLOCKED':
         pytest.skip('İzole ortamda üretim DB koruması endpoint testini bloke ediyor')
