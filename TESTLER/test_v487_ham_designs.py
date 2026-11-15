@@ -193,10 +193,12 @@ def test_gui_and_watcher_wired_to_one_working_root():
     gui=(ROOT/'MERKEZ/URETIM_V4/gui_v4.py').read_text('utf-8')
     assert 'self.root.after(150,self.start_auto_ham_designs)' in center
     assert 'HamDesignWatcher' in center
-    assert 'self.ham_design_watcher.stop()' in center
+    assert "(getattr(self,'ham_design_watcher',None),'HAM izleyicisi')" in center
+    assert 'self._stop_watcher_for_close(watcher,label)' in center
     assert "self.runtime_root/'HAM BASKI TASARIMLARI'" in gui
     assert 'validate_for_production()' in gui
-    assert 'validate_designs_for_production()' in gui
+    assert 'audit_designs_for_production()' in gui
+    assert 'CENTRAL_DESIGN_FILE_MOVED_USED' in gui
 
 def test_all_seven_category_product_engine_refuses_duplicate_extensions(tmp_path):
     from URETIM_V4.unified_batch import assert_unique_print_names
