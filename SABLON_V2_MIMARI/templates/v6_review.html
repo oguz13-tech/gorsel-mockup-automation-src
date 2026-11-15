@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Görsel Üretim Merkezi · V6 — Şablon İnceleme Panosu</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%2317D3A3'/><text x='16' y='22' text-anchor='middle' font-size='17' font-family='Arial' fill='%2304140E'>G</text></svg>">
+<link rel="stylesheet" href="/static/css/v6_review.css">
+<link rel="stylesheet" href="/static/css/graphite_embed_v1.css">
+<script>
+  // The desktop Graphite shell already owns application navigation and
+  // branding.  Mark the embedded surface before first paint so WebView2 does
+  // not briefly render a second top navigation bar during route changes.
+  if (new URLSearchParams(window.location.search).get('ui') === 'graphite') {
+    document.documentElement.classList.add('graphite-embedded');
+  }
+</script>
+</head>
+<body>
+<div id="app">
+  <header id="topbar">
+    <div class="brand">
+      <div class="brandmark">G</div>
+      <div>
+        <div class="brandname">Görsel Üretim Merkezi</div>
+        <div class="brandsub">V6 · Graphite Workbench</div>
+      </div>
+    </div>
+    <nav id="topnav">
+      <button class="navbtn active" data-nav="review">🧭 <span>Şablon İnceleme</span><span class="cnt" id="navReviewCnt">0</span></button>
+      <button class="navbtn" data-nav="production">🖼️ <span>Üretim</span></button>
+      <button class="navbtn" data-nav="upload">⬆️ <span>Yükleme</span></button>
+      <button class="navbtn" data-nav="petek">🔥 <span>PETEK</span></button>
+      <button class="navbtn" data-nav="stores">🏪 <span>Mağazalar</span></button>
+      <button class="navbtn" data-nav="reports">📊 <span>Raporlar</span></button>
+    </nav>
+    <div class="topbar-right">
+      <div class="chip">Runtime <b id="runtimeLabel">2_SABLON_HAVUZU</b></div>
+      <div class="chip"><span class="dot" id="healthDot"></span> Sistem <b id="healthText">Hazır</b></div>
+      <button class="iconbtn" title="Yardım" id="helpBtn">?</button>
+      <button class="iconbtn" title="Ayarlar" id="settingsBtn">⚙</button>
+    </div>
+  </header>
+
+  <div id="contextbar">
+    <div class="crumb">Şablon İnceleme</div>
+    <div class="tmpl-nav">
+      <button id="prevBtn" title="Önceki şablon">‹</button>
+      <div class="tmpl-current">
+        <div class="n" id="curName">—</div>
+        <div class="s"><span class="pill approved" id="curPill"><span class="dot"></span>—</span></div>
+      </div>
+      <button id="nextBtn" title="Sonraki şablon">›</button>
+    </div>
+    <span id="ctx-counter" style="margin-left:6px;font-size:11px;color:var(--faint);">0 / 0 şablon</span>
+    <div id="ctx-spacer"></div>
+    <span id="perf-metric" style="font-size:11px;font-weight:700;padding:3px 8px;border-radius:5px;display:none;" title="Son API isteği"></span>
+    <div class="zoomgroup">
+      <button id="zoomOut">−</button>
+      <span class="zval" id="zoomVal">100%</span>
+      <button id="zoomIn">+</button>
+      <button id="zoomFit" style="background:rgba(23,211,163,.16);color:var(--accent);">⤢</button>
+    </div>
+    <div class="segmented" id="previewSeg">
+      <button class="active" data-p="final">Nihai</button>
+      <button data-p="working">Çalışma</button>
+      <button data-p="original">Ham</button>
+    </div>
+    <button class="btn primary" id="autoBtn">🧭 Köşeleri Otomatik</button>
+  </div>
+
+  <div id="main">
+    <aside id="rail">
+      <div class="rail-head">
+        <div class="rail-title">Şablonlar <span class="cnt" id="railCnt">0</span>
+          <button type="button" class="iconbtn rail-toggle" id="railToggle" title="Şablon listesini daralt" aria-label="Şablon listesini daralt">◀</button>
+        </div>
+      </div>
+      <div class="rail-search">
+        <input id="railSearch" placeholder="Ara: Ahsap, salon, …">
+        <label class="category-filter-label" for="categoryFilter">Kategori</label>
+        <select id="categoryFilter" class="category-filter" aria-label="Kategori seçin">
+          <option value="all">Tüm kategoriler</option>
+        </select>
+        <div class="petek-loading" id="petekLoading" hidden>🔥 PETEK listesi taranıyor… ilk tarama 10–15 s sürer, yalnız bu oturumda bir kez yapılır.</div>
+      </div>
+
+      <div id="v6BulkPanel">
+        <button type="button" class="btn" id="v6BulkModeButton" title="Çoklu şablon seçerek toplu köşe taslağı çıkarın, güvenli onaylayın veya çöpe taşıyın">☑️ Toplu Seçim</button>
+        <div class="tool-note">Çoklu şablon seçerek otomatik köşe önerisi çıkarın, inceleyin, güvenli onaylayın veya çöpe taşıyın.</div>
+        <div id="v6BulkSelectionActions" hidden>
+          <div class="bulk-action-row">
+            <button type="button" class="btn ghost" id="v6BulkSelectCategory">Bu Kategorinin Tümünü Seç</button>
+            <button type="button" class="btn ghost" id="v6BulkClearSelection">Seçimi Temizle</button>
+          </div>
+          <div class="bulk-count" id="v6BulkSelectedCount">0 şablon seçildi</div>
+          <div class="bulk-action-row">
+            <button type="button" class="btn ghost" id="v6BulkSelectPending" title="Kontrol bekleyen (Taslak/Yeni) kayıtları işaretler">📝 Kontrol Bekleyenleri Seç</button>
+            <button type="button" class="btn ghost" id="v6BulkSelectApproved" title="Onaylı kayıtları işaretler">✅ Onaylıları Seç</button>
+          </div>
+          <button type="button" class="btn" id="v6BulkDetectButton" title="Yalnız seçtiklerinize otomatik 4 köşe TASLAĞI oluşturur. Hiçbir onaylı 4 köşeyi veya şablon dosyasını değiştirmez.">🧭 Seçilenlerin 4 Köşesini Algıla (Taslak)</button>
+          <div class="bulk-run-status" id="v6BulkDetectStatus" aria-live="polite">Seçili şablonlara taslak öneri üretir; kayıtlı onaylı koordinatları değiştirmez.</div>
+          <button type="button" class="btn danger" id="v6BulkDetectStopButton" hidden title="Mevcut küçük paket tamamlanınca tarama durur">⏹ Tarama Sonrası Durdur</button>
+          <button type="button" class="btn primary" id="v6BulkApproveButton" title="Kaydedilmiş 4 köşesi geçerli olan seçili şablonları toplu onaylar; her biri ayrı güvenli kaynak kontrolünden geçer.">✅ Seçilenleri Toplu Onayla</button>
+          <div class="tool-note">Onaydan önce kayıtlı dört köşeleri kontrol eder. Onaysız, köşesiz veya değişmiş kaynakları otomatik geçmez; sonuçları tek tek bildirir.</div>
+          <button type="button" class="btn danger" id="v6BulkDeleteButton">🗑️ Seçilenleri Çöpe At</button>
+          <div class="tool-note">Seçilenleri aktif kullanımdan çıkarır. İşlem geri alınabilir.</div>
+        </div>
+      </div>
+
+      <fieldset id="v499StatusPanel" class="v499-status-filter" aria-label="Şablon durum filtreleri">
+        <legend>Duruma Göre Filtrele</legend>
+        <label class="v499-state-new"><input type="checkbox" data-v499-state="NEW" checked> Yeni</label>
+        <label class="v499-state-approved"><input type="checkbox" data-v499-state="APPROVED" checked> Onaylı</label>
+        <label class="v499-state-draft"><input type="checkbox" data-v499-state="REVIEW_REQUIRED" checked> Taslak</label>
+        <label class="v499-state-error"><input type="checkbox" data-v499-state="ERROR" checked> Hatalı</label>
+        <div class="v499-filter-help">Filtreler tüm kategorilerde geçerlidir; tik kaldırılan durum listede gizlenir, kayıtlar değişmez.</div>
+      </fieldset>
+
+      <div class="rail-filters" id="railFilters">
+        <div class="fchip on" data-f="all">Tümü</div>
+        <div class="fchip" data-f="APPROVED">Onaylı</div>
+        <div class="fchip" data-f="REVIEW_REQUIRED">Taslak</div>
+        <div class="fchip" data-f="NEW">Yeni</div>
+        <div class="fchip" data-f="ERROR">Hata</div>
+      </div>
+      <div class="status-legend">🔵 Yeni · 🟢 Onaylı · 🟡 Taslak · 🔴 Hatalı (sebebi dosya ayrıntısında)</div>
+      <div class="rail-list" id="railList"></div>
+    </aside>
+    <div class="pane-resizer rail-resizer" data-pane="rail" role="separator" aria-label="Şablon listesinin genişliğini ayarla" tabindex="0"></div>
+
+    <section id="stage">
+      <div class="shot" id="shot">
+        <img id="shotImg" alt="Şablon baskı önizlemesi" draggable="false">
+        <canvas id="maskCanvas" aria-hidden="true"></canvas>
+        <svg id="cornerSvg" viewBox="0 0 896 1200" preserveAspectRatio="xMidYMid meet"></svg>
+      </div>
+      <div class="stage-top">
+        <div class="card-hint">✋ <b>Köşeleri elle ayarla:</b> noktalara dokun ve sürükle. Sistem daima perspektifi korur; sadece baskı alanını ayarlar.</div>
+        <div class="card-hint" style="text-align:right;">🎯 <b>Doğrulama:</b> 4 köşe + kaynak + insan onayı olmadan üretimde kullanılmaz.</div>
+      </div>
+      <div class="stage-tools">
+        <button class="btn" id="btnCorner" title="Kırmızı noktaları gerçek baskı alanının dört köşesine sürükleyin. Sistem daima perspektif kullanır.">✋ Köşeleri Elle Ayarla</button>
+        <button class="btn" id="autoCornerBtn">◉ Köşeleri Otomatik Algıla</button>
+        <button class="btn" id="v6BatchAnalyzeButton" title="Kaynağı değişmemiş insan onaylı APPROVED şablonları koruyarak seçili kategorinin tüm köşelerini yeniden tarar">⚡ Kategoriyi Hızlı Tara</button>
+        <button class="btn" id="placeBtn">👁️ Yerleşim</button>
+        <button class="btn primary" id="approveQuick">✅ Bu Şablonu Onayla</button>
+      </div>
+    </section>
+
+    <div class="pane-resizer inspector-resizer" data-pane="inspector" role="separator" aria-label="Kontrol panelinin genişliğini ayarla" tabindex="0"></div>
+
+    <aside id="inspector">
+      <div class="insp-head">
+        <div class="insp-title">KONTROL PANELİ</div>
+        <span class="pill approved" id="inspPill"><span class="dot"></span>—</span>
+        <button type="button" class="iconbtn rail-toggle" id="inspectorToggle" title="Kontrol panelini daralt" aria-label="Kontrol panelini daralt">▶</button>
+      </div>
+      <div class="insp-body">
+
+        <div class="approve-zone">
+          <div class="at">✅ 4 Köşe Doğrulama & Onay</div>
+          <div class="ad">Köşeler tanımlı, tutarlı ve kaynak doğrulandıktan sonra şablon üretimde kullanılabilir.</div>
+          <button class="btn primary" id="approveBtn">✅ Şablonu Onayla</button>
+          <div class="v6-draft-alert" id="v6DraftAlert" hidden aria-live="polite"></div>
+        </div>
+
+        <div class="card open">
+          <div class="card-h" onclick="toggleCard(this)">
+            <span>📐 Köşe Koordinatları</span><span class="arr">▾</span>
+          </div>
+          <div class="card-b" id="coBody"></div>
+        </div>
+
+        <div class="card open">
+          <div class="card-h" onclick="toggleCard(this)">
+            <span>🧭 Yerleşim Rehberi</span><span class="arr">▾</span>
+          </div>
+          <div class="card-b">
+            <div class="kv"><span class="k">Koordinat sistemi</span><span class="v">piksel · merkezi</span></div>
+            <div class="kv"><span class="k">Baskı alanı</span><span class="v" id="printSize">— × —</span></div>
+            <div class="kv"><span class="k">Köşe açıları</span><span class="v" id="cornerAngles">—</span></div>
+            <div class="kv"><span class="k">Uyumsuzluk</span><span class="v" id="mismatchInfo" style="color:var(--green)">Yok</span></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-h" onclick="toggleCard(this)">
+            <span>⚙️ Ürün Ve Baskı Seçenekleri</span><span class="arr">▸</span>
+          </div>
+          <div class="card-b">
+            <div id="physical-orientation-wrap" hidden>
+              <label class="kv" for="physicalOrientationSelect"><span class="k">Fiziksel ürün yönü</span><span class="v" id="physicalOrientationValue">—</span></label>
+              <select id="physicalOrientationSelect" class="v6-select">
+                <option value="">Seçin…</option>
+                <option value="H">Yatay (H)</option>
+                <option value="V">Dikey (V)</option>
+              </select>
+              <div class="tool-note">Cam Doğrama için gerçek ürünün yatay/dikey yönü. Onaylanırken birlikte kaydedilir.</div>
+            </div>
+            <div id="glassCornerWrap" hidden>
+              <label class="kv" for="glassCornerRadiusApproval"><span class="k">Cam baskı köşesi</span></label>
+              <select id="glassCornerRadiusApproval" class="v6-select">
+                <option value="0">Keskin (%0)</option>
+                <option value="0.008" selected>Hafif (%0,8)</option>
+                <option value="0.015">Belirgin (%1,5)</option>
+              </select>
+              <div class="tool-note">4 köşe noktasını değiştirmez; onaylanınca sonraki üretimlere uygulanır. Eski çıktı dosyaları korunur.</div>
+            </div>
+            <div class="tool-note" id="v6OptionsEmpty">Bu şablon için ek seçenek yok.</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-h" onclick="toggleCard(this)">
+            <span>👁️ Görsel Önizleme</span><span class="arr">▸</span>
+          </div>
+          <div class="card-b">
+            <div class="segmented" style="width:100%">
+              <button data-p="final" class="active" style="flex:1">Nihai</button>
+              <button data-p="working" style="flex:1">Çalışma</button>
+              <button data-p="original" style="flex:1">Ham</button>
+            </div>
+            <div class="source-view-status" id="sourceViewStatus">🟢 Çalışma görseli gösteriliyor.</div>
+            <button class="adv-btn" id="v6WhitePreviewBtn" title="Mevcut 4 köşe ayarlarıyla beyazlatma önizlemesi hazırlar; yalnız ayrılmış klasöre kaydedilir, çalışma/onay değişmez">🖼️ Beyazlatma Önizlemesi (Kaydetmez)</button>
+            <div class="tool-note">Beyazlatma önizlemesinden dönmek için "Ham Orijinali Göster" veya "Çalışma Görseline Dön" kullanın.</div>
+            <div class="adv-group">
+              <div class="ag-t">Güvenli Geri Yükleme</div>
+              <button class="adv-btn" id="restoreOriginalBtn">👁️ Ham Orijinali Göster</button>
+              <button class="adv-btn" id="refreshWorkingBtn">↩️ Çalışma Görseline Dön</button>
+              <button class="adv-btn" id="v6RestoreWorkingBtn" title="Dosyayı değiştirir: korunmuş ham yedek, çalışma kopyasının yerine yazılır">🔄 Ham Orijinali Geri Yükle</button>
+              <button class="adv-btn" id="v6ChooseReplacementBtn" title="Yeni bir ham görsel seç; eski ham ve eski çalışma kopyası recovery alanına taşınır">🆕 Ham Dosyayı Yenisiyle Değiştir</button>
+              <input type="file" id="replaceOriginalFileInput" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" hidden>
+              <div class="tool-note"><b>Dosya değiştiren</b> işlemler sonrası köşeleri yeniden kontrol edip şablonu tekrar onaylayın.</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-h" onclick="toggleCard(this)">
+            <span>📊 Taramalar Ve Raporlar</span><span class="arr">▸</span>
+          </div>
+          <div class="card-b">
+            <button class="adv-btn" id="templateHealthScanButton">🩺 Ham Dosya Sağlık Taraması</button>
+            <div class="tool-note">Çalışma dosyası eksik, ham yedek eksik/okunamıyor, DB kaydı olmayan dosya gibi sorunları tarar; hiçbir dosya silinmez.</div>
+            <button class="adv-btn" id="lastTemplateHealthReportButton">📄 Son Sağlık Raporunu Aç</button>
+            <button class="adv-btn" id="templateHealthHistoryButton">📚 Sağlık Rapor Geçmişi</button>
+            <button class="adv-btn" id="workspaceConsistencyScanButton">🧭 Klasör Tutarlılık Taraması</button>
+            <div class="tool-note">Tamamen READ-ONLY. DB ↔ çalışma ↔ ham yedek eşitliğini; staging, çöp, recovery, Kaggle ve Mockup klasörlerini denetler.</div>
+            <button class="adv-btn" id="lastWorkspaceConsistencyReportButton">📄 Son Tutarlılık Raporunu Aç</button>
+            <button class="adv-btn" id="workspaceConsistencyHistoryButton">📚 Tutarlılık Rapor Geçmişi</button>
+            <button class="adv-btn" id="v6BulkAlignmentButton">📐 Seçililerin Hizalama Raporu (Salt-Okunur)</button>
+          </div>
+        </div>
+
+        <div class="danger-zone">
+          <div class="ag-t" style="margin-bottom:8px">Tehlikeli İşlemler</div>
+          <button class="adv-btn danger" id="deleteTemplateBtn">🗑️ Şablonu Çöpe At</button>
+          <button class="adv-btn" id="restoreDeletedBtn">♻️ Son Silineni Geri Al</button>
+        </div>
+
+        <div class="adv-group">
+          <div class="ag-t">Gelişmiş / Kurtarma</div>
+          <button class="adv-btn" data-action="reports">📊 Taramalar ve Raporlar</button>
+          <button class="adv-btn" data-action="tools">🧰 Diğer Araçlar ve Kurtarma</button>
+        </div>
+        <div class="adv-group">
+          <div class="ag-t">Eşitleme / Lifecycle</div>
+          <button class="adv-btn" id="v6ReconciliationBtn">🧭 Güvenli Eşitleme Merkezi</button>
+          <button class="adv-btn" id="v6ResolveDuplicatesBtn">🧹 Bu Şablondaki Duplicate'ları Güvenli Ayır</button>
+          <button class="adv-btn" id="v6RecoveryCenterBtn">🗂️ Trash / Recovery Merkezi</button>
+          <button class="adv-btn" id="v6UndoLifecycleBtn">↩️ Son Lifecycle İşlemini Geri Al</button>
+          <button class="adv-btn" id="v6CanvasBgBtn">🎨 Önizleme Arka Planı</button>
+          <button class="adv-btn" id="v6OverlayToggleBtn" title="Baskı alanını yeşil kaplama ile gösterir">🟢 Baskı Alanı Kaplaması</button>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <footer id="statusbar">
+    <div id="graphiteActionDock" role="toolbar" aria-label="Şablon işlemleri">
+      <button type="button" class="graphite-action-approve" id="dockApproveBtn">✓ Onayla</button>
+      <button type="button" class="graphite-action-pause" id="dockPauseBtn">Ⅱ Beklemeye Al</button>
+      <button type="button" class="graphite-action-critical" id="dockHealthBtn" title="Ham Dosya Sağlık Taraması">⚠ Kritik Hata</button>
+      <button type="button" class="graphite-action-save" id="dockSaveBtn" title="Açık şablonun köşe ve seçim değişikliklerini veritabanına kaydet">▣ Kaydet</button>
+      <span id="graphiteActionStatus" role="status" aria-live="polite"></span>
+    </div>
+    <div id="statusmsg">Hazır · 4 köşe ve insan onayı korunuyor.</div>
+    <div class="stat"><span class="dot"></span> SQLite</div>
+    <div class="stat"><span class="dot"></span> Onaylı: <b id="statApproved">0</b></div>
+    <div class="stat"><span class="dot amber"></span> Taslak: <b id="statDraft">0</b></div>
+    <div class="stat"><span class="dot red"></span> Hata: <b id="statError">0</b></div>
+  </footer>
+</div>
+
+<div class="placement-modal" id="placementModal" hidden>
+  <div class="placement-dialog" role="dialog" aria-modal="true" aria-labelledby="placementTitle">
+    <div class="placement-head">
+      <div><div class="placement-title" id="placementTitle">Baskı Yerleşimi Önizlemesi</div><div class="placement-subtitle">Seçtiğiniz tasarım, üretim motoruyla birebir (aynı render parametreleri) giydirilir — üretimde göreceğiniz sonuç budur. Hiçbir dosya, onay veya maske değişmez.</div></div>
+      <button class="iconbtn" id="placementClose" aria-label="Önizlemeyi kapat">×</button>
+    </div>
+    <div class="placement-controls">
+      <label class="placement-file">Tasarım seçin<input id="placementFile" type="file" accept="image/png,image/jpeg,image/webp"></label>
+      <label class="placement-mode">Yerleşim<select id="placementMode"><option value="cover">Tam Doldur (kırpılabilir)</option><option value="contain">Tam Göster (boşluk bırakabilir)</option></select></label>
+      <span class="placement-note" id="placementNote">Önizleme için bir PNG, JPG veya WEBP seçin.</span>
+    </div>
+    <div class="placement-canvas-wrap"><canvas id="placementCanvas" aria-label="Geçici baskı yerleşimi önizlemesi"></canvas></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="/static/js/loopback_csrf_v47.js"></script>
+<script src="/static/js/v6_review.js"></script>
+<script src="/static/js/v6_review_tools.js"></script>
+</body>
+</html>

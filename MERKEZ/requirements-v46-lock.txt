@@ -1,0 +1,8 @@
+# Candidate test environment, pinned; native Windows acceptance is separate.
+numpy==2.2.6
+opencv-python-headless==4.13.0.92
+Pillow==12.1.1
+openpyxl==3.1.5
+Flask==3.1.3
+requests==2.32.5
+pytest==9.0.2

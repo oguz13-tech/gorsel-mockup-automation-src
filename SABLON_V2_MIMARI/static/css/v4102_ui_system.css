@@ -1,0 +1,75 @@
+/* V4.10.2 UI consistency: user-supplied modern SaaS references, no engine changes.
+   Deliberately prefers slate/anthracite, not pure black; high contrast and
+   keyboard focus preserved. Applies to review sidebar, tools, PETEK cards.
+*/
+:root{
+ color-scheme:dark;
+ --ui-bg:#0B101B;--ui-side:#0F1622;--ui-surface:#131C2B;
+ --ui-panel:#182238;--ui-border:#22304A;--ui-fg:#E9EFF9;
+ --ui-muted:#93A6C4;--ui-primary:#17D3A3;
+ --ui-blue:#5AA9FF;--ui-green:#3FD98A;--ui-orange:#F0B84C;
+}
+body,#main,#petekV477Editor{background:var(--ui-bg)!important;color:var(--ui-fg)!important;
+ font-family:'Segoe UI Variable','Segoe UI',system-ui,sans-serif!important}
+#sidebar,.petek-v477-list-pane.in-sidebar{background:var(--ui-side)!important;
+ border-color:var(--ui-border)!important}
+#toolbar,.petek-v477-head,.petek-v477-selectrow{background:var(--ui-surface)!important;
+ border-bottom:1px solid var(--ui-border)!important}
+#sidebar>h2,#sidebar>.panel-zoom-content>h2{font-size:19px!important;font-weight:750!important;letter-spacing:-.3px!important}
+.category-title{background:var(--ui-surface)!important;border:1px solid var(--ui-border)!important;
+ font-size:14px!important;font-weight:700!important;border-radius:10px!important;
+ min-height:36px!important;line-height:1.35!important;color:var(--ui-fg)!important}
+.category-title:hover{background:#1F2C44!important;border-color:#17D3A3!important}
+.category-title.selected,#petekV477Nav[aria-current=page]{background:#10332B!important;
+ border-color:#17D3A3!important;color:#fff!important}
+#bulk-select-panel,.v499-status-filter,.petek-v477-list-pane{background:var(--ui-surface)!important;
+ border:1px solid var(--ui-border)!important;border-radius:12px!important}
+.panel-hint,.status-legend,.notice,.tool-note{color:var(--ui-muted)!important;
+ font-size:14px!important;line-height:1.5!important}
+#petekV477List .petek-v484-item-wrap,#categories .template-item{min-height:35px;
+ border-radius:8px!important;transition:background-color .1s ease,border-color .1s ease}
+#petekV477List button.petek-v477-list-item.petek-v484-name{
+ font-size:14px!important;font-weight:650!important;letter-spacing:0!important}
+button,#toolbar button,.tools-center-button{border-radius:9px!important;
+ font-family:'Segoe UI Variable','Segoe UI',system-ui,sans-serif!important;
+ font-size:14px!important;font-weight:650!important;
+ transition:background-color .12s ease,border-color .12s ease!important}
+button:not(:disabled):hover{filter:brightness(1.12)}
+button:disabled{opacity:.72!important;cursor:not-allowed!important}
+/* Keep 4K/HTTPS disabled labels readable on Windows Chromium hover. */
+label:has(input[type=checkbox]),.v499-status-filter label{color:#E9EFF9!important;
+ background:transparent!important}
+label:has(input[type=checkbox]):hover{color:#fff!important;background:#182238!important}
+label:has(input[type=checkbox]:disabled),label:has(input[type=checkbox]:disabled):hover{
+ color:#66789B!important;background:transparent!important;opacity:.82!important}
+input[type=checkbox]{accent-color:#17D3A3!important}
+input[type=text],input[type=number],select,textarea{
+ background:#131C2B!important;border:1px solid #22304A!important;color:#E9EFF9!important;
+ font-size:14px!important;min-height:28px!important}
+input::placeholder{color:#66789B!important;opacity:1}
+input:focus-visible,button:focus-visible,select:focus-visible,
+[role=tab]:focus-visible{outline:2px solid #17D3A3!important;outline-offset:2px!important}
+#petekV477List .petek-v484-selected,#categories .template-item.bulk-selected{
+ outline-color:#17D3A3!important}
+@media (prefers-reduced-motion:reduce){button,.template-item,
+#petekV477List .petek-v484-item-wrap{transition:none!important}}
+@media(max-width:720px){#sidebar{padding:10px!important}
+#petekV477List button.petek-v477-list-item.petek-v484-name{font-size:14px!important}}
+
+/* Compact inspection controls: keep the review workbench dense and scannable. */
+#sidebar{padding:0!important;overflow:hidden!important}
+#toolbar button,#sidebar button:not(.sidebar-toggle),#right-toolbar button,
+.petek-v477-list-pane button,.petek-v477-tools button{
+ padding:8px 10px!important;min-height:34px!important;font-size:13px!important;line-height:1.25!important}
+#toolbar button{padding:7px 12px!important;min-height:32px!important}
+.resizer{touch-action:none}
+
+/* Ctrl + wheel scales a panel's inner UI while the panel width stays fixed. */
+.panel-zoom-content{
+ --panel-zoom:1;box-sizing:border-box;width:calc(100% / var(--panel-zoom));
+ height:calc(100% / var(--panel-zoom));transform:scale(var(--panel-zoom));
+ transform-origin:top left;overflow-y:auto;overflow-x:hidden}
+#sidebar>.panel-zoom-content{display:flex;flex-direction:column;padding:19px;overflow-y:auto;overflow-x:hidden}
+#right-toolbar>.panel-zoom-content{display:flex;flex-direction:column;gap:7px;padding:10px;min-height:0}
+#petekV477ListPane>.panel-zoom-content,
+.petek-v477-tools>.panel-zoom-content{display:flex;flex-direction:column;min-height:0;gap:7px;padding:10px}

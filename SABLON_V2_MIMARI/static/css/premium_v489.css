@@ -1,0 +1,49 @@
+/* Premium V4.9 UI; presentation-only, no editor geometry/JS changes. */
+:root{color-scheme:dark;--ui-bg:#0F1622;--ui-side:#0F1622;--ui-surface:#131C2B;--ui-panel:#182238;--ui-border:#22304A;--ui-fg:#E9EFF9;--ui-muted:#93A6C4;--ui-primary:#17D3A3;--ui-blue:#5AA9FF;--ui-green:#3FD98A;--ui-orange:#f8ab57;}
+body{background:var(--ui-bg);color:var(--ui-fg);font-family:'Segoe UI',system-ui,Arial,sans-serif;font-size:14px;line-height:1.5;}
+#sidebar{background:var(--ui-side);border-right:1px solid var(--ui-border);padding:19px;box-shadow:4px 0 22px rgba(0,0,0,.1);}
+#sidebar>h2{font-size:22px;letter-spacing:-.4px;color:#E9EFF9;}
+#main{background:var(--ui-bg);}
+#toolbar{background:#131C2B;border-bottom:1px solid var(--ui-border);padding:12px 19px;gap:12px;min-height:66px;}
+button{background:#182238;color:white;border-radius:9px;padding:10px 14px;min-height:38px;font-size:14px;font-weight:650;line-height:1.36;transition:background-color .12s ease,border-color .12s ease,box-shadow .12s ease;}
+button:hover{background:#0FAC80;}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #17D3A3;outline-offset:2px;}
+button.success{background:#0E8F6E;}
+button.success:hover{background:#13A87C;}
+button:disabled{opacity:.55;cursor:not-allowed;}
+.panel-hint,.status-legend,.notice{background:#131C2B;border:1px solid #22304A;border-radius:10px;color:var(--ui-muted);font-size:13px;line-height:1.55;padding:12px 14px;}
+.category-title{background:#131C2B;border:1px solid #22304A;border-radius:10px;color:#E9EFF9;padding:10px 12px;}
+.category-title:hover{background:#131C2B;border-color:#17D3A3;}
+.category-title.selected{background:#10332B;border-color:#17D3A3;}
+.template-item{font-size:14px;min-height:33px;padding:9px 8px;border-bottom:1px solid #22304A;border-radius:6px;}
+.template-item:hover,.template-item.active{background:#1F2C44;}
+#canvas-container{background-color:#0F1622;}
+.resizer{background:#131C2B;border-left:1px solid #22304A;border-right:1px solid #22304A;}
+.resizer:hover,.resizer.active{background:var(--ui-primary);}
+.tool-note{font-size:13px;line-height:1.45;color:#93A6C4;margin:4px 1px 6px;}
+.tool-note-accent{color:#3FD98A;}
+.tool-section-title{color:#E9EFF9;font-size:17px;border-bottom-color:#22304A;padding:10px 0;}
+.tools-center-button{background:#182238!important;color:#fff!important;min-height:42px!important;}
+input,textarea,select{accent-color:var(--ui-primary);}
+input[type=text],input[type=number],select,textarea{color:var(--ui-fg);background:#131C2B;border:1px solid #22304A;border-radius:8px;padding:9px;font-size:14px;}
+.status-legend{font-size:13px;}
+#help-sidebar{font-size:14px!important;border-color:#22304A!important;}
+@media(max-width:1000px){#sidebar{padding:12px}#toolbar{padding:9px}}
+/* /tools is a normal page, not the side-by-side editor. */
+body:has(.page){display:block;height:auto;overflow:auto;background:radial-gradient(ellipse at top right,#151A2E 0%,#0F1622 40%,#0F1622 90%);}
+.page{max-width:1360px;padding:36px 30px;}
+.page .topbar{padding:10px 0 14px;border-bottom:1px solid #22304A;align-items:flex-start;}
+.page .topbar h1{font-size:29px;letter-spacing:-.5px;}
+.page .subtitle{font-size:14px;color:#93A6C4;margin-top:8px;}
+.page .back{font-size:14px;color:#93A6C4;}
+.page .notice{margin:20px 0 25px;font-size:14px;background:#131C2B;border-color:#22304A;}
+.page .grid{grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px;}
+.page .card{position:relative;background:linear-gradient(140deg,#131C2B,#131C2B);border:1px solid #22304A;border-radius:15px;padding:22px;min-height:184px;box-shadow:0 8px 26px rgba(0,0,0,.12);}
+.page .card:hover{border-color:#0FAC80;box-shadow:0 12px 30px rgba(15,11,36,.26);}
+.page .title{font-size:19px;color:#E9EFF9;margin-bottom:10px;}
+.page .desc{font-size:14px;line-height:1.55;color:#93A6C4;}
+.page .tiny{font-size:13px;line-height:1.5;color:#93A6C4;margin-top:10px;}
+.page .card button{align-self:flex-start;background:#17D3A3;border-radius:10px;font-size:14px;padding:11px 18px;}
+.page .card button:hover{background:#0FAC80;}
+.page .status{font-size:14px;padding:15px;background:#131C2B;border-color:#22304A;border-radius:10px;}
+@media(max-width:640px){.page{padding:18px}.page .topbar{flex-wrap:wrap}.page .grid{grid-template-columns:1fr}}

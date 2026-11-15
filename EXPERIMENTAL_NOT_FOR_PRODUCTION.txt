@@ -1,0 +1,6 @@
+PETEK experimental assets and visual presets are retained for review only.
+
+The normal production path deliberately keeps G3/Y3/L1 assets, final-style
+presets, and single-vertical-shadow experiments disabled. Do not copy live
+SQLite, masks, profiles, or source photographs into this package. Use the
+runtime paths configured by the operator and take a backup before production.

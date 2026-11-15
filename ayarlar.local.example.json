@@ -1,0 +1,15 @@
+{
+  "bulut_ayarlari": {
+    "provider": "imagekit",
+    "provider_order": [
+      "imagekit",
+      "imgbb",
+      "freeimage"
+    ],
+    "imagekit_private_keys": [],
+    "imagekit_private_key": "",
+    "imgbb_keys": [],
+    "freeimage_keys": [],
+    "freeimage_key": ""
+  }
+}

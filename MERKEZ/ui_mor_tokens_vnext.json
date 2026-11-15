@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "name": "V6 Graphite Workbench",
+  "background": "#0B101B",
+  "sidebar": "#0B101B",
+  "panel": "#131C2B",
+  "raised": "#182238",
+  "border": "#22304A",
+  "accent": "#17D3A3",
+  "accent_hover": "#0FAC80",
+  "text": "#E9EFF9",
+  "muted": "#93A6C4",
+  "status_new": "#5AA9FF",
+  "status_approved": "#3FD98A",
+  "status_draft": "#F0B84C",
+  "status_error": "#EF6A73"
+}
