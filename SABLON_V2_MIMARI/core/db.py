@@ -3,19 +3,16 @@ import json
 import os
 from pathlib import Path
 
+try:
+    from MERKEZ.workspace_contract import resolve_contract as _resolve_contract
+except ImportError:  # direct utility import compatibility
+    from workspace_contract import resolve_contract as _resolve_contract
+
 SOURCE_ROOT = Path(__file__).resolve().parents[2]
 
 
 def resolve_runtime_root(source_root: Path = SOURCE_ROOT) -> Path:
-    explicit_root = str(os.environ.get("GORSEL_RUNTIME_ROOT") or "").strip()
-    if explicit_root:
-        return Path(explicit_root).expanduser().resolve()
-    override = str(os.environ.get("MOCKUP_RUNTIME_WORKSPACE") or "").strip()
-    return (
-        Path(override).expanduser().resolve()
-        if override
-        else source_root.resolve()
-    )
+    return _resolve_contract(code_root=source_root, validate=False).runtime_root
 
 
 RUNTIME_ROOT = resolve_runtime_root()

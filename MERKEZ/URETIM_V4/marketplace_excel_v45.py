@@ -14,8 +14,10 @@ import re
 import sqlite3
 import tempfile
 import unicodedata
+from collections.abc import Callable
 
 from openpyxl import load_workbook
+from .store_identity_v485 import excel_row_sort_key
 
 
 HEADING_ALIASES = {
@@ -71,7 +73,8 @@ def detect_columns(headers: list[object], *, custom: dict[str, str] | None = Non
 
 def export_from_template(template_path: Path, state_root: Path, rows: list[dict], *,
                          report_root: Path, column_mapping: dict[str, str] | None = None,
-                         sheet_name: str | None = None) -> dict:
+                         sheet_name: str | None = None,
+                         progress: Callable[[int, int, str], None] | None = None) -> dict:
     """Create an independent, SHA-identifiable .xlsx from verified cloud link DB.
 
     Existing workbook cells, data, links and formulae are never overwritten;
@@ -121,7 +124,15 @@ def export_from_template(template_path: Path, state_root: Path, rows: list[dict]
             links = {r['artifact_key']: dict(r) for r in cc.execute('SELECT * FROM cloud_link')}
         import urllib.parse
         values = []
-        for record in rows:
+        # The input record is the unit of linkage (SKU + URL + ledger output),
+        # so sort records before projecting them into worksheet cells.
+        ordered_rows = sorted(rows, key=excel_row_sort_key)
+        for _done_i, record in enumerate(ordered_rows, 1):
+            if progress is not None and (_done_i % 10 == 0 or _done_i == len(ordered_rows)):
+                try:
+                    progress(_done_i, len(ordered_rows), 'LOCAL')
+                except Exception:
+                    pass  # canlı ilerleme hiçbir zaman dışa aktarımı durdurmasın
             key = record.get('key')
             source = db_rows.get(key)
             link = links.get(key)

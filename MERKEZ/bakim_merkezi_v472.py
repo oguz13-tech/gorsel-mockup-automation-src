@@ -8,8 +8,6 @@ import threading
 import tkinter as tk
 from tkinter import ttk,filedialog,messagebox,simpledialog
 from legacy_manager import preferred_runtime
-from magenta_reconcile_v472 import (LAB,CONFIRM as MAGENTA_CONFIRM,analyze,
-                                    write_report,html_comparison,apply)
 from external_inventory_v472 import (CONFIRM as INVENTORY_CONFIRM,
                                       build,save,stage)
 from runtime_relocate_v473 import (CONFIRM as RUNTIME_CONFIRM,
@@ -21,7 +19,7 @@ ROOT=Path(__file__).resolve().parent.parent
 # Keep high-impact writes inaccessible in the operator UI until real Windows
 # backup/restore acceptance, even if isolated CI regression tests pass.
 P0_USER_WRITE_LOCKED=True
-P0_LOCKED_TITLES=('2.','5.','6.')
+P0_LOCKED_TITLES=('4.','6.')
 
 from URETIM_V4.deleted_receipts_v474 import (candidate_rows as deleted_candidates,
                                           save_plan as save_deleted_plan,
@@ -31,13 +29,18 @@ from URETIM_V4.deleted_receipts_v474 import (candidate_rows as deleted_candidate
 class Maintenance:
     def __init__(self):
         self.window=tk.Tk()
-        self.window.title('V4.7.5 — Magenta ve Eski Sürüm Dosya Güvenliği')
+        try:
+            from dark_theme_v42 import apply_dark_theme, BG
+            apply_dark_theme(self.window)
+        except Exception:
+            BG = None
+        self.window.title('V4.7.5 — Eski Sürüm Dosya Güvenliği')
         self.window.geometry('980x820')
         self.window.minsize(730,620)
         self.events=queue.Queue()
         self.working=False
         outer=ttk.Frame(self.window);outer.pack(fill='both',expand=True)
-        canvas=tk.Canvas(outer,highlightthickness=0)
+        canvas=tk.Canvas(outer,highlightthickness=0,bg=BG if BG else '#0B101B')
         vertical=ttk.Scrollbar(outer,orient='vertical',command=canvas.yview)
         canvas.configure(yscrollcommand=vertical.set)
         vertical.pack(side='right',fill='y')
@@ -51,64 +54,51 @@ class Maintenance:
         ttk.Label(frame,text='GÜVENLİ DOSYA BİRLEŞTİRME / ÖN İNCELEME',
                   font=('Segoe UI',15,'bold')).pack(anchor='w')
         ttk.Label(frame,text='Varsayılan işlemler SALT OKUNUR. Test klasörlerini otomatik silmez, '
-                            'eski programın üzerine kod yazmaz. Magenta değişimleri yalnız ayrıca açık onayla yapılır.',
+                            'eski programın üzerine kod yazmaz.',
                   wraplength=850).pack(anchor='w',pady=7)
         self.workspace=tk.StringVar(value=str(preferred_runtime()))
-        self.lab=tk.StringVar(value=str(LAB))
         self.roots=tk.StringVar(value='C:\\AI_WORK;'+str(Path.home()/'Downloads'))
         self.code=tk.StringVar(value=str(ROOT))
         for title,variable in [('ANA ÇALIŞMA KLASÖRÜ',self.workspace),
-                                ('MAGENTA KAYNAĞI',self.lab),
                                 ('AKTİF TEST EDİLMİŞ KOD KLASÖRÜ',self.code),
                                 ('TARANACAK TEST / SÜRÜM KÖKLERİ (noktalı virgülle)',self.roots)]:
             ttk.Label(frame,text=title).pack(anchor='w',pady=(9,1))
             ttk.Entry(frame,textvariable=variable,width=115).pack(fill='x')
-        ttk.Separator(frame).pack(fill='x',pady=12)
-        ttk.Label(frame,text='AŞAMA 1 — MAGENTA GÖRSELLER (görsel bazlı, klasör bazlı değil)',
-                  font=('Segoe UI',11,'bold')).pack(anchor='w')
-        row=ttk.Frame(frame);row.pack(fill='x',pady=6)
         self.buttons=[]
         self.locked_buttons=[]
-        self.btn(row,'1. Magenta ↔ Ana Önizleme / Rapor',self.magenta_report)
-        self.btn(row,'2. İncelediğim Planı Uygula (açık onay)',self.magenta_apply)
-        self.allow_review=tk.BooleanVar(value=False)
-        ttk.Checkbutton(frame,variable=self.allow_review,
-                        text='LAB insan onayı bulunmayan eşleşen görseller değişsin, '
-                             'ancak dört köşe yeniden onaya düşsün (normalde kapalı)').pack(anchor='w')
-        ttk.Separator(frame).pack(fill='x',pady=12)
-        ttk.Label(frame,text='AŞAMA 2 — DIŞ KLASÖRLERDE KALAN DOSYALAR',
+        ttk.Label(frame,text='AŞAMA 1 — DIŞ KLASÖRLERDE KALAN DOSYALAR',
                   font=('Segoe UI',11,'bold')).pack(anchor='w')
         row=ttk.Frame(frame);row.pack(fill='x',pady=6)
-        self.btn(row,'3. Eski Klasörleri Salt-Okunur Tara',self.external_report)
-        self.btn(row,'4. Eksik/Farklı Kodları Kurtarma Alanına Kopyala',self.external_stage)
+        self.btn(row,'1. Eski Klasörleri Salt-Okunur Tara',self.external_report)
+        self.btn(row,'2. Eksik/Farklı Kodları Kurtarma Alanına Kopyala',self.external_stage)
         ttk.Label(frame,text='4. düğme dosyaları CANLI sisteme entegre etmez; '
                             'yalnız SHA kanıtlı ayrı kurtarma alanına kopyalar. '
                             'Farklı kodları körlemesine etkinleştirmek tehlikelidir.',
                   wraplength=850).pack(anchor='w',pady=4)
         ttk.Separator(frame).pack(fill='x',pady=9)
-        ttk.Label(frame,text='AŞAMA 3 — ONEDRIVE / SQLite Güvenli Çalışma Alanı',
+        ttk.Label(frame,text='AŞAMA 2 — ONEDRIVE / SQLite Güvenli Çalışma Alanı',
                   font=('Segoe UI',11,'bold')).pack(anchor='w')
         rw=ttk.Frame(frame);rw.pack(fill='x',pady=6)
-        self.btn(rw,'5. OneDrive Dışı Yedek Kopyayı Hazırla',self.stage_runtime)
-        self.btn(rw,'6. Doğrulanan Kopyayı Etkinleştir (AÇIK ONAY)',self.activate_runtime)
+        self.btn(rw,'3. OneDrive Dışı Yedek Kopyayı Hazırla',self.stage_runtime)
+        self.btn(rw,'4. Doğrulanan Kopyayı Etkinleştir (AÇIK ONAY)',self.activate_runtime)
         ttk.Separator(frame).pack(fill='x',pady=9)
-        ttk.Label(frame,text='AŞAMA 4 — GEÇMİŞTE BİLEREK SİLİNEN 35 ÇIKTI',
+        ttk.Label(frame,text='AŞAMA 3 — GEÇMİŞTE BİLEREK SİLİNEN 35 ÇIKTI',
                   font=('Segoe UI',11,'bold')).pack(anchor='w')
         hist=ttk.Frame(frame);hist.pack(fill='x',pady=6)
-        self.btn(hist,'7. Kayıp Çıktıları Salt-Okunur Listele',self.plan_user_removed)
-        self.btn(hist,'8. Tam 35 Kaydı USER_REMOVED Olarak İşaretle (ONAY)',self.mark_user_removed)
+        self.btn(hist,'5. Kayıp Çıktıları Salt-Okunur Listele',self.plan_user_removed)
+        self.btn(hist,'6. Tam 35 Kaydı USER_REMOVED Olarak İşaretle (ONAY)',self.mark_user_removed)
         ttk.Separator(frame).pack(fill='x',pady=9)
-        ttk.Label(frame,text='AŞAMA 5 — 7 KATEGORİ / TÜM SİSTEM BÜTÜNLÜK DENETİMİ',
+        ttk.Label(frame,text='AŞAMA 4 — 7 KATEGORİ / TÜM SİSTEM BÜTÜNLÜK DENETİMİ',
                   font=('Segoe UI',11,'bold')).pack(anchor='w')
         health=ttk.Frame(frame);health.pack(fill='x',pady=6)
-        self.btn(health,'9. SQLite / Şablon / Mağaza / PETEK / Kod / Çıktı SHA Raporu',
+        self.btn(health,'7. SQLite / Şablon / Mağaza / PETEK / Kod / Çıktı SHA Raporu',
                  self.full_integrity_report)
         ttk.Label(frame,text='9 numaralı işlem yalnız okur; bütün bileşenlerin durumunu '
                             'tek JSON raporunda gösterir. Eski klasör raporu olmadan '
                             'final silme izni vermez.',wraplength=875).pack(anchor='w')
-        ttk.Label(frame,text='GÜVENLİK KİLİDİ: 2 / 5 / 6 işlemleri gerçek Windows veri yedeği ve geri dönüş testi kabul edilene kadar kapalıdır.',
-                  wraplength=870,foreground='#bd5b25').pack(anchor='w',pady=5)
-        self.status=tk.StringVar(value='Hazır. Önce 1, 3 ve 9 numaralı salt-okunur raporları oluşturun.')
+        ttk.Label(frame,text='GÜVENLİK KİLİDİ: 4 / 6 işlemleri gerçek Windows veri yedeği ve geri dönüş testi kabul edilene kadar kapalıdır.',
+                  wraplength=870,foreground='#8A4A14').pack(anchor='w',pady=5)
+        self.status=tk.StringVar(value='Hazır. Önce 1 ve 7 numaralı salt-okunur raporları oluşturun.')
         ttk.Label(frame,textvariable=self.status,wraplength=850).pack(anchor='w',pady=5)
         self.output=tk.Text(frame,height=11,wrap='word')
         self.output.pack(fill='both',expand=True)
@@ -148,40 +138,6 @@ class Maintenance:
                     if on_success:on_success(result)
         except queue.Empty:pass
         self.window.after(150,self.poll)
-    def magenta_report(self):
-        def work():
-            plan=analyze(Path(self.workspace.get()),Path(self.lab.get()))
-            path=write_report(plan);comparison=html_comparison(path)
-            from collections import Counter
-            return {'report':str(path),'html':str(comparison),
-                    'statuses':dict(Counter(j['status'] for j in plan['jobs']))}
-        def open_result(r):
-            messagebox.showinfo('Magenta Raporu','İki görselin karşılaştırması açılacak. '
-                                'Kopyalama henüz yapılmadı.')
-            os.startfile(r['html']) if os.name=='nt' else None
-        self.enqueue(work,open_result)
-    def magenta_apply(self):
-        if P0_USER_WRITE_LOCKED:
-            messagebox.showwarning('Veri güvenliği kilidi',
-                'Bu işlem gerçek Windows yedekleme / geri alma kabulü bitene kadar kapalı.',parent=self.window)
-            return
-        plan=filedialog.askopenfilename(
-            parent=self.window,title='1. adımda oluşan MAGENTA_PLAN_...json dosyasını seç',
-            filetypes=[('Magenta planı','MAGENTA_PLAN_*.json'),('JSON','*.json')])
-        if not plan:return
-        if not messagebox.askyesno('GÖRSEL DEĞİŞİKLİĞİ',
-            'Flask ve 7 Kategori üretim uygulamalarını kapattın mı?\n'
-            'Yalnız aynı kimlikli fotoğraf değişecek. Eski çalışma görüntüsü ve '
-            'ana SQLite önce SHA ile yedeklenecek. Orijinal arşiv korunacak. Devam?'):
-            return
-        prompt=simpledialog.askstring('AÇIK ONAY','Devam etmek için şu metni eksiksiz yaz:\n\n'+MAGENTA_CONFIRM,
-                                     parent=self.window)
-        if prompt!=MAGENTA_CONFIRM:
-            messagebox.showwarning('İptal','Onay metni eşleşmedi. Hiçbir şey değiştirilmedi.')
-            return
-        self.enqueue(lambda:apply(Path(plan),prompt,allow_review=self.allow_review.get()),
-                     lambda r:messagebox.showinfo('Magenta aktarım sonucu',
-                         'Değiştirilen: '+str(r.get('count',0))+'\n'+str(r.get('backup',''))))
     def external_report(self):
         def work():
             plan=build(Path(self.code.get()),Path(self.workspace.get()),

@@ -27,6 +27,15 @@ def test_port_8080_free_never_queries_or_kills_anything():
         terminate=lambda pid:calls.append(pid))
     assert r['reason']=='FREE' and r['port']==8080 and calls==[]
 
+def test_snapshot_script_accepts_windows_listener_with_empty_state():
+    """Windows can omit State=Listen; RemotePort=0 still identifies a listener."""
+    import review_port_owner_v478 as review
+    script = review._CIM_SCRIPT
+    assert 'Get-NetTCPConnection -LocalPort 8080 -State Listen' not in script
+    assert 'Get-NetTCPConnection -LocalPort 8080' in script
+    assert 'RemotePort' in script
+    assert 'Where-Object' in script
+
 def test_nonowned_or_multiple_listeners_fail_closed():
     with pytest.raises(PortOwnerError,match='BELIRSIZ'):
         _validated_owner({'current_sid':'S-1','listeners':[{'pid':1},{'pid':2}]})

@@ -1,25 +1,25 @@
 /* Unified anthracite, accessibility-minded overrides: no production logic. */
-:root{--ui-bg:#24292f;--ui-side:#2a3139;--ui-surface:#333b45;--ui-panel:#39424e;--ui-border:#576170;--ui-fg:#f5f7fc;--ui-muted:#cbd4e0;--ui-primary:#8b62cc}
-body,#main{background:#24292f!important;color:#f5f7fc}
-#sidebar{background:#2a3139!important;border-color:#576170!important}
-#toolbar{background:#343b46!important;border-color:#576170!important}
-#canvas-container{background-color:#22272e!important}
+:root{--ui-bg:#131C2B;--ui-side:#131C2B;--ui-surface:#131C2B;--ui-panel:#182238;--ui-border:#22304A;--ui-fg:#E9EFF9;--ui-muted:#93A6C4;--ui-primary:#8A7CF0}
+body,#main{background:#131C2B!important;color:#E9EFF9}
+#sidebar{background:#131C2B!important;border-color:#22304A!important}
+#toolbar{background:#131C2B!important;border-color:#22304A!important}
+#canvas-container{background-color:#080C14!important}
 #petekV477Editor,.petek-v477-workspace,.petek-v477-list-pane,.petek-v477-side,
-.petek-v477-stage{background:#2b3037}
-.petek-v477-stage{color:#f5f7fc}
-.petek-v477-viewport-bar{background:#343d48!important}
-#petekV477List .petek-status-approved,.v499-status-approved{background:#203d35!important;border-left:3px solid #34d399!important;color:#d1fae5!important}
-#petekV477List .petek-status-pending.v499-status-draft,.v499-status-draft{background:#453a21!important;border-left:3px solid #fbbf24!important;color:#fff3c4!important}
-#petekV477List .v499-status-new,.v499-status-new{background:#233b56!important;border-left:3px solid #60a5fa!important;color:#dbeafe!important}
-#petekV477List .petek-status-error,.v499-status-error{background:#4c2931!important;border-left:3px solid #fb7185!important;color:#ffe4e6!important}
-.v499-status-filter{border:1px solid #646b78;border-radius:10px;padding:8px;margin:8px 0;background:#313a45;display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.petek-v477-stage{background:#0B101B}
+.petek-v477-stage{color:#E9EFF9}
+.petek-v477-viewport-bar{background:#131C2B!important}
+#petekV477List .petek-status-approved,.v499-status-approved{background:#122A21!important;border-left:3px solid #3FD98A!important;color:#B9F3DC!important}
+#petekV477List .petek-status-pending.v499-status-draft,.v499-status-draft{background:#2A2410!important;border-left:3px solid #F0B84C!important;color:#F8E3AC!important}
+#petekV477List .v499-status-new,.v499-status-new{background:#182238!important;border-left:3px solid #5AA9FF!important;color:#BFE0FF!important}
+#petekV477List .petek-status-error,.v499-status-error{background:#2E161A!important;border-left:3px solid #EF6A73!important;color:#ffe4e6!important}
+.v499-status-filter{border:1px solid #22304A;border-radius:10px;padding:8px;margin:8px 0;background:#131C2B;display:grid;grid-template-columns:1fr 1fr;gap:7px}
 .v499-status-filter legend{font-size:13px;font-weight:750;color:#fff;padding:0 5px}
 .v499-status-filter label{font-size:13px;font-weight:650;padding:6px;border-radius:6px;white-space:nowrap;cursor:pointer}
-.v499-state-new{color:#93c5fd;background:#243a54}
-.v499-state-approved{color:#86efac;background:#204435}
-.v499-state-draft{color:#fcd34d;background:#483d24}
-.v499-state-error{color:#fda4af;background:#542c32}
-.v499-filter-help{grid-column:1/-1;font-size:11px;line-height:1.35;color:#cfdae5}
+.v499-state-new{color:#8FC2FF;background:#13243A}
+.v499-state-approved{color:#7BE3A8;background:#122A21}
+.v499-state-draft{color:#F0B84C;background:#2A2410}
+.v499-state-error{color:#EF6A73;background:#2E161A}
+.v499-filter-help{grid-column:1/-1;font-size:11px;line-height:1.35;color:#93A6C4}
 .template-item[hidden]{display:none!important}
 @media(max-width:920px){.v499-status-filter{grid-template-columns:1fr 1fr}}
 
@@ -27,7 +27,7 @@ body,#main{background:#24292f!important;color:#f5f7fc}
    Without this, button shrinks to zero and filenames appear blank. */
 #petekV477List .petek-v484-line{display:flex!important;width:100%;align-items:center;gap:7px}
 #petekV477List input.petek-v484-check{width:18px!important;max-width:18px!important;min-width:18px!important;height:18px!important;flex:0 0 18px!important;margin:0 3px!important;padding:0!important}
-#petekV477List .petek-v484-name{display:block!important;flex:1 1 auto!important;min-width:55px!important;width:auto!important;font-size:13px!important;color:#f8fafc!important;opacity:1!important;visibility:visible!important;white-space:nowrap;text-overflow:ellipsis;overflow:hidden;line-height:1.35}
+#petekV477List .petek-v484-name{display:block!important;flex:1 1 auto!important;min-width:55px!important;width:auto!important;font-size:13px!important;color:#E9EFF9!important;opacity:1!important;visibility:visible!important;white-space:nowrap;text-overflow:ellipsis;overflow:hidden;line-height:1.35}
 #petekV477List .petek-v484-item-wrap{min-height:36px!important}
-#petekV498BulkApprove{min-height:52px;background:#10775e!important;color:#fff!important;font-weight:750}
-.petek-v499-bulk-hint{color:#dbeafe;background:#293b50;padding:9px;border-left:3px solid #60a5fa;font-size:12px;line-height:1.45}
+#petekV498BulkApprove{min-height:52px;background:#0E8F6E!important;color:#fff!important;font-weight:750}
+.petek-v499-bulk-hint{color:#BFE0FF;background:#131C2B;padding:9px;border-left:3px solid #5AA9FF;font-size:12px;line-height:1.45}

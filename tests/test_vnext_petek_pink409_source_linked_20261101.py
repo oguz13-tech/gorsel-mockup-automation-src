@@ -85,6 +85,31 @@ def test_hue_179_source_magenta_is_not_reported_as_new_leak():
     assert np.array_equal(out, rendered)
 
 
+def test_dark_alpha_composite_shifted_magenta_is_cleaned_content_independently():
+    """A dark/alpha design can shift the leaked key colour before cleanup.
+
+    The shifted pixel is still spatially tied to the photographed PETEK marker,
+    but no longer has the exact source hue. Cleanup must use the immutable
+    pre-effect print reference plus the owned edge corridor, rather than making
+    success depend on the artwork's brightness or alpha representation.
+    """
+    scene, mask, quad = _sample()
+    artwork = np.full((350, 500, 3), (24, 28, 34), np.uint8)
+    reference = scene.copy()
+    # The print-before-effects reference contains the dark design at this
+    # location; the photographed marker exists only in the original scene.
+    reference[60:95, 62:65] = artwork[0, 0]
+    rendered = reference.copy()
+    # Premultiplied-alpha/resize-like darkening of the source marker.
+    rendered[60:95, 62:65] = (184, 36, 172)
+    out, qa = cleanup_petek_magenta(
+        rendered, mask, quad, printed_reference=reference, source_scene=scene
+    )
+    assert qa['repaired_pixels'] >= 100
+    assert qa['remaining_pixels'] == 0
+    assert np.array_equal(out[60:95, 62:65], reference[60:95, 62:65])
+
+
 def test_reference_cleanup_rejects_bad_shapes_without_writing():
     scene,mask,quad=_sample()
     image=scene.copy()

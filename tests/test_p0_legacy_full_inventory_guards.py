@@ -37,7 +37,7 @@ def test_old_preview_batch_never_launches_cloud_without_explicit_approval():
     assert "__name__" in source
     assert "--allow-cloud-upload" in source
     assert "MOCKUP_RUNTIME_WORKSPACE" in source
-    assert 'Path(r"C:\\Users\\oguzc' not in source
+    assert 'Path(r"C:\\Users\\' not in source
 
 
 def test_launcher_does_not_mutate_python_environment_on_start():

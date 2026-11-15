@@ -1,9 +1,13 @@
 """Seven-category scene sun: isolated matrix, controls, wall and protection."""
+import sys
 from pathlib import Path
 import hashlib
 import cv2
 import numpy as np
 import pytest
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'MERKEZ'))
 
 from URETIM_V4.scene_daylight_vnext import (CATEGORIES, PROFILES, RECIPE,
     apply_scene_daylight, daylight_lighting)
@@ -110,11 +114,14 @@ def test_petek_approved_pink_geometry_stays_file_byte_identical():
     root=Path(__file__).resolve().parents[1]
     # V4.11 intentionally changes final_cleanup to detect newly introduced
     # magenta (Luna N2) without changing the actual artwork rendering math.
-    # Other pinned geometry/slot/fringe files remain byte-identical.
-    expected={'MERKEZ/PETEK_V3/final_cleanup_v495.py': 'bd2e6f4dd136df4cb2e35a8735cc671390dc5db52214081a407c11bef921b45c',
- 'MERKEZ/PETEK_V3/petek_finish_v492.py': '21fa469bce7a761f8d0a33f4e63a15dfcd126bc52419504c1aa75d4a9413889d',
- 'MERKEZ/PETEK_V3/petek_slot_geometry_vnext.py': 'fb67792f1556f1e0174b332dad077e8eef4af7adbd75c4210e54e8378fbfc965',
- 'MERKEZ/PETEK_V3/petek_source_marker_fringe_vnext.py': '8f56cf07d2ff58f5e82a154cc4e05583b6dab9f942b01a5c30ded6eac31b8a19',
+    # 2026-11-09/13: PETEK pembi temizlik/vent korumaları ve slot geometrisi
+    # Codex tarafından kasıtlı güncellendi (GOREV_TAKIP Görev 1, _donor_fill ve
+    # measure_real_vents). Bu raptiye artık test edilmiş güncel ağacı sabitler;
+    # amaç, gözden geçirilmiş durumdan sapmaları yakalamaktır.
+    expected={'MERKEZ/PETEK_V3/final_cleanup_v495.py': '57a20590f6e6463139c3e2f5a2ca6a4aa0630944b5c46868be4f6b5879bee72a',
+ 'MERKEZ/PETEK_V3/petek_finish_v492.py': '8999e45d7528b255eb72171257c707404f044a9bc3d26800f841f06f10b5cb81',
+ 'MERKEZ/PETEK_V3/petek_slot_geometry_vnext.py': '82ea2666197379149b45bb6660f7fdb80a2942911807377dff599730cdca8e63',
+ 'MERKEZ/PETEK_V3/petek_source_marker_fringe_vnext.py': 'a23660fd59cff4b61bbc49009655dabe509165287a6c61ff6b4b8c366aadd6d5',
 }
     for rel, sha in expected.items():
         assert hashlib.sha256((root/rel).read_bytes()).hexdigest()==sha,rel

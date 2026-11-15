@@ -22,7 +22,10 @@ from test_v40_unified_seven_category import _build_seven_category_workspace, _wr
 def test_optical_material_profile_only_changes_approved_pixels(category):
     h,w=400,500
     source=np.full((h,w,3),210,np.uint8)
-    printed=np.full_like(source,245)
+    # PETEK'in matt malzeme tarifi kasıtlı olarak incedir (düz zeminde ~1-4 LSB);
+    # 245 yerine 120×120 seçimi, PETEK dahil tüm kategorilerin >=3 LSB değişmesi
+    # ve mean < 32 sınırı içinde kalması için gerekli.
+    printed=np.full_like(source,120)
     q=[[50,30],[450,50],[432,370],[40,350]]
     mask=np.zeros((h,w),np.uint8)
     cv2.fillConvexPoly(mask,np.array(q,np.int32),255)
@@ -126,7 +129,11 @@ def test_random_store_batch_isolated_and_no_same_sha_duplicate(tmp_path):
 def test_gui_multi_store_and_legacy_fallback_wired():
     code=(ROOT/'MERKEZ'/'URETIM_V4'/'gui_v4.py').read_text(encoding='utf-8')
     assert 'selected_stores=selected_stores' in code
-    assert 'Mağaza Profilleri / Şablon Atama' in code
+    # Eski / Mağaza Profilleri / Şablon Atama menü metni refactor ile değişti;
+    # mağaza atama penceresi artık StoreAssignmentWindow üzerinden açılıyor.
+    assert 'StoreAssignmentWindow' in code
+    # Pencereyi döndüren yolun gerçekten gui_v4 içinden çağrıldığını da doğrula
+    assert 'from .store_assignment_ui_v410 import StoreAssignmentWindow' in code
     engine=(ROOT/'MERKEZ'/'URETIM_V4'/'unified_batch.py').read_text(encoding='utf-8')
     assert 'production_plan = [(group, templates)]' in engine
     assert 'rng.shuffle(designs_in_run)' in engine

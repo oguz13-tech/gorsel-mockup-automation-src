@@ -220,8 +220,23 @@ def discover_all_approved_seven_categories(
                                 backup_file = runtime_root / "2_SABLON_HAVUZU_ORIJINAL_YEDEK" / rel
                                 if not backup_file.is_file() or backup_file.is_symlink():
                                     raise ValueError("Orijinal yedek kopyası eksik")
-                            scene = petek_engine.read_bgr(source_file)
-                            valid_quad = validated_legacy_manual_quad(quad, scene.shape)
+                            # Header-only shape read: the full decode here cost a
+                            # multi-megabyte PNG decode per template at startup.
+                            # Pixel data is never needed for quad validation.
+                            try:
+                                from PIL import Image as PILImage
+                                with PILImage.open(source_file) as probe:
+                                    probe.verify()
+                                with PILImage.open(source_file) as probe:
+                                    width, height = probe.size
+                                    bands = len(probe.getbands())
+                                image_shape = (int(height), int(width), int(bands))
+                            except Exception:
+                                # Fall back to the previous full read for unusual
+                                # codecs PIL cannot open; identical validation.
+                                scene = petek_engine.read_bgr(source_file)
+                                image_shape = scene.shape
+                            valid_quad = validated_legacy_manual_quad(quad, image_shape)
                             if per_category_limit is not None and counts[cat] >= int(per_category_limit):
                                 skipped.append(
                                     {

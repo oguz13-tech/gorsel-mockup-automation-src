@@ -50,5 +50,5 @@ def test_selected_petek_profile_is_wired_only_through_petek_branch():
     assert "self.petek_nature_profile=tk.StringVar(value='Belirgin')" in gui
     assert "petek_realism_profile=petek_realism_profile" in gui
     assert "petek_realism_profile: str = 'dogal'" in batch
-    assert "lighting=('strong' if lighting != 'off' and petek_realism_profile == 'belirgin' else lighting)" in batch
-    assert 'lighting=lighting,\n                                    category=cat' in batch
+    assert 'lighting=("strong" if lighting != "off" and petek_realism_profile == "belirgin" else lighting)' in batch
+    assert 'lighting=lighting,\n        category=item["category"]' in batch

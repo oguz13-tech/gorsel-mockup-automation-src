@@ -39,14 +39,29 @@ def marker_fringe_candidates(scene: np.ndarray, mask: np.ndarray, quad) -> np.nd
     physical=cv2.dilate(np.uint8(panel>0),cv2.getStructuringElement(
          cv2.MORPH_ELLIPSE,(2*MAX_FRINGE_WIDTH_PX+1,)*2))>0
     # A source-protected vent is an enclosed zero island inside the printable
-    # face. It is not an outside fringe and must never be treated as a repair
-    # target merely because the RAM mask protects its full measured width.
+    # face. Its black physical core is never a repair target; a one-pixel
+    # magenta lip immediately beside that core is, however, a photographed
+    # source marker and may be restored just like an outside fringe.
     zero=(mask==0).astype(np.uint8)
     nlabels,labels=cv2.connectedComponents(zero, connectivity=8)
     border_labels=np.unique(np.concatenate((
         labels[0,:], labels[-1,:], labels[:,0], labels[:,-1])))
     exterior=np.isin(labels,border_labels[border_labels!=0])
     candidate=exterior&near&physical&marker
+    enclosed=(zero>0)&~np.isin(labels,border_labels[border_labels!=0])
+    gray=cv2.cvtColor(scene,cv2.COLOR_BGR2GRAY)
+    # Saturated source magenta has a low luminance in OpenCV's BGR->GRAY
+    # conversion (255,0,255 becomes about 105), so ``gray < 130`` alone
+    # misclassifies an entire magenta opening as a photographed black core.
+    # That only becomes visible when a render-only safety mask protects an
+    # opening: the whole newly-zero island is then counted as a "vent lip"
+    # and the broad-fringe guard rejects an otherwise valid artwork.  A core
+    # must be dark *and non-marker*; the marker pixels immediately beside a
+    # genuinely dark core remain eligible through the dilation below.
+    dark_core=cv2.dilate(((gray<130)&~marker).astype(np.uint8),
+                         cv2.getStructuringElement(cv2.MORPH_ELLIPSE,(5,5)))>0
+    vent_lip=enclosed&physical&marker&dark_core
+    candidate |= vent_lip
     # If source marker occupies an unusually broad area, fail closed: it may
     # indicate a bad human mask instead of an anti-aliased 1..8 px fringe.
     n=int(np.count_nonzero(candidate))
@@ -69,10 +84,29 @@ def restore_source_marker_fringe(scene, printed, mask, quad, *, enabled):
     count=int(np.count_nonzero(target))
     if not count:return printed.copy(),{'status':'TEMIZ','repaired_pixels':0,'marker_pixels_detected':int(candidate.sum())}
     # Surrounding context contains both the photographed side and printed
-    # panel; the entire target region is excluded from donor pixels.
-    inpainted=cv2.inpaint(printed,(target.astype(np.uint8)*255),4.,cv2.INPAINT_TELEA)
+    # panel; the entire outside-fringe target is excluded from donor pixels.
+    # Enclosed vent lips use the same source-linked dark-core estimator as the
+    # later vent-interior stage, keeping standalone and production replay byte
+    # identical.
+    zero=(mask==0).astype(np.uint8)
+    _,labels=cv2.connectedComponents(zero,connectivity=8)
+    border_labels=np.unique(np.concatenate((labels[0,:],labels[-1,:],labels[:,0],labels[:,-1])))
+    enclosed=(zero>0)&~np.isin(labels,border_labels[border_labels!=0])
+    target_vent=target&enclosed
+    target_fringe=target&~enclosed
+    inpainted=cv2.inpaint(printed,(target_fringe.astype(np.uint8)*255),4.,cv2.INPAINT_TELEA)
     out=printed.copy()
-    out[target]=inpainted[target]
+    out[target_fringe]=inpainted[target_fringe]
+    if np.any(target_vent):
+        gray=cv2.cvtColor(scene,cv2.COLOR_BGR2GRAY)
+        ys,xs=np.where(target_vent)
+        for y,x in zip(ys,xs):
+            y0,y1=max(0,y-7),min(scene.shape[0],y+8)
+            x0,x1=max(0,x-7),min(scene.shape[1],x+8)
+            local=(gray[y0:y1,x0:x1]<130)&enclosed[y0:y1,x0:x1]
+            if int(local.sum())<5: continue
+            level=int(np.clip(np.percentile(gray[y0:y1,x0:x1][local],18),8,92))
+            out[y,x]=(level,level,level)
     # Only strictly identified magenta SOURCE markers, outside the print.
     if np.any(out[~target]!=printed[~target]):
         raise engine.MaskError('PETEK_FRINGE_REPAIR_OUTSIDE_CANDIDATE')

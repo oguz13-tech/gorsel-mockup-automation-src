@@ -13,8 +13,9 @@ const s={
   dragCorner:-1,dragChanged:false,dirty:false,needsCurveApply:false,
   fitScale:1,zoom:1,preview:null,previewMode:false,entries:[],spaceHeld:false,panning:false,undoStack:[],listHost:null,
   bulkMode:false,bulkSelected:new Set(),bulkActive:false,bulkStop:false,bulkRows:[],bulkReport:[],compactList:true,
-  hoverBrush:null,batchPreviewActive:false
+  hoverBrush:null,batchPreviewActive:false,maskReady:false
 };
+let selectionGeneration=0;
 const names={corners:'Dört köşe',wood:'Baskı ahşabını boya',erasewood:'Ahşap boyasını sil',protect:'Delik / yan yüzü koru',top:'Üst kavis',bottom:'Alt kavis'};
 const errorSolutions=[
   [/maske taslağı|baskı alanı|%0|0[.,]0%/i,'Dört köşe kaydedildiyse önce “2. Otomatik Maske Taslağı” oluştur, ardından gerçek tasarımla önizle. Kaydedilmiş maske yokken baskı alanını %0 diye yorumlama.','petekV477Auto'],
@@ -23,12 +24,42 @@ const errorSolutions=[
   [/4k|esrgan|vulkan/i,'Seri Üretim > “4K Kurulumunu Kontrol Et” düğmesini kullan. 4K kapalı normal üretim sürdürülebilir.',null]
 ];
 let lastErrorKey='',lastErrorTime=0;
+let serviceTimer=null, serviceHealthy=false, serviceCheckInFlight=false;
+function connectionNotice(message, bad=false){
+ const e=$('petekV477Connection'), text=$('petekV477ConnectionText'), button=$('petekV477Reconnect');
+ if(e){(text||e).textContent=String(message)+' ';e.style.color=bad?'#fca5a5':'#B9F3DC';}
+ if(button)button.hidden=!bad;
+}
+function reportConnectionFailure(error,path){
+ const detail={kind:'PETEK_CONNECTION',path:String(path||''),error:String(error?.message||error),
+   href:String(location.href),at:new Date().toISOString()};
+ try{fetch('/api/petek/client-diagnostic',{method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify(detail),keepalive:true,cache:'no-store'}).catch(()=>{});}catch(_ignored){}
+}
+async function checkService({quiet=false}={}){
+ if(serviceCheckInFlight)return serviceHealthy;
+ serviceCheckInFlight=true;
+ try{
+   const response=await fetch('/api/petek/service-status',{cache:'no-store',credentials:'same-origin'});
+   const type=String(response.headers?.get?.('content-type')||'').toLowerCase();
+   const data=type.includes('json')?await response.json():null;
+   if(!response.ok||!data?.success||data.contract!=='PETEK_PREVIEW_API_VNEXT_JSON_20261101')
+      throw Error('PETEK_SERVICE_CONTRACT_INVALID_HTTP_'+String(response.status));
+   serviceHealthy=true;connectionNotice('PETEK servisi bağlı · salt-okunur durum kontrolü başarılı.');
+   return true;
+ }catch(error){
+   serviceHealthy=false;connectionNotice('PETEK servisine bağlantı yok. Ana Merkezden doğrulanmış 4 Köşe Servisini yeniden açın; bilinmeyen 8080 sürecini kapatmayın.',true);
+   reportConnectionFailure(error,'/api/petek/service-status');
+   if(!quiet)notice('PETEK sunucusu hazır değil: '+String(error.message||error)+'\nBağlantıyı yeniden dene düğmesini kullanın.',true);
+   return false;
+ }finally{serviceCheckInFlight=false;}
+}
 function notice(message,bad=false){
  const e=$('petekV477Status'); if(!e)return;
  const raw=String(message);let recommendation=null;
  if(bad){for(const [pattern,advice,id] of errorSolutions){if(pattern.test(raw)){recommendation={advice,id};break;}}}
  e.textContent=raw+(recommendation?'\nNEDEN / ÇÖZÜM: '+recommendation.advice:'');
- e.style.color=bad?'#fca5a5':'#c6f6d5';
+ e.style.color=bad?'#fca5a5':'#B9F3DC';
  // Only blocking, non-batch errors trigger the popup once. Per-file bulk
  // failures are aggregated in the report and must not stop the queue.
  if(!bad||s.bulkActive||!recommendation)return;
@@ -43,7 +74,10 @@ function notice(message,bad=false){
  if(!popup.open)popup.showModal();
 }
 
-function photoUrl(name){return '/api/petek/photo/'+encodeURIComponent(name);}
+// Use a bounded display raster for the canvas. The server still validates and
+// renders against the original SHA-bound source; this only avoids decoding a
+// multi-megabyte camera file on every template click.
+function photoUrl(name){return '/api/petek/photo/'+encodeURIComponent(name)+'?display=1';}
 function detailUrl(name,uid){return '/api/petek/detail/'+encodeURIComponent(name)+'?uid='+encodeURIComponent(uid);}
 async function api(path,body){
  // A stale Flask process on 8080 may return its HTML 404/500 page here.
@@ -52,7 +86,9 @@ async function api(path,body){
  try{
    r=await fetch(path,body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),cache:'no-store'}:{cache:'no-store'});
  }catch(e){
-   throw Error('PETEK sunucusuna erişilemedi (127.0.0.1:8080). 4 Köşe Servisini Durdur / tekrar başlat; sadece doğrulanmış sunucuyu durdur. Ağ hatası: '+String(e.message||e));
+   serviceHealthy=false;connectionNotice('PETEK servisine erişilemiyor. Sunucu durmuş olabilir; yeniden bağlanmayı deneyin.',true);
+   reportConnectionFailure(e,path);
+   throw Error('PETEK sunucusuna erişilemedi (127.0.0.1:8080). Şablon İnceleyiciyi Güvenle Kapat ile tekrar başlat; sadece doğrulanmış sunucu durdur. Ağ hatası: '+String(e.message||e));
  }
  const ct=String(r.headers?.get?.('content-type')||'').toLowerCase();
  let data;
@@ -63,7 +99,7 @@ async function api(path,body){
    const status=Number.isInteger(r.status)?String(r.status):'?';
    throw Error('PETEK API JSON yerine HTML/geçersiz yanıt döndürdü (HTTP '+status+'). '
       +'8080 portunda ESKİ/YANLIŞ sunucu ya da sunucu iç hatası olabilir. '
-      +'Ana Merkez > 4 Köşe Servisini Durdur ve yeniden aç; Ctrl+F5 yap. '
+      +'Ana Merkez yan menüdeki "Şablon İnceleyiciyi Güvenle Kapat" düğmesiyle yeniden aç; Ctrl+F5 yap. '
       +'Salt-okunur teşhis: /api/petek/service-status. Yol: '+path);
  }
  if(!data||typeof data!=='object'||Array.isArray(data))
@@ -233,12 +269,12 @@ function chooseRelative(delta){
  // Never interpret a filtered-out selection as 'jump to the first template'.
  if(idx<0){notice('Seçili PETEK bu filtrede gizli. Aynı görselde kalındı; gezinmek için ilgili durum filtresini aç.',true);return;}
  const target=list[idx+delta];if(!target)return;
- if(s.dirty&&!confirm('Kaydedilmemiş PETEK taslağını bırakıp sonraki şablona geçilsin mi?'))return;
- select(target.name,target.uid);
+ navigateToPetek(target.name,target.uid);
 }
 function bulkKey(item){return JSON.stringify([item.name,item.uid,item.source_sha]);}
 function visiblePetekItems(){
- const q=$('petekV477Search').value.trim().toLocaleLowerCase('tr');
+ const input=$('petekV477Search');
+ const q=String(input?.value||'').trim().toLocaleLowerCase('tr');
  return s.entries.filter(x=>(!q||x.name.toLocaleLowerCase('tr').includes(q)||x.uid.toLocaleLowerCase('tr').includes(q)) && (!window.V499StatusFilters || window.V499StatusFilters.allowed(petekState(x))));
 }
 function refreshBulkCount(){
@@ -341,12 +377,15 @@ async function runBulkPetek(save){
 async function beginBulkPetekApproval(){
  if(s.bulkActive)return;
  if(s.dirty){notice('Kaydedilmemiş PETEK düzenlemesi var. Önce kaydet veya geri al.',true);return;}
- const drafts=visiblePetekItems().filter(x=>x.status==='DRAFT'&&x.mask_verified);
- const rejected=visiblePetekItems().filter(x=>x.status==='DRAFT'&&!x.mask_verified).length;
- if(!drafts.length){notice('Onaylanabilecek doğrulanmış PETEK TASLAĞI bulunamadı. Önce Otomatik Maske Taslağı oluştur ve kaydet.',true);return;}
+ const candidates=s.bulkSelected.size
+   ? s.entries.filter(x=>s.bulkSelected.has(bulkKey(x)))
+   : visiblePetekItems();
+ const drafts=candidates.filter(x=>x.status==='DRAFT'&&x.mask_verified);
+ const rejected=candidates.filter(x=>x.status==='DRAFT'&&!x.mask_verified).length;
+ if(!drafts.length){notice('Seçilenlerde onaylanabilecek doğrulanmış PETEK TASLAĞI bulunamadı. Önce taslakları oluşturup kaydedin.',true);return;}
  const reviewer=($('petekV477Reviewer')?.value||'Can').trim();
  if(!reviewer){notice('İnceleyen kişinin adını gir.',true);return;}
- if(!confirm(drafts.length+' PETEK TASLAĞININ TÜMÜ SUNUCUDA AYRI AYRI DENETLENECEK.\n\n'+
+ if(!confirm(drafts.length+' seçili PETEK TASLAĞININ TÜMÜ SUNUCUDA AYRI AYRI DENETLENECEK.\n\n'+
    'Kaynak fotoğraf, maske SHA, dört köşe ve baskı alanı doğru olanlar ONAYLANACAK; hatalılar TASLAK kalacak.\n'+
    'Onaylı eski maskeler ve orijinal dosyalar değişmeyecek.\n\n'+
    'Her dosyaya tik atmanız gerekmiyor. Toplu onayı BAŞLATMAK istiyor musunuz?'))return;
@@ -425,13 +464,9 @@ function listVisual(){
      });
      line.append(input);
    }
-   const thumbnail=document.createElement('img');
-   thumbnail.className='petek-v484-thumb';thumbnail.loading='lazy';
-   thumbnail.decoding='async';thumbnail.alt=item.name+' küçük önizleme';
-   thumbnail.width=52;thumbnail.height=52;
-   thumbnail.src='/api/petek/thumbnail/'+encodeURIComponent(item.name);
-   thumbnail.addEventListener('error',()=>{thumbnail.alt='Önizleme açılamadı';thumbnail.classList.add('petek-v484-thumb-error');});
-   line.append(thumbnail);
+   // Deliberately no per-row thumbnail request. A large PETEK pool can have
+   // hundreds of photos; generating/loading all small previews starved the
+   // selected full-size photo on the single-process editor.
    const button=document.createElement('button');button.type='button';button.className='petek-v477-list-item petek-v484-name';
    button.setAttribute('role','option');
    button.setAttribute('aria-selected',String(s.uid===item.uid&&s.name===item.name));
@@ -447,8 +482,7 @@ function listVisual(){
    button.addEventListener('click',()=>{
      if(s.bulkActive){notice('PETEK toplu tarama sürüyor; bitince şablon değiştir.',true);return;}
      if(s.name===item.name&&s.uid===item.uid)return;
-     if(s.dirty&&!confirm('Kaydedilmemiş değişiklikleri bırakarak farklı PETEK şablonu açılsın mı?'))return;
-     select(item.name,item.uid);
+     navigateToPetek(item.name,item.uid);
    });
    line.append(button);
    const pictos=document.createElement('span');pictos.className='petek-v484-pictos';
@@ -492,13 +526,13 @@ function draw(){
     ctx.drawImage(tint,0,0);
  }
  if(s.quad.length){
-    ctx.lineWidth=2;ctx.strokeStyle='#ff5555';ctx.fillStyle='#ff4444';
+    ctx.lineWidth=2;ctx.strokeStyle='#ff5555';ctx.fillStyle='#EF6A73';
     ctx.beginPath();s.quad.forEach((p,i)=>i?ctx.lineTo(p[0]*k,p[1]*k):ctx.moveTo(p[0]*k,p[1]*k));
     if(s.quad.length===4)ctx.closePath();ctx.stroke();
     s.quad.forEach((p,i)=>{
       ctx.beginPath();ctx.arc(p[0]*k,p[1]*k,5,0,Math.PI*2);ctx.fill();
       ctx.fillStyle='white';ctx.font='bold 12px Arial';ctx.fillText(String(i+1),p[0]*k+7,p[1]*k-7);
-      ctx.fillStyle='#ff4444';
+      ctx.fillStyle='#EF6A73';
     });
  }
  for(const type of ['top','bottom']){
@@ -597,7 +631,7 @@ function resetCorners(){
  if(!editingAllowed()||!s.img)return;
  if(!confirm('PETEK TASLAĞINDAKİ 4 köşe, maske ve kavisler temizlenecek. Önceki kayıtlı/onaylı maskeler korunur. Baştan seçilsin mi?'))return;
  snapshot();s.quad=[];s.curves={top:[],bottom:[]};s.base=null;s.mask=blank();
- s.previewMode=false;s.preview=null;s.dirty=true;s.needsCurveApply=false;
+ s.previewMode=false;s.preview=null;s.dirty=true;s.needsCurveApply=false;s.maskReady=false;
  s.mode='corners';$('petekV477Mode').textContent='Mod: '+names[s.mode];
  draw();notice('4 köşeyi sol üstten başlayıp yeniden işaretle. Ctrl+Z ile geri alabilirsin.');
 }
@@ -616,9 +650,37 @@ function setMode(mode){
        'Kavis uçları yan kenarlara ulaşmalı. Noktaları soldan sağa işaretle.');
  draw();
 }
-async function select(name,uid){
+async function saveDraftSilently(){
+ if(!s.dirty)return true;
+ if(!editingAllowed()||!s.img||s.quad.length!==4)return false;
  try{
+  // A corner drag invalidates the old mask. Rebuild a draft mask locally on
+  // navigation so changing templates never discards the reviewed geometry.
+  if(!s.maskReady){
+   const generated=await api('/api/petek/auto-mask',{name:s.name,source_sha:s.sha,quad:s.quad});
+   s.mask=await decodeCanvas(generated.mask);s.base=null;
+   s.curves={top:[],bottom:[]};s.needsCurveApply=false;s.maskReady=true;
+  }
+  const data=await api('/api/petek/save-draft',content());
+  if(data.uid!==s.uid||data.status!=='DRAFT')throw Error('PETEK_OTOMATIK_TASLAK_KIMLIK_UYUSMUYOR');
+  applyDraftInPlace(s.name,s.uid,data.mask_sha);
+  return true;
+ }catch(e){notice('PETEK taslağı otomatik kaydedilemedi: '+e.message,true);return false;}
+}
+async function navigateToPetek(name,uid){
+ if(s.bulkActive){notice('PETEK toplu tarama sürüyor; bitince şablon değiştir.',true);return;}
+ if(s.dirty && !(await saveDraftSilently()))return;
+ await select(name,uid);
+}
+async function select(name,uid){
+ const generation=++selectionGeneration;
+ try{
+  // Start the source image request at the same time as the JSON detail
+  // request. Previously the full photo waited for detail/registry validation
+  // to finish, adding avoidable latency on every selection.
+  const imagePromise=imageOf(photoUrl(name));
   const data=await api(detailUrl(name,uid));
+  if(generation!==selectionGeneration)return;
   s.name=name;s.uid=data.uid;s.sha=data.source_sha;s.status=data.status;
   // The visible list click and hidden native selection MUST have one UID.
   // Otherwise the next reload or arrow navigation silently jumps elsewhere.
@@ -635,8 +697,9 @@ async function select(name,uid){
   s.preview=null;s.previewMode=false;s.zoom=1;s.undoStack=[];
   s.width=data.width;s.height=data.height;s.quad=data.quad||[];
   s.curves=data.curve_points||{top:[],bottom:[]};s.needsCurveApply=false;
-  s.base=null;s.dirty=false;
-  s.img=await imageOf(photoUrl(name));
+  s.base=null;s.dirty=false;s.maskReady=Boolean(data.mask);
+  s.img=await imagePromise;
+  if(generation!==selectionGeneration)return;
   s.mask=data.mask?await decodeCanvas(data.mask):blank();
   s.base=data.base_mask?await decodeCanvas(data.base_mask):null;
   $('petekV477Aspect').value=String(data.physical_aspect);
@@ -757,27 +820,33 @@ async function previewArtwork(isFifteen=false){
     if(data.diagnostic_artwork_applied && data.preview){
       // This is real uploaded artwork, rendered on an UNSAVED and more
       // protective temporary mask. No batch approval is implied.
+      if(data.mask){
+        // Keep the automatically reconciled mask only in the current draft.
+        // It is never persisted or approved by this response.
+        snapshot();
+        s.mask=await decodeCanvas(data.mask);
+        s.base=null;s.curves={top:[],bottom:[]};s.needsCurveApply=false;s.dirty=true;
+      }
       s.preview=await imageOf(data.preview);
       s.previewMode=true;
       draw();
       const count=Number(data.diagnostic_mask_qa?.source_vent_count||0);
-      notice('GERÇEK TASARIMLA GÜVENLİ TASLAK ÖNİZLEME — Baskı görseli geçici koruma maskesiyle gösteriliyor. '
+      notice('GERÇEK TASARIMLA OTOMATİK GÜVENLİ TASLAK — Sistem fotoğraftaki '+count+' koyu yarığı koruyan geçici maskeyi oluşturdu. '
         +'Kaynak fotoğrafta ölçülen '+count+' koyu yarık korundu. '
-        +'ORİJİNAL MASKENİZ DEĞİŞMEDİ. ÜRETİME ONAY VERİLMEDİ; '
-        +'gerçek yarıkların ve kavislerin maskesini gözden geçirip yeni revizyonu elle onaylayın. '
+        +'Bu maske yalnız ekrandaki mevcut taslağa alındı; ORİJİNAL VE ONAYLI KAYIT DEĞİŞMEDİ. '
+        +'Görseli kontrol edip taslağı kaydedin; üretim onayı ayrıca verilecek. '
         +String(data.detail||''),false);
     }else{
       // Do not visually remove the green mask to display a plain magenta
       // photograph as if it were a finished artwork preview.
       s.preview=null;s.previewMode=false;
       draw();
-      notice('GERÇEK TASARIM UYGULANAMADI — Güvenilir bir baskı önizlemesi çıkarılamadı. '
-        +'ORİJİNAL FOTOĞRAF VE MASKE GÖSTERİLİYOR. '
-        +'Koyu fiziksel yarıkları koruyan yeni maske taslağını düzeltmeniz gerekiyor. '
-        +'Baskı oluşturuldu veya üretime onaylandı sanmayın. '
+      notice('MASKE TASLAĞI İNCELENMELİ — Sistem güvenli geçici taslak oluşturamadı; '
+        +'orijinal fotoğraf ve maske korunuyor. Önce “2. Otomatik Maske Taslağı” ile yeni taslak oluşturun. '
+        +'Bu bir üretim hatası değildir; üretim kaydı oluşturulmadı. '
         +String(data.detail||'')+' · '+String(data.diagnostic_detail||''),true);
     }
-    $('petekV477Status').style.color='#fde68a';
+    $('petekV477Status').style.color='#F8E3AC';
     return;
   }
   const previewBefore=await imageOf(data.preview);
@@ -805,7 +874,7 @@ async function previewArtwork(isFifteen=false){
       ' • Değişen piksel: '+qa.changed_pixels+
       ' • Dört kenar / ızgara temizliği: '+data.pink_qa.status+
       ' · Kalan yüksek doygunluklu pembe: '+(data.pink_qa.remaining_pixels||0)+
-      ' • Yatay gölge: 2 bant / '+(data.wall_shadow_qa?.status==='APPLIED'?'duvara da uygulandı':'duvar alanı güvenle ayrıştırılamadı')+
+      ' • Yatay gölge: 2 bant; pencere gölgesi sağ üst çeyrek + güvenilir duvar / '+(data.window_shadow_qa?.status==='APPLIED'?'duvara kesintisiz devam ediyor':'uygulanmadı')+
       '. ÖNCE / SONRA ile kontrol et; kaynak veya onaylı maske değişmedi.';
   }else{
     s.previewBefore=null;s.previewAfter=null;s.preview=previewBefore;
@@ -820,11 +889,11 @@ async function previewArtwork(isFifteen=false){
       :'Çıktıda korunmuş magenta saçak uyarısı yok. ';
   notice((isFifteen?Number(data.slot_qa.count)+' GERÇEK IZGARA A/B ÖNİZLEMESİ — ':'GERÇEK BASKI ÖNİZLEMESİ — ')+ 'PETEK V3 motoru. '+
      markerStatus+
-     'Yatay gölge: 2 bant; '+(data.wall_shadow_qa?.status==='APPLIED'?'görünür duvara da yayıldı. ':'güvenilir duvar alanı bulunamadığından duvara yayılmadı. ')+
+     'Yatay gölge: 2 bant; pencere gölgesi yalnız sağ üst çeyrekte; '+(data.window_shadow_qa?.status==='APPLIED'?'güvenilir duvara kesintisiz yayıldı. ':'güvenilir duvar alanı bulunamadığından duvara yayılmadı. ')+
      'Önizleme yalnız ekranda gösterildi; diske kayıt yapılmadı. Belirgin ışık/gölge ve gerçek yarık efektleri üretimle aynı motoru kullanıyor; 3:4/4K sonradan boyutlandırılır.',
      false);
   if(residual>0||!!(data.pink_qa&&data.pink_qa.remaining_pixels>0)){
-     $('petekV477Status').style.color='#fde68a';
+     $('petekV477Status').style.color='#F8E3AC';
   }
  }catch(e){notice('Baskı önizlemesi oluşturulamadı: '+e.message,true);}
  finally{btn.disabled=false;}
@@ -848,7 +917,7 @@ async function autoCorners(){
     notice('Başka şablon açıldı; eski otomatik köşe sonucu uygulanmadı.',true);return;
   }
   snapshot();s.quad=data.quad;s.previewMode=false;s.preview=null;s.mask=blank();s.base=null;s.curves={top:[],bottom:[]};
-  s.needsCurveApply=false;s.dirty=true;s.mode='corners';
+  s.needsCurveApply=false;s.dirty=true;s.maskReady=false;s.mode='corners';
   $('petekV477Mode').textContent='Mod: '+names[s.mode];
   draw();
   notice('MAGENTA 4 KÖŞE TASLAĞI ('+data.method+', kapsam '+Math.round(100*data.coverage)+
@@ -863,7 +932,7 @@ async function autoMask(){
  try{
   const data=await api('/api/petek/auto-mask',{name:s.name,source_sha:s.sha,quad:s.quad});
   snapshot();s.mask=await decodeCanvas(data.mask);s.previewMode=false;s.preview=null;s.base=null;s.curves={top:[],bottom:[]};
-  s.needsCurveApply=false;s.dirty=true;draw();
+  s.needsCurveApply=false;s.dirty=true;s.maskReady=true;draw();
   notice('Otomatik TASLAK oluşturuldu. Dikey delikler, kavisler ve yanları gözle kontrol et.');
  }catch(e){notice(e.message,true);}
 }
@@ -878,7 +947,7 @@ async function applyCurves(){
   const data=await api('/api/petek/curve-preview',{
     name:s.name,source_sha:s.sha,quad:s.quad,base_mask:maskUrl(s.base),curve_points:s.curves
   });
-  snapshot();s.mask=await decodeCanvas(data.mask);s.needsCurveApply=false;s.dirty=true;draw();
+  snapshot();s.mask=await decodeCanvas(data.mask);s.needsCurveApply=false;s.maskReady=true;s.dirty=true;draw();
   notice('Kavis maskesi görüntülendi; delik ve yer gölgelerini kontrol et.');
  }catch(e){notice(e.message,true);}
 }
@@ -1065,7 +1134,7 @@ function pointerMove(e){
      snapshot();
      // The existing draft mask belongs to the OLD quad. Never reuse a mask
      // after a geometry edit; request a fresh preview before approval.
-     s.mask=blank();s.base=null;s.curves={top:[],bottom:[]};s.needsCurveApply=false;
+     s.mask=blank();s.base=null;s.curves={top:[],bottom:[]};s.needsCurveApply=false;s.maskReady=false;
      s.preview=null;s.previewMode=false;s.dragChanged=true;
    }
    s.quad=candidate;s.dirty=true;draw();
@@ -1083,7 +1152,7 @@ function restoreListHost(){
  if(list&&workspace&&list.parentElement!==workspace)workspace.prepend(list);
  list?.classList.remove('in-sidebar');
 }
-function start(){
+async function start(){
  const normal=$('main'),pane=$('petekV477Editor'),nav=$('petekV477Nav');
  // Category refresh can detach a live PETEK list. Retain the original DOM
  // element (including listeners and controls); never recreate it from HTML.
@@ -1092,18 +1161,23 @@ function start(){
     notice('PETEK arayüzü eksik veya eski sürüm dosyaları karışmış. Güncel paketi açıp sayfayı Ctrl+Shift+R ile yenile.',true);
     return;
  }
- s.listHost=list;s.active=true;
+ s.listHost=list;
+ if(!(await checkService())){s.active=true;normal.style.display='none';pane.style.display='flex';nav.classList.add('selected');return;}
+ s.active=true;
  normal.style.display='none';pane.style.display='flex';
  nav.classList.add('selected');
  nav.after(list);
  list.classList.add('in-sidebar');
  reload();
+ if(serviceTimer)clearInterval(serviceTimer);
+ serviceTimer=setInterval(()=>{if(s.active)checkService({quiet:true});},15000);
 }
 function exit(){
  if(!s.active)return;
  if(s.bulkActive){notice('PETEK toplu tarama sürüyor. Önce taramayı durdur.',true);return;}
  if(s.dirty&&!confirm('Kaydedilmemiş PETEK taslağın var. Kaydetmeden çıkılsın mı?'))return;
  s.active=false;
+ if(serviceTimer){clearInterval(serviceTimer);serviceTimer=null;}
  restoreListHost();
  $('main').style.display='flex';$('petekV477Editor').style.display='none';
  $('petekV477Nav')?.classList.remove('selected');
@@ -1113,11 +1187,23 @@ function init(){
  s.listHost=$('petekV477ListPane');
  $('petekV477Nav').addEventListener('click',start);
  $('petekV477Close').addEventListener('click',exit);
+ $('petekV477Reconnect')?.addEventListener('click',async()=>{
+   const ok=await checkService();
+   if(ok){notice('PETEK servisi yeniden bağlandı; liste yenileniyor.');await reload();}
+ });
  $('petekV477Reload').addEventListener('click',()=>{
    if(s.dirty&&!confirm('Kaydedilmemiş PETEK değişiklikleri atılsın ve liste yenilensin mi?'))return;
    reload();
  });
- $('petekV477Search').addEventListener('input',listVisual);
+ const search=$('petekV477Search');
+ // Keep the field live after the PETEK pane is detached/re-attached by the
+ // shared sidebar renderer.  The delegated listener also covers a restored
+ // field created by a legacy cached page and never steals keyboard focus.
+ search?.addEventListener('input',listVisual);
+ search?.addEventListener('keyup',listVisual);
+ document.addEventListener('input',event=>{
+   if(event.target?.id==='petekV477Search')listVisual();
+ });
  document.addEventListener('v499:status-filter',()=>{if(s.active)listVisual();});
  $('petekV484BulkMode').addEventListener('click',()=>{
    if(s.bulkActive)return;
@@ -1154,7 +1240,7 @@ function init(){
  document.addEventListener('keydown',e=>{
    if(!s.active || ['INPUT','TEXTAREA','SELECT','BUTTON'].includes(e.target.tagName) || e.target.isContentEditable) return;
    if(['ArrowRight','ArrowLeft'].includes(e.key)){
-     if(s.bulkActive||s.dirty){notice('Önce açık maske değişikliklerini kaydet veya bırak; ondan sonra şablon değiştir.',true);e.preventDefault();e.stopImmediatePropagation();return;}
+     if(s.bulkActive){notice('PETEK toplu tarama sürüyor; bitince şablon değiştir.',true);e.preventDefault();e.stopImmediatePropagation();return;}
      e.preventDefault();e.stopImmediatePropagation();chooseRelative(e.key==='ArrowRight'?1:-1);return;
    }
    if(e.code==='Space')s.spaceHeld=true;
@@ -1180,7 +1266,7 @@ function init(){
  });
  $('petekV477Select').addEventListener('change',e=>{
     const [name,uid]=JSON.parse(e.target.value);
-    select(name,uid);
+    navigateToPetek(name,uid);
  });
  for(const b of document.querySelectorAll('[data-petek-mode]'))
    b.addEventListener('click',()=>setMode(b.dataset.petekMode));

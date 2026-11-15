@@ -12,6 +12,9 @@ from pathlib import Path
 
 SOURCE_ROOT = Path(__file__).resolve().parents[1]
 ARCH_DIR = SOURCE_ROOT / "SABLON_V2_MIMARI"
+if str(SOURCE_ROOT) not in sys.path:
+    sys.path.insert(0, str(SOURCE_ROOT))
+from MERKEZ.workspace_contract import resolve_contract
 if str(ARCH_DIR) not in sys.path:
     sys.path.insert(0, str(ARCH_DIR))
 
@@ -36,8 +39,8 @@ def parse_args():
     )
     parser.add_argument(
         "--runtime",
-        default=str(os.environ.get("MOCKUP_RUNTIME_WORKSPACE") or "").strip(),
-        help="Runtime workspace. Varsayılan: MOCKUP_RUNTIME_WORKSPACE.",
+        default=str(resolve_contract(code_root=SOURCE_ROOT, validate=False).runtime_root),
+        help="Runtime workspace. Varsayılan: merkezi çalışma alanı sözleşmesi.",
     )
     parser.add_argument(
         "--fast",
@@ -50,13 +53,6 @@ def parse_args():
 def main() -> int:
     args = parse_args()
     runtime = str(args.runtime or "").strip()
-    if not runtime:
-        _safe_console_print(
-            "HATA: Runtime workspace belirtilmedi. "
-            "MOCKUP_RUNTIME_WORKSPACE ayarlayın veya --runtime kullanın."
-        )
-        return 2
-
     report = run_factory_doctor(
         runtime,
         source_root=SOURCE_ROOT,

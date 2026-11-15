@@ -3,47 +3,53 @@ window.onerror = function(msg, url, line, col, error) {
         return false;
     };
     
-    // GLOBAL PERFORMANS OLCUM (FETCH WRAPPER)
-    const originalFetch = window.fetch;
-    window.fetch = async function(...args) {
-        const url = args[0];
-        if (typeof url === 'string' && url.startsWith('/api/')) {
-            const startTime = performance.now();
-            try {
-                const response = await originalFetch.apply(this, args);
-                const endTime = performance.now();
-                const durationMs = endTime - startTime;
-                
-                let perfMetric = document.getElementById("perf-metric");
-                if (perfMetric) {
-                    perfMetric.style.display = "inline-block";
-                    let sec = (durationMs / 1000).toFixed(2);
-                    
-                    if (durationMs < 500) {
-                        perfMetric.style.color = "#44ff44";
-                        perfMetric.innerText = `⚡ ${sec}s`;
-                    } else if (durationMs < 2000) {
-                        perfMetric.style.color = "#ffdd44";
-                        perfMetric.innerText = `⏱️ ${sec}s`;
-                    } else {
-                        perfMetric.style.color = "#ff4444";
-                        perfMetric.innerText = `🐢 ${sec}s`;
+    // GLOBAL PERFORMANS ÖLÇÜMÜ (FETCH WRAPPER)
+    // Script iki kez yüklenirse zincirleme wrapper/perf şişmesi oluşmasın.
+    if (!window.fetch.__gorselPerfWrapped) {
+        const originalFetch = window.fetch;
+        const perfState = window.__gorselPerfState || (window.__gorselPerfState = {
+            count: 0, slow: 0, samples: [], lastPath: '', lastMs: 0
+        });
+        const wrappedFetch = async function(...args) {
+            const url = args[0];
+            if (typeof url === 'string' && url.startsWith('/api/')) {
+                const startTime = performance.now();
+                try {
+                    const response = await originalFetch.apply(this, args);
+                    const durationMs = performance.now() - startTime;
+                    perfState.count += 1;
+                    perfState.lastPath = url;
+                    perfState.lastMs = Math.round(durationMs);
+                    perfState.slow += durationMs >= 2000 ? 1 : 0;
+                    perfState.samples.push(durationMs);
+                    if (perfState.samples.length > 30) perfState.samples.shift();
+                    const ordered = perfState.samples.slice().sort((a,b) => a-b);
+                    const p95 = ordered[Math.max(0, Math.ceil(ordered.length * .95) - 1)] || durationMs;
+
+                    const perfMetric = document.getElementById("perf-metric");
+                    if (perfMetric) {
+                        perfMetric.style.display = "inline-block";
+                        const sec = (durationMs / 1000).toFixed(2);
+                        perfMetric.style.color = durationMs < 500 ? "#3FD98A" :
+                            durationMs < 2000 ? "#F0B84C" : "#EF6A73";
+                        perfMetric.innerText = `${durationMs < 500 ? '⚡' : durationMs < 2000 ? '⏱️' : '🐢'} ${sec}s`;
+                        perfMetric.title = `${url} · son ${Math.round(durationMs)} ms · p95 ${Math.round(p95)} ms · ${perfState.count} istek`;
+                        clearTimeout(window.perfTimeout);
+                        window.perfTimeout = setTimeout(() => { perfMetric.style.display = "none"; }, 4000);
                     }
-                    
-                    // 3 saniye sonra gizle (eger yeni istek gelmezse)
-                    clearTimeout(window.perfTimeout);
-                    window.perfTimeout = setTimeout(() => {
-                        perfMetric.style.display = "none";
-                    }, 4000);
+                    return response;
+                } catch (error) {
+                    perfState.lastPath = url;
+                    perfState.lastMs = Math.round(performance.now() - startTime);
+                    console.error("Fetch hatası:", error);
+                    throw error;
                 }
-                return response;
-            } catch (error) {
-                console.error("Fetch hatasi:", error);
-                throw error;
             }
-        }
-        return originalFetch.apply(this, args);
-    };
+            return originalFetch.apply(this, args);
+        };
+        wrappedFetch.__gorselPerfWrapped = true;
+        window.fetch = wrappedFetch;
+    }
 
     function showCopyableReport(title, text) {
         let overlay = document.getElementById('copyable-report-overlay');
@@ -269,6 +275,7 @@ window.onerror = function(msg, url, line, col, error) {
             const solvedCount = Number(data.cozulen_sayisi || 0);
             if(errorCount > 0 || warningCount > 0 || solvedCount > 0) {
                 let banner = document.createElement("div");
+                banner.className = "graphite-safety-banner";
                 banner.style.padding = "10px";
                 banner.style.textAlign = "center";
                 banner.style.fontWeight = "bold";
@@ -276,15 +283,15 @@ window.onerror = function(msg, url, line, col, error) {
                 banner.style.position = "relative";
                 
                 if(errorCount > 0) {
-                    banner.style.backgroundColor = "#ff4444";
+                    banner.style.backgroundColor = "#EF6A73";
                     banner.style.color = "white";
                     banner.textContent = "⛔ ÜRETİM GÜVENLİĞİ: " + errorCount + " kritik sorun bulundu.";
                 } else if(warningCount > 0) {
-                    banner.style.backgroundColor = "#ffbf47";
+                    banner.style.backgroundColor = "#F0B84C";
                     banner.style.color = "black";
                     banner.textContent = "⚠️ FACTORY DOCTOR: " + warningCount + " geliştirme/sağlık uyarısı var.";
                 } else {
-                    banner.style.backgroundColor = "#44ff44";
+                    banner.style.backgroundColor = "#3FD98A";
                     banner.style.color = "black";
                     banner.textContent = "✅ SİSTEM " + solvedCount + " adet sorunu otomatik olarak çözdü.";
                 }
@@ -377,13 +384,13 @@ window.onerror = function(msg, url, line, col, error) {
         if (!el) return;
         if (sourceViewMode === 'original') {
             el.innerHTML = '🟣 <b>HAM ORİJİNAL önizleniyor.</b> Bu sadece görüntülemedir; dosya değişmedi.';
-            el.style.borderColor = '#8b5cf6';
+            el.style.borderColor = '#8A7CF0';
         } else if (sourceViewMode === 'preview') {
             el.innerHTML = '🟡 <b>SADECE BEYAZLATMA ÖNİZLEMESİ.</b> Çalışma, orijinal ve onay değişmedi.';
-            el.style.borderColor = '#eab308';
+            el.style.borderColor = '#F0B84C';
         } else {
             el.innerHTML = '🟢 <b>Çalışma görseli gösteriliyor.</b> Sistem işlemlerinde kullanılan aktif kopya budur.';
-            el.style.borderColor = '#2e7d32';
+            el.style.borderColor = '#0E8F6E';
         }
     }
 
@@ -1055,7 +1062,7 @@ window.onerror = function(msg, url, line, col, error) {
             'bottom:18px',
             'z-index:22000',
             'width:min(430px,calc(100vw - 36px))',
-            'background:#202124',
+            'background:#131C2B',
             'color:#fff',
             'border:1px solid #555',
             'border-radius:10px',
@@ -1066,13 +1073,13 @@ window.onerror = function(msg, url, line, col, error) {
         card.innerHTML = `
             <div style="font-weight:700;margin-bottom:8px;">🧭 Klasör Tutarlılık Taraması</div>
             <div id="workspace-audit-message" style="font-size:12px;color:#ddd;margin-bottom:8px;">Hazırlanıyor...</div>
-            <div style="height:14px;background:#3b3b3b;border-radius:999px;overflow:hidden;">
-                <div id="workspace-audit-bar" style="height:100%;width:0%;background:#16a34a;transition:width .2s ease;"></div>
+            <div style="height:14px;background:#182238;border-radius:999px;overflow:hidden;">
+                <div id="workspace-audit-bar" style="height:100%;width:0%;background:#17D3A3;transition:width .2s ease;"></div>
             </div>
             <div id="workspace-audit-count" style="font-size:11px;color:#bbb;margin-top:6px;">0 / 8</div>
             <div style="display:flex;gap:8px;margin-top:10px;">
-                <button type="button" id="workspace-audit-stop" style="flex:1;padding:8px;background:#b02a37;color:white;border:0;border-radius:6px;cursor:pointer;">⏹ Durdur</button>
-                <button type="button" id="workspace-audit-hide" style="flex:1;padding:8px;background:#374151;color:white;border:0;border-radius:6px;cursor:pointer;">↘ Gizle</button>
+                <button type="button" id="workspace-audit-stop" style="flex:1;padding:8px;background:#A94442;color:white;border:0;border-radius:6px;cursor:pointer;">⏹ Durdur</button>
+                <button type="button" id="workspace-audit-hide" style="flex:1;padding:8px;background:#182238;color:white;border:0;border-radius:6px;cursor:pointer;">↘ Gizle</button>
             </div>
         `;
         document.body.appendChild(card);
@@ -1677,6 +1684,29 @@ window.onerror = function(msg, url, line, col, error) {
             startStagingCollisionPolling();
         })
         .catch(err => showMessage("FETCH ERROR: " + err.message));
+
+    // The Tk upload center writes the same SQLite registry while this review
+    // page remains open. Poll with no-store so a newly canonicalized name and
+    // its NEW/DRAFT state become visible without a manual browser reload.
+    let reviewRegistryFingerprint = '';
+    window.setInterval(async () => {
+        try {
+            const response = await fetch('/api/ayarlar', {cache: 'no-store'});
+            if (!response.ok) return;
+            const fresh = await response.json();
+            const fingerprint = JSON.stringify(fresh?.kategoriler || {});
+            if (!reviewRegistryFingerprint) {
+                reviewRegistryFingerprint = fingerprint;
+            } else if (fingerprint !== reviewRegistryFingerprint) {
+                reviewRegistryFingerprint = fingerprint;
+                ayarlar = fresh;
+                renderSidebar();
+                refreshTemplateHealth(false, false);
+            }
+        } catch (error) {
+            console.debug('Şablon inceleme canlı yenileme bekliyor:', error);
+        }
+    }, 1500);
     
     function renderSidebar() {
         const catDiv = document.getElementById('categories');
@@ -1776,8 +1806,15 @@ window.onerror = function(msg, url, line, col, error) {
                 list.style.display = list.style.display === 'block' ? 'none' : 'block';
             };
             div.appendChild(title);
+            let hiddenHistoricalCount = 0;
             for (const tmpl in ayarlar.kategoriler[cat].sablonlar) {
                 const itemData = ayarlar.kategoriler[cat].sablonlar[tmpl];
+                const sourceMap = itemData && itemData._source_map;
+                const normalizedCategory = String(cat).normalize('NFKD').toLocaleLowerCase('tr-TR').replace(/[\u0300-\u036f]/g, '').replace(/ı/g, 'i');
+                if (normalizedCategory === 'yuklenecekler' && sourceMap && !sourceMap.active && !sourceMap.backup) {
+                    hiddenHistoricalCount += 1;
+                    continue;
+                }
                 const item = document.createElement('div');
                 item.className = 'template-item';
                 item.dataset.category = cat;
@@ -1826,12 +1863,12 @@ window.onerror = function(msg, url, line, col, error) {
                 ) {
                     label.textContent = '⛔ ' + tmpl;
                     item.style.backgroundColor = 'rgba(220,53,69,0.2)';
-                    item.style.color = '#ff9999';
+                    item.style.color = '#FFB3B8';
                     item.title = 'Onay artık güvenli değil; yeniden analiz/onay gerekli.';
                 } else if (itemData.supheli) {
                     label.textContent = '⚠️ ' + tmpl;
                     item.style.backgroundColor = 'rgba(220,53,69,0.2)';
-                    item.style.color = '#ff9999';
+                    item.style.color = '#FFB3B8';
                     item.title = 'Otomatik tespit şüpheli. İnsan kontrolü gerekli.';
                 } else if (hasCorners) {
                     label.textContent = '📝 ' + tmpl;
@@ -1862,10 +1899,10 @@ window.onerror = function(msg, url, line, col, error) {
 
                     if (healthInfo.severity === 'CRITICAL') {
                         item.style.backgroundColor = 'rgba(220,53,69,0.35)';
-                        item.style.color = '#ffb3b3';
+                        item.style.color = '#FFC4C8';
                     } else if (!item.style.backgroundColor) {
                         item.style.backgroundColor = 'rgba(255,193,7,0.18)';
-                        item.style.color = '#ffe08a';
+                        item.style.color = '#FBE7B0';
                     }
                 }
 
@@ -1913,15 +1950,25 @@ window.onerror = function(msg, url, line, col, error) {
                 };
 
                 const isHealthError = !!(healthInfo && healthInfo.severity !== 'OK');
-                const reviewDanger = ['STALE_SOURCE_CHANGED','AMBIGUOUS_DUPLICATE','REVIEW_REQUIRED','INVALID'].includes(reviewStatus);
+                // REVIEW_REQUIRED is the normal state for a newly imported
+                // template. A detected quad is a human-review draft, while a
+                // source without geometry remains NEW; neither is an error.
+                const reviewDanger = ['STALE_SOURCE_CHANGED','AMBIGUOUS_DUPLICATE','INVALID'].includes(reviewStatus);
                 const uiStatus = (isHealthError || reviewDanger || itemData.supheli) ? 'ERROR'
                     : reviewStatus === 'APPROVED' ? 'APPROVED'
-                    : (hasCorners || ['DRAFT','PENDING_REVIEW'].includes(reviewStatus)) ? 'DRAFT' : 'NEW';
+                    : (hasCorners || ['DRAFT','PENDING_REVIEW','REVIEW_REQUIRED_DRAFT'].includes(reviewStatus)) ? 'DRAFT' : 'NEW';
                 item.dataset.v499Status = uiStatus;
                 item.classList.add('v499-status-'+uiStatus.toLowerCase());
                 if (window.V499StatusFilters) window.V499StatusFilters.applyRow(item);
                 list.appendChild(item);
                 allTemplates.push({cat, tmpl, elem: item, list});
+            }
+            if (hiddenHistoricalCount > 0) {
+                const note = document.createElement('div');
+                note.className = 'template-item template-item-muted';
+                note.textContent = '↳ ' + hiddenHistoricalCount + ' eski/kayıp kayıt gizlendi (katalog korunuyor).';
+                note.title = 'Fiziksel aktif veya arşiv kaynağı bulunmayan eski kayıtlar listelenmez.';
+                list.appendChild(note);
             }
             div.appendChild(list);
             catDiv.appendChild(div);
@@ -2026,18 +2073,26 @@ window.onerror = function(msg, url, line, col, error) {
         };
 
         const img = new Image();
-        img.onload = () => {
+        const startsFromOriginal = (
+            data?._source_map?.active === false
+            && data?._source_map?.backup === true
+        );
+        let originalFallbackAttempted = startsFromOriginal;
+        const acceptLoadedImage = (loadedImage, mode) => {
             if (
                 loadToken !== templateLoadToken
                 || cat !== currentCat
                 || tmpl !== currentTmpl
             ) return;
-            currentImg = img;
-            originalImgObj = img;
-            sourceViewMode = 'working';
+            currentImg = loadedImage;
+            originalImgObj = loadedImage;
+            sourceViewMode = mode;
             updateSourceViewStatus();
             initPoints(data);
             draw();
+        };
+        img.onload = () => {
+            acceptLoadedImage(img, startsFromOriginal ? 'original' : 'working');
         };
         img.onerror = () => {
             if (
@@ -2045,6 +2100,37 @@ window.onerror = function(msg, url, line, col, error) {
                 || cat !== currentCat
                 || tmpl !== currentTmpl
             ) return;
+            // A catalog row can retain a valid immutable ham backup while
+            // its working copy is absent.  Keep the review screen usable,
+            // but make the yedek explicit in the source status instead of
+            // silently treating the backup as the active working image.
+            if (!originalFallbackAttempted && data?._source_map?.backup) {
+                originalFallbackAttempted = true;
+                const yedek = new Image();
+                yedek.onload = () => acceptLoadedImage(yedek, 'original');
+                yedek.onerror = () => {
+                    if (
+                        loadToken !== templateLoadToken
+                        || cat !== currentCat
+                        || tmpl !== currentTmpl
+                    ) return;
+                    currentImg = null;
+                    originalImgObj = null;
+                    pts = [];
+                    sourceViewMode = 'working';
+                    updateSourceViewStatus();
+                    showMessage(
+                        'HATA: "' + tmpl + '" çalışma görseli ve ham orijinal yedeği okunamadı.'
+                    );
+                    draw();
+                };
+                yedek.src =
+                    '/original-image/' +
+                    encodeURIComponent(cat) + '/' +
+                    encodeURIComponent(tmpl) +
+                    '?t=' + Date.now() + '-' + loadToken + '-original-yedek';
+                return;
+            }
             currentImg = null;
             originalImgObj = null;
             pts = [];
@@ -2058,7 +2144,7 @@ window.onerror = function(msg, url, line, col, error) {
             draw();
         };
         img.src =
-            '/working-image/' +
+            (startsFromOriginal ? '/original-image/' : '/working-image/') +
             encodeURIComponent(cat) + '/' +
             encodeURIComponent(tmpl) +
             '?t=' + Date.now() + '-' + loadToken;
@@ -2959,7 +3045,7 @@ window.onerror = function(msg, url, line, col, error) {
         button.style.cssText =
             'padding:8px 10px;border:0;border-radius:5px;cursor:pointer;' +
             'font-weight:bold;margin-left:6px;' +
-            'background:' + (danger ? '#b91c1c' : '#2563eb') + ';color:white;';
+            'background:' + (danger ? '#A94442' : '#2F6FED') + ';color:white;';
         button.onclick = handler;
         return button;
     }
@@ -2968,11 +3054,11 @@ window.onerror = function(msg, url, line, col, error) {
         const row = document.createElement('div');
         row.className = 'reconciliation-row';
         const border = severity === 'critical'
-            ? '#dc2626'
-            : (severity === 'warning' ? '#d97706' : '#475569');
+            ? '#A94442'
+            : (severity === 'warning' ? '#C88A2D' : '#22304A');
         row.style.cssText =
             'border:1px solid ' + border + ';border-radius:7px;' +
-            'padding:10px;margin:8px 0;background:#171717;';
+            'padding:10px;margin:8px 0;background:#0F1622;';
 
         const head = document.createElement('div');
         head.style.cssText =
@@ -2982,7 +3068,7 @@ window.onerror = function(msg, url, line, col, error) {
 
         const info = document.createElement('div');
         info.style.cssText =
-            'white-space:pre-wrap;color:#d1d5db;font-size:12px;' +
+            'white-space:pre-wrap;color:#93A6C4;font-size:12px;' +
             'line-height:1.45;word-break:break-word;';
         info.textContent = details;
         row.appendChild(info);
@@ -3212,15 +3298,15 @@ window.onerror = function(msg, url, line, col, error) {
                 overlay.innerHTML =
                     '<div id="reconciliation-center-dialog" ' +
                     'style="width:min(1050px,96vw);max-height:90vh;' +
-                    'overflow:auto;background:#111827;border:1px solid #475569;' +
+                    'overflow:auto;background:#131C2B;border:1px solid #22304A;' +
                     'border-radius:10px;padding:16px;color:white;">' +
                     '<div style="display:flex;justify-content:space-between;' +
                     'align-items:center;gap:10px;position:sticky;top:0;' +
-                    'background:#111827;padding-bottom:10px;z-index:2;">' +
+                    'background:#131C2B;padding-bottom:10px;z-index:2;">' +
                     '<div><div style="font-size:18px;font-weight:bold;">' +
                     '🧭 Güvenli Eşitleme Merkezi</div>' +
                     '<div id="reconciliation-summary" ' +
-                    'style="font-size:12px;color:#cbd5e1;margin-top:3px;"></div>' +
+                    'style="font-size:12px;color:#93A6C4;margin-top:3px;"></div>' +
                     '</div>' +
                     '<div style="display:flex;gap:6px;">' +
                     '<button type="button" id="reconciliation-copy-report" ' +
@@ -3267,8 +3353,8 @@ window.onerror = function(msg, url, line, col, error) {
 
             const intro = document.createElement('div');
             intro.style.cssText =
-                'padding:9px;border-radius:6px;background:#0f172a;' +
-                'color:#cbd5e1;font-size:12px;line-height:1.5;margin-bottom:10px;';
+                'padding:9px;border-radius:6px;background:#0F1622;' +
+                'color:#93A6C4;font-size:12px;line-height:1.5;margin-bottom:10px;';
             intro.textContent =
                 'Her sorun tek tek çözülür. “Hepsini düzelt” yoktur. ' +
                 'Dosya taşıyan işlemler kalıcı silme yapmaz; recovery kaydı oluşturur.';
@@ -3278,7 +3364,7 @@ window.onerror = function(msg, url, line, col, error) {
                 const h = document.createElement('h3');
                 h.textContent = title;
                 h.style.cssText =
-                    'margin:15px 0 6px;color:#e2e8f0;font-size:14px;';
+                    'margin:15px 0 6px;color:#E9EFF9;font-size:14px;';
                 content.appendChild(h);
             };
 
@@ -3287,7 +3373,7 @@ window.onerror = function(msg, url, line, col, error) {
             if (!duplicates.length) {
                 const empty = document.createElement('div');
                 empty.textContent = '✅ Duplicate kimlik yok.';
-                empty.style.color = '#86efac';
+                empty.style.color = '#7BE3A8';
                 content.appendChild(empty);
             }
             duplicates.forEach(row => {
@@ -3346,7 +3432,7 @@ window.onerror = function(msg, url, line, col, error) {
             if (!orphans.length) {
                 const empty = document.createElement('div');
                 empty.textContent = '✅ Çalışma yetimi yok.';
-                empty.style.color = '#86efac';
+                empty.style.color = '#7BE3A8';
                 content.appendChild(empty);
             }
             orphans.forEach(row => {
@@ -3375,7 +3461,7 @@ window.onerror = function(msg, url, line, col, error) {
             if (!missing.length) {
                 const empty = document.createElement('div');
                 empty.textContent = '✅ Aktif DB kayıtlarında dosya eksiği yok.';
-                empty.style.color = '#86efac';
+                empty.style.color = '#7BE3A8';
                 content.appendChild(empty);
             }
             missing.forEach(row => {
@@ -3860,49 +3946,154 @@ window.onerror = function(msg, url, line, col, error) {
         }
     }
 
+    // --- PANEL UI ZOOM (CTRL + FARE TEKERLEĞİ) ---
+    const panelZoomStorageKey = 'sablon-inceleme-panel-zoom-v1';
+    const panelZoomMin = 0.75;
+    const panelZoomMax = 1.5;
+    const panelZoomStep = 0.1;
+
+    function readPanelZooms() {
+        try {
+            const saved = JSON.parse(localStorage.getItem(panelZoomStorageKey) || '{}');
+            return saved && typeof saved === 'object' ? saved : {};
+        } catch (_) {
+            return {};
+        }
+    }
+
+    function writePanelZooms(zooms) {
+        try {
+            localStorage.setItem(panelZoomStorageKey, JSON.stringify(zooms));
+        } catch (_) {
+            // Private browsing or disabled storage must not block the editor.
+        }
+    }
+
+    function ensurePanelZoomContent(panel) {
+        let content = panel.querySelector(':scope > .panel-zoom-content');
+        if (content) return content;
+
+        content = document.createElement('div');
+        content.className = 'panel-zoom-content';
+        const keepOutside = panel.id === 'sidebar'
+            ? child => child.id === 'sidebarToggle'
+            : () => false;
+        Array.from(panel.children).forEach(child => {
+            if (!keepOutside(child)) content.appendChild(child);
+        });
+        panel.appendChild(content);
+        panel.style.overflow = 'hidden';
+        panel.style.padding = '0';
+        return content;
+    }
+
+    function setPanelZoom(panel, content, value, zooms) {
+        const zoom = Math.max(panelZoomMin, Math.min(panelZoomMax, value));
+        const normalizedZoom = Math.round(zoom * 10) / 10;
+        panel.dataset.panelZoomLevel = String(normalizedZoom);
+        content.style.setProperty('--panel-zoom', normalizedZoom);
+        zooms[panel.id || panel.dataset.panelZoomKey] = normalizedZoom;
+        writePanelZooms(zooms);
+    }
+
+    function setupPanelZoom(panelOrSelector) {
+        const panel = typeof panelOrSelector === 'string'
+            ? document.querySelector(panelOrSelector)
+            : panelOrSelector;
+        if (!panel || panel.dataset.panelZoomReady === 'true') return;
+        const storageId = panel.id || panel.dataset.panelZoomKey || (
+            panel.matches('.petek-v477-tools') ? 'petek-v477-tools' : null
+        );
+        if (!storageId) return;
+        panel.dataset.panelZoomKey = storageId;
+        const content = ensurePanelZoomContent(panel);
+        const zooms = readPanelZooms();
+        const savedZoom = Number(zooms[storageId]);
+        setPanelZoom(panel, content, Number.isFinite(savedZoom) ? savedZoom : 1, zooms);
+        panel.dataset.panelZoomReady = 'true';
+
+        panel.addEventListener('wheel', function(e) {
+            if (!e.ctrlKey) return; // Normal tekerlek davranışı kaydırma olarak kalır.
+            e.preventDefault();
+            e.stopPropagation();
+            const currentZoom = Number(panel.dataset.panelZoomLevel) || 1;
+            const direction = e.deltaY < 0 ? 1 : -1;
+            setPanelZoom(panel, content, currentZoom + direction * panelZoomStep, zooms);
+        }, { passive: false });
+    }
+
     // --- PANELLERI BOYUTLANDIRMA (RESIZER) ---
     function setupResizer(resizerId, panelId, isLeft) {
         const resizer = document.getElementById(resizerId);
         const panel = document.getElementById(panelId);
         if (!resizer || !panel) return;
-        let startX, startWidth;
 
-        resizer.addEventListener('mousedown', function(e) {
-            startX = e.clientX;
-            const style = window.getComputedStyle(panel);
-            startWidth = parseInt(style.width, 10);
-            document.documentElement.addEventListener('mousemove', doDrag, false);
-            document.documentElement.addEventListener('mouseup', stopDrag, false);
-            resizer.classList.add('active');
-            document.body.style.cursor = 'col-resize';
-            document.body.style.userSelect = 'none'; // Secimi engelle
-        });
+        let startX = 0;
+        let startWidth = 0;
+        let activePointerId = null;
+        let pendingWidth = null;
+        let frameId = null;
 
-        function doDrag(e) {
-            let newWidth = isLeft ? startWidth + (e.clientX - startX) : startWidth - (e.clientX - startX);
-            if (newWidth > 150 && newWidth < 800) {
-                panel.style.width = newWidth + 'px';
-                // Surekli guncellemek yerine ufak bir cizim tetikle (kasmamasi icin)
-                draw();
-            }
+        function applyPendingWidth() {
+            frameId = null;
+            if (pendingWidth === null) return;
+            panel.style.width = pendingWidth + 'px';
+            panel.style.flexBasis = pendingWidth + 'px';
         }
 
-        function stopDrag() {
-            document.documentElement.removeEventListener('mousemove', doDrag, false);
-            document.documentElement.removeEventListener('mouseup', stopDrag, false);
+        function doDrag(e) {
+            if (activePointerId !== e.pointerId) return;
+            const delta = e.clientX - startX;
+            const newWidth = isLeft ? startWidth + delta : startWidth - delta;
+            if (newWidth <= 150 || newWidth >= 800) return;
+            pendingWidth = Math.round(newWidth);
+            if (frameId === null) frameId = requestAnimationFrame(applyPendingWidth);
+        }
+
+        function stopDrag(e) {
+            if (activePointerId === null || (e && e.pointerId !== activePointerId)) return;
+            if (frameId !== null) {
+                cancelAnimationFrame(frameId);
+                applyPendingWidth();
+            }
+            const pointerId = activePointerId;
+            activePointerId = null;
+            pendingWidth = null;
+            if (resizer.hasPointerCapture && resizer.hasPointerCapture(pointerId)) {
+                resizer.releasePointerCapture(pointerId);
+            }
             resizer.classList.remove('active');
             document.body.style.cursor = '';
             document.body.style.userSelect = '';
-            // Son boyutlandirmadan sonra canvas'i tam ortaya oturt
             setTimeout(() => {
                 resetView();
                 draw();
             }, 50);
         }
+
+        resizer.addEventListener('pointerdown', function(e) {
+            if (e.button !== 0 || activePointerId !== null) return;
+            e.preventDefault();
+            activePointerId = e.pointerId;
+            startX = e.clientX;
+            startWidth = panel.getBoundingClientRect().width;
+            resizer.setPointerCapture(e.pointerId);
+            resizer.classList.add('active');
+            document.body.style.cursor = 'col-resize';
+            document.body.style.userSelect = 'none';
+        });
+        resizer.addEventListener('pointermove', doDrag);
+        resizer.addEventListener('pointerup', stopDrag);
+        resizer.addEventListener('pointercancel', stopDrag);
+        window.addEventListener('blur', () => stopDrag());
     }
     
     // Sayfa yuklendikten kisa sure sonra aktif et
     setTimeout(() => {
+        setupPanelZoom('#sidebar');
+        setupPanelZoom('#right-toolbar');
+        setupPanelZoom('#petekV477ListPane');
+        setupPanelZoom('.petek-v477-tools');
         setupResizer('resizer-left', 'sidebar', true);
         setupResizer('resizer-right', 'right-toolbar', false);
         
@@ -3991,23 +4182,23 @@ function ensureBatchAnalyzeProgressModal() {
     ].join(';');
 
     overlay.innerHTML = `
-        <div id="batchAnalyzePanel" style="width:min(560px,92vw);background:#202020;border:1px solid #555;border-radius:12px;padding:22px;box-shadow:0 18px 60px rgba(0,0,0,.45);color:#fff;font-family:Arial,sans-serif;">
+        <div id="batchAnalyzePanel" style="width:min(560px,92vw);background:#131C2B;border:1px solid #22304A;border-radius:12px;padding:22px;box-shadow:0 18px 60px rgba(0,0,0,.45);color:#fff;font-family:Arial,sans-serif;">
             <div id="batchAnalyzeTitle" style="font-size:20px;font-weight:700;margin-bottom:8px;">Şablonlar analiz ediliyor</div>
             <div id="batchAnalyzeSummary" style="font-size:14px;color:#ddd;margin-bottom:14px;">Hazırlanıyor...</div>
-            <div style="height:18px;background:#3a3a3a;border-radius:999px;overflow:hidden;border:1px solid #555;">
-                <div id="batchAnalyzeBar" style="height:100%;width:0%;background:#28a745;transition:width .18s ease;"></div>
+            <div style="height:18px;background:#182238;border-radius:999px;overflow:hidden;border:1px solid #22304A;">
+                <div id="batchAnalyzeBar" style="height:100%;width:0%;background:#17D3A3;transition:width .18s ease;"></div>
             </div>
             <div style="display:flex;justify-content:space-between;gap:12px;margin-top:8px;font-size:13px;color:#ddd;">
                 <span id="batchAnalyzeCount">0 / 0</span>
                 <span id="batchAnalyzePercent">%0</span>
             </div>
-            <div id="batchAnalyzeCurrent" style="margin-top:14px;padding:10px;background:#151515;border-radius:7px;font-size:13px;word-break:break-word;color:#eee;">Bekleniyor...</div>
-            <div id="batchAnalyzeErrors" style="display:none;margin-top:12px;padding:10px;background:#3a2020;border-radius:7px;font-size:12px;max-height:120px;overflow:auto;"></div>
+            <div id="batchAnalyzeCurrent" style="margin-top:14px;padding:10px;background:#0F1622;border-radius:7px;font-size:13px;word-break:break-word;color:#eee;">Bekleniyor...</div>
+            <div id="batchAnalyzeErrors" style="display:none;margin-top:12px;padding:10px;background:#2E161A;border-radius:7px;font-size:12px;max-height:120px;overflow:auto;"></div>
             <div id="batchAnalyzeRunActions" style="display:flex;gap:8px;margin-top:14px;">
-                <button id="batchAnalyzeBackground" type="button" style="flex:1;padding:10px;border:0;border-radius:7px;background:#0d6efd;color:white;font-weight:700;cursor:pointer;">↘ Arka Planda Sürdür</button>
-                <button id="batchAnalyzeStop" type="button" style="flex:1;padding:10px;border:0;border-radius:7px;background:#b02a37;color:white;font-weight:700;cursor:pointer;">⏹ Taramayı Durdur</button>
+                <button id="batchAnalyzeBackground" type="button" style="flex:1;padding:10px;border:0;border-radius:7px;background:#2F6FED;color:white;font-weight:700;cursor:pointer;">↘ Arka Planda Sürdür</button>
+                <button id="batchAnalyzeStop" type="button" style="flex:1;padding:10px;border:0;border-radius:7px;background:#A94442;color:white;font-weight:700;cursor:pointer;">⏹ Taramayı Durdur</button>
             </div>
-            <button id="batchAnalyzeClose" type="button" style="display:none;width:100%;margin-top:14px;padding:11px;border:0;border-radius:7px;background:#28a745;color:white;font-weight:700;cursor:pointer;">Tamam</button>
+            <button id="batchAnalyzeClose" type="button" style="display:none;width:100%;margin-top:14px;padding:11px;border:0;border-radius:7px;background:#17D3A3;color:#04140E;font-weight:700;cursor:pointer;">Tamam</button>
         </div>
     `;
 
@@ -4139,8 +4330,8 @@ function chooseBatchAnalyzeCategory() {
         const dialog = document.createElement('div');
         dialog.style.cssText = [
             'width:min(560px,94vw)',
-            'background:#202124',
-            'color:#f1f3f4',
+            'background:#131C2B',
+            'color:#E9EFF9',
             'border:1px solid #555',
             'border-radius:12px',
             'padding:20px',
@@ -4159,11 +4350,11 @@ function chooseBatchAnalyzeCategory() {
             'Onaysız şablonlar mevcut motorla analiz edilir. ' +
             '<b>Arka Planda Sürdür</b> ile diğer şablonlarda çalışabilirsiniz.';
         note.style.cssText =
-            'font-size:12px;line-height:1.5;color:#c7c7c7;margin-bottom:14px;';
+            'font-size:12px;line-height:1.5;color:#93A6C4;margin-bottom:14px;';
 
         const select = document.createElement('select');
         select.style.cssText =
-            'width:100%;padding:11px;border-radius:7px;background:#111315;color:#fff;' +
+            'width:100%;padding:11px;border-radius:7px;background:#0F1622;color:#fff;' +
             'border:1px solid #666;font-size:14px;box-sizing:border-box;';
 
         categories.forEach(cat => {
@@ -4185,13 +4376,13 @@ function chooseBatchAnalyzeCategory() {
         cancel.type = 'button';
         cancel.textContent = 'İptal';
         cancel.style.cssText =
-            'padding:10px 16px;background:#555;color:white;border:0;border-radius:7px;cursor:pointer;';
+            'padding:10px 16px;background:#22304A;color:white;border:0;border-radius:7px;cursor:pointer;';
 
         const confirmButton = document.createElement('button');
         confirmButton.type = 'button';
         confirmButton.textContent = '⚡ Bu Kategoriyi Hızlı Tara';
         confirmButton.style.cssText =
-            'padding:10px 16px;background:#0d6efd;color:white;border:0;border-radius:7px;' +
+            'padding:10px 16px;background:#2F6FED;color:white;border:0;border-radius:7px;' +
             'font-weight:700;cursor:pointer;';
 
         const finish = value => {

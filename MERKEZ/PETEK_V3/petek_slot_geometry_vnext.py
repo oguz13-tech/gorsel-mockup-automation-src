@@ -12,13 +12,23 @@ from __future__ import annotations
 
 import cv2
 import numpy as np
+import os
+from pathlib import Path
+from .geometry_cache import cache_key, load as load_geometry_cache, store as store_geometry_cache
+import hashlib
 
 from . import engine
 
 RECT_W = 900
 RECT_H = 690
-MIN_REAL_VENTS = 10
-MAX_REAL_VENTS = 16
+MIN_REAL_VENTS = 5
+MAX_REAL_VENTS = 17
+GEOMETRY_RECIPE = 'PETEK_GEOMETRY_VNEXT_20261104'
+_CODE_SHA = hashlib.sha256(Path(__file__).read_bytes() + Path(engine.__file__).read_bytes()).hexdigest()
+
+
+def _frame_sha(frame: np.ndarray) -> str:
+    return hashlib.sha256(memoryview(np.ascontiguousarray(frame))).hexdigest()
 
 
 def _source_peaks(profile: np.ndarray) -> list[tuple[float, float]]:
@@ -69,12 +79,18 @@ def _plausible(points: list[float] | np.ndarray, *, count: int | None=None) -> b
     d=np.diff(np.asarray(points,float))
     # Perspective was rectified: local spacing changes slightly, but no
     # consecutive physical vents should collapse or jump to a second grille.
-    return bool(np.all(d>18) and np.all(d<92) and
+    # Sparse 5..9-slot faces legitimately have a wider pitch than the dense
+    # 10..17-slot grille.  Scale the upper spacing bound to the rectified face
+    # while retaining a generous cap for the dense layouts.
+    max_spacing=92.0
+    if len(points)<10:
+        max_spacing=max(max_spacing,(RECT_W-1)/max(1,len(points)-1)*1.25)
+    return bool(np.all(d>18) and np.all(d<max_spacing) and
                 np.std(d)/max(1.,np.mean(d))<.36)
 
 
 def _fit_source_vents(peaks: list[tuple[float,float]], profile: np.ndarray):
-    """Select 10..16 positions actually detected in the ORIGINAL photo.
+    """Select 5..17 positions actually detected in the ORIGINAL photo.
 
     Candidate lattice pitch is used ONLY to reject spurious dark-artwork peaks.
     We never return interpolated or fabricated positions. Physical count is
@@ -87,12 +103,14 @@ def _fit_source_vents(peaks: list[tuple[float,float]], profile: np.ndarray):
     # Full evidence already present: still test grid alternatives when an
     # unrelated vertical artwork stroke looks like an extra vent.
     best=None
-    # Preserve the existing 13..16 selection model. For the 10..12 vent
+    # Preserve the existing 13..17 selection model. For the 5..12 vent
     # models require ALL observed peaks, never select a convenient subset.
     counts = [len(peaks)] if len(peaks) < 13 else range(13, MAX_REAL_VENTS+1)
     for count in counts:
         for anchor in xs[xs < RECT_W*.29]:
-            for pitch in np.arange(36.,92. if count < 13 else 76.,.8):
+            pitch_hi=(max(92.,(RECT_W-1)/max(1,count-1)*1.25)
+                      if count < 13 else 76.)
+            for pitch in np.arange(36.,pitch_hi,.8):
                 expected=anchor+pitch*np.arange(count)
                 if expected[-1]>RECT_W*.975:continue
                 distances=np.abs(expected[:,None]-xs[None,:])
@@ -114,7 +132,22 @@ def _fit_source_vents(peaks: list[tuple[float,float]], profile: np.ndarray):
                        - 3.8*float(np.sum(residual)) + dark_bonus)
                 if best is None or score>best[0]:
                     best=(score,observed.copy())
-    if best is None:return None,0
+    if best is None:
+        # Some real photographs contain a complete 5..17-vent sequence whose
+        # perspective pitch changes smoothly enough to be physically plausible,
+        # but not close enough to one constant lattice for the legacy residual
+        # search above.  Do not reject those observed centres merely because a
+        # lattice model failed: every returned point still comes directly from
+        # the source peak list, and the downstream source-length and
+        # source/mask-coverage checks remain authoritative.
+        observed=xs.copy()
+        spacing=np.diff(observed)
+        median_spacing=float(np.median(spacing)) if spacing.size else 0.0
+        if (MIN_REAL_VENTS <= len(observed) <= MAX_REAL_VENTS and
+                median_spacing >= 36.0 and
+                _plausible(observed,count=len(observed))):
+            return observed,0
+        return None,0
     return best[1],0
 
 
@@ -198,15 +231,26 @@ def _trace_one(center: float, contrast: np.ndarray, rect_mask: np.ndarray,
                     (round(float(center),2),float(y1))]}
 
 
-def measure_real_vents(source: np.ndarray, mask: np.ndarray, quad):
-    """Return 10..16 physically detected, perspective-aligned real openings.
+def measure_real_vents(source: np.ndarray, mask: np.ndarray, quad, *, cache_root=None):
+    """Return 5..17 physically detected, perspective-aligned real openings.
 
     Never adds missing slots to reach an assumed target. Where the original
-    image is ambiguous, a complete reviewed mask with plausible 10..16 holes
+    image is ambiguous, a complete reviewed mask with plausible 13..16 holes
     is a fallback. Unreliable records are kept for manual review, unchanged.
     """
     q=engine.validated_quad(quad,source.shape)
     engine.mask_check(mask,source,q)
+    if cache_root is None:
+        configured = os.environ.get('V4_GEOMETRY_CACHE_DIR', '').strip()
+        cache_root = Path(configured) if configured else None
+    source_sha = _frame_sha(source)
+    mask_sha = _frame_sha(mask)
+    recipe = GEOMETRY_RECIPE + _CODE_SHA + repr((source.shape, source.dtype.str, mask.shape, mask.dtype.str))
+    key = cache_key(source_sha, mask_sha, q, recipe)
+    use_cache = os.environ.get('V4_GEOMETRY_CACHE', '1') != '0'
+    cached = load_geometry_cache(cache_root, key) if use_cache else None
+    if cached is not None:
+        return cached
     target=np.float32([[0,0],[RECT_W-1,0],[RECT_W-1,RECT_H-1],[0,RECT_H-1]])
     inverse=cv2.getPerspectiveTransform(np.float32(q),target)
     rect_source=cv2.warpPerspective(source,inverse,(RECT_W,RECT_H),
@@ -221,13 +265,19 @@ def measure_real_vents(source: np.ndarray, mask: np.ndarray, quad):
     masked_centers=_mask_peaks(rect_mask)
     measured,inferred=_fit_source_vents(source_peaks,profile)
     source_measured=measured is not None
-    if measured is None and _plausible(masked_centers):
+    # A mask-only yedek is retained for the historically reviewed 13..16
+    # layouts, where the stored physical openings are already independently
+    # documented.  For 10..12, require fresh source-photo evidence; otherwise
+    # a clean, uniform photograph plus an arbitrary set of mask cut-outs could
+    # be mistaken for real vents.  Real 10..12 layouts are accepted above
+    # through ``_fit_source_vents`` when their photo peaks are present.
+    if measured is None and len(masked_centers) >= 13 and _plausible(masked_centers):
         measured=np.asarray(masked_centers,dtype=float)
     if measured is None:
         raise engine.MaskError('PETEK_IZGARA_KONUMU_BELIRSIZ: PETEK_KAYNAK_GEOMETRI_INCELEME_GEREKLI: '
             f'orijinal fotograf {len(source_peaks)} dikey koyu cizgi, '
             f'maske {len(masked_centers)} korunan delik gosteriyor. '
-            '10..16 gercek yarik kaynaktan/maske kaydindan olculmeden cizgi cizilmez; '
+            '5..17 gercek yarik kaynaktan/maske kaydindan olculmeden cizgi cizilmez; '
             '4 kose / maske duzeltmesini ve kaynak goruntusunu inceleyin.')
     if not _plausible(measured):
         raise engine.MaskError('PETEK_KAYNAK_IZGARA_ARALIKLARI_TUTARSIZ')
@@ -276,7 +326,7 @@ def measure_real_vents(source: np.ndarray, mask: np.ndarray, quad):
             continue
         # Prefer reviewed physical mask where valid, else ORIGINAL PHOTO.
         # This explicit photo recovery fixes the failure seen with one bad
-        # endpoint in an otherwise valid 10..16-slot approved template.
+        # endpoint in an otherwise valid 5..17-slot approved template.
         candidates=[('REVIEWED_MASK',r['mask_span']),('SOURCE_PHOTO',r['source_span'])]
         candidates=[(label,span) for label,span in candidates if agrees(span)]
         if not candidates:
@@ -317,7 +367,7 @@ def measure_real_vents(source: np.ndarray, mask: np.ndarray, quad):
     if len(masked_centers)==len(measured):
         mask_offset=[round(float(a-b),2) for a,b in zip(measured,masked_centers)]
     n=len(slots)
-    return slots,{'status':'KAYNAK_YARIKLAR_OLCULDU',
+    measured_result={'status':'KAYNAK_YARIKLAR_OLCULDU',
         'count':n,
         'alignment':f'SOURCE_PHOTO_{n}' if source_measured else f'APPROVED_MASK_{n}',
         'mask_evidence_count':len(masked_centers),
@@ -330,6 +380,14 @@ def measure_real_vents(source: np.ndarray, mask: np.ndarray, quad):
         'mask_source_center_delta':mask_offset,
         **endpoint_qa,
         'homography':cv2.getPerspectiveTransform(target,np.float32(q))}
+    if use_cache:
+        try:
+            store_geometry_cache(cache_root, key, slots, measured_result)
+        except (OSError, ValueError, TypeError):
+            # Derived cache is optional; no production output is rejected
+            # merely because the cache directory cannot be written.
+            pass
+    return slots, measured_result
 
 
 def measure_fifteen_vents(source: np.ndarray, mask: np.ndarray, quad):

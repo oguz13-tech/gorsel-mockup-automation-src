@@ -23,7 +23,7 @@ if not exist ".venv\Scripts\python.exe" (
 if errorlevel 1 goto failed
 ".venv\Scripts\python.exe" -m pip install -r requirements.txt
 if errorlevel 1 goto failed
-".venv\Scripts\python.exe" -B -c "import cv2,PIL,openpyxl,numpy,tkinter;print('BAGIMLILIKLAR_HAZIR')"
+".venv\Scripts\python.exe" -B -c "import cv2,PIL,openpyxl,numpy,tkinter,webview;print('BAGIMLILIKLAR_HAZIR')"
 if errorlevel 1 goto failed
 echo Kurulum hazir. BASLAT.bat ile merkezi acabilirsiniz.
 pause

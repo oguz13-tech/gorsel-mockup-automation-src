@@ -9,6 +9,9 @@ from pathlib import Path
 
 
 SOURCE_ROOT = Path(__file__).resolve().parents[1]
+if str(SOURCE_ROOT) not in sys.path:
+    sys.path.insert(0, str(SOURCE_ROOT))
+from MERKEZ.workspace_contract import WorkspaceContractError, resolve_contract
 
 
 def _version(dist_name):
@@ -60,9 +63,11 @@ def main():
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
 
-    runtime = Path(
-        os.environ.get("MOCKUP_RUNTIME_WORKSPACE") or SOURCE_ROOT
-    ).expanduser().resolve()
+    try:
+        runtime = resolve_contract(code_root=SOURCE_ROOT, validate=True).runtime_root
+    except WorkspaceContractError as exc:
+        print(f"BAŞLATMA ENGELLENDİ: {exc}", file=sys.stderr)
+        return 2
     target = runtime / "SABLON_V2_MIMARI" / "runtime_ai_baseline.json"
     target.parent.mkdir(parents=True, exist_ok=True)
 

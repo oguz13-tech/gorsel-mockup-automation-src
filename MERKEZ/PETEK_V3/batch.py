@@ -15,6 +15,10 @@ from . import engine
 from .registry import Registry
 from .safety_audit import receipt_identity, audit_ledger, audit_summary
 from .excel_links_v42 import xlsx_with_photo_links, verify_photo_links
+try:
+    from ..URETIM_V4.store_identity_v485 import excel_row_sort_key
+except ImportError:  # legacy direct ``PETEK_V3`` import path
+    from URETIM_V4.store_identity_v485 import excel_row_sort_key
 
 EXT={'.jpg','.jpeg','.png','.webp'}
 HEADERS=['Stok Kodu','Dahili Barkod (GS1 Degil)','Model Kodu','Kategori','Urun Adi',
@@ -86,7 +90,9 @@ class Ledger:
 
     def successful(self):
         with self.connect() as con:
-            return [dict(row) for row in con.execute('SELECT * FROM artifact WHERE status=\'RENDERED\' ORDER BY sku,uid')]
+            rows = [dict(row) for row in con.execute(
+                'SELECT * FROM artifact WHERE status=\'RENDERED\' ORDER BY sku,uid')]
+        return sorted(rows, key=excel_row_sort_key)
 
 
 class Batch:

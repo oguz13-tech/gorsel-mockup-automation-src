@@ -25,7 +25,14 @@ class PortOwnerError(RuntimeError):
 _CIM_SCRIPT=r"""
 $ErrorActionPreference='Stop'
 $identity=[System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
-$listeners=@(Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue)
+# On some Windows 11 builds MSFT_NetTCPConnection reports a real listening
+# socket with an empty State value (while RemotePort remains 0).  Filtering
+# with `-State Listen` therefore makes an occupied port look ownerless and
+# causes the misleading 8080_SAHIP_BILINMIYOR failure.  Query the exact local
+# port and identify listening endpoints by their zero remote port instead.
+# TIME_WAIT/ESTABLISHED rows have a non-zero RemotePort and are excluded.
+$listeners=@(Get-NetTCPConnection -LocalPort 8080 -ErrorAction SilentlyContinue |
+  Where-Object { [int]$_.RemotePort -eq 0 })
 $rows=@()
 foreach ($entry in $listeners) {
   $owning=[int]$entry.OwningProcess

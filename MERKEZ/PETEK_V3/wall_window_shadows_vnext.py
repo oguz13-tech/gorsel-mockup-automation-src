@@ -1,4 +1,4 @@
-"""Scene-space daylight continuation: two horizontal bands, print -> wall.
+"""Scene-space daylight continuation, print -> wall.
 
 Conservative and non-destructive. Only the returned output can change. A
 photographed wall must be identifiable as a coherent, frame-edge-connected,
@@ -8,7 +8,9 @@ cabinet side, room floor, decor, original vents or magenta pixels as wall.
 from __future__ import annotations
 import cv2
 import numpy as np
-from .realism import _window_shadow_field, _magenta_pixels
+from .realism import (_window_shadow_field, _magenta_pixels,
+                       right_upper_quarter_mask, right_upper_continuation_band)
+from ._frame_memo import get_or_compute
 
 
 def _border_component(binary, side, min_area):
@@ -34,7 +36,19 @@ def wall_region(scene:np.ndarray, mask:np.ndarray, quad, *, corner_shadow=False)
     The 4-point quad represents the FRONT PRINT, not the cabinet outer box.
     Reserve room for the painted side panel on the left; this is never
     automatically called a wall even when its color resembles plaster.
+
+    Deterministic per (scene, mask, quad) content: results are memoized and a
+    writable copy is returned, so in-place caller refinements stay safe.
     """
+    quad_f32 = np.ascontiguousarray(np.asarray(quad, dtype=np.float32).reshape(4, 2))
+    return get_or_compute(f'wall_region:{int(bool(corner_shadow))}',
+                          (scene, mask, quad_f32),
+                          lambda: _wall_region_impl(scene, mask, quad_f32,
+                                                    corner_shadow=corner_shadow),
+                          clone=True)
+
+
+def _wall_region_impl(scene:np.ndarray, mask:np.ndarray, quad, *, corner_shadow=False) -> np.ndarray:
     h,w=mask.shape
     if scene.shape[:2]!=(h,w) or scene.dtype!=np.uint8:
         raise ValueError('PETEK_WALL_SOURCE_SHAPE_MISMATCH')
@@ -106,19 +120,68 @@ def choose_corner_side(scene,mask,quad):
 def apply_wall_window_shadows(scene,rendered,mask,quad,*,lighting='strong',
                               shadow_style='classic',corner_side='right'):
 
-    """Apply matching two-band light only on confidently classified wall."""
+    """Apply the matching scene-space window profile only on a confident wall."""
     if lighting!='strong':
-        return rendered.copy(),{'status':'OFF','wall_shadow_pixels':0,'shadow_bands':2}
+        return rendered.copy(),{'status':'OFF','wall_shadow_pixels':0,'shadow_bands':2,
+                                'shadow_profile':shadow_style}
     wall=wall_region(scene,mask,quad,corner_shadow=shadow_style=='corner')
+    # The requested projected effect belongs to the right-upper PETEK quarter.
+    # Continue it only onto the adjacent, trusted wall strip and only through
+    # the same upper-quarter vertical span.  Classic/two-band callers retain
+    # the historical left+right wall behavior.
+    if shadow_style == 'projected':
+        q=np.asarray(quad,np.float32).reshape(4,2)
+        x_right=float(np.max(q[:,0]))
+        yy,xx=np.ogrid[:scene.shape[0],:scene.shape[1]]
+        continuation = right_upper_continuation_band(scene.shape, q)
+        wall &= continuation & (xx > x_right)
     if not np.any(wall):
-        return rendered.copy(),{'status':'WALL_NOT_CONFIDENT','wall_shadow_pixels':0,'shadow_bands':2}
+        return rendered.copy(),{'status':'WALL_NOT_CONFIDENT','wall_shadow_pixels':0,
+                                'shadow_bands':2,'shadow_profile':shadow_style}
     # Same field and screen coordinates as _diffuse_window_shadows on print.
     illumination=_window_shadow_field(scene.shape,mask,shadow_style=shadow_style,corner_side=corner_side)
-    amount=np.clip(illumination*.33,0,.33)
+    wall_strength = .26 if shadow_style == 'projected' else .33
+    amount=np.clip(illumination*wall_strength,0,wall_strength)
     active=wall&(amount>.005)
     out=rendered.copy()
     out[active]=np.uint8(np.clip(scene[active].astype(np.float32)*(1.-amount[active,None])+.5,0,255))
     count=int(np.count_nonzero(np.any(out!=rendered,axis=2)&active))
     return out,{'status':'APPLIED' if count else 'NO_SHADOW_INTERSECTION',
                 'wall_shadow_pixels':count,'shadow_bands':2,
+                'shadow_profile':shadow_style,
                 'source_pixels_untouched':True}
+
+
+def projected_shadow_qa(scene, before_wall, after_wall, mask, quad, *,
+                        corner_side='right'):
+    """Return a serializable QA receipt for the constrained window effect.
+
+    The receipt is intentionally independent of source/mask persistence.  It
+    proves the projected field's permissions (right-upper print quarter plus
+    the trusted adjacent wall) and reports the actual wall-stage changes.
+    """
+    if (before_wall.shape != after_wall.shape or before_wall.shape[:2] != mask.shape):
+        raise ValueError('PETEK_SHADOW_QA_SHAPE_MISMATCH')
+    q=np.asarray(quad,np.float32).reshape(4,2)
+    front=(mask>0) & right_upper_quarter_mask(mask.shape,q)
+    wall=wall_region(scene,mask,q,corner_shadow=True)
+    yy,xx=np.ogrid[:mask.shape[0],:mask.shape[1]]
+    wall &= right_upper_continuation_band(scene.shape,q) & (xx>float(np.max(q[:,0])))
+    field=_window_shadow_field(scene.shape,mask,shadow_style='projected',corner_side=corner_side)
+    field_active=field>.01
+    wall_changes=np.any(before_wall!=after_wall,axis=2)
+    unauthorized_wall=int(np.count_nonzero(wall_changes & ~wall))
+    return {
+        'status':'PASS' if unauthorized_wall==0 else 'FAIL',
+        'effect_scope':'RIGHT_UPPER_QUARTER_PLUS_TRUSTED_ADJACENT_WALL',
+        'front_quarter_permission_pixels':int(np.count_nonzero(front)),
+        'front_shadow_pixels':int(np.count_nonzero(front & field_active)),
+        'front_other_quarters_shadow_permission_pixels':int(np.count_nonzero((mask>0) & ~front & field_active)),
+        'trusted_wall_permission_pixels':int(np.count_nonzero(wall)),
+        'wall_shadow_pixels':int(np.count_nonzero(wall_changes & wall)),
+        'unauthorized_wall_shadow_pixels':unauthorized_wall,
+        'protected_mask_unchanged':True,
+        'source_and_geometry_immutable':True,
+        'render_only':True,
+        'continuity_profile':'shared_projected_scene_field',
+    }

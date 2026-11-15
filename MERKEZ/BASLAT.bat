@@ -4,10 +4,16 @@ chcp 65001 >nul
 cd /d "%~dp0"
 rem Portable data root: CODEX_ACTIVE lives directly under C:\GorselUretimMerkezi.
 rem Do not fall back to a historical OneDrive dataset when this root is valid.
+set "GORSEL_CODE_ROOT=%~dp0.."
 set "GORSEL_RUNTIME_ROOT=%~dp0..\.."
 set "MOCKUP_RUNTIME_WORKSPACE=%GORSEL_RUNTIME_ROOT%"
-title GORSEL MOCKUP - WINDOWS V4 PETEK HOTFIX
-echo Gorsel Uretim Merkezi V4 baslatiliyor.
+rem Üretim worker profili kesinleştirildi: güvenli ve ölçülmüş ayar 2 worker.
+rem Motor ortam değişkeni veya eski benchmark profiliyle değiştirilemez.
+set "V4_RENDER_WORKERS=2"
+title Gorsel Uretim Merkezi V5 - Graphite Workbench
+echo Gorsel Uretim Merkezi V5 Graphite Workbench baslatiliyor.
+echo Kod: %GORSEL_CODE_ROOT%
+echo Runtime: %GORSEL_RUNTIME_ROOT%
 if exist ".venv\Scripts\python.exe" (
   ".venv\Scripts\python.exe" -B merkez.py
 ) else if exist "%LocalAppData%\Programs\Python\Python311\python.exe" (
@@ -29,7 +35,8 @@ if exist ".venv\Scripts\python.exe" (
 )
 if errorlevel 1 (
   echo.
-  echo Program acilmadi. Ilk kez kuruyorsaniz once KURULUM.bat dosyasini calistirin.
+  echo Program acilamadi. Ilk kez kuruyorsaniz once KURULUM.bat dosyasini calistirin.
+  echo Kod kokunu ve Python kurulumunu kontrol edin: %GORSEL_CODE_ROOT%
   pause
 )
 endlocal

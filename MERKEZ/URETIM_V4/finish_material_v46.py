@@ -8,6 +8,7 @@ from __future__ import annotations
 import cv2
 import numpy as np
 from pathlib import Path
+from functools import lru_cache
 
 try:
     from MERKEZ.PETEK_V3.petek_effect_assets import load_fields, manifest
@@ -20,7 +21,8 @@ DAYLIGHT = frozenset(('03_Ahsap_Tablo','06_Petek_Kapama'))
 RECIPE = 'material-optics-window-mullion-daylight-v47-20261027'
 
 
-def _local_layers(category, width=400, height=400):
+@lru_cache(maxsize=32)
+def _local_layers_cached(category, width=400, height=400):
     y,x = np.mgrid[0:height,0:width].astype(np.float32)
     u=x/max(width-1,1);v=y/max(height-1,1)
     bright=np.zeros((height,width),np.float32)
@@ -73,7 +75,35 @@ def _local_layers(category, width=400, height=400):
             dark+=.40*np.exp(-.5*((slanted-c)/.085)**2)
         bright=np.clip(cv2.GaussianBlur(bright,(0,0),6)*.72,0,1)
         dark=np.clip(cv2.GaussianBlur(dark,(0,0),7)*.43,0,1)
+    bright.setflags(write=False)
+    dark.setflags(write=False)
     return bright,dark
+
+
+def _local_layers(category, width=400, height=400):
+    # The procedural 400×400 fields depend only on category and dimensions;
+    # callers receive immutable cached arrays and cannot affect later renders.
+    return _local_layers_cached(str(category), int(width), int(height))
+
+
+@lru_cache(maxsize=16)
+def _warped_material_layers(category: str, quad_key: tuple[tuple[float, float], ...], width: int, height: int):
+    """Cache geometry-only material fields; artwork-dependent Sobel stays live."""
+    sw = sh = 400
+    light, shade = _local_layers(category, sw, sh)
+    transform = cv2.getPerspectiveTransform(
+        np.float32([[0, 0], [sw - 1, 0], [sw - 1, sh - 1], [0, sh - 1]]),
+        np.asarray(quad_key, dtype=np.float32),
+    )
+    glow = cv2.warpPerspective(light, transform, (width, height),
+                               flags=cv2.INTER_LINEAR,
+                               borderMode=cv2.BORDER_CONSTANT, borderValue=0)
+    shadow = cv2.warpPerspective(shade, transform, (width, height),
+                                 flags=cv2.INTER_LINEAR,
+                                 borderMode=cv2.BORDER_CONSTANT, borderValue=0)
+    glow.setflags(write=False)
+    shadow.setflags(write=False)
+    return glow, shadow
 
 
 def apply_material_finish(scene, printed, mask, quad, category, *, enabled=True,
@@ -87,16 +117,8 @@ def apply_material_finish(scene, printed, mask, quad, category, *, enabled=True,
     if not np.any(mask>0):
         raise ValueError('MATERIAL_FINISH_EMPTY_MASK')
     H,W=mask.shape
-    sw=sh=400
-    light,shade=_local_layers(category,sw,sh)
-    transform=cv2.getPerspectiveTransform(
-        np.float32([[0,0],[sw-1,0],[sw-1,sh-1],[0,sh-1]]),
-        np.asarray(quad,dtype=np.float32),
-    )
-    def warp(layer):
-        return cv2.warpPerspective(layer,transform,(W,H),flags=cv2.INTER_LINEAR,
-                                   borderMode=cv2.BORDER_CONSTANT,borderValue=0)
-    glow,shadow=warp(light),warp(shade)
+    quad_key = tuple(tuple(round(float(v), 6) for v in point) for point in quad)
+    glow, shadow = _warped_material_layers(category, quad_key, W, H)
     # Artwork edge/detail protection derived from legacy Sobel-based attenuation.
     gray=cv2.cvtColor(printed,cv2.COLOR_BGR2GRAY).astype(np.float32)
     gx=cv2.Sobel(gray,cv2.CV_32F,1,0,ksize=3)

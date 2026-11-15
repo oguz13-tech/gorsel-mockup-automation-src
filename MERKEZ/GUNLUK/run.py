@@ -5,6 +5,13 @@ import queue
 import threading
 import tkinter as tk
 from tkinter import filedialog,messagebox,ttk
+import sys
+_PARENT = str(Path(__file__).resolve().parents[1])
+if _PARENT not in sys.path:sys.path.insert(0, _PARENT)
+try:
+    from dark_theme_v42 import apply_dark_theme
+except Exception:
+    apply_dark_theme = None
 from daily import Production,STORE
 from session_safety import atomic_json
 import json
@@ -12,7 +19,11 @@ import json
 
 def main():
     root=tk.Tk();root.title('Görsel Mockup — Günlük Üretim — 6 Kategori');root.geometry('840x700');root.minsize(680,540)
-    style=ttk.Style(root);style.theme_use('clam');style.configure('TLabel',font=('Segoe UI',10));style.configure('TButton',font=('Segoe UI',10),padding=8)
+    if apply_dark_theme:apply_dark_theme(root)
+    style=ttk.Style(root);
+    try:style.theme_use('clam')
+    except tk.TclError:pass
+    style.configure('TLabel',font=('Segoe UI',10));style.configure('TButton',font=('Segoe UI',10),padding=8)
     body=ttk.Frame(root,padding=24);body.pack(fill='both',expand=True)
     ttk.Label(body,text='Tasarım klasöründen mockup üret',font=('Segoe UI',18,'bold')).pack(anchor='w',pady=(0,12))
     ttk.Label(body,text='Çıktı: 1200 × 1600 • Görsel kalite incelemesi gerekli • Tekrar koruması etkin').pack(anchor='w')

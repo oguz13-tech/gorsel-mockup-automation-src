@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Profesyonel Araçlar</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23131C2B'/%3E%3Cpath d='M16 44 32 12l16 32h-9l-3-7H28l-3 7z' fill='%2317D3A3'/%3E%3C/svg%3E">
     <style>
         :root {
             color-scheme: dark;
@@ -11,8 +12,8 @@
         }
         body {
             margin: 0;
-            background: #171719;
-            color: #f1f1f1;
+            background: #0B101B;
+            color: #E9EFF9;
         }
         .page {
             max-width: 1180px;
@@ -32,21 +33,21 @@
         }
         .subtitle {
             margin-top: 6px;
-            color: #aaa;
+            color: #93A6C4;
             font-size: 13px;
         }
         .back {
-            color: #9ecbff;
+            color: #5AA9FF;
             text-decoration: none;
             font-size: 13px;
             white-space: nowrap;
         }
         .notice {
             padding: 12px 14px;
-            border: 1px solid #3d4a57;
-            background: #202832;
+            border: 1px solid #22304A;
+            background: #131C2B;
             border-radius: 9px;
-            color: #d8e6f4;
+            color: #93A6C4;
             font-size: 12px;
             line-height: 1.5;
             margin-bottom: 18px;
@@ -57,9 +58,9 @@
             gap: 14px;
         }
         .card {
-            border: 1px solid #3c3c40;
+            border: 1px solid #22304A;
             border-radius: 10px;
-            background: #222225;
+            background: #131C2B;
             padding: 16px;
             display: flex;
             flex-direction: column;
@@ -71,13 +72,13 @@
             margin-bottom: 6px;
         }
         .desc {
-            color: #c6c6c8;
+            color: #93A6C4;
             font-size: 12px;
             line-height: 1.45;
             flex: 1;
         }
         .tiny {
-            color: #8f969e;
+            color: #93A6C4;
             font-size: 10.5px;
             line-height: 1.4;
             margin-top: 8px;
@@ -86,14 +87,14 @@
             margin-top: 13px;
             border: 0;
             border-radius: 7px;
-            background: #0d6efd;
+            background: #5AA9FF;
             color: white;
             font-weight: 700;
             padding: 10px 12px;
             cursor: pointer;
         }
         button:hover {
-            background: #2a7fff;
+            background: #5AA9FF;
         }
         button:disabled {
             opacity: .55;
@@ -103,15 +104,90 @@
             margin-top: 20px;
             padding: 11px 13px;
             border-radius: 8px;
-            background: #202022;
-            border: 1px solid #3b3b3e;
-            color: #cfcfd2;
+            background: #131C2B;
+            border: 1px solid #22304A;
+            color: #93A6C4;
             font-size: 12px;
             display: none;
+        }
+        .github-sync-card {
+            border-color: #0FAC80 !important;
+            background: linear-gradient(140deg, #131C2B, #131C2B) !important;
+        }
+        .github-sync-meta {
+            white-space: pre-line;
+            color: #B9F3DC;
+            font-size: 12px;
+            line-height: 1.5;
+            min-height: 39px;
+            margin: 7px 0 2px;
+        }
+        .github-sync-card button {
+            background: #0FAC80 !important;
+        }
+        .github-sync-card button:hover {
+            background: #17D3A3 !important;
+        }
+        .github-sync-progress {
+            display: none;
+            margin-top: 10px;
+            padding: 8px 10px;
+            border-radius: 7px;
+            border: 1px solid #22304A;
+            color: #D6E8FF;
+            font-size: 12px;
+            line-height: 1.4;
+        }
+        .github-sync-progress[data-kind="error"] {
+            color: #FFB3B8;
+            border-color: #7A3A40;
+        }
+        .github-sync-result {
+            margin-top: 9px;
+            color: #B9F3DC;
+            font-size: 12px;
+            line-height: 1.5;
+        }
+        .github-sync-result code {
+            color: #E9EFF9;
+            word-break: break-all;
+        }
+        .github-sync-result a {
+            color: #9CCBFF;
+            white-space: nowrap;
+        }
+        .github-sync-result small {
+            color: #93A6C4;
+            word-break: break-all;
+        }
+        .inspection-card {
+            border-color: #C88A2D !important;
+            background: linear-gradient(140deg, #241F0C, #1D1A12) !important;
+        }
+        .inspection-progress {
+            display: none;
+            margin-top: 10px;
+            color: #F8E3AC;
+            font-size: 12px;
+            line-height: 1.45;
+        }
+        .inspection-result {
+            margin-top: 8px;
+            color: #B9F3DC;
+            font-size: 12px;
+            line-height: 1.45;
+            word-break: break-word;
         }
     </style>
     <link rel="stylesheet" href="/static/css/premium_v489.css?v=489">
 <link rel="stylesheet" href="/static/css/v4102_ui_system.css?v=4102">
+<link rel="stylesheet" href="/static/css/v6_theme.css?v=6">
+<link rel="stylesheet" href="/static/css/graphite_embed_v1.css">
+<script>
+  if (new URLSearchParams(window.location.search).get('ui') === 'graphite') {
+    document.documentElement.classList.add('graphite-embedded');
+  }
+</script>
 </head>
 <body>
 <script src="/static/js/loopback_csrf_v47.js"></script>
@@ -131,11 +207,28 @@
     </div>
 
     <div class="grid">
-        <div class="card" style="border-color:#7650ab">
+        <div class="card inspection-card">
+            <div class="title">🧾 Çift Kaynak İnceleme Paketi Hazırla</div>
+            <div class="desc">Ana çalışma ağacı ile <b>CODEX_ACTIVE</b> kod ağacını ayrı öneklerle tek bir inceleme ZIP'inde toplar.</div>
+            <div class="tiny">Veritabanı, ayarlar, maskeler, görseller, modeller ve üretim çıktıları dahil edilmez. Bu bir tam yedek değildir; ZIP ve SHA256 dosyası oluşturulunca Explorer'da seçili açılır.</div>
+            <button id="inspectionPackageButton" onclick="startInspectionPackage(this)">Paketi Hazırla</button>
+            <div class="inspection-progress" id="inspectionPackageProgress" role="status" aria-live="polite"></div>
+            <div class="inspection-result" id="inspectionPackageResult"></div>
+        </div>
+        <div class="card" style="border-color:#17D3A3">
             <div class="title">◫ YATAY - DİKEY GÖRSEL SEÇİCİ</div>
             <div class="desc">Bir klasör ve alt klasörlerindeki görselleri EXIF yönüne göre YATAY, DİKEY ve KARE olarak üç klasöre ayırır.</div>
             <div class="tiny">%1 kare toleransı · Başlangıçta KOPYALA · Aynı dosya adına güvenli yeni ad · Ayrı hedef klasör · SHA256 doğrulama · CSV raporu. Onaylı şablon/yedek klasörlerine yazmaz.</div>
             <button onclick="launchTool('orientation_sort', this)">Görsel Seçiciyi Aç</button>
+        </div>
+        <div class="card github-sync-card" id="githubSyncCard">
+            <div class="title">⇧ GitHub'a Aktar</div>
+            <div class="desc">Son yerel Git commit'inde bulunan güvenli kaynakları mevcut DRAFT GitHub senkronizasyon dalına aktarır.</div>
+            <div class="github-sync-meta" id="githubSyncMeta">GitHub hedefi ve yerel commit okunuyor...</div>
+            <div class="tiny">Sadece commit edilmiş izinli kaynaklar seçilir. Commit edilmemiş dosyalar otomatik kaydedilmez; aktif index/branch değiştirilmez. Force-push, merge, Release veya main güncellemesi yapılmaz.</div>
+            <button id="githubSyncButton" onclick="startGithubSync(this)">GitHub'a Aktar</button>
+            <div class="github-sync-progress" id="githubSyncProgress" role="status" aria-live="polite"></div>
+            <div class="github-sync-result" id="githubSyncResult"></div>
         </div>
         <div class="card">
             <div class="title">📥 Güvenli Yeni Şablon Ekle</div>
@@ -223,6 +316,171 @@
 
 <script>
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+let githubSyncInfo = null;
+let githubSyncRunning = false;
+let inspectionPackageRunning = false;
+
+function setInspectionProgress(text, kind='info') {
+    const node = document.getElementById('inspectionPackageProgress');
+    node.textContent = text || '';
+    node.dataset.kind = kind;
+    node.style.display = text ? 'block' : 'none';
+}
+
+async function startInspectionPackage(button) {
+    if (inspectionPackageRunning) return;
+    inspectionPackageRunning = true;
+    button.disabled = true;
+    button.textContent = 'Hazırlanıyor...';
+    document.getElementById('inspectionPackageResult').textContent = '';
+    setInspectionProgress('İki kaynak ağacı taranıyor; arayüz çalışmaya devam edecek...');
+    try {
+        const response = await fetch('/api/inspection-package/start', {method:'POST'});
+        const started = await response.json();
+        if (!response.ok || !started.success) throw new Error(started.error || 'Paketleme başlatılamadı.');
+        let finished = false;
+        for (let retry = 0; retry < 240; retry++) {
+            await sleep(500);
+            const check = await fetch('/api/inspection-package/status/' + encodeURIComponent(started.job_id), {cache:'no-store'});
+            const result = await check.json();
+            if (!check.ok || !result.success) throw new Error(result.error || 'Paket durumu okunamadı.');
+            setInspectionProgress(result.progress || 'Paket hazırlanıyor...', result.status === 'FAILED' ? 'error' : 'info');
+            if (result.status !== 'RUNNING') {
+                finished = true;
+                const out = document.getElementById('inspectionPackageResult');
+                if (result.status === 'SUCCEEDED') {
+                    out.textContent = 'Tamamlandı: ' + (result.zip_path || 'ZIP yolu alınamadı');
+                } else {
+                    out.textContent = 'HATA: ' + (result.error || 'Paket oluşturulamadı.');
+                    setInspectionProgress(result.progress || 'Paket oluşturulamadı.', 'error');
+                }
+                break;
+            }
+        }
+        if (!finished) throw new Error('Paketleme 120 saniyede tamamlanmadı; tekrar denemeden önce çıktı klasörünü kontrol edin.');
+    } catch (err) {
+        setInspectionProgress('HATA: ' + err.message, 'error');
+    } finally {
+        inspectionPackageRunning = false;
+        button.disabled = false;
+        button.textContent = 'Paketi Hazırla';
+    }
+}
+
+function setGithubProgress(text, kind='info') {
+    const node = document.getElementById('githubSyncProgress');
+    node.textContent = text || '';
+    node.dataset.kind = kind;
+    node.style.display = text ? 'block' : 'none';
+}
+
+function renderGithubSyncInfo(info) {
+    githubSyncInfo = info;
+    const meta = document.getElementById('githubSyncMeta');
+    const connection = info.connection || {};
+    const commit = info.local_commit || {};
+    const dirty = Number(commit.working_tree_changes || 0);
+    meta.textContent = `GitHub: ${connection.status || 'BİLİNMİYOR'} · ${connection.repository || 'hedef yok'} · dal: ${connection.branch || 'yok'}\n${connection.message || ''}\nSon yerel commit: ${(commit.short_sha || 'yok')} — ${commit.subject || 'mesaj yok'}${dirty ? ` · Çalışma ağacında ${dirty} değişiklik (aktarılmaz)` : ''}`;
+}
+
+async function loadGithubSyncInfo() {
+    try {
+        const response = await fetch('/api/github-sync/info', {cache:'no-store'});
+        const info = await response.json();
+        if (!response.ok || !info.success) throw new Error(info.error || 'GitHub durumu okunamadı.');
+        renderGithubSyncInfo(info);
+    } catch (err) {
+        document.getElementById('githubSyncMeta').textContent = 'GitHub durumu okunamadı: ' + err.message;
+        document.getElementById('githubSyncButton').disabled = true;
+    }
+}
+
+function renderGithubResult(result) {
+    const node = document.getElementById('githubSyncResult');
+    node.replaceChildren();
+    if (!result || result.status === 'RUNNING') return;
+    const label = document.createElement('span');
+    label.textContent = result.status === 'SUCCEEDED'
+        ? (result.result === 'UNCHANGED' ? 'GitHub zaten aynı güvenli committe.' : 'Aktarım başarılı.')
+        : 'Aktarım başarısız.';
+    node.appendChild(label);
+    if (result.commit_sha) {
+        const sha = document.createElement('code');
+        sha.textContent = ` Commit SHA: ${result.commit_sha}`;
+        node.appendChild(sha);
+    }
+    if (result.pull_request) {
+        const link = document.createElement('a');
+        link.href = result.pull_request;
+        link.target = '_blank';
+        link.rel = 'noopener';
+        link.textContent = ' PR bağlantısını aç';
+        node.appendChild(link);
+    }
+    if (result.technical_report_path) {
+        const report = document.createElement('small');
+        report.textContent = ` Teknik rapor: ${result.technical_report_path}`;
+        node.appendChild(document.createElement('br'));
+        node.appendChild(report);
+    }
+    if (result.status === 'FAILED' && Array.isArray(result.output) && result.output.length) {
+        const diagnostic = document.createElement('small');
+        diagnostic.textContent = ` Teknik ayrıntı: ${result.output[result.output.length - 1]}`;
+        node.appendChild(document.createElement('br'));
+        node.appendChild(diagnostic);
+    }
+}
+
+async function startGithubSync(button) {
+    if (githubSyncRunning) return;
+    const info = githubSyncInfo || {};
+    const connection = info.connection || {};
+    const commit = info.local_commit || {};
+    const summary = [
+        'GitHub aktarımı başlatılsın mı?',
+        `Hedef: ${connection.repository || 'bilinmiyor'} / ${connection.branch || 'bilinmiyor'}`,
+        `Yerel commit: ${commit.short_sha || 'bilinmiyor'} — ${commit.subject || 'mesaj yok'}`,
+        '',
+        'Yalnızca commit edilmiş ve güvenlik filtresinden geçen kaynaklar aktarılır.',
+        'Commit edilmemiş dosyalar otomatik commit edilmez; çalışma klasörü/index/aktif dal değiştirilmez.'
+    ].join('\n');
+    if (!window.confirm(summary)) return;
+    githubSyncRunning = true;
+    button.disabled = true;
+    button.textContent = 'Aktarılıyor...';
+    document.getElementById('githubSyncResult').replaceChildren();
+    setGithubProgress('Güvenli aktarım başlatılıyor...');
+    try {
+        const response = await fetch('/api/github-sync/transfer', {
+            method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({confirmed:true})
+        });
+        const started = await response.json();
+        if (!response.ok || !started.success) throw new Error(started.error || 'Aktarım başlatılamadı.');
+        let finished = false;
+        for (let retry = 0; retry < 240; retry++) {
+            await sleep(500);
+            const check = await fetch('/api/github-sync/status/' + encodeURIComponent(started.job_id), {cache:'no-store'});
+            const result = await check.json();
+            if (!check.ok || !result.success) throw new Error(result.error || 'Aktarım durumu okunamadı.');
+            setGithubProgress(result.progress || 'GitHub aktarımı çalışıyor...', result.status === 'FAILED' ? 'error' : 'info');
+            if (result.status !== 'RUNNING') {
+                finished = true;
+                renderGithubResult(result);
+                if (result.status === 'FAILED') throw new Error((result.output || []).slice(-1)[0] || 'GitHub aktarımı başarısız oldu.');
+                break;
+            }
+        }
+        if (!finished) throw new Error('Aktarım 120 saniyede tamamlanmadı; arka plan işinin teknik raporunu kontrol edin.');
+    } catch (err) {
+        setGithubProgress('HATA: ' + err.message, 'error');
+    } finally {
+        githubSyncRunning = false;
+        button.disabled = false;
+        button.textContent = 'GitHub\'a Aktar';
+        loadGithubSyncInfo();
+    }
+}
+
 async function launchTool(name, button) {
     const status = document.getElementById('status');
     const oldText = button.textContent;
@@ -263,6 +521,7 @@ async function launchTool(name, button) {
         button.textContent = oldText;
     }
 }
+loadGithubSyncInfo();
 </script>
 </body>
 </html>

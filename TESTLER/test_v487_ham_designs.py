@@ -196,6 +196,7 @@ def test_gui_and_watcher_wired_to_one_working_root():
     assert 'self.ham_design_watcher.stop()' in center
     assert "self.runtime_root/'HAM BASKI TASARIMLARI'" in gui
     assert 'validate_for_production()' in gui
+    assert 'validate_designs_for_production()' in gui
 
 def test_all_seven_category_product_engine_refuses_duplicate_extensions(tmp_path):
     from URETIM_V4.unified_batch import assert_unique_print_names

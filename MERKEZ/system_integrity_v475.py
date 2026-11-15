@@ -30,7 +30,6 @@ REQUIRED_CODE=(
     'MERKEZ/URETIM_V4/cloud_excel_v43.py',
     'MERKEZ/PETEK_V3/engine.py',
     'MERKEZ/PETEK_V3/registry.py',
-    'MERKEZ/magenta_reconcile_v472.py',
     'MERKEZ/external_inventory_v472.py',
     'MERKEZ/runtime_relocate_v473.py',
     'MERKEZ/URETIM_V4/deleted_receipts_v474.py',
@@ -38,7 +37,6 @@ REQUIRED_CODE=(
     'SABLON_V2_MIMARI/core/db.py',
     'SABLON_V2_MIMARI/static/js/loopback_csrf_v47.js',
     'BASLAT_V47_WINDOWS.bat',
-    'BAKIM_V472_MAGENTA_KLASOR_DENETIM_WINDOWS.bat',
 )
 
 def _sha(path):

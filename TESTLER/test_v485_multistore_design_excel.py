@@ -11,7 +11,8 @@ from openpyxl import Workbook,load_workbook
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'MERKEZ'))
 from URETIM_V4.store_identity_v485 import (store_codes,codes_from_sku,
-                                            filename,design_number)
+                                            filename,design_number,
+                                            trendyol_codes,petek_measurement_codes)
 from URETIM_V4.store_profiles_v47 import StoreProfiles
 from URETIM_V4.unified_batch import UnifiedV4Ledger
 from URETIM_V4.cloud_excel_v43 import CloudExcel
@@ -127,6 +128,114 @@ def test_store_excel_preserves_nonempty_template_and_refuses_wrong_url(tmp_path)
     with pytest.raises(ValueError,match='DOLU_SABLON'):
         export_store_upload(template,state,store_id='M5',report_root=state/'raporlar')
     assert template.exists()
+
+
+def test_petek_store_excel_fixed_measurement_order_keeps_complete_rows(tmp_path):
+    """PETEK size order is fixed, while each row keeps its own URL/codes."""
+    state = tmp_path / 'state'; state.mkdir()
+    ledger = UnifiedV4Ledger(state)
+    cloud = CloudExcel(state, state / 'raporlar')
+    category = '06_Petek_Kapama'
+    # Insert in the historical lexical-problem order deliberately.
+    for size in ('116', '136', '76', '96'):
+        art = 'pexels-artbovich-6434617.png'
+        base = trendyol_codes(art, 'Wudie', category)
+        code = petek_measurement_codes(base, size)
+        folder = state / 'uretilen_gorseller' / 'Wudie' / category
+        folder.mkdir(parents=True, exist_ok=True)
+        output = folder / f'{size}-pexels-artbovich-6434617_Petek_Wudie.png'
+        output.write_bytes((size + '-linked-row').encode())
+        fields = {
+            'key': f'Wudie-{size}', 'sku': code['sku'], 'category': category,
+            'art_sha': 'a' * 64, 'template_sha': 'b' * 64,
+            'mask_sha': 'c' * 64, 'art_name': art, 'uid': size,
+            'output': str(output), 'artifact_kind': 'overlay',
+            'overlay_cm': size,
+        }
+        ledger.reserve(fields)
+        digest = engine.digest(output)
+        ledger.complete(fields['key'], digest)
+        with cloud.connect() as db:
+            db.execute('INSERT INTO cloud_link(artifact_key,output_sha,url) VALUES(?,?,?)',
+                       (fields['key'], digest, f'https://cdn.example/{size}.png'))
+
+    template = tmp_path / 'petek.xlsx'
+    wb = Workbook(); ws = wb.active
+    ws.append(['Stok Kodu', 'Barkod', 'Model Kodu', 'Kategori', 'Ölçü', 'Görsel 1'])
+    wb.save(template); wb.close()
+    result = export_store_upload(template, state, store_id='Wudie', report_root=state / 'raporlar')
+
+    exported = load_workbook(result['output']); sheet = exported.active
+    assert [sheet.cell(row, 5).value for row in range(2, 6)] == [
+        '76 santimetre', '96 santimetre', '116 santimetre', '136 santimetre'
+    ]
+    for row, size in zip(range(2, 6), ('76', '96', '116', '136')):
+        # Codes and the URL are read from the same complete row identity.
+        assert sheet.cell(row, 1).value.startswith(size + '-')
+        assert sheet.cell(row, 2).value.startswith(size + '-')
+        assert sheet.cell(row, 3).value.endswith('_WUD_Pet')
+        assert sheet.cell(row, 6).hyperlink.target == f'https://cdn.example/{size}.png'
+    exported.close()
+
+
+def test_petek_store_excel_groups_each_design_then_measurement(tmp_path):
+    """Two designs must export as 76/96/116/136, then 76/96/116/136.
+
+    The fixture deliberately inserts the eight ledger rows in a mixed order.
+    Every row carries a design-specific URL and the assertions verify that
+    the complete product identity, measurement, and link move together.
+    """
+    state = tmp_path / 'state'; state.mkdir()
+    ledger = UnifiedV4Ledger(state)
+    cloud = CloudExcel(state, state / 'raporlar')
+    category = '06_Petek_Kapama'
+    designs = ('Yatay_Tasarim100', 'Yatay_Tasarim200')
+    insertion = [
+        ('116', designs[1]), ('76', designs[0]), ('136', designs[1]),
+        ('96', designs[0]), ('76', designs[1]), ('136', designs[0]),
+        ('96', designs[1]), ('116', designs[0]),
+    ]
+    for index, (size, design) in enumerate(insertion):
+        art = design + '.png'
+        base = trendyol_codes(art, 'OmzHome', category)
+        code = petek_measurement_codes(base, size)
+        folder = state / 'uretilen_gorseller' / 'OmzHome' / category
+        folder.mkdir(parents=True, exist_ok=True)
+        output = folder / f'{size}-{design}-Petek.png'
+        output.write_bytes(f'{design}-{size}'.encode())
+        fields = {
+            'key': f'OmzHome-{index}', 'sku': code['sku'], 'category': category,
+            'art_sha': 'a' * 64, 'template_sha': 'b' * 64,
+            'mask_sha': 'c' * 64, 'art_name': art, 'uid': str(index),
+            'output': str(output), 'artifact_kind': 'overlay',
+            'overlay_cm': size,
+        }
+        ledger.reserve(fields)
+        digest = engine.digest(output)
+        ledger.complete(fields['key'], digest)
+        with cloud.connect() as db:
+            db.execute(
+                'INSERT INTO cloud_link(artifact_key,output_sha,url) VALUES(?,?,?)',
+                (fields['key'], digest, f'https://cdn.example/{design}-{size}.png'),
+            )
+
+    template = tmp_path / 'petek-two-designs.xlsx'
+    wb = Workbook(); ws = wb.active
+    ws.append(['Stok Kodu', 'Barkod', 'Model Kodu', 'Kategori', 'Ölçü', 'Görsel 1'])
+    wb.save(template); wb.close()
+    result = export_store_upload(template, state, store_id='OmzHome', report_root=state / 'raporlar')
+
+    exported = load_workbook(result['output']); sheet = exported.active
+    expected_sizes = ['76 santimetre', '96 santimetre', '116 santimetre', '136 santimetre'] * 2
+    expected_designs = [designs[0]] * 4 + [designs[1]] * 4
+    assert [sheet.cell(row, 5).value for row in range(2, 10)] == expected_sizes
+    assert [sheet.cell(row, 1).value.split('-', 1)[1].rsplit('_Petek_OmzHome', 1)[0]
+            for row in range(2, 10)] == expected_designs
+    for row, (design, size) in enumerate(
+        ((design, size) for design in designs for size in ('76', '96', '116', '136')), 2
+    ):
+        assert sheet.cell(row, 6).hyperlink.target == f'https://cdn.example/{design}-{size}.png'
+    exported.close()
 
 
 def test_store_assignment_no_phash_image_decoding(tmp_path,monkeypatch):

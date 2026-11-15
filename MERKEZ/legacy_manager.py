@@ -14,6 +14,23 @@ import tempfile
 import socket
 import shutil
 import sys
+import subprocess
+try:
+    from .workspace_contract import (
+        WorkspaceContractError,
+        resolve_contract,
+        resolve_code_root,
+        resolve_runtime_root,
+        validate_code_root,
+    )
+except ImportError:  # direct ``python MERKEZ/...`` compatibility
+    from workspace_contract import (
+        WorkspaceContractError,
+        resolve_contract,
+        resolve_code_root,
+        resolve_runtime_root,
+        validate_code_root,
+    )
 
 ROOT=Path(__file__).resolve().parent.parent
 EMBEDDED=ROOT/'LEGACY_REFERANS_KOD'
@@ -32,51 +49,25 @@ def local_state_dir(env=None) -> Path:
 
 
 def preferred_runtime(userprofile=None, env=None) -> Path:
-    env=os.environ if env is None else env
-    # The portable Windows candidate exposes one canonical data-root override.
-    # It wins over stale historical workspace pointers and old OneDrive paths.
-    explicit = str(env.get('GORSEL_RUNTIME_ROOT') or '').strip()
-    if explicit:
-        selected = Path(explicit).expanduser().absolute()
-        if _valid_runtime(selected):
-            return selected
-        raise LegacyLaunchError('GORSEL_RUNTIME_ROOT geçersiz veya eksik veri kökü: '+str(selected))
-    if env.get('MOCKUP_RUNTIME_WORKSPACE'):
-        selected = Path(env['MOCKUP_RUNTIME_WORKSPACE']).expanduser().absolute()
-        if _valid_runtime(selected):
-            return selected
-        raise LegacyLaunchError('MOCKUP_RUNTIME_WORKSPACE geçersiz veya eksik veri kökü: '+str(selected))
-    state=local_state_dir(env)/'workspace.json'
-    if state.is_file():
-        try:
-            selected=Path(json.loads(state.read_text('utf-8'))['path']).expanduser().absolute()
-            if _valid_runtime(selected):
-                return selected
-            # An explicitly selected but now-missing workspace is not proof
-            # that another dataset is safe. Fail closed instead of silently
-            # switching to an old OneDrive or code-adjacent root.
-            return selected
-        except (ValueError, KeyError, OSError, TypeError):pass
-    user=Path(userprofile or env.get('USERPROFILE') or Path.home())
-    # When the code is launched from C:\GorselUretimMerkezi\CODEX_ACTIVE,
-    # the sibling parent is the intended portable data root. Prefer it before
-    # any historical OneDrive location so a moved workspace cannot silently
-    # reopen a different dataset.
-    code_parent = Path(__file__).resolve().parents[2]
-    if _valid_runtime(code_parent):
-        return code_parent
-    places=[user/'OneDrive'/'Masaüstü'/'GörselÜretme-ve-Mockup Otomasyonu',
-        user/'OneDrive'/'Desktop'/'GörselÜretme-ve-Mockup Otomasyonu',
-        user/'Desktop'/'GörselÜretme-ve-Mockup Otomasyonu']
-    for loc in places:
-        if _valid_runtime(loc):return loc
-    return places[0]
+    environment = os.environ if env is None else env
+    try:
+        selected = resolve_runtime_root(code_root=ROOT, env=environment)
+        # Keep the historical public helper strict: callers that use it to
+        # open live tools must never receive a missing or mixed-up root.
+        if not _valid_runtime(selected):
+            raise LegacyLaunchError(
+                'Runtime kökü geçersiz veya eksik veri: ' + str(selected)
+            )
+        return selected
+    except WorkspaceContractError as exc:
+        raise LegacyLaunchError(str(exc)) from exc
 
 
 def _valid_runtime(root: Path) -> bool:
     """Validate an existing data root without creating or migrating anything."""
     root = Path(root)
     return (root.is_dir() and not root.is_symlink()
+            and (root/'ayarlar.json').is_file()
             and (root/'SABLON_V2_MIMARI'/'ayarlar.db').is_file()
             and (root/'2_SABLON_HAVUZU').is_dir()
             and (root/'2_SABLON_HAVUZU_ORIJINAL_YEDEK').is_dir())
@@ -84,9 +75,10 @@ def _valid_runtime(root: Path) -> bool:
 
 def store_runtime_choice(folder:Path,env=None)->Path:
     folder=Path(folder).absolute()
-    if not (folder/'SABLON_V2_MIMARI'/'ayarlar.db').is_file():
-        raise LegacyLaunchError('Seçilen ana çalışma klasöründe SABLON_V2_MIMARI/ayarlar.db yok.')
-    if folder.is_symlink():raise LegacyLaunchError('Sembolik bağlantı çalışma klasörü kullanılmıyor.')
+    try:
+        resolve_contract(code_root=ROOT, runtime_root=folder, validate=True)
+    except WorkspaceContractError as exc:
+        raise LegacyLaunchError(str(exc)) from exc
     target=local_state_dir(env);target.mkdir(parents=True,exist_ok=True)
     data=json.dumps({'path':str(folder)},ensure_ascii=False).encode('utf-8')
     tmp=target/('workspace-'+os.urandom(6).hex()+'.tmp')
@@ -105,18 +97,35 @@ def preferred_code(env=None)->Path:
     the active V4.7.2 application silently depend on a disposable test folder.
     Data runtime remains independently selected by preferred_runtime().
     """
-    expected=ROOT
-    if ((expected/'SABLON_V2_MIMARI'/'app.py').is_file()
-            and (expected/'SABLON_V2_MIMARI'/'core'/'db.py').is_file()):
-        return expected.absolute()
-    raise LegacyLaunchError(
-        'TEST_EDILMIS_KOD_EKSIK: Paket kodu eksik; eski/test '
-        'klasöründen otomatik yedek kod çalıştırılması engellendi.' )
+    expected=resolve_code_root(ROOT)
+    problems = validate_code_root(expected)
+    if problems:
+        raise LegacyLaunchError('Çalışma alanı kaynak sözleşmesi geçersiz:\n' + '\n'.join(problems))
+    return expected
 
 
 def inspect(runtime=None,code=None)->dict:
-    runtime=Path(runtime or preferred_runtime()).absolute()
-    code=Path(code or preferred_code()).absolute()
+    try:
+        contract = resolve_contract(
+            code_root=code or ROOT,
+            runtime_root=runtime,
+            validate=True,
+        )
+    except WorkspaceContractError as exc:
+        try:
+            fallback_runtime = Path(runtime).absolute() if runtime is not None else resolve_runtime_root(code_root=ROOT)
+        except (WorkspaceContractError, OSError, ValueError):
+            fallback_runtime = Path(runtime or ROOT.parent).absolute()
+        return {
+            'ready': False,
+            'runtime': str(fallback_runtime),
+            'code': str(Path(code or ROOT).absolute()),
+            'database': str(fallback_runtime / 'SABLON_V2_MIMARI' / 'ayarlar.db'),
+            'problems': str(exc).splitlines()[1:] or [str(exc)],
+            'warnings': [], 'counts': {}, 'source': 'Sözleşme geçersiz',
+        }
+    runtime=contract.runtime_root
+    code=contract.code_root
     db=runtime/'SABLON_V2_MIMARI'/'ayarlar.db'
     problems=[];warnings=[];counts={}
     if runtime.is_symlink() or not runtime.is_dir():problems.append('Ana çalışma klasörü bulunamadı: '+str(runtime))
@@ -157,7 +166,13 @@ def inspect(runtime=None,code=None)->dict:
 
 def backup_database(runtime:Path,env=None)->Path:
     """Consistent SQLite online backup, saved OUTSIDE OneDrive; unique & verified."""
-    runtime=Path(runtime).absolute();db=runtime/'SABLON_V2_MIMARI'/'ayarlar.db'
+    try:
+        runtime = resolve_contract(
+            code_root=ROOT, runtime_root=runtime, validate=True
+        ).runtime_root
+    except WorkspaceContractError as exc:
+        raise LegacyLaunchError(str(exc)) from exc
+    db=runtime/'SABLON_V2_MIMARI'/'ayarlar.db'
     if not db.is_file() or db.is_symlink():raise LegacyLaunchError('Canlı ayarlar.db bulunamadı veya güvenli değil.')
     root=local_state_dir(env)/'DB_YEDEK';root.mkdir(parents=True,exist_ok=True)
     stamp=datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ')
@@ -194,11 +209,33 @@ def backup_database(runtime:Path,env=None)->Path:
         if source is not None:source.close()
 
 
-def launch_spec(runtime=None,code=None,python=None)->tuple[list[str],dict,str]:
-    state=inspect(runtime,code)
+def launch_spec(runtime=None,code=None,python=None,validated_state=None)->tuple[list[str],dict,str]:
+    """Build the reviewed Flask command without repeating a completed preflight."""
+    state=validated_state if isinstance(validated_state,dict) else inspect(runtime,code)
     if not state['ready']:
         raise LegacyLaunchError('Başlatma engellendi:\n'+'\n'.join(state['problems']))
-    exe=python or sys.executable
+    # The desktop center may itself be launched with the system Python, while
+    # the Flask review editor's dependencies live in the portable center venv.
+    # Prefer that interpreter so `flask`, OpenCV and the locked dependencies
+    # are resolved consistently. Explicit callers may still override it.
+    if python is None:
+        venv_python = Path(__file__).resolve().parent / '.venv' / 'Scripts' / 'python.exe'
+        exe = venv_python if os.name == 'nt' and venv_python.is_file() else sys.executable
+    else:
+        exe = python
+    try:
+        probe = subprocess.run(
+            [str(exe), '-c', 'import flask, cv2, numpy'],
+            capture_output=True, text=True, timeout=8,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise LegacyLaunchError('İnceleme Python ortamı çalıştırılamadı: ' + str(exc)) from exc
+    if probe.returncode != 0:
+        detail = (probe.stderr or probe.stdout or 'flask/cv2/numpy eksik').strip()[-600:]
+        raise LegacyLaunchError(
+            'İnceleme Python ortamında gerekli bağımlılıklar eksik. '
+            'CODEX_ACTIVE\\MERKEZ\\.venv\\Scripts\\python.exe kullanılmalı. Detay: ' + detail
+        )
     env=dict(os.environ,MOCKUP_RUNTIME_WORKSPACE=state['runtime'],MOCKUP_NO_AUTO_BROWSER='1',
              MOCKUP_FLASK_DEBUG='0',PYTHONDONTWRITEBYTECODE='1',PYTHONUTF8='1',PYTHONIOENCODING='utf-8')
     cmd=[str(exe),'-B',str(Path(state['code'])/'SABLON_V2_MIMARI'/'app.py')]

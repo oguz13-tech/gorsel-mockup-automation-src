@@ -1,3 +1,7 @@
 @echo off
+set "GORSEL_CODE_ROOT=%~dp0"
+set "GORSEL_RUNTIME_ROOT=%~dp0.."
+set "MOCKUP_RUNTIME_WORKSPACE=%GORSEL_RUNTIME_ROOT%"
+if not defined V4_RENDER_WORKERS set "V4_RENDER_WORKERS=2"
 call "%~dp0BASLAT.bat"
 exit /b %ERRORLEVEL%

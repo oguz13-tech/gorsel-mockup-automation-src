@@ -4,8 +4,15 @@ The actual seven-category render path calls PETEK_V3.realism.apply. The
 photometric change must not alter printed black ink, vivid artwork, two
 scene-spanning shadow bands, source magenta or approved ventilation holes.
 """
+import sys
+from pathlib import Path
+
 import numpy as np
 import pytest
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / 'MERKEZ'))
 
 from MERKEZ.PETEK_V3.realism import apply, _diffuse_window_shadows
 from URETIM_V4.scene_daylight_vnext import CATEGORIES, apply_scene_daylight, RECIPE

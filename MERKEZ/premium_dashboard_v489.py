@@ -10,16 +10,21 @@ from tkinter import ttk, scrolledtext, messagebox
 from datetime import datetime
 from dark_theme_v42 import BG, FG, MUTED, UI_MOR_THEME
 from ui_layout_v498 import load as load_visual_layout, save as save_visual_layout, LayoutEditor
+from error_advisor_v498 import (
+    register_listener, open_report, copy_report_text, prepare_codex_bundle,
+)
 
 SIDE = UI_MOR_THEME['sidebar']
 PANEL = UI_MOR_THEME['panel']
 PANEL_ALT = UI_MOR_THEME['raised']
 OUTLINE = UI_MOR_THEME['border']
 ACCENT = UI_MOR_THEME['accent']
-MAGENTA = '#ec4ca0'
-ORANGE = '#f8a552'
-BLUE = '#4c9df9'
-GREEN = '#43d1a7'
+MAGENTA = '#17D3A3'
+ORANGE = '#F0B84C'
+BLUE = '#5AA9FF'
+GREEN = '#3FD98A'
+WARNING = '#F0B84C'
+CRITICAL = '#EF6A73'
 
 
 def _frame(parent, bg=BG, **kwargs):
@@ -56,7 +61,7 @@ def _card(parent, title, description, action, callback, color, row, column,
     body.pack(side='left', fill='both', expand=True, padx=19, pady=16)
     if drag_mode is not None and drag_mode.get():
         handle=_label(body, '⠿  TUT VE KARTA SÜRÜKLE · '+title, 11, bold=True,
-                      color='#edd7ff',bg=panel,cursor='fleur')
+                      color='#93A6C4',bg=panel,cursor='fleur')
         handle.pack(fill='x',pady=(0,7))
         if on_drop:handle.bind('<ButtonRelease-1>',lambda e:on_drop(card_key,e))
     _label(body, title, 15, color=palette.get('title',FG), bold=True,bg=panel).pack(fill='x', pady=(0, 7))
@@ -84,11 +89,11 @@ def build_dashboard(app):
     sidebar.pack_propagate(False)
     brand = _frame(sidebar, SIDE)
     brand.pack(fill='x', padx=17, pady=(25, 27))
-    _label(brand, '✦ Görsel Üretim', 17, bold=True, color='#e7d6ff', bg=SIDE).pack(fill='x')
-    _label(brand, 'MERKEZİ  ·  7 KATEGORİ', 10, color='#c5d0dc', bg=SIDE).pack(fill='x', pady=(2,0))
+    _label(brand, '✦ Görsel Üretim', 17, bold=True, color='#93A6C4', bg=SIDE).pack(fill='x')
+    _label(brand, 'MERKEZİ  ·  7 KATEGORİ', 10, color='#93A6C4', bg=SIDE).pack(fill='x', pady=(2,0))
 
     def nav(title, callback, active=False):
-        b = _button(sidebar, title, callback, color='#4b3865' if active else SIDE, size=11)
+        b = _button(sidebar, title, callback, color='#182238' if active else SIDE, size=11)
         b.pack(fill='x', padx=11, pady=3)
         return b
 
@@ -103,6 +108,7 @@ def build_dashboard(app):
     nav('▤   Notlarım ve Görevlerim', app.open_notes_v493)
     nav('⌕   Özellik / Araç Ara', app.open_tool_search_v493)
     nav('✥   Arayüzü Düzenle', lambda: LayoutEditor(root,'dashboard',on_save=app._refresh_visual_cards))
+    nav('⏻   ŞABLON İNCELEMEYİ KAPAT', app.stop_legacy_editor)
     nav('⏻   PROGRAMI KAPAT', app.close)
     def open_reports():
         if not app.advanced_panel.winfo_manager():
@@ -114,16 +120,70 @@ def build_dashboard(app):
 
     workspace = _frame(shell)
     workspace.pack(side='left', fill='both', expand=True)
-    topbar = _frame(workspace, '#2b323c', height=59)
+    topbar = _frame(workspace, '#131C2B', height=59)
     topbar.pack(fill='x')
     topbar.pack_propagate(False)
-    _label(topbar, 'GÖRSEL ÜRETİM MERKEZİ', 12, bold=True, bg='#2b323c').pack(
+    _label(topbar, 'GÖRSEL ÜRETİM MERKEZİ', 12, bold=True, bg='#131C2B').pack(
         side='left', padx=25, pady=14)
-    _button(topbar, '⏻  Programı Kapat', app.close, color='#64243d', size=11).pack(side='right', padx=(6,20), pady=8)
-    _button(topbar, '✥  Arayüzü Düzenle', lambda: LayoutEditor(root,'dashboard',on_save=app._refresh_visual_cards),color='#30345a',size=10).pack(side='right',padx=3,pady=8)
-    _button(topbar, '↕ Kartları Taşı', lambda:(drag_mode.set(not drag_mode.get()),app._refresh_visual_cards()),color='#303f54',size=10).pack(side='right',padx=3,pady=8)
+    # Search is presentation-only: it filters dashboard cards and never scans
+    # or mutates template/SQLite data on the Tk event thread.
+    app.dashboard_query = tk.StringVar(value='')
+    search = ttk.Entry(topbar, textvariable=app.dashboard_query, width=28)
+    search.pack(side='left', padx=(10, 6), pady=13)
+    search.insert(0, 'Ara: araç / işlem')
+    search.configure(foreground=MUTED)
+    def clear_search(_event=None):
+        if search.get() == 'Ara: araç / işlem':
+            search.delete(0, 'end'); search.configure(foreground=FG)
+    search.bind('<FocusIn>', clear_search)
+    search.bind('<KeyRelease>', lambda _event: app._refresh_visual_cards())
+    _button(topbar, '⏻  Programı Kapat', app.close, color='#2E161A', size=11).pack(side='right', padx=(6,20), pady=8)
+    _button(topbar, '✥  Arayüzü Düzenle', lambda: LayoutEditor(root,'dashboard',on_save=app._refresh_visual_cards),color='#131C2B',size=10).pack(side='right',padx=3,pady=8)
+    _button(topbar, '↕ Kartları Taşı', lambda:(drag_mode.set(not drag_mode.get()),app._refresh_visual_cards()),color='#22304A',size=10).pack(side='right',padx=3,pady=8)
     _label(topbar, '●  Çalışma alanı korumalı  ·  V4.10.2', 10,
-           GREEN, bg='#2b323c').pack(side='right', padx=10)
+           GREEN, bg='#131C2B').pack(side='right', padx=10)
+
+    # Persistent error radar strip. It is hidden until a real error is recorded
+    # and keeps report actions visible after the modal dialog is dismissed.
+    radar = _frame(workspace, '#2E161A')
+    radar.pack(fill='x', padx=0, pady=0)
+    radar.pack_forget()
+    app.error_radar = radar
+    app.error_radar_text = tk.StringVar(value='')
+    _label(radar, '', 10, color='#FFD9DC', bg='#2E161A',
+           textvariable=app.error_radar_text, wraplength=640).pack(side='left', padx=16, pady=9)
+    def radar_action(action):
+        try:
+            result = action()
+            if result and hasattr(app, 'status'):
+                app.status.set('Hata raporu hazır: ' + str(result))
+        except Exception as exc:
+            app._log('Hata raporu işlemi başarısız: ' + str(exc))
+    _button(radar, 'Raporu Aç', lambda: radar_action(open_report), color='#2E161A', size=9).pack(side='right', padx=4, pady=5)
+    _button(radar, 'Raporu Kopyala', lambda: radar_action(copy_report_text), color='#2E161A', size=9).pack(side='right', padx=4, pady=5)
+    _button(radar, 'Codex İçin Rapor Hazırla', lambda: radar_action(prepare_codex_bundle), color='#2E161A', size=9).pack(side='right', padx=4, pady=5)
+    def on_error(report):
+        def update():
+            try:
+                pixels = report.get('pixel_errors') or {}
+                mask = report.get('mask_comparison') or {}
+                pixel_count = pixels.get('mismatched_pixels', 0)
+                mask_count = mask.get('mismatched_pixels', 0)
+                stage = report.get('processing_stage') or report.get('stage') or 'bilinmiyor'
+                app.error_radar_text.set('⚠ ' + str(report.get('error_code')) + ' · ' +
+                    str(report.get('title')) + ' · Aşama: ' + str(stage) +
+                    ' · Hatalı piksel: ' + str(pixel_count) +
+                    ' · Maske farkı: ' + str(mask_count) + ' · Rapor: ' +
+                    str(report.get('text_path') or 'yazılamadı'))
+                if not app.error_radar.winfo_ismapped():
+                    app.error_radar.pack(fill='x', padx=0, pady=0, before=scroll_host)
+            except tk.TclError:
+                pass
+        try:
+            root.after_idle(update)
+        except tk.TclError:
+            pass
+    register_listener(on_error)
 
     scroll_host = _frame(workspace)
     scroll_host.pack(fill='both', expand=True)
@@ -145,16 +205,16 @@ def build_dashboard(app):
 
     page = _frame(content)
     page.pack(fill='both', expand=True, padx=23, pady=22)
-    banner = _frame(page, '#271b46')
+    banner = _frame(page, '#0B101B')
     banner.pack(fill='x', pady=(0, 15))
     accent = _frame(banner, ACCENT, height=5)
     accent.pack(fill='x')
-    banner_inner = _frame(banner, '#271b46')
+    banner_inner = _frame(banner, '#0B101B')
     banner_inner.pack(fill='x', padx=22, pady=23)
     _label(banner_inner, 'BUGÜN NELER ÜRETECEĞİZ?', 22, bold=True,
-           bg='#271b46').pack(fill='x')
+           bg='#0B101B').pack(fill='x')
     _label(banner_inner, 'Şablonları incele, PETEK maskelerini düzenle, mağaza bazlı mockup üret.',
-           12, color='#d4cbe9', bg='#271b46').pack(fill='x', pady=(7,0))
+           12, color='#93A6C4', bg='#0B101B').pack(fill='x', pady=(7,0))
 
     strip = _frame(page)
     strip.pack(fill='x', pady=(0,13))
@@ -236,6 +296,9 @@ def build_dashboard(app):
             for i,key in enumerate(identities):
                 if key not in card_defs:continue
                 title,detail,action,callback,color=card_defs[key]
+                query = app.dashboard_query.get().strip().casefold()
+                if query and query != 'ara: araç / işlem' and query not in (title+' '+detail+' '+action).casefold():
+                    continue
                 if prefs.get('effect')=='kapalı':color=ACCENT
                 elif prefs.get('effect')=='belirgin':color=accent
                 btn=_card(view,title,detail,action,callback,color,i//2,i%2,
@@ -273,7 +336,7 @@ def build_dashboard(app):
       ('SQLite Güvenli Yedek', app.g3_backup),
       ('PETEK Maskesi — Eski Editör', app.open_review),
       ('PETEK Klasör Denetimi', app.prepare_petek_folders),
-      ('Magenta Dosya Denetimi', app.open_consolidation),
+      ('Dosya Denetimi', app.open_consolidation),
       ('İnceleme Servisini Durdur', app.stop_legacy_editor),
       ('Üretim Kayıt Denetimi', app.open_unified_audit),
       ('Kesinti ve Kilit Kurtarma', app.open_crash_recovery),
@@ -291,7 +354,7 @@ def build_dashboard(app):
 
     _label(page, 'İşlem Günlüğü', 16, bold=True).pack(anchor='w',pady=(14,8))
     app.log = scrolledtext.ScrolledText(page, height=6, state='disabled',
-        font=('Consolas',10), bg='#14192a', fg=FG, insertbackground=FG,
+        font=('Consolas',10), bg='#0F1622', fg=FG, insertbackground=FG,
         padx=12, pady=10, relief='flat', borderwidth=0, wrap='word')
     app.log.pack(fill='both', expand=True, pady=(0,12))
     _label(page, 'Veri koruması: orijinal şablonlar, maskeler, onaylar ve SQLite kayıtları bu arayüz tarafından değiştirilmez.',

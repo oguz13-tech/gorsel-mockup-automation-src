@@ -18,7 +18,12 @@ import numpy as np
 from PIL import Image, ImageTk
 
 from . import engine, curves as curve_math
-from dark_theme_v42 import BG, PANEL, FG, MUTED, ACCENT
+
+try:
+    from URETIM_V4 import ui_table_v1 as _table_tools
+except Exception:
+    _table_tools = None
+from dark_theme_v42 import BG, PANEL, FG, MUTED, ACCENT, apply_dark_theme
 from help_v42 import bind_help
 from .batch import Batch
 from .registry import Registry
@@ -52,6 +57,10 @@ class MaskEditor:
         self.registry=registry or Registry();self.on_saved=on_saved
         self.runtime_root=Path(runtime_root).resolve() if runtime_root else None
         self.window=tk.Toplevel(parent)
+        try:
+            apply_dark_theme(self.window)
+        except Exception:
+            pass
         self.window.title('PETEK — Mockup Baskı Alanı Düzenleyici')
         # Match the *usable* screen, including small laptops / display scaling.
         screen_w = self.window.winfo_screenwidth()
@@ -172,7 +181,7 @@ class MaskEditor:
         ttk.Button(left,text='5. Kontrol Ettim — Mockupı Üretime Aç',command=self.approve).pack(fill='x',pady=4)
         hint(left, 'Yalnız görsel kontrolünden sonra onayla; onaylı profil PETEK üretim listesine girer.')
         self.status=tk.StringVar(value='Dikkat: 4 köşe içinde kalan her piksel ahşap değildir.')
-        ttk.Label(left,textvariable=self.status,wraplength=275,foreground='#fbbf24').pack(fill='x',pady=10)
+        ttk.Label(left,textvariable=self.status,wraplength=275,foreground='#F0B84C').pack(fill='x',pady=10)
         ttk.Label(left,text='TURUNCU: tasarımın basılacağı yüzey.\nŞEFFAF: orijinal delik/gölge/kavis/parke.\nMaske onayı kaynak SHA ile kilitlenir.',wraplength=285).pack(anchor='w')
         self.scene=None;self.source=None;self.mask=None;self.quad=[];self.photo=None
         self.mode.set('corners');self.undo_stack=[];self.curve=[]
@@ -495,9 +504,9 @@ class MaskEditor:
         self._ensure_view()
         x,y=self._cursor_xy
         radius=brush_radius_screen(self.brush.get(),self.view.scale)
-        color='#25e7fe' if self.mode.get()=='wood' else '#f83f73'
+        color='#17D3A3' if self.mode.get()=='wood' else '#EF6A73'
         self.canvas.create_oval(x-radius,y-radius,x+radius,y+radius,
-                                outline='#111111',width=4,tags='brush_cursor')
+                                outline='#0B101B',width=4,tags='brush_cursor')
         self.canvas.create_oval(x-radius,y-radius,x+radius,y+radius,
                                 outline=color,width=2,tags='brush_cursor')
         self.canvas.create_line(x-5,y,x+5,y,fill=color,tags='brush_cursor')
@@ -825,20 +834,20 @@ class MaskEditor:
         self.canvas.delete('all');self.canvas.create_image(0,0,anchor='nw',image=self.photo)
         for i,(x,y) in enumerate(self.quad):
             cx,cy=v.screen(x,y)
-            self.canvas.create_oval(cx-5,cy-5,cx+5,cy+5,fill='#ff2244',outline='white')
-            self.canvas.create_text(cx+14,cy+12,text=str(i+1),fill='#ff2244',font=('Segoe UI',11,'bold'))
+            self.canvas.create_oval(cx-5,cy-5,cx+5,cy+5,fill='#EF6A73',outline='white')
+            self.canvas.create_text(cx+14,cy+12,text=str(i+1),fill='#EF6A73',font=('Segoe UI',11,'bold'))
         if len(self.quad)==4:
             points=[coord for p in self.quad for coord in v.screen(*p)]
-            self.canvas.create_polygon(points,outline='#ff3355',fill='',width=2)
+            self.canvas.create_polygon(points,outline='#EF6A73',fill='',width=2)
             for i,(x,y) in enumerate(self.quad):
                 x,y=v.screen(x,y)
-                self.canvas.create_rectangle(x-6,y-6,x+6,y+6,fill='#f25',outline='white')
+                self.canvas.create_rectangle(x-6,y-6,x+6,y+6,fill='#EF6A73',outline='white')
                 other=self.quad[(i+1)%4]
                 mx,my=v.screen((self.quad[i][0]+other[0])/2,(self.quad[i][1]+other[1])/2)
-                self.canvas.create_oval(mx-5,my-5,mx+5,my+5,fill='#008ddd',outline='white')
+                self.canvas.create_oval(mx-5,my-5,mx+5,my+5,fill='#5AA9FF',outline='white')
         for kind,pts in self.curves.items():
             if not pts:continue
-            clr='#ffff00' if kind=='top' else '#00ffff'
+            clr='#F0B84C' if kind=='top' else '#17D3A3'
             try:
                 xs,ys=curve_math.interpolate(pts,self.quad if len(self.quad)==4 else None)
                 if len(xs)>1:
@@ -865,9 +874,15 @@ class MaskEditor:
             raise engine.MaskError(f'Maske panel dışına taşıyor: {leak} piksel. '
                                    'Önce «Panel dışı maskeyi TEMİZLE» düğmesine bas, '
                                    'sonra kavisleri kontrol et.')
+        # The preview must use the exact placement selected for production.
+        # Keeping this mapping here (on the UI thread) prevents a contain
+        # selection from silently previewing as cover while the batch engine
+        # correctly receives contain.
+        placement = ('cover' if getattr(self, 'placement', None) is None or
+                     self.placement.get().startswith('Tam Doldur') else 'contain')
         rendered, qa = engine.render(self.scene, artwork, self.quad, self.mask,
                                       float(self.aspect.get()), marketplace=True,
-                                      placement='cover',lighting=_lighting_code(self.lighting.get()))
+                                      placement=placement,lighting=_lighting_code(self.lighting.get()))
         win = tk.Toplevel(self.window)
         win.title('PETEK — Tasarım Önizlemesi (kaydedilmedi)')
         scale = min(1, 640 / rendered.shape[0], 560 / rendered.shape[1])
@@ -880,8 +895,12 @@ class MaskEditor:
         label = ttk.Label(win, image=preview)
         label.image = preview
         label.pack(padx=12, pady=12)
-        ttk.Label(win, text='TAM DOLDUR: Tasarım kenarlardan kırpılabilir. '
-                  'Üst/alt kavis, dikey yarıklar, gölge ve zemin orijinal kalmalı.',
+        note = ('TAM DOLDUR: Baskı yüzeyi boşluksuz kaplanır; oran korunur ve '
+                'tasarım merkezden kırpılabilir.' if placement == 'cover' else
+                'TAM GÖSTER: Tasarımın tamamı korunur; oran nedeniyle üst/alt '
+                'bant oluşabilir.')
+        ttk.Label(win, text=note + ' Üst/alt kavis, dikey yarıklar, gölge ve '
+                  'zemin orijinal kalmalı.',
                   wraplength=540).pack(padx=12, pady=8)
 
     def preview_edge_variants(self):
@@ -894,6 +913,8 @@ class MaskEditor:
                 filetypes=[('Baskı tasarımı','*.jpg *.jpeg *.png *.webp')])
             if not path:return
             art=engine.read_bgr(Path(path))
+            placement = ('cover' if getattr(self, 'placement', None) is None or
+                         self.placement.get().startswith('Tam Doldur') else 'contain')
             choices=[('1 · Çerçevesiz',0,0.),
                      ('2 · Mikro taşma %1,2',0,.012),
                      ('3 · Beyaz sınır ~5 mm',5,0.),
@@ -902,7 +923,7 @@ class MaskEditor:
             for label,frame,overscan in choices:
                 result,_=engine.render(self.scene,art,self.quad,self.mask,float(self.aspect.get()),
                     lighting=_lighting_code(self.lighting.get()),marketplace=True,
-                    frame_mm=frame,overscan=overscan)
+                    frame_mm=frame,overscan=overscan,placement=placement)
                 thumb=cv2.resize(result,(210,280),interpolation=cv2.INTER_AREA)
                 panels.append((label,ImageTk.PhotoImage(
                     Image.fromarray(cv2.cvtColor(thumb,cv2.COLOR_BGR2RGB)),master=self.window)))
@@ -1006,6 +1027,8 @@ class BatchWindow:
         self.listbox=tk.Listbox(area,selectmode='extended',height=8,exportselection=False,
                                 bg=PANEL,fg=FG,selectbackground=ACCENT,selectforeground='#ffffff')
         self.listbox.pack(fill='x')
+        if _table_tools is not None:
+            _table_tools.attach_listbox_tooltip(self.listbox)
         self.mapping=[];self.reload()
         ttk.Button(area,text='Yeni Onaylanan PETEK Fotoğraflarını Listele',command=self.reload).pack(anchor='w',pady=5)
         ttk.Label(area,text='İnsan onayından sonra yenile; tüm onaylılar varsayılan seçilir, istersen seçimi değiştir.',

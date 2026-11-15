@@ -6,6 +6,10 @@ import logging
 from logging.handlers import RotatingFileHandler
 import os
 from pathlib import Path
+try:
+    from MERKEZ.workspace_contract import resolve_contract
+except ImportError:
+    from workspace_contract import resolve_contract
 import re
 import tempfile
 from . import engine
@@ -167,10 +171,7 @@ class Registry:
         """Find a moved source by SHA without rewriting the approved profile."""
         if profile_source.is_file() and not profile_source.is_symlink():
             return profile_source
-        root_text = str(os.getenv('GORSEL_RUNTIME_ROOT') or '').strip()
-        if not root_text:
-            return None
-        root = Path(root_text).expanduser().resolve()
+        root = resolve_contract(validate=False).runtime_root
         if root.is_symlink() or not root.is_dir():
             return None
         names = [profile_source.name]

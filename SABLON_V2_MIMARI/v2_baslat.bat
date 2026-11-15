@@ -2,6 +2,9 @@
 chcp 65001 > nul
 title JARVIS V2 - Guvenli Kontrol Merkezi
 cd /d "%~dp0.."
+set "GORSEL_CODE_ROOT=%CD%"
+if not defined GORSEL_RUNTIME_ROOT set "GORSEL_RUNTIME_ROOT=%CD%\.."
+if not defined MOCKUP_RUNTIME_WORKSPACE set "MOCKUP_RUNTIME_WORKSPACE=%GORSEL_RUNTIME_ROOT%"
 if not defined MOCKUP_RUNTIME_WORKSPACE (
     echo Guvenlik: Baslatmadan once mevcut gercek calisma klasoru secilmeli.
     set /p "MOCKUP_RUNTIME_WORKSPACE=Runtime klasoru: "

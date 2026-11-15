@@ -9,6 +9,7 @@ from __future__ import annotations
 import cv2
 import numpy as np
 from . import engine
+from .petek_slot_geometry_vnext import MIN_REAL_VENTS, MAX_REAL_VENTS
 
 RECIPE = 'petek-geometric-final-despill-v495-1'
 
@@ -28,6 +29,34 @@ def _magenta_pixels(bgr):
     return ((hsv[:, :, 0] >= 126) & (hsv[:, :, 0] <= 179) &
             (hsv[:, :, 1] >= 85) & (hsv[:, :, 2] >= 55) &
             (b + r > 2 * g + 44) & ((b > g + 16) | (r > g + 16)))
+
+
+DONOR_MAX_DISTANCE_PX = 10
+
+
+def _donor_fill(image, target, donors, max_distance=DONOR_MAX_DISTANCE_PX):
+    """Replace ``target`` pixels with the nearest clean in-print donor pixel.
+
+    Unlike inpainting, the fill never averages in neighbouring magenta-class
+    pixels, so a dark purple/crimson design cannot re-create the marker tone.
+    Only pixels with a donor within ``max_distance`` are touched.
+    """
+    if not np.any(target) or not np.any(donors):
+        return image, 0
+    inverse = (~donors).astype(np.uint8)
+    distance, labels = cv2.distanceTransformWithLabels(
+        inverse, cv2.DIST_L2, 5, labelType=cv2.DIST_LABEL_PIXEL)
+    ys, xs = np.where(donors)
+    # Labels number the zero pixels in row-major order starting at 1.
+    order = np.lexsort((xs, ys))
+    ys, xs = ys[order], xs[order]
+    fill = target & (distance <= max_distance) & (labels > 0)
+    if not np.any(fill):
+        return image, 0
+    out = image.copy()
+    idx = labels[fill] - 1
+    out[fill] = image[ys[idx], xs[idx]]
+    return out, int(np.count_nonzero(fill))
 
 
 def cleanup_petek_magenta(rendered, mask, quad, *, slot_centers=None, enabled=True,
@@ -57,7 +86,7 @@ def cleanup_petek_magenta(rendered, mask, quad, *, slot_centers=None, enabled=Tr
     vent_corridor = np.zeros((h, w), dtype=np.uint8)
     if slot_centers is not None:
         positions = [float(c) for c in slot_centers]
-        if not (10 <= len(positions) <= 16) or not np.isfinite(positions).all():
+        if not (MIN_REAL_VENTS <= len(positions) <= MAX_REAL_VENTS) or not np.isfinite(positions).all():
             raise engine.MaskError('PETEK_REAL_SLOT_GEOMETRY_INVALID')
         gw, gh = 900, 690
         rect = np.float32([[0, 0], [gw-1, 0], [gw-1, gh-1], [0, gh-1]])
@@ -80,10 +109,17 @@ def cleanup_petek_magenta(rendered, mask, quad, *, slot_centers=None, enabled=Tr
     # with PETEK_PINK_CLEANUP_INCOMPLETE_REVIEW (HTTP 409).
     #
     # In the shared preview/production path we only repair NEW magenta that
-    # (1) was absent from the artwork's base render, (2) matches magenta in
-    # the *original source photograph*, and (3) is inside approved print +
-    # geometrically eligible edge/vent lip. A legitimate pink design is never
-    # changed. The legacy standalone mode remains compatible with older tests.
+    # (1) was absent from the artwork's base render and (2) is inside approved
+    # print + geometrically eligible edge/vent lip. Earlier revisions also
+    # required a matching magenta pixel in the original source photograph.
+    # That made cleanup depend on the artwork: premultiplied-alpha fringes,
+    # resize rounding, and dark/photo designs can transform the source marker
+    # enough that the leaked pixel no longer matches ``source_marker``. The
+    # immutable pre-effect print reference is the stronger discriminator here:
+    # intentional pink artwork is still protected by ``base_pink``, while any
+    # newly introduced magenta in the owned corridor is repaired regardless of
+    # its compositing path. The legacy standalone mode remains compatible with
+    # older tests.
     if printed_reference is not None:
         if (source_scene is None or printed_reference.shape != rendered.shape or
             printed_reference.dtype != np.uint8 or
@@ -92,13 +128,52 @@ def cleanup_petek_magenta(rendered, mask, quad, *, slot_centers=None, enabled=Tr
         allowed &= (mask > 0)  # physical vents/cabinet must never be repainted
         base_pink = _magenta_pixels(printed_reference)
         actual_pink = _magenta_pixels(rendered)
+        # Do not require an exact source hue match: alpha/composite/resize can
+        # shift the leaked marker outside the narrow hue window. Keep a small
+        # spatial link to the original marker, however, so an arbitrary pink
+        # injected by a material stage is still fail-closed and reaches the
+        # incomplete-cleanup review gate.
         source_marker = _magenta_pixels(source_scene)
-        target = allowed & actual_pink & (~base_pink) & source_marker
+        source_link = cv2.dilate(source_marker.astype(np.uint8),
+                                  np.ones((9, 9), np.uint8), iterations=1) > 0
+        target = allowed & actual_pink & (~base_pink) & source_link
         initial = int(np.count_nonzero(target))
         out = rendered.copy()
         # Restore genuine printed artwork pixels instead of inpainting from
         # neighboring ORIGINAL magenta, which would make the bleed worse.
         out[target] = printed_reference[target]
+        # A vent leak may already exist in printed_reference when it is
+        # introduced before this cleanup stage.  In the measured physical
+        # vent corridor, saturated magenta is never intentional artwork.
+        # A broad magenta artwork is legitimate and must remain untouched;
+        # only a narrow vent-local pattern is treated as a leak.  This keeps
+        # the physical guard strict without repainting an intentionally pink
+        # design that happens to cross a measured slot.
+        base_inside = int(np.count_nonzero(base_pink & (mask > 0)))
+        broad_artwork_pink = base_inside > max(1000, int(face_pixels * .025))
+        vent_leak = ((vent_corridor > 0) & (mask > 0) & _magenta_pixels(out)
+                     if not broad_artwork_pink else np.zeros_like(mask, dtype=bool))
+        vent_count = int(np.count_nonzero(vent_leak))
+        if vent_count:
+            if vent_count > max(1200, int(face_pixels * .02)):
+                return rendered.copy(), {
+                    'status': 'GENIS_VENT_MAGENTA_INCELEME',
+                    'repaired_pixels': 0,
+                    'remaining_pixels': vent_count,
+                    'detected_pixels': vent_count,
+                    'vent_magenta_repaired_pixels': 0,
+                    'recipe': 'petek-source-linked-pink-v497-vent-gate',
+                }
+            context = cv2.dilate(vent_leak.astype(np.uint8),
+                                 np.ones((5, 5), np.uint8)) * 255
+            repaired = cv2.inpaint(out, context, 3.0, cv2.INPAINT_TELEA)
+            out[vent_leak] = repaired[vent_leak]
+        donor_filled = 0
+        if not broad_artwork_pink and np.any(vent_corridor):
+            leftover = (vent_corridor > 0) & (mask > 0) & _magenta_pixels(out)
+            if np.any(leftover):
+                clean_donors = (mask > 0) & ~_magenta_pixels(out)
+                out, donor_filled = _donor_fill(out, leftover, clean_donors)
         # A new purple/magenta artifact without a source marker is ALSO a
         # quality defect. Original source-only cleanup could wrongly say
         # TEMIZ for such colors. Intentional pink is kept by base_pink.
@@ -110,14 +185,20 @@ def cleanup_petek_magenta(rendered, mask, quad, *, slot_centers=None, enabled=Tr
         # final source/reference quality gate.
         unexpected_new = allowed & (mask>0) & _magenta_pixels(out) & (~base_pink)
         remaining = int(np.count_nonzero(unexpected_new))
+        if not broad_artwork_pink:
+            remaining += int(np.count_nonzero(
+                (vent_corridor > 0) & (mask > 0) & _magenta_pixels(out)))
         if not np.array_equal(out[mask == 0], rendered[mask == 0]):
             raise engine.MaskError('PETEK_FINAL_CLEANUP_PROTECTED_PIXELS_CHANGED')
         return out, {
-            'status': 'KAYNAK_MAGENTA_TEMIZLENDI' if initial else 'TEMIZ',
-            'repaired_pixels': initial, 'detected_pixels': initial,
+            'status': 'KAYNAK_MAGENTA_TEMIZLENDI' if (initial or vent_count) else 'TEMIZ',
+            'repaired_pixels': initial + vent_count,
+            'detected_pixels': initial + vent_count,
             'remaining_pixels': remaining,
             'legitimate_artwork_pink_pixels': int(np.count_nonzero(allowed & base_pink)),
             'source_linked_cleanup': True, 'new_unexpected_magenta_pixels': remaining,
+            'vent_magenta_repaired_pixels': vent_count,
+            'donor_filled_pixels': donor_filled,
             'changed_outside_print': 0,
             'recipe': 'petek-source-linked-pink-v496-20261101',
         }

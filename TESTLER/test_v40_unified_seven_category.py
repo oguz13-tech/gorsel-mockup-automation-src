@@ -173,7 +173,10 @@ def test_v40_unified_batch_renders_all_7_categories_zero_blur_and_cutout_preserv
         runtime_root=runtime,
         petek_registry=petek_reg,
     )
-    res = batch.run(designs_dir, group="MAGAZA1", max_jobs=5000, placement="cover", lighting="natural")
+    # render_mode="all_templates_per_design": varsayılan "balanced_one_per_design"
+    # artık tasarım başına tek şablon üretir; bu test tüm 21 şablonu doğrular.
+    res = batch.run(designs_dir, group="MAGAZA1", max_jobs=5000, placement="cover", lighting="natural",
+                    render_mode="all_templates_per_design")
     assert res["status"] == "LOCAL_READY"
     assert res["approved_template_count"] == 21
     assert res["rendered"] == 42  # 21 templates across 7 categories * 2 designs = 42 outputs
@@ -192,7 +195,8 @@ def test_v40_unified_batch_renders_all_7_categories_zero_blur_and_cutout_preserv
     assert prefixes_seen == set(CATEGORY_SKU_PREFIXES.values())
 
     # Second run must reuse all 42 verified outputs without re-rendering or overwriting
-    second = batch.run(designs_dir, group="MAGAZA1", max_jobs=5000, placement="cover", lighting="natural")
+    second = batch.run(designs_dir, group="MAGAZA1", max_jobs=5000, placement="cover", lighting="natural",
+                       render_mode="all_templates_per_design")
     assert second["rendered"] == 0
     assert second["reused"] == 42
     assert second["csv"] == res["csv"]
@@ -229,6 +233,7 @@ def test_v40_crash_and_stale_lock_recovery_quarantines_partial_and_resumes(tmp_p
         designs_dir,
         categories=("01_Wifi_Kutusu", "02_Cam_Tablo_Dikey", "06_Petek_Kapama"),
         group="RECOVERY_TEST",
+        render_mode="all_templates_per_design",
     )
     assert initial["rendered"] == 3
 
@@ -276,7 +281,8 @@ def test_v40_crash_and_stale_lock_recovery_quarantines_partial_and_resumes(tmp_p
     assert not partial_out.exists()
 
     # Now running across all 7 categories reuses the 3 previously RENDERED outputs and renders the remaining 4!
-    resumed = batch.run(designs_dir, group="RECOVERY_TEST")
+    resumed = batch.run(designs_dir, group="RECOVERY_TEST",
+                        render_mode="all_templates_per_design")
     assert resumed["reused"] == 3
     assert resumed["rendered"] == 4
     assert resumed["total_registry_outputs"] == 7

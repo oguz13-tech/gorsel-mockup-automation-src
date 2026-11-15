@@ -64,7 +64,9 @@ def test_v499_bulk_no_tick_no_eight_user_approval_and_fixed_list_width():
     css=(UI/'static/css/v499_anthracite.css').read_text('utf-8')
     be=(UI/'core/petek_web_v477.py').read_text('utf-8')
     fn=js[js.index('async function beginBulkPetekApproval(){'):js.index('function petekState(')]
-    assert 'visiblePetekItems().filter(x=>x.status===\'DRAFT\'' in fn
+    # 2026-11 güncel kod: toplu seçim ayrıca mask_verified taslaklara daraltılır.
+    assert "x.status==='DRAFT'&&x.mask_verified" in fn
+    assert 'visiblePetekItems()' in fn
     assert fn.count('if(!confirm(')==1
     assert 'x.checked' not in fn and 'reviewCursor' not in fn
     assert 'I_APPROVE_ALL_VALID_PETEK_DRAFTS_IN_THIS_SELECTION' in fn

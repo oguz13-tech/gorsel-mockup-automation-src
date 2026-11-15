@@ -300,3 +300,8 @@ class AutoInboxWatcher:
 
     def stop(self):
         self.stop_event.set()
+        thread=self.thread
+        if thread is not None and thread.is_alive():
+            thread.join(timeout=5)
+            if thread.is_alive():
+                raise RuntimeError('INBOX_WATCHER_STOP_TIMEOUT')

@@ -17,11 +17,14 @@ from .petek_source_marker_fringe_vnext import (marker_fringe_candidates,
                                                restore_source_marker_fringe,
                                                restore_source_marker_vent_interiors)
 from .petek_slot_geometry_vnext import (RECT_H, RECT_W, _fit_source_vents,
-    _source_peaks, measure_real_vents)
+    _source_peaks, measure_real_vents, MIN_REAL_VENTS, MAX_REAL_VENTS)
 
 
 def digest_frame(frame):
-    return hashlib.sha256(np.ascontiguousarray(frame).tobytes()).hexdigest()
+    # Hash the contiguous buffer directly; ``tobytes()`` created a full-size
+    # temporary copy for every StageAudit checkpoint.
+    contiguous = np.ascontiguousarray(frame)
+    return hashlib.sha256(memoryview(contiguous)).hexdigest()
 
 
 @dataclass(frozen=True)
@@ -79,7 +82,7 @@ class StageAudit:
 def source_repair_reference(scene, printed_inside, mask, quad, *,
                             pink_cleanup, lighting, material_effect,
                             shadow_style='classic',corner_side='right',include_pre=True,
-                            g3_asset=False):
+                            g3_asset=False, window_shadow_asset=False):
     """Replay exact *authorized* outside-mask photo processing independently.
 
     Reconstruct outside from the original source, not from the possibly-tampered
@@ -93,6 +96,14 @@ def source_repair_reference(scene, printed_inside, mask, quad, *,
     before=expected.copy()
     expected=before.copy()
     expected[mask>0]=printed_inside[mask>0]
+    shadow_changes=np.zeros(mask.shape,bool)
+    # Replay the output-only window overlay before marker-fringe restoration,
+    # matching the production stage order so inpaint donors are identical.
+    if material_effect and lighting=='strong' and window_shadow_asset and not g3_asset:
+        from .petek_effect_assets import apply_window_shadow_overlay
+        before_shadow=expected.copy()
+        expected,_=apply_window_shadow_overlay(scene,expected,mask,quad)
+        shadow_changes=np.any(expected!=before_shadow,axis=2)&(mask==0)
     expected,fringeqa=restore_source_marker_fringe(scene,expected,mask,quad,
                                                     enabled=pink_cleanup)
     before_vent=expected.copy()
@@ -106,8 +117,13 @@ def source_repair_reference(scene, printed_inside, mask, quad, *,
         allowed=ordinary|prechanges|ventchanges
     else:
         allowed=np.zeros(mask.shape,bool)
+    # The window overlay is an explicit output-only authorization, separate
+    # from source-marker repair permissions.
+    allowed |= shadow_changes
     beforewall=expected.copy()
-    if material_effect and lighting=='strong' and not g3_asset:
+    if material_effect and lighting=='strong' and window_shadow_asset and not g3_asset:
+        wallchanges=np.any(expected!=beforewall,axis=2)&(mask==0)
+    elif material_effect and lighting=='strong' and not g3_asset:
         from .wall_window_shadows_vnext import apply_wall_window_shadows
         expected,_=apply_wall_window_shadows(scene,expected,mask,quad,lighting='strong',
                           shadow_style=shadow_style,corner_side=corner_side)
@@ -132,7 +148,7 @@ def source_repair_reference(scene, printed_inside, mask, quad, *,
 def ensure_source_vent_mask_consensus(scene,mask,quad):
     """Protect photographed slits *even when visual grille effect is OFF*.
 
-    Only an independently observed 10..16-line photo group may establish
+    Only an independently observed 5..17-line photo group may establish
     a physical core. If no source geometry is defensible, this check abstains;
     the normal geometry renderer and manual-review approval rules remain.
     """
@@ -207,7 +223,7 @@ def _source_protected_preview_mask(scene, mask, quad):
     rect_mask=cv2.warpPerspective(mask,M,(RECT_W,RECT_H),
                                   flags=cv2.INTER_NEAREST,borderValue=255)
     slots, vent_qa=measure_real_vents(scene,mask,q)
-    if not (10 <= len(slots) <= 16):
+    if not (MIN_REAL_VENTS <= len(slots) <= MAX_REAL_VENTS):
         raise engine.MaskError('PETEK_DIAGNOSTIC_PHYSICAL_VENTS_UNCERTAIN')
     protected=rect_mask.copy()
     for slot in slots:

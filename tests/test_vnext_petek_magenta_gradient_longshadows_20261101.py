@@ -61,6 +61,21 @@ def test_marker_seam_all_four_edges_and_vent_lip_no_unrelated_pixels():
         verify_petek_source_protection(src,out,mask,q,pink_cleanup=False)
 
 
+def test_magenta_opening_is_not_counted_as_dark_core_in_temporary_mask():
+    """A render-only protected magenta island must not trip broad-fringe QA.
+
+    OpenCV's grayscale value for saturated magenta is below the historical
+    ``gray < 130`` threshold.  The source-marker pixels themselves therefore
+    cannot be used as evidence of a black physical vent core.
+    """
+    src, mask, q, _ = scene_with_marker_lips()
+    # Simulate one of the extra source-protected islands added by the
+    # temporary safety mask when an approved mask misses photographed vents.
+    mask[190:250, 342:350] = 0
+    allowed = marker_fringe_candidates(src, mask, q)
+    assert not np.any(allowed[190:250, 342:350])
+
+
 def test_end_to_end_no_pink_lips_and_approved_holes_exact():
     src,mask,q,art=scene_with_marker_lips()
     out,report=render_petek_visual(src,art,q,mask,1.1163,

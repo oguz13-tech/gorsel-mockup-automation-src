@@ -16,6 +16,9 @@ from datetime import datetime
 from pathlib import Path
 
 SOURCE = Path(__file__).resolve().parents[1]
+if str(SOURCE) not in sys.path:
+    sys.path.insert(0, str(SOURCE))
+from MERKEZ.workspace_contract import resolve_contract
 BASELINES = {
     "005": "C75F3BC021BCFC7A6AE01B96D735B09BB4C7D6C8AC0D752CC8A9A6912532C6BE",
     "135": "375D85B4F098799C621C1EC24A6729D498B51B8451BDBD0F1F75B769D8D852FC",
@@ -33,15 +36,7 @@ def _hash(path: Path) -> str:
 
 
 def discover():
-    env = os.getenv("MOCKUP_RUNTIME_WORKSPACE")
-    if env:
-        return Path(env).expanduser()
-    one = Path.home() / "OneDrive"
-    for desktop in ("Masaüstü", "Desktop"):
-        candidate = one / desktop / "GörselÜretme-ve-Mockup Otomasyonu"
-        if candidate.is_dir():
-            return candidate
-    return Path.home() / "OneDrive" / "Masaüstü" / "GörselÜretme-ve-Mockup Otomasyonu"
+    return resolve_contract(code_root=SOURCE, validate=False).runtime_root
 
 
 def _port_listening(port: int) -> bool:

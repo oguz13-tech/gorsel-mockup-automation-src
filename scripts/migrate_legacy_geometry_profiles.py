@@ -27,12 +27,11 @@ import cv2
 import numpy as np
 
 SOURCE_ROOT = Path(__file__).resolve().parents[1]
-_runtime_override = str(os.environ.get("MOCKUP_RUNTIME_WORKSPACE") or "").strip()
-RUNTIME_ROOT = (
-    Path(_runtime_override).expanduser().resolve()
-    if _runtime_override
-    else SOURCE_ROOT.resolve()
-)
+if str(SOURCE_ROOT) not in sys.path:
+    sys.path.insert(0, str(SOURCE_ROOT))
+from MERKEZ.workspace_contract import WorkspaceContractError, resolve_contract
+
+RUNTIME_ROOT = resolve_contract(code_root=SOURCE_ROOT, validate=False).runtime_root
 
 ARCH_DIR = SOURCE_ROOT / "SABLON_V2_MIMARI"
 DB_PATH = RUNTIME_ROOT / "SABLON_V2_MIMARI" / "ayarlar.db"
@@ -492,6 +491,7 @@ def migrate(legacy_json: Path, apply: bool = False) -> Dict[str, int]:
 
 
 def main():
+    global RUNTIME_ROOT, DB_PATH, DEFAULT_LEGACY_JSON, TEMPLATE_ROOT
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--legacy-json",
@@ -505,6 +505,18 @@ def main():
         help="Apply migration after creating a database backup",
     )
     args = parser.parse_args()
+    try:
+        contract = resolve_contract(
+            code_root=SOURCE_ROOT,
+            runtime_root=RUNTIME_ROOT,
+            validate=True,
+        )
+    except WorkspaceContractError as exc:
+        parser.error(str(exc))
+    RUNTIME_ROOT = contract.runtime_root
+    DB_PATH = RUNTIME_ROOT / "SABLON_V2_MIMARI" / "ayarlar.db"
+    DEFAULT_LEGACY_JSON = RUNTIME_ROOT / "ayarlar.json"
+    TEMPLATE_ROOT = RUNTIME_ROOT / "2_SABLON_HAVUZU"
     migrate(args.legacy_json.resolve(), apply=args.apply)
 
 

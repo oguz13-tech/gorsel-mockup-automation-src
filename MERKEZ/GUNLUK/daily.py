@@ -22,6 +22,12 @@ import checks
 from helpers import idle
 
 HERE=Path(__file__).resolve().parent
+if str(HERE.parents[2]) not in sys.path:
+    sys.path.insert(0, str(HERE.parents[2]))
+try:
+    from MERKEZ.workspace_contract import resolve_contract
+except ImportError:
+    from workspace_contract import resolve_contract
 CODE=Path('C:/AI_WORK/gorsel-mockup-automation-src')
 BASE=Path('C:/AI_BACKUPS/GORSEL_MOCKUP/P0_20261019_214610_99f583e8')
 STORE=Path('C:/AI_LOCAL_OUTPUTS/GorselMockup')
@@ -114,8 +120,10 @@ class Production:
         # The daily UI shares the portable runtime selected by the main center.
         # Never reconstruct the historical OneDrive path after the workspace
         # has been moved to C:\GorselUretimMerkezi (or another explicit root).
-        configured=os.environ.get('GORSEL_RUNTIME_ROOT') or os.environ.get('MOCKUP_RUNTIME_WORKSPACE')
-        runtime=Path(configured).expanduser().resolve() if configured else HERE.parents[3]
+        runtime=resolve_contract(
+            code_root=HERE.parents[2],
+            validate=False,
+        ).runtime_root
         self.folder=validate_input_root(self.folder,[runtime,self.code,self.base.parent.parent,self.store,HERE])
         self.acquire_store_lock()
         self.output=self.store/'OTURUMLAR'/(datetime.datetime.now().strftime('%Y%m%d_%H%M%S')+'_'+uuid.uuid4().hex[:10]);self.output.mkdir(parents=True)
@@ -209,7 +217,7 @@ class Production:
         self.verify()
         if self.report.get('verified_code_files'):verify_installed(self.code,self.source,self.tree,SPEC,checks)
         self.report['protected_live_reference_hashes_unchanged_at_close']=bool(self.protected)
-        self.save();gallery=['<!doctype html><meta charset="utf-8"><title>Mockup sonuçları</title><style>body{font:16px Arial;background:#f3f5f7;padding:24px}main{display:flex;flex-wrap:wrap;gap:20px}article{background:white;padding:12px;width:280px}img{width:280px}a{color:#1265af}</style><h1>Yerel üretim sonuçları</h1><p>1200 × 1600 · Görsel kalite kontrolünüz bekleniyor.</p><main>']
+        self.save();gallery=['<!doctype html><meta charset="utf-8"><title>Mockup sonuçları</title><style>body{font:16px "Segoe UI",Arial,sans-serif;background:#0B101B;color:#E9EFF9;padding:24px}h1{color:#E9EFF9;font-size:22px;letter-spacing:-.2px}p{color:#93A6C4}main{display:flex;flex-wrap:wrap;gap:16px}article{background:#131C2B;border:1px solid #22304A;border-radius:10px;padding:12px;width:280px}img{width:280px;border-radius:8px;border:1px solid #22304A;background:#0F1622}a{color:#5AA9FF}a:hover{color:#8FC2FF}</style><h1>Yerel üretim sonuçları</h1><p>1200 × 1600 · Görsel kalite kontrolünüz bekleniyor.</p><main>']
         for r in self.report['results']:
             target=self.store/r['first']['output'];relative=os.path.relpath(target,self.output).replace(os.sep,'/')
             from urllib.parse import quote

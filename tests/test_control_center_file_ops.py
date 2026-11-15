@@ -1,18 +1,15 @@
-import importlib.util
 import os
 import json
 from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
+import sys
 
 
 ROOT = Path(__file__).resolve().parents[1]
-MODULE_PATH = ROOT / "V2_KONTROL_MERKEZI" / "app.py"
-SPEC = importlib.util.spec_from_file_location("v2_control_center_app", MODULE_PATH)
-control = importlib.util.module_from_spec(SPEC)
-assert SPEC and SPEC.loader
-SPEC.loader.exec_module(control)
+sys.path.insert(0, str(ROOT))
+from SABLON_V2_MIMARI.core import file_safety as control
 
 
 class TestSafeTwoPhaseRename(unittest.TestCase):

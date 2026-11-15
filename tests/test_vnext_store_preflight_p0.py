@@ -272,6 +272,8 @@ def test_production_start_uses_exact_ui_selected_uids_and_store_snapshot(tmp_pat
     view.upscale_model=Var('Hızlı')
     view.petek_slot_mode=Var('off')
     view.petek_pink_cleanup=Var(False)
+    view.petek_overlay_enabled=Var(False)
+    view.include_used_designs=Var(False)
     view.batch_engine=SimpleNamespace(root=tmp_path/'state')
     view.start_button=FakeButton()
     observed=[]

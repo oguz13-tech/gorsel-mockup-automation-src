@@ -48,7 +48,7 @@ def test_petek_minimum_readable_fonts_and_full_original_filename_tooltip():
     assert "button.textContent=shortName+' — '+readableState" in js
     assert "'/api/petek/thumbnail/'" in js
     # Current release's accessible theme must be present, not a stale V4.8.8 cache key.
-    assert 'v4102_ui_system.css?v=4102' in html
+    assert 'v4102_ui_system.css?v=4103-panel-ui' in html
     modern=(ROOT/'SABLON_V2_MIMARI/static/css/v4102_ui_system.css').read_text('utf-8')
     assert 'font-size:14px!important' in modern
     assert 'font-size:12px!important' not in modern

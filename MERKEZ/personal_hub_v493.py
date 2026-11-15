@@ -10,6 +10,11 @@ from contextlib import contextmanager
 from pathlib import Path
 from datetime import datetime, timezone
 import tkinter as tk
+
+try:
+    from URETIM_V4 import ui_table_v1 as _table_tools
+except Exception:
+    _table_tools = None
 from tkinter import ttk, messagebox, filedialog, scrolledtext
 
 DB_NAME = 'personel_merkez_v493.sqlite3'
@@ -148,10 +153,6 @@ ACCEPTANCE = [
  '1. Şablonları İncele > PETEK aç.\n2. Gerçek tasarım seç.\n3. Aynı ekrandaki 15 Izgara A/B denemesini başlat.\n4. Çıkmadan önce/sonra arasında geçiş yap.\n5. Taslak maskenin ve onayın değişmediğini kontrol et.',
  'A/B tek ekrandan ulaşılabilir; yalnız önizlemedir, onaylı maskeler değişmez.',
  'Görünmeyen düğme veya yanlış bağlantı varsa ekran görüntüsü gönder.'),
-('MAGENTA-ONCE', 'MAGENTA: Tek seferlik güvenli değiştirme', 'Kritik',
- '1. Şablon inceleme sunucusunu, açık kayıtlarını tamamladıktan sonra güvenle kapat.\n2. Test Merkezi > Magenta Aracını Aç kullan.\n3. Eşleşen/eşleşmeyen dosyaları ve yedek yolunu kontrol et.\n4. İzin verdiğin eşleşmeleri yalnız araç tarafından yedek alındıktan sonra uygula.\n5. Çalışma şablonlarını ve orijinal yedekleri karşılaştır.',
- 'STOP_4_KOSE hatası güvenli biçimde giderilmiş; dosyalar doğru eşleşmiş, rollback yedeği var, orijinal arşiv değişmedi.',
- 'Aktarım özeti, eşleşme adetleri ve varsa hata metnini bu sohbete gönder.'),
 ('REAL-ESRGAN-4K', '4K: Real-ESRGAN ağırlık ve GPU kabulü', '4K',
  '1. Seri Üretim > 4K Durum/Kur/GPU Test aç.\n2. Resmî motor ve model ağırlıklarının doğrulama sonucunu kontrol et.\n3. Bir küçük örnekten 2880×3840 çıktı oluştur.\n4. Normal 1200×1600 dosyanın korunduğunu denetle.',
  'Model doğrulanır, test görüntüsü oluşur, normal üretim etkilenmez.',
@@ -310,11 +311,11 @@ class Store:
 
 def _window(root,title,width=1070,height=710):
     w=tk.Toplevel(root);w.title(title)
-    w.geometry(f'{width}x{height}');w.minsize(780,530);w.configure(bg='#121625')
+    w.geometry(f'{width}x{height}');w.minsize(780,530);w.configure(bg='#0F1622')
     return w
 
 
-def open_acceptance(root,launch_magenta=None):
+def open_acceptance(root):
     store=Store();win=_window(root,f'Yapmam Gereken Testler — {CURRENT_VERSION} Kabul Merkezi')
     frame=ttk.Frame(win,padding=16);frame.pack(fill='both',expand=True)
     ttk.Label(frame,text='Yapmam Gereken Testler',font=('Segoe UI',19,'bold')).pack(anchor='w')
@@ -325,20 +326,23 @@ def open_acceptance(root,launch_magenta=None):
     left=ttk.Frame(frame);left.pack(side='left',fill='y',padx=(0,12))
     scrollbar=ttk.Scrollbar(left);scrollbar.pack(side='right',fill='y')
     listing=tk.Listbox(left,width=47,height=28,yscrollcommand=scrollbar.set,exportselection=False,
-                       font=('Segoe UI',11),bg='#1b2032',fg='#eff0fa',
-                       selectbackground='#6f4db5',selectforeground='#ffffff',
+                       font=('Segoe UI',11),bg='#0F1622',fg='#E9EFF9',
+                       selectbackground='#17D3A3',selectforeground='#ffffff',
                        highlightthickness=0,relief='flat')
     listing.pack(side='left',fill='y');scrollbar.config(command=listing.yview)
+    if _table_tools is not None:
+        _table_tools.attach_listbox_tooltip(listing)
+        _table_tools.add_listbox_xscroll(listing)
     detail=ttk.Frame(frame);detail.pack(side='left',fill='both',expand=True)
     headline=tk.StringVar();ttk.Label(detail,textvariable=headline,wraplength=640,font=('Segoe UI',13,'bold')).pack(anchor='w')
     instructions=scrolledtext.ScrolledText(detail,height=9,wrap='word',font=('Segoe UI',11),
-                       bg='#1c2032',fg='#f2f1ff',insertbackground='#ffffff',
-                       selectbackground='#5a438e',relief='flat',padx=12,pady=11,state='disabled')
+                       bg='#0F1622',fg='#E9EFF9',insertbackground='#ffffff',
+                       selectbackground='#182238',relief='flat',padx=12,pady=11,state='disabled')
     instructions.pack(fill='both',expand=True,pady=(9,8))
     ttk.Label(detail,text='Sonuç / notun (kalıcı kaydedilir):').pack(anchor='w')
     notes=scrolledtext.ScrolledText(detail,height=2,wrap='word',font=('Segoe UI',11),
-                       bg='#1c2032',fg='#f2f1ff',insertbackground='#ffffff',
-                       selectbackground='#5a438e',relief='flat',padx=9,pady=7)
+                       bg='#0F1622',fg='#E9EFF9',insertbackground='#ffffff',
+                       selectbackground='#182238',relief='flat',padx=9,pady=7)
     notes.pack(fill='x',pady=(3,9))
     btns=ttk.Frame(detail);btns.pack(fill='x')
     records=[]
@@ -378,8 +382,6 @@ def open_acceptance(root,launch_magenta=None):
         except Exception as exc:messagebox.showerror('Rapor hatası',str(exc),parent=win)
     ttk.Checkbutton(toolbar,text='Tamamlananlar / Arşiv',variable=archive,command=refresh).pack(side='left')
     ttk.Button(toolbar,text='Test Raporu Oluştur + Kopyala',command=export).pack(side='right')
-    if launch_magenta:
-        ttk.Button(toolbar,text='Magenta Son Aktarım Aracı',command=launch_magenta).pack(side='right',padx=8)
     actions=ttk.Frame(btns);actions.pack(fill='x')
     ttk.Button(actions,text='Notu Kaydet',command=lambda:update(current()['status'] if current() else 'BEKLIYOR')).pack(side='left',padx=3)
     ttk.Button(actions,text='Beklet',command=lambda:update('BEKLETILDI')).pack(side='left',padx=3)
@@ -396,17 +398,22 @@ def open_personal(root):
     book=ttk.Notebook(win);book.pack(fill='both',expand=True,padx=12,pady=12)
     for kind,caption in [('notes','Notlarım'),('tasks','Görevlerim')]:
         frame=ttk.Frame(book,padding=12);book.add(frame,text=caption)
-        left=ttk.Frame(frame);left.pack(side='left',fill='y',padx=(0,13))
+        pw=tk.PanedWindow(frame,orient='horizontal',bg='#0F1622',bd=0,sashwidth=6,sashrelief='raised',sashcursor='sb_h_double_arrow')
+        pw.pack(fill='both',expand=True)
+        left=ttk.Frame(pw);pw.add(left,minsize=170,sticky='nsew')
         listing=tk.Listbox(left,width=33,height=26,exportselection=False,
-                   font=('Segoe UI',11),bg='#1b2032',fg='#eff0fa',
-                   selectbackground='#6f4db5',selectforeground='#ffffff',relief='flat');listing.pack(fill='y',expand=True)
-        right=ttk.Frame(frame);right.pack(side='left',fill='both',expand=True)
+                   font=('Segoe UI',11),bg='#0F1622',fg='#E9EFF9',
+                   selectbackground='#17D3A3',selectforeground='#ffffff',relief='flat');listing.pack(fill='y',expand=True)
+        if _table_tools is not None:
+            _table_tools.attach_listbox_tooltip(listing)
+            _table_tools.add_listbox_xscroll(listing)
+        right=ttk.Frame(pw);pw.add(right,minsize=270,sticky='nsew')
         ttk.Label(right,text='Başlık').pack(anchor='w')
         name=ttk.Entry(right);name.pack(fill='x',pady=(2,9))
         ttk.Label(right,text='Not / görev detayları').pack(anchor='w')
         editor=scrolledtext.ScrolledText(right,wrap='word',height=12,font=('Segoe UI',11),
-                    bg='#1c2032',fg='#f2f1ff',insertbackground='#ffffff',
-                    selectbackground='#5a438e',relief='flat',padx=11,pady=9);editor.pack(fill='both',expand=True,pady=(2,10))
+                    bg='#0F1622',fg='#E9EFF9',insertbackground='#ffffff',
+                    selectbackground='#182238',relief='flat',padx=11,pady=9);editor.pack(fill='both',expand=True,pady=(2,10))
         row=ttk.Frame(right);row.pack(fill='x')
         records=[]
         def make_funcs(kind=kind,listing=listing,name=name,editor=editor,frame=frame,row=row):
@@ -459,7 +466,6 @@ TOOL_INDEX = [
  ('HAM Baskı Tasarımları','ham tasarım klasör','open_ham_design_folder'),
  ('PETEK Maskeleri ve 15 Izgara A/B','petek ızgara maske önizle','open_legacy_review'),
  ('4K Real-ESRGAN Kur / GPU Test','ağırlık model upscale','open_4k_setup_v493'),
- ('Magenta Tek Seferlik Değiştirme','magenta lab aktarım onay','open_magenta_replace_v486'),
  ('Mağaza Profilleri ve Excel','mağaza stok barkod excel','open_unified_v4'),
  ('G3 Bütünlük Kontrolü','veri güvenlik hash denetim','g3_audit'),
  ('SQLite Güvenli Yedek','geri yükleme yedek','g3_backup'),
@@ -490,8 +496,11 @@ def open_tool_search(app):
     ttk.Label(frame,text='Araç, düğme veya özelliği yaz; seçili kayda çift tıkla ya da Aç düğmesine bas.',wraplength=850).pack(anchor='w',pady=(0,10))
     query=tk.StringVar();entry=ttk.Entry(frame,textvariable=query,font=('Segoe UI',12));entry.pack(fill='x',pady=6)
     listing=tk.Listbox(frame,exportselection=False,font=('Segoe UI',12),height=22,
-                  bg='#1b2032',fg='#eff0fa',selectbackground='#6f4db5',
+                  bg='#0F1622',fg='#E9EFF9',selectbackground='#17D3A3',
                   selectforeground='#ffffff',relief='flat');listing.pack(fill='both',expand=True,pady=8)
+    if _table_tools is not None:
+        _table_tools.attach_listbox_tooltip(listing)
+        _table_tools.add_listbox_xscroll(listing)
     result=[]
     def filter_items(*_):
         nonlocal result

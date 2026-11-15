@@ -395,7 +395,8 @@ def warp_artwork(art: np.ndarray, quad: np.ndarray, scene_shape,
 
 def composite(scene, projected, mask, quad, preserve_shading=True,
               lighting='natural', edge_feather_px=1.4,
-              shadow_style='classic',corner_side='right'):
+              shadow_style='classic',corner_side='right',
+              window_shadow_field_enabled=True):
     """Render only into approved wood, optionally soften INNER print edge.
 
     This changes no pixel outside mask, creates no fake floor shadow, and does
@@ -408,7 +409,8 @@ def composite(scene, projected, mask, quad, preserve_shading=True,
     if not 0 <= float(edge_feather_px) <= 4:
         raise MaskError('Kenar gecisi 0-4 kaynak piksel olmali')
     lit=apply(scene,projected,mask,lighting if preserve_shading else 'off',
-              shadow_style=shadow_style,corner_side=corner_side)
+              shadow_style=shadow_style,corner_side=corner_side,quad=quad,
+              window_shadow_field_enabled=window_shadow_field_enabled)
     if preserve_shading and lighting != 'off':
         # PETEK edge realism: paint tone + subtle contact only, never blend
         # the original magenta marker and never touch protected pixels.
@@ -457,7 +459,7 @@ def canvas_3x4(scene,width=1200,height=1600):
     return target
 
 
-def render(source, art, quad, mask, physical_aspect:float=1.1163, *,shading=True,marketplace=True, placement='cover', lighting='natural', frame_mm=0, overscan=0., edge_feather_px=1.4, panel_width_cm=None, shadow_style='classic',corner_side='right'):
+def render(source, art, quad, mask, physical_aspect:float=1.1163, *,shading=True,marketplace=True, placement='cover', lighting='natural', frame_mm=0, overscan=0., edge_feather_px=1.4, panel_width_cm=None, shadow_style='classic',corner_side='right', window_shadow_field_enabled=True):
     scene=read_bgr(source) if not isinstance(source,np.ndarray) else source
     design=read_bgr(art) if not isinstance(art,np.ndarray) else art
     q=validated_quad(quad,scene.shape)
@@ -465,10 +467,16 @@ def render(source, art, quad, mask, physical_aspect:float=1.1163, *,shading=True
     projection=warp_artwork(design,q,scene.shape,physical_aspect,placement=placement,overscan=overscan)
     projection=white_border(projection,q,mask,frame_mm=frame_mm,
                             panel_width_cm=panel_width_cm,physical_aspect=physical_aspect)
+    # The standalone PETEK editor and batch engine share the same projected
+    # window profile as the unified production pipeline in strong light.
+    active_shadow_style = ('projected' if lighting == 'strong' and
+                           shadow_style == 'classic' else shadow_style)
     composed,report=composite(scene,projection,mask,q,preserve_shading=shading,
                               lighting=lighting,edge_feather_px=edge_feather_px,
-                              shadow_style=shadow_style,corner_side=corner_side)
+                              shadow_style=active_shadow_style,corner_side=corner_side,
+                              window_shadow_field_enabled=window_shadow_field_enabled)
     report.update({'artwork_placement':placement,'frame_mm':frame_mm,
+                   'shadow_style':active_shadow_style,
                    'frame_width_nominal':panel_width_cm is None,
                    'art_overscan':float(overscan),
                    'cut_and_paste_verified':True,
@@ -492,7 +500,13 @@ def atomic_new_file(path: Path, data:bytes):
         if os.path.exists(temp):os.unlink(temp)
 
 
-def encode_png(img):
-    ok,buf=cv2.imencode('.png',img,[cv2.IMWRITE_PNG_COMPRESSION,4])
+def encode_png(img, compression: int | None = None):
+    if compression is None:
+        try:
+            compression = int(os.environ.get('V4_PNG_COMPRESSION', '4'))
+        except (TypeError, ValueError):
+            compression = 4
+    compression = max(0, min(9, int(compression)))
+    ok,buf=cv2.imencode('.png',img,[cv2.IMWRITE_PNG_COMPRESSION,compression])
     if not ok:raise MaskError('Cikti PNG kodlanamadi.')
     return buf.tobytes()

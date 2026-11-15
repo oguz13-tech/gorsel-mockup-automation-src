@@ -47,8 +47,8 @@ def default() -> dict:
         'paneOrder': 'photo-first',
         'density': 'normal', 'effect': 'subtle',
         'colors': {
-            'accent': '#7A4DFA', 'background': '#111827', 'panel': '#1D2638',
-            'border': '#384466', 'text': '#F4F6FF'
+            'accent': '#8A7CF0', 'background': '#131C2B', 'panel': '#131C2B',
+            'border': '#3A4A68', 'text': '#E9EFF9'
         },
         'tabs': {'review': ['Tümü'], 'petek': ['Tümü']},
         'assignments': {'review': {}, 'petek': {}},

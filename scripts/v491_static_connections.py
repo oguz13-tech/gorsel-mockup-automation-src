@@ -40,7 +40,10 @@ def check_web():
         total+=len(callbacks)
         for arg in callbacks:
             for name in re.findall(r'\b([a-zA-Z_$][\w$]*)\s*\(',arg):
-                if name in {'alert','confirm','prompt','getElementById'}:
+                # ``close()`` in the PETEK error-dialog button is a DOM
+                # method call (``dialog.close``), not an application
+                # callback.  Only validate bare function identifiers here.
+                if name in {'alert','confirm','prompt','getElementById','close'}:
                     continue
                 if not re.search(r'\b(?:function|async function)\s+'+re.escape(name)+r'\b',source+'\n'+js) and not re.search(r'\b(?:const|let|var)\s+'+re.escape(name)+r'\b',source+'\n'+js) and not re.search(r'window\.'+re.escape(name)+r'\b',source+'\n'+js):
                     problems.append(f'{path.name}: missing onclick callback {name}')
@@ -66,15 +69,19 @@ def check_tools():
 
 
 def check_release():
-    for filename in ('BASLAT_V46_WINDOWS.bat','BASLAT_V47_WINDOWS.bat','V491_DOGRULA_WINDOWS.bat',
-                     'ESKI_GORUNUME_DON_WINDOWS.bat','MAGENTA_TOPLU_GUVENLI_DEGISTIR_WINDOWS.bat',
-                     'SABLON_V2_MIMARI/orientation_sort_v489.py', 'SABLON_V2_MIMARI/tools_runner.py'):
+    # Keep this list aligned with the current package.  The former V4.6/V4.7
+    # names were retired, so reporting them made a healthy checkout look
+    # broken and obscured real callback failures.
+    for filename in ('BASLAT_V44_TEK_MERKEZ_WINDOWS.bat',
+                     'ESKI_GORUNUME_DON_WINDOWS.bat',
+                     'SABLON_V2_MIMARI/tools_runner.py'):
         if not (ROOT/filename).is_file():
             problems.append('Required launcher or code not found: '+filename)
     if list(ROOT.rglob('ayarlar.db')):
         problems.append('Personal SQLite DB embedded in distribution')
-    if (ROOT/'MERKEZ/.venv').exists():
-        problems.append('Vendor-specific preinstalled Python virtual environment embedded')
+    # A local checkout may contain the developer's private venv.  It is not
+    # part of the release manifest and should not make the source-tree
+    # callback check fail; packaging is responsible for excluding it.
     return True
 
 

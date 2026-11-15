@@ -437,4 +437,7 @@ class HamDesignWatcher:
 
     def stop(self):
         self.stop_event.set()
-        if self.thread and self.thread.is_alive():self.thread.join(timeout=5)
+        if self.thread and self.thread.is_alive():
+            self.thread.join(timeout=5)
+            if self.thread.is_alive():
+                raise RuntimeError('HAM_WATCHER_STOP_TIMEOUT')

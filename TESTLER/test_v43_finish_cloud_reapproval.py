@@ -11,7 +11,8 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT/'MERKEZ'))
 from URETIM_V4.finish_v42 import subdued_reflection
-from URETIM_V4.cloud_excel_v43 import CloudExcel, REMOTE_HEADERS
+from URETIM_V4.cloud_excel_v43 import CloudExcel, REMOTE_HEADERS, _store_id_from_output as cloud_store_id
+from URETIM_V4.store_excel_v485 import _store_id_from_output as store_store_id
 from URETIM_V4.unified_batch import unified_receipt_identity, UnifiedV4Batch
 
 
@@ -59,6 +60,8 @@ def test_old_outputs_are_published_once_then_excel_backfilled(tmp_path, monkeypa
     calls=[]
     def upload(p,keys,free):
         calls.append(p);return 'https://i.ibb.co/abc/preview.png'
+    import URETIM_V4.cloud_excel_v43 as cloud_mod
+    monkeypatch.setattr(cloud_mod, '_head_check', lambda url, timeout=8.0: (True, 'head_ok'))
     outcome=c.publish_existing([row],upload_fn=upload)
     assert outcome['linked']==1 and outcome['uploaded']==1 and len(calls)==1
     wb=load_workbook(outcome['xlsx'])
@@ -81,6 +84,30 @@ def test_cloud_bad_url_never_in_excel(tmp_path):
     a=c.publish_existing([row],upload_fn=lambda *_: 'file:///C:/local.png')
     assert a['linked']==0 and a['failed']==1
     wb=load_workbook(a['xlsx']);assert wb.active.max_row==1;wb.close()
+
+
+def test_missing_rendered_receipt_is_local_output_issue_not_provider_failure(tmp_path):
+    runtime=tmp_path/'runtime';runtime.mkdir()
+    (runtime/'ayarlar.json').write_text('{"bulut_ayarlari":{"imgbb_keys":["fake"]}}')
+    row=make_row(tmp_path,state='missing')
+    Path(row['output']).unlink()
+    c=CloudExcel(tmp_path/'missing', tmp_path/'missing'/'r', runtime)
+    result=c.publish_existing([row],upload_fn=lambda *_: pytest.fail('missing output must not upload'))
+    assert result['linked']==0
+    assert result['failed']==0
+    assert result['missing']==1
+    payload=list((tmp_path/'missing'/'r').glob('BULUT_LINKLEME_HATALARI_*.json'))
+    assert len(payload)==1
+    report=payload[0].read_text(encoding='utf-8')
+    assert 'LOCAL_OUTPUT_INVALID' in report
+
+
+def test_external_output_namespace_does_not_become_marketplace_store(tmp_path):
+    root=tmp_path/'state'/'uretilen_gorseller'
+    output=root/'HARICI'/'OP-abc12345'/'wudie'/'06_Petek_Kapama'/'overlay.png'
+    output.parent.mkdir(parents=True)
+    assert cloud_store_id(output, root) == 'wudie'
+    assert store_store_id(output, root) == 'wudie'
 
 
 def test_local_safe_not_modify_original_approved_geometry_code():

@@ -70,6 +70,39 @@ def move_create_only(source, destination):
     source.unlink()
 
 
+def safe_two_phase_rename(selected, prefix):
+    """Compatibility entry point for the current safe rename transaction.
+
+    Older callers imported this helper from the retired control-center app.
+    Keep the public behavior while routing all work through the current
+    snapshot/journal/rollback implementation.  Names are assigned only from
+    the explicitly supplied selection order; no folder scan or JSON renaming
+    is performed.
+    """
+    selected = [Path(item) for item in selected]
+    if not selected:
+        return []
+    if not isinstance(prefix, str) or not prefix or Path(prefix).name != prefix:
+        raise ValueError('RENAME_PREFIX_MUST_BE_RELATIVE_BASENAME')
+    parent = selected[0].parent
+    if any(item.parent != parent for item in selected):
+        raise ValueError('RENAME_SOURCES_MUST_SHARE_FOLDER')
+    if len({str(item.absolute()).casefold() for item in selected}) != len(selected):
+        raise ValueError('DUPLICATE_SOURCE')
+    for item in selected:
+        reject_redirect(item)
+        if not item.is_file():
+            raise FileNotFoundError(str(item))
+    targets = [parent / f'{prefix}{index:03d}{source.suffix.lower()}'
+               for index, source in enumerate(selected, 1)]
+    if len({target.name.casefold() for target in targets}) != len(targets):
+        raise ValueError('DUPLICATE_TARGET')
+    with rename_safety_transaction(selected, targets):
+        for source, target in zip(selected, targets):
+            move_create_only(source, target)
+    return [str(target) for target in targets]
+
+
 def save_image_create_only(image, desired, *, format, unique=True, **kwargs):
     """No exists-then-save race; complete bytes are published with os.link."""
     desired = Path(desired)
@@ -161,6 +194,16 @@ def rename_safety_transaction(selected, targets):
                         copy_exclusive(item["snapshot"], original)
                     if sha256_file(original) != item["sha256"]:
                         recovered = False
+                    target = Path(item["target"])
+                    # A later phase may have published one or more targets
+                    # before failing.  Rollback must remove only bytes that
+                    # we can prove are ours; never overwrite or delete a
+                    # target changed by another process.
+                    if target.exists():
+                        if sha256_file(target) == item["sha256"]:
+                            target.unlink()
+                        else:
+                            recovered = False
                 except OSError:
                     recovered = False
             data["state"] = "ROLLED_BACK" if recovered else "RECOVERY_REQUIRED"

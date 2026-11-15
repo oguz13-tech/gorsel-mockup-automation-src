@@ -3,22 +3,141 @@
    All user overrides are validated in the UI-only preferences backend.
 */
 :root {
-  --mor-background: #111827;
-  --mor-side: #0E1424;
-  --mor-panel: #1D2638;
-  --mor-raised: #29344B;
-  --mor-border: #384466;
-  --mor-accent: #7A4DFA;
-  --mor-text: #F4F6FF;
-  --mor-muted: #C7D3E8;
-  --mor-blue: #60A5FA;
-  --mor-green: #34D399;
-  --mor-yellow: #F3C05B;
-  --mor-red: #F87171;
+  --mor-background: #0B101B;
+  --mor-side: #0F1622;
+  --mor-panel: #131C2B;
+  --mor-raised: #182238;
+  --mor-border: #22304A;
+  --mor-accent: #17D3A3;
+  --mor-text: #E9EFF9;
+  --mor-muted: #93A6C4;
+  --mor-blue: #5AA9FF;
+  --mor-green: #3FD98A;
+  --mor-yellow: #F0B84C;
+  --mor-red: #EF6A73;
   --mor-gap: 10px;
   --mor-radius: 12px;
   color-scheme: dark;
 }
+/* Graphite Workbench bridge: the browser editor uses the same shell colors,
+   spacing and readable control contrast as the V5 desktop window. */
+body { min-width: 1120px; }
+body #sidebar { width: 205px !important; background: var(--mor-side) !important; }
+body #main { background: var(--mor-background) !important; }
+/* The main navigation is a real flex child. Collapsing it releases its
+   width so #main and the existing PETEK/editor panes can reflow naturally. */
+body #sidebar {
+  position: relative;
+  overflow-x: hidden;
+  transition: width .18s ease, min-width .18s ease, padding .18s ease,
+              border-color .18s ease;
+}
+body #sidebarToggle {
+  position: absolute;
+  top: 12px;
+  right: 11px;
+  z-index: 2147483601;
+  width: 30px;
+  height: 30px;
+  min-height: 30px;
+  padding: 0;
+  border: 1px solid var(--mor-border);
+  border-radius: 7px;
+  background: var(--mor-raised);
+  color: var(--mor-text);
+  font-size: 14px;
+  line-height: 28px;
+  text-align: center;
+}
+body #sidebarToggle:hover { background: var(--mor-accent); color: #04140E; }
+body.graphite-sidebar-collapsed #sidebar {
+  width: 0 !important;
+  min-width: 0 !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  border-right-width: 0 !important;
+  background: transparent !important;
+  overflow: visible;
+  z-index: 2147483604;
+}
+body.graphite-sidebar-collapsed #sidebar > :not(#sidebarToggle) {
+  visibility: hidden;
+  pointer-events: none;
+}
+body.graphite-sidebar-collapsed #sidebarToggle {
+  position: fixed;
+  top: 10px;
+  left: 10px;
+  right: auto;
+  z-index: 2147483605;
+  background: var(--mor-panel);
+  border-color: var(--mor-accent);
+  box-shadow: 0 4px 16px rgba(0,0,0,.35);
+}
+body.graphite-sidebar-collapsed #resizer-left {
+  width: 0 !important;
+  min-width: 0 !important;
+  border: 0 !important;
+  pointer-events: none;
+}
+/* Review editor panels are independent: each collapsed surface releases its
+   real flex/grid footprint while its edge control remains reachable. */
+body #reviewWorkspace { position:relative; min-width:0; }
+body .graphite-panel-toggle {
+  border:1px solid var(--mor-border); border-radius:7px; background:var(--mor-raised);
+  color:var(--mor-text); min-width:34px; min-height:32px; padding:5px 9px;
+  font:700 13px 'Segoe UI',sans-serif; cursor:pointer; z-index:2147483500;
+}
+body .graphite-panel-toggle:hover { background:var(--mor-accent); color:#04140E; }
+body .graphite-right-toggle {
+  position:fixed; right:7px; top:76px; width:34px; padding:4px; opacity:.92;
+}
+body.graphite-tools-collapsed #right-toolbar,
+body.graphite-tools-collapsed .petek-v477-tools {
+  display:none !important;
+}
+body.graphite-tools-collapsed #resizer-right { display:none !important; }
+body.graphite-tools-collapsed .graphite-right-toggle { right:7px; }
+
+body .graphite-flow-panel {
+  position:relative; flex:0 0 118px; min-height:118px; box-sizing:border-box;
+  padding:9px 16px 11px; background:var(--mor-panel);
+  border-top:1px solid var(--mor-border); color:var(--mor-text);
+  transition:min-height .18s ease, flex-basis .18s ease, padding .18s ease;
+}
+body .graphite-flow-head { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+body .graphite-flow-head strong { color:var(--mor-accent); font-size:13px; }
+body .graphite-flow-head span { margin-left:9px; color:var(--mor-muted); font-size:11px; }
+body .graphite-flow-steps { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; margin-top:8px; }
+body .graphite-flow-step {
+  min-width:0; display:grid; grid-template-columns:24px 1fr; column-gap:7px; align-items:center;
+  padding:8px 9px; border:1px solid var(--mor-border); border-radius:8px;
+  background:var(--mor-background); color:var(--mor-text);
+}
+body .graphite-flow-step span { grid-row:span 2; display:grid; place-items:center; width:22px; height:22px;
+  border-radius:50%; background:var(--mor-raised); color:var(--mor-accent); font-weight:800; }
+body .graphite-flow-step b { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:11px; }
+body .graphite-flow-step small { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--mor-muted); font-size:10px; }
+body .graphite-flow-step.is-active { border-color:var(--mor-accent); box-shadow:inset 0 0 0 1px var(--mor-accent); }
+body .graphite-flow-open { display:none; position:absolute; right:14px; bottom:8px; }
+body.graphite-flow-collapsed .graphite-flow-panel { display:none; }
+body.graphite-flow-collapsed .graphite-flow-open { display:block; }
+@media(max-width:900px) {
+  body .graphite-flow-panel { flex-basis:102px; min-height:102px; padding:7px 10px; }
+  body .graphite-flow-step { padding:6px; }
+  body .graphite-flow-step small { display:none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  body #sidebar { transition: none; }
+}
+body #toolbar, body .petek-v477-head, body .petek-v477-selectrow { background: var(--mor-panel) !important; }
+body button { border-radius: 6px; font-family: 'Segoe UI', sans-serif; }
+body button.success, body .success { background: #0E8F6E !important; border-color: #3FD98A !important; }
+body .v46-quick, body .v46-alignment, body .v46-status, body .tool-section { background: var(--mor-panel) !important; }
+body .page, body .review-shell { background: var(--mor-background) !important; }
+body .category-title.selected, body #petekV477Nav[aria-current=page] { background: #10332B !important; border-color: var(--mor-accent) !important; }
+body .tools-center-button, body #bulkModeButton, body #bulkApproveButton { background: var(--mor-raised) !important; }
+body #canvas-container, body .petek-v477-stage { background: #080C14 !important; }
 body, body #main, body #petekV477Editor {
   background: var(--mor-background) !important;
   color: var(--mor-text) !important;
@@ -40,7 +159,7 @@ body .petek-v484-bulk, body #bulk-select-panel {
 }
 body .category-title.selected, body #petekV477Nav.selected,
 body #petekV477Nav[aria-current=page] {
-  background: #453086 !important;
+  background: #10332B !important;
   border-color: var(--mor-accent) !important;
   color: var(--mor-text) !important;
 }
@@ -56,7 +175,7 @@ body #petekV477List button.petek-v477-list-item.petek-v484-name,
 body #categories .template-item-label {font-size: 14px !important; color: var(--mor-text) !important;}
 body button:focus-visible,body input:focus-visible,
 body [role=tab]:focus-visible,body .ui-card-drag:focus-visible {
-  outline: 2px solid #B99CFF !important;outline-offset:2px!important;
+  outline: 2px solid #17D3A3 !important;outline-offset:2px!important;
 }
 body .petek-v477-tools {max-width: 48vw !important;box-sizing:border-box;}
 body .ui-review-card-container {display:flex;flex-direction:column;gap:var(--mor-gap);}
@@ -78,32 +197,32 @@ body .ui-card-drag {min-height:36px;flex:1;min-width:0;border-radius:7px;
 body .ui-card-tab-select {max-width:110px;min-width:80px;font-size:13px;min-height:36px;
   background:var(--mor-background);color:var(--mor-text);}
 body.ui-layout-editing #sidebar,body.ui-layout-editing #main,
-body.ui-layout-editing #petekV477Editor {outline:2px dashed #A26BFF;outline-offset:-2px;}
+body.ui-layout-editing #petekV477Editor {outline:2px dashed #17D3A3;outline-offset:-2px;}
 body.ui-layout-editing #right-toolbar,body.ui-layout-editing .petek-v477-tools{
   box-shadow:inset 0 0 0 2px var(--mor-accent) !important;}
 body .ui-layout-launcher {position:sticky;right:auto;top:0;width:100%;margin:0 0 12px;z-index:2147483600;
-  padding:9px 12px;min-height:39px;background:#6334CF!important;color:#fff;
-  border:1px solid #BCA4FF;border-radius:10px;font:700 14px 'Segoe UI',sans-serif;
+  padding:9px 12px;min-height:39px;background:#17D3A3!important;color:#04140E;
+  border:1px solid #3FD98A;border-radius:10px;font:700 14px 'Segoe UI',sans-serif;
   box-shadow:0 4px 15px #0B09284A;}
-body .ui-layout-launcher:hover {background:#7842E8!important;}
+body .ui-layout-launcher:hover {background:#0FAC80!important;}
 body .ui-layout-shell {position:fixed;right:12px;top:60px;bottom:12px;width:min(370px,94vw);
-  overflow-y:auto;z-index:2147483590;border:1px solid #8165C9;
+  overflow-y:auto;z-index:2147483590;border:1px solid #22304A;
   box-shadow:0 10px 50px rgba(0,0,0,.60);border-radius:14px;
-  background:#172033;color:#F4F6FF;padding:14px;box-sizing:border-box;}
+  background:#131C2B;color:#E9EFF9;padding:14px;box-sizing:border-box;}
 body .ui-layout-shell[hidden] {display:none!important;}
-body .ui-layout-controls h2 {font-size:19px;margin:2px 0 10px;color:#F4F6FF;}
-body .ui-layout-controls h3 {font-size:15px;margin:16px 0 8px;color:#D5C4FF;}
-body .ui-layout-sub {color:#CDD6E8;line-height:1.5;font-size:13px;}
+body .ui-layout-controls h2 {font-size:19px;margin:2px 0 10px;color:#E9EFF9;}
+body .ui-layout-controls h3 {font-size:15px;margin:16px 0 8px;color:#93A6C4;}
+body .ui-layout-sub {color:#93A6C4;line-height:1.5;font-size:13px;}
 body .ui-layout-field {display:flex;align-items:center;justify-content:space-between;gap:8px;
-  margin:8px 0;min-height:36px;font-size:14px;color:#F4F6FF;}
+  margin:8px 0;min-height:36px;font-size:14px;color:#E9EFF9;}
 body .ui-layout-input {max-width:180px;min-width:75px;min-height:32px;}
 body .ui-layout-actions {display:flex;flex-wrap:wrap;gap:7px;margin:9px 0;}
-body .ui-layout-action {flex:1 1 100px;background:#3A2A70!important;color:#fff;
-  border:1px solid #7652DE;border-radius:9px;padding:8px;min-height:38px;}
-body .ui-layout-action:hover {background:#5B36BD!important;}
+body .ui-layout-action {flex:1 1 100px;background:#182238!important;color:#E9EFF9;
+  border:1px solid #22304A;border-radius:9px;padding:8px;min-height:38px;}
+body .ui-layout-action:hover {background:#131C2B!important;}
 body .ui-layout-notice {font-size:13px;line-height:1.5;min-height:25px;color:#BCFFDF;}
 body .ui-layout-resize-handle {display:none;position:fixed;z-index:2147483585;
-  width:18px;height:62px;background:#7440EA;color:#FFF;border:1px solid #AC8AFF;
+  width:18px;height:62px;background:#182238;color:#17D3A3;border:1px solid #22304A;
   border-radius:12px;font:bold 19px/58px sans-serif;text-align:center;touch-action:none;
   cursor:ew-resize;user-select:none;}
 body.ui-layout-editing .ui-layout-resize-handle {display:block;}
@@ -119,3 +238,90 @@ body[data-ui-effect=subtle] .ui-review-card {box-shadow:0 2px 8px #080C1B40;}
 @media(prefers-reduced-motion:reduce) {
   body .ui-review-card,body .ui-layout-launcher,body .ui-review-tab {transition:none!important;animation:none!important;}
 }
+
+/* Graphite compact workbench layout.  This layer is UI-only: the existing
+   canvas, corner, mask, approval and persistence callbacks remain unchanged. */
+body { min-width: 0; }
+body #sidebar { width: 250px !important; min-height: 100vh; padding: 12px !important; gap: 6px; }
+body #sidebar > h2 { margin: 0 !important; font-size: 17px !important; }
+body #sidebar .panel-hint,
+body #sidebar .tools-center-link,
+body #sidebar .tools-center-note,
+body #sidebar #help-sidebar,
+body #sidebar #help-sidebar + div { display: none !important; }
+body #main { min-width: 0; min-height: 0; }
+body #toolbar { flex: 0 0 48px; min-height: 48px; height: 48px; padding: 6px 12px !important; gap: 6px !important; }
+body #toolbar .toolbar-action .tool-note { display: none; }
+body #toolbar button { padding: 6px 10px !important; min-height: 30px; }
+body #toolbar #current-file { max-width: min(42vw, 560px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px !important; }
+body .toolbar-status { margin-left: auto; color: var(--mor-muted); font-size: 11px; white-space: nowrap; }
+body #reviewWorkspace { flex: 1 1 auto !important; min-height: 0; }
+body #canvas-container { min-width: 0; min-height: 0; }
+body #right-toolbar { width: 270px !important; padding: 9px !important; gap: 6px !important; min-height: 0; }
+body #right-toolbar .tool-note { font-size: 10px; line-height: 1.25; }
+body #right-toolbar button { padding: 8px 7px !important; min-height: 32px; }
+body .v46-quick-approval { padding: 7px; }
+body .v46-quick-approval .v46-quick-title { font-size: 12px; padding-bottom: 4px; }
+body .v46-quick-approval .v46-quick-buttons { grid-template-columns: 1fr 1.35fr; }
+body .v46-quick-approval .v46-quick-buttons button { padding: 7px 4px; }
+body #bulk-select-panel { padding: 5px; margin-bottom: 5px; }
+body #bulk-select-panel > .tool-note { display: none; }
+body #bulkModeButton { padding: 7px 8px; }
+body .v499-status-filter { margin: 3px 0 !important; padding: 5px !important; gap: 4px !important; }
+body .v499-status-filter legend { font-size: 11px; }
+body .v499-status-filter label { padding: 4px !important; font-size: 11px; }
+body .v499-filter-help { display: none; }
+body #categories { min-height: 0; }
+body #categories .category-title { padding: 7px !important; font-size: 12px; }
+body .status-legend { margin: 4px 0 0 !important; padding: 5px !important; font-size: 10px; }
+body #graphiteActionDock { flex: 0 0 48px; min-height: 48px; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 5px 10px; background: var(--mor-panel); border-top: 1px solid var(--mor-border); }
+body #graphiteActionDock button { min-width: 116px; padding: 7px 14px; border: 1px solid transparent; border-radius: 7px; font-size: 12px; }
+body #graphiteActionDock .graphite-action-approve { background: #0E8F6E; border-color: #3FD98A; }
+body #graphiteActionDock .graphite-action-pause { background: #6E5A17; }
+body #graphiteActionDock .graphite-action-critical { background: #3A1F22; }
+body #graphiteActionDock .graphite-action-save { background: var(--mor-raised); }
+body #graphiteActionDock.is-paused { box-shadow: inset 0 2px 0 var(--mor-yellow); }
+body #graphiteActionStatus { min-width: 130px; color: var(--mor-muted); font-size: 11px; }
+@media (max-width: 900px) {
+  body #sidebar { width: 215px !important; }
+  body #right-toolbar { width: 230px !important; }
+  body #graphiteActionDock button { min-width: 0; flex: 1 1 auto; padding-inline: 7px; }
+  body #graphiteActionStatus { display: none; }
+}
+
+/* Full-height side workspaces.  Compact typography must not collapse the
+   panel bodies: the list and the tool rail should consume the complete area
+   between the top toolbar and the action dock. */
+html, body { width: 100%; height: 100%; min-height: 0; }
+body #sidebar { height: 100vh; min-height: 0; }
+body #main { height: 100vh; min-height: 0; }
+body #reviewWorkspace { height: auto; min-height: 0; align-items: stretch; }
+body #canvas-container { min-height: 0; height: auto; }
+body #right-toolbar { height: 100%; min-height: 0; box-sizing: border-box;
+  justify-content: flex-start !important; align-content: flex-start; }
+body #categories { flex: 1 1 auto !important; min-height: 0; overflow-y: auto;
+  display: block; }
+body #categories > .category { margin: 0 0 6px !important; }
+body #categories > .category:last-child { margin-bottom: 0 !important; }
+body #sidebar > #categories { display: block; }
+body #right-toolbar { overflow-y: auto; overflow-x: hidden; }
+body #right-toolbar .tool-note { display: none !important; }
+body #right-toolbar #glassCornerWrap { padding: 5px !important; margin: 2px 0 !important; }
+body #right-toolbar #glassCornerWrap > div { display: none !important; }
+body #right-toolbar .v46-alignment small { display: none; }
+body #right-toolbar > .ui-review-card-container,
+body #right-toolbar.ui-review-card-container { min-height: 0; }
+body #right-toolbar .ui-review-card-container { flex: 1 1 auto; min-height: 0; }
+body #graphiteActionDock { flex: 0 0 48px; }
+
+/* The layout editor's saved width remains authoritative; these rules only
+   make the existing panels stretch vertically. */
+body #sidebar > .status-legend { flex: 0 0 auto; }
+
+/* The health banner is injected by main.js. Keep it a thin one-line alert so
+   it cannot consume the editor's vertical working area. */
+body .graphite-safety-banner { box-sizing: border-box; min-height: 38px; height: 38px;
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  padding: 4px 12px !important; font-size: 12px; line-height: 1.1; }
+body .graphite-safety-banner button { margin-left: 4px !important; padding: 6px 12px !important;
+  min-height: 28px; font-size: 11px; }

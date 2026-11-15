@@ -11,6 +11,10 @@ import re
 import secrets
 import shutil
 from pathlib import Path
+try:
+    from .store_identity_v485 import DEFAULT_STORE_SHORT_CODES, default_store_short_code, normalize_short_code
+except ImportError:  # pragma: no cover - direct legacy script execution
+    from store_identity_v485 import DEFAULT_STORE_SHORT_CODES, default_store_short_code, normalize_short_code
 
 STORE_ID = re.compile(r'^[A-Za-z0-9_][A-Za-z0-9_-]{1,35}$')
 SCHEMA = 1
@@ -76,11 +80,18 @@ class StoreProfiles:
             raise ValueError('STORE_PROFILE_SCHEMA_INVALID')
         owners={}
         source_owners={}
+        short_code_owners={}
         for store, row in raw['stores'].items():
             if not STORE_ID.fullmatch(store) or store == 'LOCAL':
                 raise ValueError('STORE_ID_INVALID')
             if not isinstance(row,dict) or not isinstance(row.get('templates'),list):
                 raise ValueError('STORE_TEMPLATES_INVALID')
+            configured_code = row.get('short_code') or default_store_short_code(str(store))
+            if configured_code is not None:
+                normalized = normalize_short_code(configured_code)
+                if normalized in short_code_owners and short_code_owners[normalized] != store:
+                    raise ValueError('MAGAZA_KISA_KODU_CAKISMASI: ' + normalized)
+                short_code_owners[normalized] = store
             for template in row['templates']:
                 if not isinstance(template,str) or ':' not in template or '@' not in template or len(template)>300:
                     raise ValueError('STORE_TEMPLATE_KEY_INVALID')
@@ -160,6 +171,36 @@ class StoreProfiles:
         if store in raw['stores']:
             raise ValueError('Mağaza zaten kayıtlı.')
         raw['stores'][store]={'templates':[]}
+        default_code = default_store_short_code(str(store))
+        if default_code:
+            raw['stores'][store]['short_code'] = default_code
+        return self.save(raw)
+
+    def short_code(self, store: str) -> str | None:
+        """Return the explicit store code, or the requested known default."""
+        raw = self.load()
+        if store not in raw['stores']:
+            raise ValueError('Mağaza bulunamadı: ' + str(store))
+        configured = raw['stores'][store].get('short_code')
+        if configured:
+            return normalize_short_code(configured)
+        return default_store_short_code(str(store))
+
+    def set_short_code(self, store: str, short_code: str):
+        """Persist a unique store short code with an atomic, backed-up write.
+
+        Existing product identities are intentionally not rewritten.  The UI
+        or an operator must review/re-export affected unpublished products.
+        """
+        code = normalize_short_code(short_code)
+        raw = self.load()
+        if store not in raw['stores']:
+            raise ValueError('Mağaza bulunamadı: ' + str(store))
+        for other, row in raw['stores'].items():
+            existing = row.get('short_code') or default_store_short_code(str(other))
+            if other != store and str(existing or '').upper() == code:
+                raise ValueError('MAGAZA_KISA_KODU_CAKISMASI: ' + code)
+        raw['stores'][store]['short_code'] = code
         return self.save(raw)
 
     def assign(self, store, items: list[dict], all_approved: list[dict] | None=None):
@@ -212,7 +253,28 @@ class StoreProfiles:
         return self.unassign_keys(store,[key_for(item) for item in items])
 
     def plan(self, selected: list[str], approved: list[dict], *, selected_uids: list[str] | None=None):
-        """Snapshot a fail-closed plan. Empty store selection = legacy path."""
+        """Snapshot a fail-closed plan. Empty store selection = legacy path.
+
+        The strict API remains intentionally fail-closed for callers that need
+        an all-or-nothing preflight.  Production uses :meth:`plan_resilient`
+        so one stale membership can be quarantined while unrelated stores keep
+        running.
+        """
+        result = self.plan_resilient(selected, approved, selected_uids=selected_uids)
+        if result['stale']:
+            raise ValueError('Atanan şablon onayı/SHA değişmiş; kontrol gerekli: '
+                             + result['stale'][0]['key'])
+        return result['groups']
+
+    def plan_resilient(self, selected: list[str], approved: list[dict], *,
+                       selected_uids: list[str] | None = None) -> dict:
+        """Build a plan while isolating stale template memberships.
+
+        A stale key is never re-keyed or rendered.  It is returned as an
+        explicit review item; only groups with at least one currently approved
+        member are returned for production.  If every selected group is stale,
+        the caller can still fail closed with a queue-level explanation.
+        """
         raw=self.load()
         if not selected or len(selected)!=len(set(selected)):
             raise ValueError('Seçilen mağazalar boş veya tekrarlı.')
@@ -222,6 +284,8 @@ class StoreProfiles:
         filter_uids=set(selected_uids) if selected_uids is not None else None
         groups=[]
         matched_uids=set()
+        stale_items=[]
+        stale_uids=set()
         for name in selected:
             if name not in raw['stores']:
                 raise ValueError('Mağaza profili bulunamadı: '+name)
@@ -229,20 +293,31 @@ class StoreProfiles:
             if not stored:
                 raise ValueError('Mağazaya şablon atanmamış: '+name)
             stale=[k for k in stored if k not in approved_by_key]
-            if stale:
-                raise ValueError('Atanan şablon onayı/SHA değişmiş; kontrol gerekli: '+stale[0])
-            subset=[approved_by_key[k] for k in stored if
+            for key in stale:
+                uid = key.split(':', 1)[1].split('@', 1)[0]
+                # A store may contain many historical assignments, while the
+                # operator has selected only a small UID subset for this run.
+                # Do not report unrelated stale memberships as failures in
+                # the current operation; they remain visible to the store
+                # manager on a full assignment audit.
+                if filter_uids is None or uid in filter_uids:
+                    stale_uids.add(uid)
+                    stale_items.append({'store': name, 'key': key,
+                                        'reason': 'Atanan şablon onayı/SHA değişmiş; kontrol gerekli'})
+            subset=[approved_by_key[k] for k in stored
+                    if k in approved_by_key and
                     (filter_uids is None or approved_by_key[k]['uid'] in filter_uids)]
-            if not subset:
+            if not subset and not stale:
                 raise ValueError('Seçili şablonlar mağazanın özel grubunda yok: '+name)
-            matched_uids.update(str(item['uid']) for item in subset)
-            groups.append((name,subset))
+            if subset:
+                matched_uids.update(str(item['uid']) for item in subset)
+                groups.append((name,subset))
         # Legacy plan silently dropped extra selected templates when at least
         # one UID belonged to a selected store. Never present those to users as
         # production selections and then skip them without explanation.
         if filter_uids is not None:
-            outside={str(uid) for uid in filter_uids}-matched_uids
+            outside={str(uid) for uid in filter_uids}-matched_uids-stale_uids
             if outside:
                 raise ValueError('STORE_SELECTED_UID_NOT_ASSIGNED: '
                                  + ', '.join(sorted(outside)[:20]))
-        return groups
+        return {'groups': groups, 'stale': stale_items}

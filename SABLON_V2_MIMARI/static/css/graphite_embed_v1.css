@@ -1,0 +1,57 @@
+/* One application shell: the Tk Graphite host owns brand/navigation while
+   V6 owns the review workspace.  Direct browser visits keep the full V6 bar. */
+html.graphite-embedded #topbar {
+  display: none;
+}
+
+html.graphite-embedded #contextbar {
+  height: 58px;
+  border-top: 0;
+}
+
+html.graphite-embedded #statusbar {
+  border-bottom: 0;
+}
+
+/* The tools page is another WebView surface of the same desktop shell. */
+html.graphite-embedded .page {
+  max-width: none;
+  padding: 18px 22px;
+}
+
+html.graphite-embedded .page > .topbar {
+  display: none;
+}
+
+/* PETEK is still served by the protected compatibility editor while its
+   controls are being migrated.  In that mode the outer Graphite shell owns
+   application navigation, so keep only the editor's own list/stage/tools. */
+html.graphite-petek-compat #sidebar {
+  display: none !important;
+}
+
+html.graphite-petek-compat #main {
+  left: 0 !important;
+  width: 100% !important;
+}
+
+/* WebView2 can be narrower than a normal browser window inside the desktop
+   shell.  Preserve the three-pane work area without forcing horizontal page
+   scrolling; the rail and inspector remain independently scrollable. */
+html.graphite-embedded #rail {
+  width: 248px;
+}
+
+@media (max-width: 1120px) {
+  html.graphite-embedded #rail {
+    width: 224px;
+  }
+
+  html.graphite-embedded .tmpl-current {
+    min-width: 180px;
+  }
+
+  html.graphite-embedded .stage-top .card-hint {
+    max-width: 300px;
+  }
+}

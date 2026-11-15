@@ -1,4 +1,12 @@
-# Source-only public repository. Local production data must stay private.
+# ============================================================
+# Görsel Üretim Merkezi — PUBLIC repo yoksay listesi (source-only)
+# Amaç: gizli anahtar, canlı ayarlar, maskeler, canlı DB, kullanıcı
+# görselleri ve üretim çıktıları asla repoya girmesin.
+# Yalnızca ürün-nötr, render-only ASSETS/PETEK/*.png dosyaları
+# `git add -f` ile bilinçli eklenir.
+# ============================================================
+
+# --- Python ---
 .venv/
 venv/
 __pycache__/
@@ -6,21 +14,93 @@ __pycache__/
 *.py[cod]
 .env
 .env.*
+*.pem
+*.key
+*.pfx
+.git-credentials
+
+# --- Yerel üretim ayarları / gizli anahtarlar ---
+ayarlar.local.json
+MERKEZ/URETIM_V4/ayarlar.local.json
+**/ayarlar.json
+**/ayarlar.local.json
+**/store_profiles_v47.json
+**/v4_ortak_uretim.sqlite3
+**/PetekV3/
+
+# --- Canlı veritabanları ---
 *.db
 *.db-*
 *.sqlite
 *.sqlite3
 *.sqlite3-*
-**/ayarlar.json
-**/store_profiles_v47.json
-**/v4_ortak_uretim.sqlite3
-**/PetekV3/
+SABLON_V2_MIMARI/ayarlar.db*
+store_profiles_v47.json
+v4_ortak_uretim.sqlite3
+
+# --- Runtime (canlı durum, loglar, çıktılar) ---
+runtime/
 **/runtime/
-**/logs/
+uretilen_gorseller/
 **/uretilen_gorseller/
+logs/
+**/logs/
+*.log
+SABLON_V2_MIMARI/core/logs/
+
+# --- Kullanıcı maskeleri, onaylı köşeler, şablon havuzu ---
+PETEK_MASTER_REVISIONS/
+REVIEW_ARTIFACTS/
 **/REVIEW_ARTIFACTS/
+Kalite_Kontrol_Gorselleri/
 **/Kalite_Kontrol_Gorselleri/
+2_SABLON_HAVUZU/
+2_SABLON_HAVUZU_ORIJINAL_YEDEK/
+HAM BASKI TASARIMLARI/
+HAM_BASKI_TASARIMLARI/
 **/HAM_BASKI_TASARIMLARI/
+Overlay_Giydirme/
+YENI-BOS MOCKUP SABLON HAVUZU/
+Mockup_Magaza_Klasorleri/
+
+# --- Test/çalıştırma artıkları ---
+TEST_ARTIFACTS/
+TEST_ENV/
+run*.out
+run*.err
+test.out
+test.err
+run_ui_verify*.out
+run_ui_verify*.err
+tmp_*
+tmp_fixtures/
+*.bak
+*.bak_*
+.bak_before_*
+_UI_ROLLBACK_*/
+99_SISTEM_MOTORLARI_VE_KODLAR/
+TESTLER/_smoke_designs_stores_tabs_tmp.py
+
+# --- Gizli açıklamalı başlatıcılar / push scriptleri ---
+CODEX_GITHUB_CANLI_COMMIT_ESITLE.bat
+CODEX_GITHUB_CANLI_COMMIT_ESITLE.ps1
+OKU_ONCE_GITHUB_CANLI_ESITLE.txt
+ESKI_GORUNUME_DON_WINDOWS.bat
+PETEK_8080_DOGRULA_WINDOWS.bat
+PETEK_DOGAL_BEYAZ_DOGRULA.bat
+
+# --- Manifestler ve yerel SHA / test raporları ---
+SHA256_MANIFEST.json
+PETEK_ISOLATED_SHA256_MANIFEST.json
+PETEK_ISOLATED_TEST_RAPORU_20261101.md
+WINDOWS_ACCEPTANCE_FINAL.json
+WINDOWS_ACCEPTANCE_REPORT.json
+WINDOWS_V4_TEST_REPORT.json
+CODEX_ACTIVE_TEST_REPORT_20261102.json
+docs/PETEK_KENAR_PROTECTED_SOURCE_SHA256_20261101.txt
+docs/V4_TEST_LOGS/
+
+# --- İkili / paket / model dosyaları ---
 *.jpg
 *.jpeg
 *.png
@@ -40,4 +120,5 @@ __pycache__/
 *.pt
 *.onnx
 *.safetensors
-# Only reviewed, product-neutral render assets may be force-added explicitly.
+
+# --- Sadece ürün-nötr render-only ASSETS/PETEK/*.png bilinçli eklenir (-f) ---

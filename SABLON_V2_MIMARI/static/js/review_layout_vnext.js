@@ -22,7 +22,7 @@
   const DEFAULT = () => ({
     schema: 1, widths: {left:290,right:330}, paneOrder:'photo-first',
     density:'normal', effect:'subtle',
-    colors:{accent:'#7A4DFA',background:'#111827',panel:'#1D2638',border:'#384466',text:'#F4F6FF'},
+    colors:{accent:'#8A7CF0',background:'#131C2B',panel:'#182238',border:'#3A4A68',text:'#E9EFF9'},
     tabs:{review:['Tümü'],petek:['Tümü']},
     assignments:{review:{},petek:{}},
     order:{review:GROUPS.review.map(x=>x[0]),petek:GROUPS.petek.map(x=>x[0])}
@@ -105,7 +105,19 @@
       r.setProperty('--mor-'+key,cssColor(key));
     document.body.dataset.uiDensity=current.density;
     document.body.dataset.uiEffect=current.effect;
-    $('sidebar')?.style.setProperty('width',current.widths.left+'px','important');
+    const sidebar=$('sidebar');
+    if(sidebar){
+      // Keep the saved expanded width while the presentation-only navigation
+      // toggle is closed. This prevents tab/card reflows from reopening it.
+      if(document.body.classList.contains('graphite-sidebar-collapsed')){
+        if(!sidebar.dataset.graphiteExpandedWidth)
+          sidebar.dataset.graphiteExpandedWidth=String(current.widths.left);
+        sidebar.style.setProperty('width','0px','important');
+      }else{
+        sidebar.dataset.graphiteExpandedWidth=String(current.widths.left);
+        sidebar.style.setProperty('width',current.widths.left+'px','important');
+      }
+    }
     $('right-toolbar')?.style.setProperty('width',current.widths.right+'px','important');
     document.querySelector('.petek-v477-tools')?.style.setProperty('width',current.widths.right+'px','important');
     const photo=document.querySelector('.petek-v477-stage');
@@ -161,21 +173,34 @@
       if(!editing)return;
       event.preventDefault();event.stopPropagation();checkpoint();
       const start=event.clientX,old=current.widths[key];
+      let pending=null,frame=null;
       handle.setPointerCapture(event.pointerId);
+      const flush=()=>{
+        frame=null;
+        if(pending===null)return;
+        current.widths[key]=pending;
+        apply();renderWidthLabels();
+      };
       const move=e=>{
         const next=old+(e.clientX-start)*direction;
         const min=key==='left'?205:245,max=key==='left'?480:530;
-        current.widths[key]=Math.max(min,Math.min(max,Math.round(next)));
-        apply();renderWidthLabels();
+        pending=Math.max(min,Math.min(max,Math.round(next)));
+        if(frame===null)frame=requestAnimationFrame(flush);
       };
-      const finish=()=>{handle.removeEventListener('pointermove',move);
-        handle.removeEventListener('pointerup',finish);handle.removeEventListener('pointercancel',finish);};
+      const finish=()=>{
+        if(frame!==null){cancelAnimationFrame(frame);flush();}
+        else if(pending!==null)flush();
+        pending=null;
+        if(handle.hasPointerCapture(event.pointerId))handle.releasePointerCapture(event.pointerId);
+        handle.removeEventListener('pointermove',move);
+        handle.removeEventListener('pointerup',finish);handle.removeEventListener('pointercancel',finish);
+      };
       handle.addEventListener('pointermove',move);handle.addEventListener('pointerup',finish);
       handle.addEventListener('pointercancel',finish);
     });
   }
   function show(message,bad=false){
-    if(!notice)return;notice.textContent=message;notice.style.color=bad?'#ffb9b9':'#b3ffdc';
+    if(!notice)return;notice.textContent=message;notice.style.color=bad?'#FFB3B8':'#8DEBD5';
   }
   function isDirty(){return JSON.stringify(current)!==JSON.stringify(saved);}
   function enter(){
@@ -326,6 +351,11 @@
       event.preventDefault();event.stopImmediatePropagation();cancel();return;
     }
     const target=event.target;
+    // Panel zoom owns Ctrl+wheel. Keep it available even while the
+    // presentation-only layout editor is open; normal wheel remains blocked
+    // here so the layout editor does not accidentally move the workbench.
+    if(event.type==='wheel'&&event.ctrlKey&&target instanceof Element&&
+      target.closest('#sidebar,#right-toolbar,#petekV477ListPane,.petek-v477-tools'))return;
     if(target instanceof Element && target.closest('[data-ui-edit-control]'))return;
     if(['pointerdown','pointermove','mousedown','mousemove','touchstart','click','dblclick','keydown','keyup','wheel'].includes(event.type)){
       event.stopImmediatePropagation();event.preventDefault();

@@ -34,7 +34,7 @@ def backend(monkeypatch):
 def test_default_theme_contrast_and_review_sections(monkeypatch):
     m=backend(monkeypatch)
     data=m.validate(m.default())
-    assert data['colors']['accent']=='#7A4DFA'
+    assert data['colors']['accent']=='#8A7CF0'
     assert m.contrast(data['colors']['text'],data['colors']['panel'])>=4.5
     assert 'petek-approval' in m.PINNED['petek']
     assert data['tabs']['review']==['Tümü']

@@ -74,6 +74,23 @@ def test_repeated_missing_output_export_preserves_reports(tmp_path):
     assert len(reports)==2
     assert legacy.read_bytes()==b'previous immutable report'
     assert all(json.loads(p.read_text(encoding='utf-8'))['status']=='REVIEW_REQUIRED' for p in reports)
+    assert all(json.loads(p.read_text(encoding='utf-8'))['rejected_rendered_rows'][0]['failure_kind']=='OUTPUT_MISSING' for p in reports)
+
+
+def test_historical_missing_output_cannot_claim_local_ready(tmp_path):
+    runtime,registry=_build_seven_category_workspace(tmp_path,per_cat_count=1)
+    designs=tmp_path/'designs'
+    _write_png(designs/'art.png',np.full((200,300,3),(40,90,180),np.uint8))
+    batch=UnifiedV4Batch(tmp_path/'state',runtime_root=runtime,petek_registry=registry)
+    first=batch.run(designs,group='TEST',lighting='off')
+    assert first['status']=='LOCAL_READY'
+    with batch.ledger.connect() as con:
+        output=Path(con.execute("SELECT output FROM artifact WHERE status='RENDERED' LIMIT 1").fetchone()[0])
+    output.unlink()
+    second=batch.run(designs,group='TEST',lighting='off')
+    assert second['status']=='REVIEW_REQUIRED'
+    assert second['export_review_required'] >= 1
+    assert Path(second['export_review_report']).is_file()
 
 
 def test_geometry_failure_does_not_poison_ledger_or_stop_other_templates(tmp_path,monkeypatch):

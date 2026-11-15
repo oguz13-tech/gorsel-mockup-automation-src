@@ -6,6 +6,7 @@ the parent app's existing global guard.
 """
 import base64
 import re
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from functools import lru_cache
 from time import perf_counter
@@ -44,9 +45,17 @@ def _photo(name):
         raise ValueError('PETEK_SOURCE_NOT_IN_WORKING_POOL')
     return file
 
-def _identity(registry,file,selected=None):
+def _identity(registry,file,selected=None,history=None):
     sha=engine.digest(file)
-    matches=[row for row in registry.list() if row['source_sha']==sha]
+    if history is None:
+        history=registry.list()
+    # A central canonical filename is a new logical template even when its
+    # bytes were copied from an older, human-approved source.  Binding by SHA
+    # here made Petek_Dolabi_001..008 appear APPROVED and silently reused an
+    # unrelated UID.  Existing names still retain SHA-bound portability.
+    canonical = re.fullmatch(r'Petek_Dolabi_\d{3}', file.stem, re.IGNORECASE)
+    matches=[row for row in history if row['source_sha']==sha and
+             (Path(row['source']).name.casefold()==file.name.casefold() or not canonical)]
     if selected is not None:
         if not isinstance(selected,str) or not re.fullmatch('[A-Za-z0-9_-]{1,96}',selected):
             raise ValueError('PETEK_SELECTED_UID_INVALID')
@@ -132,6 +141,36 @@ def _sidebar_sha(file):
                            stat.st_ctime_ns,getattr(stat,'st_ino',0))
 
 
+def _sidebar_sha_many(files):
+    """Hash independent sidebar/archive files concurrently.
+
+    The PETEK pool can contain hundreds of high-resolution photos. The old
+    serial source+archive pass made the first editor list request appear
+    frozen; bounded workers preserve the same SHA/cache semantics while
+    reducing wall-clock latency on ordinary SSDs.
+    """
+    paths=list(files)
+    if not paths:
+        return {}
+    workers=min(12,max(2,len(paths)))
+    def safe(path):
+        try:
+            return _sidebar_sha(path)
+        except (OSError,ValueError,engine.MaskError):
+            return None
+    with ThreadPoolExecutor(max_workers=workers,thread_name_prefix='petek-sidebar-sha') as pool:
+        values=pool.map(safe,paths)
+        return {str(path):value for path,value in zip(paths,values)}
+
+
+def _validate_sidebar_profile(registry, match, file):
+    try:
+        profile,_=registry.get(match['uid'],source_override=file)
+        return profile['status'],True,None
+    except (ValueError,OSError,KeyError,engine.MaskError) as exc:
+        return 'REVIEW_REQUIRED',False,str(exc)[:200]
+
+
 @petek_web.get('/api/petek/service-status')
 def petek_service_status():
     """Read-only origin/version check for browser/client port ownership.
@@ -142,10 +181,32 @@ def petek_service_status():
     return jsonify({'success':True,
         'contract':'PETEK_PREVIEW_API_VNEXT_JSON_20261101',
         'preview_ui_revision':'PETEK_REAL_ARTWORK_PREVIEW_V4112',
+        'mask_reconcile_revision':'PETEK_MASK_AUTO_RECONCILE_V1',
         'code_root':str(Path(__file__).resolve().parents[2]),
         'runtime_root':str(current_app.config.get('PETEK_WORKSPACE_V477','')),
         'preview_endpoint':'POST /api/petek/preview-artwork',
         'read_only':True})
+
+
+@petek_web.post('/api/petek/client-diagnostic')
+def petek_client_diagnostic():
+    """Record a bounded browser connection failure in the Flask log.
+
+    This endpoint is intentionally diagnostic-only: it never touches PETEK
+    sources, masks, profiles, approvals or the production database.  The
+    client may be offline when it reports, so failure to send this record is
+    harmless and the browser still shows the actionable reconnect message.
+    """
+    payload=request.get_json(silent=True)
+    if not isinstance(payload,dict):
+        return jsonify({'success':False,'code':'PETEK_DIAGNOSTIC_JSON_REQUIRED'}),400
+    def bounded(key, limit):
+        value=str(payload.get(key) or '').replace('\r',' ').replace('\n',' ')
+        return value[:limit]
+    current_app.logger.warning(
+        'PETEK_CONNECTION_DIAGNOSTIC path=%s error=%s href=%s at=%s',
+        bounded('path',160), bounded('error',500), bounded('href',240), bounded('at',64))
+    return jsonify({'success':True,'recorded':True,'read_only':True})
 
 
 @petek_web.get('/api/petek/templates')
@@ -160,7 +221,10 @@ def list_templates():
         folder=_working()
         history=registry.list()
         profiles={}
+        profiles_by_name={}
         for row in history:profiles.setdefault(row['source_sha'],[]).append(row)
+        for row in history:
+            profiles_by_name.setdefault(Path(row['source']).name.casefold(),[]).append(row)
         # A missing original archive is reported, NEVER silently fabricated.
         root=Path(current_app.config['PETEK_WORKSPACE_V477'])
         try:
@@ -169,41 +233,62 @@ def list_templates():
             archive=None
             warnings.append({'file':'ORIGINAL_ARCHIVE','error':str(exc)[:200]})
         if folder.is_dir():
-            for file in sorted(folder.iterdir(),key=lambda x:x.name.casefold()):
-                if file.is_symlink() or not file.is_file() or file.suffix.lower() not in SUFFIXES:
-                    continue
+            candidates=[file for file in sorted(folder.iterdir(),key=lambda x:x.name.casefold())
+                        if not file.is_symlink() and file.is_file() and file.suffix.lower() in SUFFIXES]
+            source_shas=_sidebar_sha_many(candidates)
+            archive_files=([archive/file.name for file in candidates]
+                           if archive is not None and archive.is_dir() else [])
+            archive_shas=_sidebar_sha_many([file for file in archive_files
+                                            if file.is_file() and not file.is_symlink()])
+            validation_pool=ThreadPoolExecutor(max_workers=12,thread_name_prefix='petek-sidebar-qa')
+            validation_jobs={}
+            for file in candidates:
+                canonical=re.fullmatch(r'Petek_Dolabi_\d{3}',file.stem,re.IGNORECASE)
+                matches=(profiles_by_name.get(file.name.casefold(),[]) if canonical
+                         else profiles.get(source_shas.get(str(file)),[]))
+                for match in matches:
+                    validation_jobs[(str(file),match['uid'])]=validation_pool.submit(
+                        _validate_sidebar_profile,registry,match,file)
+            try:
+              for file in candidates:
                 seen+=1
                 try:
-                    sha=_sidebar_sha(file)
+                    sha=source_shas.get(str(file))
+                    if not sha:
+                        raise ValueError('PETEK_SOURCE_SHA_UNAVAILABLE')
                     backup='MISSING'
                     if archive is not None and archive.is_dir():
                         original=archive/file.name
                         if original.is_symlink():
                             backup='UNSAFE'
                         elif original.is_file():
-                            backup='MATCH' if _sidebar_sha(original)==sha else 'DIFFERENT'
-                    matches=profiles.get(sha,[])
+                            backup='MATCH' if archive_shas.get(str(original))==sha else 'DIFFERENT'
+                    canonical = re.fullmatch(r'Petek_Dolabi_\d{3}', file.stem, re.IGNORECASE)
+                    matches=(profiles_by_name.get(file.name.casefold(), []) if canonical
+                             else profiles.get(sha,[]))
                     if matches:
                         for match in matches:
                             try:
-                                profile,_=registry.get(match['uid'],source_override=file)
-                                status=profile['status'];mask_ok=True
-                            except (ValueError,OSError,KeyError,engine.MaskError) as exc:
+                                status,mask_ok,error=validation_jobs[(str(file),match['uid'])].result()
+                                if error:
+                                    warnings.append({'file':file.name,'uid':match['uid'],'error':error})
+                            except (KeyError,RuntimeError) as exc:
                                 status='REVIEW_REQUIRED';mask_ok=False
-                                warnings.append({'file':file.name,'uid':match['uid'],
-                                                 'error':str(exc)[:200]})
+                                warnings.append({'file':file.name,'uid':match['uid'],'error':str(exc)[:200]})
                             items.append({'name':file.name,'uid':match['uid'],
                                 'source_sha':sha,'status':status,
                                 'working_ok':True,'backup_status':backup,
                                 'mask_verified':mask_ok,'approved':status=='APPROVED'})
                     else:
-                        uid,_=_identity(registry,file)
+                        uid,_=_identity(registry,file,history=history)
                         items.append({'name':file.name,'uid':uid,
                             'source_sha':sha,'status':'NEW','working_ok':True,
                             'backup_status':backup,'mask_verified':False,'approved':False})
                 except (ValueError,OSError,engine.MaskError) as exc:
                     # A single corrupt item never hides the other PETEK photos.
                     warnings.append({'file':file.name,'error':str(exc)[:200]})
+            finally:
+                validation_pool.shutdown(wait=True)
         counts={key:sum(i['status']==key for i in items)
                 for key in ('APPROVED','DRAFT','NEW','REVIEW_REQUIRED')}
         counts['backup_missing']=sum(i['backup_status']=='MISSING' for i in items)
@@ -347,6 +432,23 @@ def photo(name):
         file=_photo(name)
         mime={'.png':'image/png','.webp':'image/webp','.jpg':'image/jpeg',
               '.jpeg':'image/jpeg'}[file.suffix.lower()]
+        # The editor only needs a display raster; detail/approval/production
+        # continue to use the original bytes and SHA-bound source. Sending a
+        # 7–20 MB camera PNG/JPEG to WebView on every click can block decode
+        # and paint even when Flask responds quickly. Keep the editor's
+        # logical source dimensions, but serve a bounded display copy.
+        if request.args.get('display')=='1':
+            import io
+            from PIL import Image,ImageOps,UnidentifiedImageError
+            with Image.open(file) as original:
+                original=ImageOps.exif_transpose(original).convert('RGB')
+                original.thumbnail((2200,2200),Image.Resampling.LANCZOS)
+                output=io.BytesIO()
+                original.save(output,format='JPEG',quality=86,optimize=True,progressive=True)
+            output.seek(0)
+            response=send_file(output,mimetype='image/jpeg',download_name='petek-display.jpg')
+            response.cache_control.private=True;response.cache_control.max_age=300
+            return response
         return send_file(file,mimetype=mime,conditional=False)
     except (ValueError,OSError) as exc:return _fail(exc)
 
@@ -411,6 +513,11 @@ def preview_artwork():
         if not isinstance(material_effect,bool):
             raise ValueError('PETEK_PREVIEW_MATERIAL_BOOLEAN_REQUIRED')
         lighting=('strong' if profile=='belirgin' else 'natural') if material_effect else 'off'
+        # Keep the independent protection replay on the exact visual profile
+        # used by render_petek_visual / batch production.  ``corner`` was the
+        # legacy two-graze profile and made a valid strong-light preview fail
+        # verification even when rendering itself had succeeded.
+        preview_shadow_style = 'projected' if lighting == 'strong' else 'classic'
         cleanup=body.get('pink_cleanup',False)
         if not isinstance(cleanup,bool):
             raise ValueError('PETEK_PINK_CLEANUP_BOOLEAN_REQUIRED')
@@ -435,6 +542,7 @@ def preview_artwork():
                 'pre_render_pink_qa':after_qa['pre_pink_qa'],
                 'source_marker_fringe_qa':after_qa['fringe_qa'],
                 'wall_shadow_qa':after_qa['wall_shadow_qa'],
+                'window_shadow_qa':after_qa['window_shadow_qa'],
                 'effective_lighting':lighting,'material_effect':material_effect,
                 'read_only':True}
         else:
@@ -447,12 +555,16 @@ def preview_artwork():
             preview_extra={'slot_qa':qa['slot_qa'],'pink_qa':qa['pink_qa'],
                 'source_marker_fringe_qa':qa['fringe_qa'],
                 'wall_shadow_qa':qa['wall_shadow_qa'],
+                'window_shadow_qa':qa['window_shadow_qa'],
                 'effective_lighting':lighting,'material_effect':material_effect}
             render_qa_for_protection=qa
             qa=qa['render_qa']
         # Evaluate the actual AFTER image: reporting the original source
         # marker count made successfully repaired seams look still broken.
         final_frame=after if is_ab else result
+        render_meta_for_protection = after_qa if is_ab else render_qa_for_protection
+        window_shadow_enabled = bool(render_meta_for_protection.get('effect_assets',{}).get(
+            'enabled',{}).get('WINDOW_SHADOW',False))
         source_fringe=magenta_residue_report(scene,quad,mask)
         fringe=magenta_residue_report(final_frame,quad,mask)
         # The renderer and HTTP endpoint independently verify that only
@@ -460,15 +572,17 @@ def preview_artwork():
         # repaired outside the print mask; slots/curves remain unchanged.
         from MERKEZ.PETEK_V3.petek_visual_pipeline_vnext import verify_petek_source_protection
         protection_qa=verify_petek_source_protection(scene,result,mask,quad,
-                       pink_cleanup=False if is_ab else cleanup,shadow_style='corner',
+                       pink_cleanup=False if is_ab else cleanup,shadow_style=preview_shadow_style,
                        corner_side=(base_qa if is_ab else render_qa_for_protection)['corner_side'],
                        lighting='off' if is_ab else lighting,
-                       material_effect=False if is_ab else material_effect)
+                       material_effect=False if is_ab else material_effect,
+                       window_shadow_asset=False if is_ab else window_shadow_enabled)
         if is_ab:
             # BEFORE is untouched, but AFTER must satisfy identical verification.
             verify_petek_source_protection(scene,after,mask,quad,pink_cleanup=cleanup,
-                  shadow_style='corner',corner_side=after_qa['corner_side'],
-                  lighting=lighting,material_effect=material_effect)
+                  shadow_style=preview_shadow_style,corner_side=after_qa['corner_side'],
+                  lighting=lighting,material_effect=material_effect,
+                  window_shadow_asset=window_shadow_enabled)
         ok,png=cv2.imencode('.png',result,[cv2.IMWRITE_PNG_COMPRESSION,3])
         if not ok:raise ValueError('PETEK_PREVIEW_ENCODING_FAILED')
         return jsonify({'success':True,'preview':'data:image/png;base64,'+
@@ -492,7 +606,8 @@ def preview_artwork():
         reason=str(exc)
         if ('PETEK_SOURCE_MASK_VENT_CONFLICT_REVIEW' in reason or
                 'PETEK_IZGARA_KONUMU_BELIRSIZ' in reason or
-                'PETEK_KAYNAK_IZGARA_ARALIKLARI_TUTARSIZ' in reason):
+                'PETEK_KAYNAK_IZGARA_ARALIKLARI_TUTARSIZ' in reason or
+                'PETEK_GENIS_MAGENTA_SACAK_MASK_INCELE' in reason):
             if {'scene','body','art','mask','quad','ratio','lighting','material_effect','cleanup'}.issubset(locals()):
                 # Do NOT replace the operator's artwork preview with a plain
                 # magenta source photograph. Try an UNSAVED, strictly more
@@ -500,19 +615,28 @@ def preview_artwork():
                 try:
                     from MERKEZ.PETEK_V3.petek_render_contract_v1 import temporary_photo_protected_preview_mask
                     safe_mask,safe_mask_qa=temporary_photo_protected_preview_mask(scene,mask,quad)
+                    # Diagnostic mode must still show the real artwork, but
+                    # must never claim a production-clean mask.  Suppress
+                    # fringe cleanup here: a broad magenta fringe is exactly
+                    # the evidence the operator needs to correct in the mask,
+                    # and the response is explicitly diagnostic/not approved.
                     candidate,candidate_qa=render_petek_visual(
                         scene,art,quad,safe_mask,ratio,placement='cover',
                         lighting=lighting,material_effect=material_effect,
-                        slot_mode='off',pink_cleanup=cleanup)
+                        slot_mode='off',pink_cleanup=False)
                     # No automatic approval: the user's original mask has NOT
                     # passed physical QA, even when the preview looks good.
                     ok,png=cv2.imencode('.png',candidate,[cv2.IMWRITE_PNG_COMPRESSION,3])
                     if not ok:raise ValueError('PETEK_DIAGNOSTIC_PREVIEW_ENCODING_FAILED')
                     return jsonify({'success':True,
                         'preview':'data:image/png;base64,'+base64.b64encode(png.tobytes()).decode('ascii'),
+                        'mask':_png_data(safe_mask),
                         'preview_available':True,'production_allowed':False,
                         'diagnostic_preview':True,'diagnostic_artwork_applied':True,
                         'diagnostic_mask_temporary':True,
+                        'auto_reconciled_mask':True,
+                        'needs_mask_review':True,
+                        'mask_action':'UNSAVED_SAFE_DRAFT_REQUIRES_HUMAN_REVIEW',
                         'diagnostic_mask_qa':safe_mask_qa,
                         'code':'PETEK_SAFE_ARTWORK_DIAGNOSTIC_ONLY',
                         'detail':reason[:240],
@@ -526,6 +650,8 @@ def preview_artwork():
                 return jsonify({'success':True,
                          'preview_available':False,'production_allowed':False,
                          'diagnostic_preview':True,'diagnostic_artwork_applied':False,
+                         'auto_reconciled_mask':False,
+                         'needs_mask_review':True,
                          'code':'PETEK_MASK_REVIEW_REQUIRED_NO_SAFE_PRINT',
                          'detail':reason[:240],
                          'diagnostic_detail':diagnostic_error,

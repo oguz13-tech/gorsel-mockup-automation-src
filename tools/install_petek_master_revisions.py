@@ -8,6 +8,12 @@ import shutil
 from datetime import datetime
 from pathlib import Path
 
+import sys
+_SOURCE_ROOT = Path(__file__).resolve().parents[1]
+if str(_SOURCE_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SOURCE_ROOT))
+from MERKEZ.workspace_contract import resolve_contract
+
 
 ROOT_UIDS = (
     "50fa3951-3ba1-4aba-bfc2-c26527cc076b",
@@ -28,8 +34,11 @@ def sha256(path: Path) -> str:
 def _find_source(base_profile: dict, runtime_root: Path | None = None) -> Path:
     original = Path(base_profile["source"])
     candidates = [original]
-    configured = runtime_root or os.getenv("GORSEL_RUNTIME_ROOT")
-    roots = [Path(configured)] if configured else []
+    configured = runtime_root or resolve_contract(
+        code_root=_SOURCE_ROOT,
+        validate=False,
+    ).runtime_root
+    roots = [Path(configured)]
     candidates.extend(root / original.name for root in roots)
     for candidate in candidates:
         if candidate.is_file() and sha256(candidate) == base_profile["source_sha"]:
@@ -88,7 +97,10 @@ def install(package_root: Path | None = None, *, approval_token: str = "") -> di
             raise RuntimeError(f"PETEK_PROFILE_MISSING: {root_uid}")
         base = json.loads(base_path.read_text(encoding="utf-8"))
         revision = json.loads(bundled_path.read_text(encoding="utf-8"))
-        source = _find_source(base, os.getenv("GORSEL_RUNTIME_ROOT"))
+        source = _find_source(base, resolve_contract(
+            code_root=_SOURCE_ROOT,
+            validate=False,
+        ).runtime_root)
         if source_sha := revision.get("source_sha"):
             if source_sha != base.get("source_sha"):
                 raise RuntimeError(f"PETEK_SOURCE_SHA_CONFLICT: {root_uid}")

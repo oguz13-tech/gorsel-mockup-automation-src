@@ -11,7 +11,7 @@ import tempfile
 import cv2
 import numpy as np
 from pathlib import Path
-from flask import Flask, render_template, request, jsonify, send_file
+from flask import Flask, render_template, request, jsonify, send_file, Response
 import threading
 import webbrowser
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -19,16 +19,36 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 # Code comes from the checked-out source tree; mutable templates/DB/assets
 # may live in a separate production workspace.
 SOURCE_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_runtime_override = str(os.environ.get("MOCKUP_RUNTIME_WORKSPACE") or "").strip()
-BASE_DIR = os.path.abspath(
-    os.path.expanduser(_runtime_override)
-) if _runtime_override else SOURCE_ROOT
+if SOURCE_ROOT not in sys.path:
+    sys.path.insert(0, SOURCE_ROOT)
+from MERKEZ.workspace_contract import (
+    WorkspaceContractError,
+    resolve_contract,
+)
+
+# Import-time resolution is deliberately non-strict so read-only diagnostics
+# and synthetic tests can inspect the app with a temporary runtime.  The
+# request gate and the real server entry point both require the full contract.
+_WORKSPACE_CONTRACT = resolve_contract(code_root=SOURCE_ROOT, validate=False)
+BASE_DIR = os.fspath(_WORKSPACE_CONTRACT.runtime_root)
+
+# Validate before importing modules such as ``core.vision`` that initialise
+# runtime logging.  A real server process therefore cannot create side
+# effects in a stale or malformed runtime tree.
+if __name__ == '__main__':
+    try:
+        _WORKSPACE_CONTRACT = resolve_contract(
+            code_root=SOURCE_ROOT,
+            runtime_root=BASE_DIR,
+            validate=True,
+        )
+        BASE_DIR = os.fspath(_WORKSPACE_CONTRACT.runtime_root)
+    except WorkspaceContractError as exc:
+        print(f'BAŞLATMA ENGELLENDİ: {exc}', file=sys.stderr)
+        raise SystemExit(2)
 
 # Propagate the resolved runtime root to imported helpers and child processes.
 os.environ["MOCKUP_RUNTIME_WORKSPACE"] = BASE_DIR
-
-if SOURCE_ROOT not in sys.path:
-    sys.path.append(SOURCE_ROOT)
 
 from core.vision import (
     YEDEK_IMG_DIR, detect_document_corners, detect_occlusion_boxes, logger
@@ -80,6 +100,7 @@ from core.lifecycle_reconciliation import (
 )
 import hashlib
 import uuid
+import re
 from functools import wraps
 
 app = Flask(__name__)
@@ -99,6 +120,22 @@ def _enforce_loopback_csrf_v47():
     if reason:
         return jsonify({'success':False,'code':reason,'error':'Yerel inceleme güvenlik denetimi'}),403
 
+@app.before_request
+def _require_workspace_contract():
+    """Refuse every live request if code/runtime identity is ambiguous."""
+    try:
+        resolve_contract(
+            code_root=SOURCE_ROOT,
+            runtime_root=BASE_DIR,
+            validate=True,
+        )
+    except WorkspaceContractError as exc:
+        return jsonify({
+            'success': False,
+            'code': 'WORKSPACE_CONTRACT_INVALID',
+            'error': str(exc),
+        }), 503
+
 @app.after_request
 def _private_editor_headers(response):
     if request.path.startswith('/api/petek/'):
@@ -106,7 +143,15 @@ def _private_editor_headers(response):
     response.headers['X-Frame-Options']='DENY'
     response.headers['X-Content-Type-Options']='nosniff'
     response.headers['Referrer-Policy']='same-origin'
-    response.headers['Cache-Control']='private, no-store'
+    # Source-photo GETs are immutable-bytes reads for the current working
+    # pool. Allow a short browser cache so selecting the same template again
+    # does not re-download multi-megabyte photos; API/HTML responses remain
+    # no-store and authoritative. The editor intentionally does not request
+    # per-row thumbnails anymore.
+    if request.path.startswith('/api/petek/photo/'):
+        response.headers['Cache-Control']='private, max-age=60'
+    else:
+        response.headers['Cache-Control']='private, no-store'
     response.headers['Content-Security-Policy']="frame-ancestors 'none'"
     return response
 
@@ -309,8 +354,14 @@ def _require_migrated_database():
     independent_endpoints = (
         request.path == "/api/session/csrf"
         or request.path == "/api/petek/service-status"
+        or request.path == "/api/petek/client-diagnostic"
         or request.path.startswith("/api/tools/launch/")
         or request.path.startswith("/api/tools/status/")
+        or request.path == "/api/github-sync/info"
+        or request.path == "/api/github-sync/transfer"
+        or request.path.startswith("/api/github-sync/status/")
+        or request.path == "/api/inspection-package/start"
+        or request.path.startswith("/api/inspection-package/status/")
     )
     if request.path.startswith("/api/") and not independent_endpoints and not DB_STARTUP_AUDIT["ready"]:
         return jsonify({
@@ -322,12 +373,51 @@ def _require_migrated_database():
 
 @app.route('/')
 def index():
+    """Canonical V6 review surface for the Graphite workbench.
+
+    The old review page remains available at ``/legacy-review`` as a
+    reversible compatibility path, but the application entry point must not
+    open a second, visually unrelated editor.  Keeping the canonical surface
+    here also means the Tk/WebView bridge and a direct browser visit exercise
+    the same V6 data contract and controls.
+    """
+    return render_template('v6_review.html')
+
+
+@app.route('/favicon.ico')
+def favicon():
+    """Serve the same lightweight inline mark used by the Graphite shell.
+
+    Browsers request this resource even when a template has an inline icon;
+    returning an explicit asset avoids a noisy 403 in the loopback console.
+    """
+    svg = ("<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'>"
+           "<rect width='64' height='64' rx='14' fill='#131C2B'/>"
+           "<path d='M16 44 32 12l16 32h-9l-3-7H28l-3 7z' fill='#17D3A3'/>"
+           "</svg>")
+    return Response(svg, mimetype='image/svg+xml', headers={'Cache-Control': 'public, max-age=86400'})
+
+
+@app.route('/legacy-review')
+def legacy_review():
+    """Compatibility route for the pre-V6 review UI.
+
+    This route is intentionally not linked from the primary workbench.  It is
+    retained for rollback, diagnostics, and comparison while the V6 surface
+    becomes the single user-facing review design.
+    """
     return render_template('index.html')
 
 
 @app.route('/tools')
 def tools_center():
     return render_template('tools.html')
+
+
+@app.route('/review/v6')
+def review_v6():
+    # Backward-compatible alias for bookmarks and existing WebView callers.
+    return render_template('v6_review.html')
 
 
 _ALLOWED_USER_TOOLS = {
@@ -345,6 +435,292 @@ _ALLOWED_USER_TOOLS = {
     "golden_audit",
     "orientation_sort",
 }
+
+# The dual-source package is a reviewed read-only PowerShell utility.  Keep
+# its jobs separate from the Tk launcher registry: the web request returns
+# immediately and the worker owns the single concurrent-run lock.
+_INSPECTION_SCRIPT = Path(SOURCE_ROOT) / "PROFESYONEL_ARACLAR" / "CiftKaynakInceleme" / "CIFT_KAYNAK_INCELEME_HAZIRLA.ps1"
+_INSPECTION_ROOT = Path(SOURCE_ROOT).parent
+_INSPECTION_JOBS = {}
+_INSPECTION_LOCK = threading.Lock()
+_INSPECTION_ACTIVE = None
+
+
+def _inspection_worker(job_id, process):
+    lines = []
+    try:
+        stdout, stderr = process.communicate()
+        lines = (stdout or "").splitlines()
+        if stderr:
+            lines.extend((stderr or "").splitlines())
+        return_code = process.returncode
+    except Exception as exc:
+        return_code = -1
+        lines.append(str(exc))
+    output_path = next((line.split("=", 1)[1].strip()
+                        for line in lines if line.startswith("ZIP_OUTPUT=")), "")
+    ok = return_code == 0 and bool(output_path) and Path(output_path).is_file()
+    with _INSPECTION_LOCK:
+        job = _INSPECTION_JOBS.get(job_id)
+        if job is None:
+            return
+        job.update({
+            "status": "SUCCEEDED" if ok else "FAILED",
+            "return_code": return_code,
+            "output": lines[-80:],
+            "zip_path": output_path if ok else None,
+            "progress": "ZIP ve SHA256 hazırlandı; Explorer açıldı." if ok
+                        else "Paket oluşturulamadı.",
+            "error": None if ok else (lines[-1] if lines else "Bilinmeyen PowerShell hatası"),
+        })
+        global _INSPECTION_ACTIVE
+        if _INSPECTION_ACTIVE == job_id:
+            _INSPECTION_ACTIVE = None
+
+
+@app.route('/api/inspection-package/start', methods=['POST'])
+def api_inspection_package_start():
+    global _INSPECTION_ACTIVE
+    if os.name != "nt":
+        return jsonify({"success": False, "error": "Bu araç yalnızca Windows üzerinde çalışır."}), 503
+    with _INSPECTION_LOCK:
+        if _INSPECTION_ACTIVE:
+            active = _INSPECTION_JOBS.get(_INSPECTION_ACTIVE, {})
+            return jsonify({"success": False, "code": "INSPECTION_BUSY",
+                            "error": "Çift Kaynak İnceleme paketi zaten hazırlanıyor.",
+                            "job_id": _INSPECTION_ACTIVE,
+                            "status": active.get("status", "RUNNING")}), 409
+        if not _INSPECTION_SCRIPT.is_file():
+            return jsonify({"success": False, "error": "Çift Kaynak İnceleme betiği bulunamadı."}), 500
+        job_id = uuid.uuid4().hex
+        command = ["powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive",
+                   "-ExecutionPolicy", "Bypass", "-File", str(_INSPECTION_SCRIPT),
+                   "-Root", str(_INSPECTION_ROOT)]
+        kwargs = {"cwd": str(_INSPECTION_SCRIPT.parent), "stdout": subprocess.PIPE,
+                  "stderr": subprocess.STDOUT, "text": True, "encoding": "utf-8",
+                  "errors": "replace"}
+        kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        try:
+            process = subprocess.Popen(command, **kwargs)
+        except OSError as exc:
+            return jsonify({"success": False, "error": "PowerShell başlatılamadı: " + str(exc)}), 503
+        _INSPECTION_ACTIVE = job_id
+        _INSPECTION_JOBS[job_id] = {
+            "status": "RUNNING", "started_at": time.time(),
+            "progress": "İki kaynak ağacı taranıyor ve ZIP hazırlanıyor...", "output": [],
+        }
+    threading.Thread(target=_inspection_worker, args=(job_id, process), daemon=True,
+                     name="dual-source-inspection").start()
+    return jsonify({"success": True, "job_id": job_id, "status": "RUNNING"}), 202
+
+
+@app.route('/api/inspection-package/status/<job_id>')
+def api_inspection_package_status(job_id):
+    with _INSPECTION_LOCK:
+        job = _INSPECTION_JOBS.get(str(job_id))
+        if job is None:
+            return jsonify({"success": False, "error": "İnceleme paketi işi bulunamadı."}), 404
+        return jsonify({"success": True, "job_id": str(job_id), **job})
+
+# GitHub aktarımı, the previously reviewed PowerShell mechanism only.  The
+# web endpoint starts it in the background; it never stages files or changes
+# the checkout's index/branch itself.
+_GITHUB_SYNC_SCRIPT = Path(SOURCE_ROOT) / "CODEX_GITHUB_CANLI_COMMIT_ESITLE.ps1"
+_GITHUB_SYNC_LAUNCHER = Path(SOURCE_ROOT) / "CODEX_GITHUB_CANLI_COMMIT_ESITLE.bat"
+_GITHUB_SYNC_REMOTE = "https://github.com/oguz13-tech/gorsel-mockup-automation-src.git"
+_GITHUB_SYNC_BRANCH = "codex/active-source-sync-20261103"
+_GITHUB_SYNC_PR = "https://github.com/oguz13-tech/gorsel-mockup-automation-src/pull/83"
+_GITHUB_SYNC_JOBS = {}
+_GITHUB_SYNC_LOCK = threading.Lock()
+_GITHUB_SYNC_ACTIVE = None
+
+
+def _redact_sync_text(value):
+    """Keep PowerShell/Git diagnostics useful without echoing credentials."""
+    text = str(value or "")
+    patterns = (
+        r"(?i)(gh[pousr]_[A-Za-z0-9_\-]{20,})",
+        r"(?i)(github_pat_[A-Za-z0-9_\-]{20,})",
+        r"(?i)(sk-(?:proj-)?[A-Za-z0-9_\-]{24,})",
+        r"(?i)(AIza[0-9A-Za-z_\-]{30,})",
+        r"(?i)(AKIA[0-9A-Z]{16})",
+        r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----",
+    )
+    for pattern in patterns:
+        text = re.sub(pattern, "[REDACTED]", text)
+    return text
+
+
+def _github_sync_git(*args):
+    """Read-only Git query used for the confirmation summary."""
+    try:
+        result = subprocess.run(
+            ["git", "-C", SOURCE_ROOT, *args],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=8, check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    return str(result.stdout or "").strip() if result.returncode == 0 else ""
+
+
+def _github_sync_info():
+    head = _github_sync_git("rev-parse", "HEAD")
+    subject = _github_sync_git("show", "-s", "--format=%s", "HEAD")
+    branch = _github_sync_git("symbolic-ref", "--quiet", "--short", "HEAD") or "DETACHED_HEAD"
+    status = _github_sync_git("status", "--porcelain")
+    dirty_count = len([line for line in status.splitlines() if line.strip()])
+    return {
+        "success": True,
+        "connection": {
+            "status": "HEDEF TANIMLI",
+            "repository": _GITHUB_SYNC_REMOTE,
+            "branch": _GITHUB_SYNC_BRANCH,
+            "pull_request": _GITHUB_SYNC_PR,
+            "message": "Mevcut güvenli DRAFT GitHub senkronizasyon hedefi; bağlantı aktarım öncesi doğrulanır",
+        },
+        "local_commit": {
+            "sha": head,
+            "short_sha": head[:12] if head else "BULUNAMADI",
+            "subject": _redact_sync_text(subject) or "Yerel commit okunamadı",
+            "branch": branch,
+            "working_tree_changes": dirty_count,
+        },
+        "safety": {
+            "committed_only": True,
+            "auto_commit": False,
+            "index_or_branch_mutated": False,
+            "force_push_or_merge": False,
+        },
+    }
+
+
+def _github_sync_progress(line):
+    text = _redact_sync_text(line).strip()
+    if not text:
+        return "GitHub aktarımı çalışıyor..."
+    if text.startswith("[") and "]" in text:
+        return text
+    if text.startswith("GITHUB ") or text.startswith("GitHub:"):
+        return text
+    return "GitHub aktarımı: " + text
+
+
+def _github_sync_worker(job_id, process):
+    lines = []
+    try:
+        for raw in process.stdout:
+            line = _redact_sync_text(raw.rstrip("\r\n"))
+            if line:
+                lines.append(line)
+                with _GITHUB_SYNC_LOCK:
+                    job = _GITHUB_SYNC_JOBS.get(job_id)
+                    if job:
+                        job["output"] = lines[-80:]
+                        job["progress"] = _github_sync_progress(line)
+        return_code = process.wait()
+    except Exception as exc:
+        return_code = -1
+        lines.append(_redact_sync_text(str(exc)))
+
+    joined = "\n".join(lines)
+    commit_match = re.search(r"CODEX_SYNC_COMMIT_SHA=([0-9a-f]{40,64})", joined, re.I)
+    result_match = re.search(r"CODEX_SYNC_RESULT=(COMMITTED|UNCHANGED)", joined, re.I)
+    pr_match = re.search(r"CODEX_SYNC_PR_URL=(https?://\S+)", joined, re.I)
+    ok = return_code == 0
+    with _GITHUB_SYNC_LOCK:
+        job = _GITHUB_SYNC_JOBS.get(job_id)
+        if not job:
+            return
+        job.update({
+            "status": "SUCCEEDED" if ok else "FAILED",
+            "return_code": return_code,
+            "output": lines[-80:],
+            "progress": "Aktarım tamamlandı." if ok else "Aktarım başarısız oldu.",
+            "result": result_match.group(1).upper() if result_match else None,
+            "commit_sha": commit_match.group(1) if commit_match else None,
+            "pull_request": pr_match.group(1).rstrip("`.,") if pr_match else _GITHUB_SYNC_PR,
+            "technical_report": {
+                "job_id": job_id,
+                "return_code": return_code,
+                "result": result_match.group(1).upper() if result_match else None,
+                "commit_sha": commit_match.group(1) if commit_match else None,
+                "output_tail": lines[-40:],
+                "error": lines[-1] if (not ok and lines) else None,
+                "safe_mechanism": "CODEX_GITHUB_CANLI_COMMIT_ESITLE.ps1",
+            },
+        })
+        report = dict(job["technical_report"])
+        report_path = Path(tempfile.gettempdir()) / ("codex_github_sync_" + job_id + ".json")
+        try:
+            report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+            job["technical_report_path"] = str(report_path)
+        except OSError:
+            job["technical_report_path"] = None
+        global _GITHUB_SYNC_ACTIVE
+        if _GITHUB_SYNC_ACTIVE == job_id:
+            _GITHUB_SYNC_ACTIVE = None
+
+
+@app.route('/api/github-sync/info')
+def api_github_sync_info():
+    return jsonify(_github_sync_info())
+
+
+@app.route('/api/github-sync/transfer', methods=['POST'])
+def api_github_sync_transfer():
+    payload = request.get_json(silent=True) or {}
+    if payload.get("confirmed") is not True:
+        return jsonify({"success": False, "error": "Aktarım için kullanıcı onayı gerekli.", "code": "CONFIRMATION_REQUIRED"}), 400
+    global _GITHUB_SYNC_ACTIVE
+    with _GITHUB_SYNC_LOCK:
+        if _GITHUB_SYNC_ACTIVE:
+            active = _GITHUB_SYNC_JOBS.get(_GITHUB_SYNC_ACTIVE, {})
+            return jsonify({"success": False, "error": "Başka bir GitHub aktarımı zaten çalışıyor.", "code": "SYNC_BUSY", "job_id": _GITHUB_SYNC_ACTIVE, "status": active.get("status", "RUNNING")}), 409
+        if not _GITHUB_SYNC_SCRIPT.is_file() or not _GITHUB_SYNC_LAUNCHER.is_file():
+            return jsonify({"success": False, "error": "Paket içi GitHub gönderim betiği bulunamadı.", "code": "SYNC_SCRIPT_MISSING"}), 500
+        job_id = uuid.uuid4().hex
+        env = os.environ.copy()
+        env["CODEX_GITHUB_SYNC_UI"] = "1"
+        kwargs = {
+            "cwd": SOURCE_ROOT,
+            "env": env,
+            "stdout": subprocess.PIPE,
+            "stderr": subprocess.STDOUT,
+            "text": True,
+            "encoding": "utf-8",
+            "errors": "replace",
+        }
+        if os.name == "nt":
+            kwargs["creationflags"] = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        try:
+            if os.name == "nt":
+                # Use the shipped launcher so manual and UI transfers execute
+                # precisely the same reviewed PowerShell mechanism.
+                command = ["cmd.exe", "/d", "/c", str(_GITHUB_SYNC_LAUNCHER)]
+            else:
+                # Keeps contract tests/dev diagnostics usable on non-Windows;
+                # production distribution runs the .bat path above.
+                command = ["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(_GITHUB_SYNC_SCRIPT)]
+            process = subprocess.Popen(command, **kwargs)
+        except OSError as exc:
+            return jsonify({"success": False, "error": "PowerShell gönderim motoru başlatılamadı: " + _redact_sync_text(exc), "code": "SYNC_PROCESS_START_FAILED"}), 503
+        _GITHUB_SYNC_ACTIVE = job_id
+        _GITHUB_SYNC_JOBS[job_id] = {
+            "status": "RUNNING", "started_at": time.time(),
+            "progress": "Güvenli GitHub aktarımı başlatıldı...", "output": [],
+        }
+    threading.Thread(target=_github_sync_worker, args=(job_id, process), daemon=True, name="github-safe-sync").start()
+    return jsonify({"success": True, "job_id": job_id, "status": "RUNNING"}), 202
+
+
+@app.route('/api/github-sync/status/<job_id>')
+def api_github_sync_status(job_id):
+    with _GITHUB_SYNC_LOCK:
+        job = _GITHUB_SYNC_JOBS.get(str(job_id))
+        if not job:
+            return jsonify({"success": False, "error": "GitHub aktarım kaydı bulunamadı."}), 404
+        return jsonify({"success": True, "job_id": str(job_id), **job})
 
 
 # Launch receipt is not proof a GUI exists. A temporary readiness marker is
@@ -423,6 +799,40 @@ def api_launch_user_tool(tool_name):
 def api_ayarlar():
     if request.method == 'GET':
         data = annotate_review_metadata(get_all_ayarlar())
+        # Read-only source presence metadata keeps historical staging rows
+        # from appearing as actionable templates without changing the catalog.
+        # Resolve all catalog entries from one directory index per pool.  The
+        # previous per-template lookup re-scanned the same category directory
+        # for every missing/alternate extension; on the live catalog that
+        # made this read-only endpoint take tens of seconds and queued the
+        # image request made immediately after selecting a template.
+        working_index = _build_image_asset_index(
+            os.path.join(BASE_DIR, "2_SABLON_HAVUZU")
+        )
+        backup_index = _build_image_asset_index(
+            os.path.join(BASE_DIR, "2_SABLON_HAVUZU_ORIJINAL_YEDEK")
+        )
+        categories = data.get("kategoriler", {}) if isinstance(data, dict) else {}
+        for category, category_data in categories.items():
+            templates = category_data.get("sablonlar", {}) if isinstance(category_data, dict) else {}
+            if not isinstance(templates, dict):
+                continue
+            for template_name, template_data in templates.items():
+                if not isinstance(template_data, dict):
+                    continue
+                active = _resolve_indexed_image_asset(
+                    working_index,
+                    os.path.join(BASE_DIR, "2_SABLON_HAVUZU"),
+                    category,
+                    template_name,
+                )
+                backup = _resolve_indexed_image_asset(
+                    backup_index,
+                    os.path.join(BASE_DIR, "2_SABLON_HAVUZU_ORIJINAL_YEDEK"),
+                    category,
+                    template_name,
+                )
+                template_data["_source_map"] = {"active": bool(active), "backup": bool(backup)}
         return jsonify(data)
 
     elif request.method == 'POST':
@@ -553,6 +963,86 @@ def api_izole_anlik_beyazlat():
     except Exception as error:
         logger.exception("8080 izole onizleme basarisiz")
         return jsonify({"success":False,"error":str(error)}),500
+
+
+@app.route('/api/templates/placement-preview', methods=['POST'])
+@template_guard("preview-placement", source="headers")
+def api_placement_preview():
+    """Production-identical placement preview; fully in-memory and read-only.
+
+    The uploaded design is warped with the very same helper the batch engine
+    uses (``unified_batch._render_legacy_six_cover``) with the template's
+    approved quad, print mask, physical aspect and glass corner radius.
+    No file, mask, approval, DB row or production artifact is created or
+    changed; the returned PNG exists only in the HTTP response.
+    """
+    import base64 as _base64
+    from core.template_identity import CATEGORY_PREFIXES
+    merkez_dir = os.path.join(SOURCE_ROOT, "MERKEZ")
+    if merkez_dir not in sys.path:
+        sys.path.insert(0, merkez_dir)
+    from PETEK_V3 import engine as _engine
+    from URETIM_V4 import unified_batch as _ub
+    try:
+        category = str(request.headers.get("X-Active-Category", "")).strip()
+        template = str(request.headers.get("X-Active-Template", "")).strip()
+        if category not in CATEGORY_PREFIXES or Path(template).name != template or not template:
+            return jsonify({"success": False, "error": "INVALID_PREVIEW_TEMPLATE"}), 400
+        if "file" not in request.files:
+            return jsonify({"success": False, "error": "DESIGN_FILE_REQUIRED"}), 400
+        upload = request.files["file"]
+        raw = upload.read()
+        if not raw or len(raw) > 8_000_000:
+            return jsonify({"success": False, "error": "DESIGN_FILE_INVALID"}), 422
+        art = cv2.imdecode(np.frombuffer(raw, dtype=np.uint8), cv2.IMREAD_COLOR)
+        if art is None or min(art.shape[:2]) < 100:
+            return jsonify({"success": False, "error": "DESIGN_FILE_UNREADABLE"}), 422
+        placement = str(request.form.get("placement", "cover") or "cover")
+        if placement not in ("cover", "contain"):
+            return jsonify({"success": False, "error": "PLACEMENT_MODE_INVALID"}), 400
+        working_root = os.path.abspath(os.path.join(BASE_DIR, "2_SABLON_HAVUZU"))
+        img_path = _find_image_asset(working_root, category, template)
+        if img_path is None:
+            return jsonify({"success": False, "error": "WORKING_IMAGE_NOT_FOUND"}), 404
+        scene = _engine.read_bgr(img_path)
+        row = (get_all_ayarlar().get("kategoriler", {}).get(category, {})
+               .get("sablonlar", {}).get(template, {}))
+        if not isinstance(row, dict):
+            return jsonify({"success": False, "error": "TEMPLATE_NOT_FOUND"}), 404
+        quad = row.get("koseler") or row.get("corners")
+        if not (isinstance(quad, list) and len(quad) == 4 and all(
+                isinstance(p, (list, tuple)) and len(p) == 2 for p in quad)):
+            return jsonify({"success": False, "error": "APPROVED_QUAD_REQUIRED"}), 422
+        quad = [[float(p[0]), float(p[1])] for p in quad]
+        aspect = float(row.get("physical_aspect") or 0)
+        if not (0.12 <= aspect <= 12):
+            xs = [p[0] for p in quad]; ys = [p[1] for p in quad]
+            w = max(xs) - min(xs); h = max(ys) - min(ys)
+            aspect = float(w / h) if h else 0.0
+        if not (0.12 <= aspect <= 12):
+            return jsonify({"success": False, "error": "PHYSICAL_ASPECT_INVALID"}), 422
+        mask = _ub._build_legacy_category_mask(scene, quad, row)
+        corner_radius = float(row.get("glass_corner_radius") or 0.008)
+        picture, qa = _ub._render_legacy_six_cover(
+            img_path, None, quad, mask, aspect,
+            placement=placement, lighting="natural",
+            category=category, corner_radius=corner_radius,
+            glass_effect="on", marketplace=True, sunlight_profile="off",
+            scene_override=scene, art_override=art,
+        )
+        ok, png = cv2.imencode(".png", picture, [cv2.IMWRITE_PNG_COMPRESSION, 3])
+        if not ok:
+            return jsonify({"success": False, "error": "PREVIEW_ENCODE_FAILED"}), 500
+        return jsonify({
+            "success": True, "preview_only": True, "working_modified": False,
+            "preview": "data:image/png;base64," + _base64.b64encode(png.tobytes()).decode("ascii"),
+            "quality": qa,
+        })
+    except ValueError as error:
+        return jsonify({"success": False, "error": str(error)}), 422
+    except Exception as error:
+        logger.exception("placement preview basarisiz")
+        return jsonify({"success": False, "error": str(error)}), 500
 
 
 @app.route('/preview/<category>/<template>',methods=['GET'])
@@ -1851,6 +2341,82 @@ def _find_image_asset(root: str, category: str, template_name: str):
         extensions = ", ".join(
             sorted({path.suffix.casefold() for path in matches})
         )
+        names = ", ".join(path.name for path in matches)
+        raise ValueError(
+            "AYNI İSİM, FARKLI UZANTI belirsizliği: "
+            f"{category} / {canonical_identity(template_name)}. "
+            f"Uzantılar: {extensions}. Dosyalar: {names}. "
+            "Exact istenen dosya bulunmadığı için sistem seçim yapmadı."
+        )
+    return None
+
+
+def _build_image_asset_index(root: str):
+    """Build a read-only one-level image index for a template pool.
+
+    The review catalog contains hundreds of records and many entries use a
+    legacy extension that differs from the DB filename.  ``same_stem_files``
+    is intentionally strict, but calling it once per record turns a cheap
+    catalog read into an avoidable O(records * files) directory scan.  This
+    index keeps the same exact-name/unique-stem semantics while scanning each
+    category directory only once.  It is request-local so newly arrived or
+    replaced files are visible on the next request without stale cache state.
+    """
+    root_path = Path(os.path.abspath(str(root)))
+    result = {}
+    if not root_path.is_dir():
+        return result
+
+    image_exts = {".png", ".jpg", ".jpeg", ".webp", ".avif", ".bmp"}
+    for category_dir in root_path.iterdir():
+        if not category_dir.is_dir():
+            continue
+        exact = {}
+        stems = {}
+        try:
+            children = tuple(category_dir.iterdir())
+        except OSError:
+            continue
+        for path in children:
+            try:
+                if not path.is_file():
+                    continue
+            except OSError:
+                continue
+            exact[path.name] = str(path)
+            if path.suffix.casefold() not in image_exts:
+                continue
+            stems.setdefault(canonical_identity(path.name), []).append(path)
+        result[category_dir.name] = {"exact": exact, "stems": stems}
+    return result
+
+
+def _resolve_indexed_image_asset(index, root: str, category: str, template_name: str):
+    """Resolve one catalog asset from ``_build_image_asset_index`` safely."""
+    import urllib.parse
+
+    category = urllib.parse.unquote(str(category or ""))
+    template_name = urllib.parse.unquote(str(template_name or ""))
+    safe_root = os.path.abspath(str(root))
+    # Keep the same traversal checks as the single-lookup route, even though
+    # the values normally originate from the DB catalog.
+    category_dir = Path(
+        _safe_under_root(safe_root, category, label="gorsel kategorisi")
+    )
+    _safe_under_root(str(category_dir), template_name, label="gorsel")
+
+    bucket = index.get(category)
+    if not bucket:
+        return None
+    exact = bucket["exact"].get(template_name)
+    if exact and os.path.isfile(exact):
+        return exact
+
+    matches = bucket["stems"].get(canonical_identity(template_name), [])
+    if len(matches) == 1:
+        return str(matches[0])
+    if len(matches) > 1:
+        extensions = ", ".join(sorted({path.suffix.casefold() for path in matches}))
         names = ", ".join(path.name for path in matches)
         raise ValueError(
             "AYNI İSİM, FARKLI UZANTI belirsizliği: "
@@ -4099,6 +4665,24 @@ def serve_temp_files(filename):
 
 if __name__ == '__main__':
     try:
+        _WORKSPACE_CONTRACT = resolve_contract(
+            code_root=SOURCE_ROOT,
+            runtime_root=BASE_DIR,
+            validate=True,
+        )
+        BASE_DIR = os.fspath(_WORKSPACE_CONTRACT.runtime_root)
+        os.environ['MOCKUP_RUNTIME_WORKSPACE'] = BASE_DIR
+        print(
+            'Çalışma alanı sözleşmesi doğrulandı: '
+            f'kod={_WORKSPACE_CONTRACT.code_root} · '
+            f'runtime={_WORKSPACE_CONTRACT.runtime_root} · '
+            f'db={_WORKSPACE_CONTRACT.database}'
+        )
+    except WorkspaceContractError as exc:
+        print(f'BAŞLATMA ENGELLENDİ: {exc}', file=sys.stderr)
+        raise SystemExit(2)
+
+    try:
         identity_history = backfill_registry(Path(BASE_DIR))
         print(
             "Sablon numara gecmisi korumasi aktif: "
@@ -4138,4 +4722,9 @@ if __name__ == '__main__':
             lambda: webbrowser.open(bind_url + "/"),
         ).start()
     debug_enabled = str(os.environ.get("MOCKUP_FLASK_DEBUG", "")).strip().lower() in {"1", "true", "yes", "on"}
-    app.run(host='127.0.0.1', port=bind_port, debug=debug_enabled, use_reloader=False)
+    # The editor may issue independent photo/detail reads while the operator
+    # selects a template. Threaded loopback serving prevents one read from
+    # serially blocking the selected photo/detail request. This remains bound
+    # to 127.0.0.1 and does not expose the service to the network.
+    app.run(host='127.0.0.1', port=bind_port, debug=debug_enabled,
+            use_reloader=False, threaded=True)

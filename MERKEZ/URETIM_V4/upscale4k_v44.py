@@ -127,6 +127,7 @@ def process(
     model: str = "photo", exe: Path | str | None = None,
     cancel: threading.Event | None = None,
     notify: Callable[[str], None] | None = None,
+    progress: Callable[[dict], None] | None = None,
 ) -> dict:
     """Enhance only this batch's *newly rendered* SHA-verified images.
 
@@ -147,7 +148,20 @@ def process(
             raise UpscaleError(f"4K klasörü sembolik bağlantı olamaz: {base}")
         base.mkdir(parents=True, exist_ok=True)
     result = {"status": "DONE", "upscaled": 0, "failed": 0, "reused": 0, "errors": [], "items": [], "report": ""}
-    for row in records:
+    progress = progress or (lambda _: None)
+
+    def _emit(index: int, operation: str, outcome: str) -> None:
+        # Canlı ilerleme hiçbir zaman 4K işini durdurmamalı.
+        try:
+            progress({"index": int(index), "total": len(records),
+                      "operation": str(operation), "outcome": str(outcome),
+                      "upscaled": result["upscaled"], "reused": result["reused"],
+                      "failed": result["failed"]})
+        except Exception:
+            pass
+
+    _emit(0, "4K kuyruğu hazırlanıyor", "running")
+    for index, row in enumerate(records, 1):
         if cancel is not None and cancel.is_set():
             result["status"] = "STOPPED"
             break
@@ -176,6 +190,7 @@ def process(
                     raise UpscaleError("4K makbuz/SHA tutarsız; eski dosya korunuyor, inceleme gerekli.")
                 result["reused"] += 1
                 result["items"].append(metadata)
+                _emit(index, f"{row.get('sku', '?')} · mevcut 4K yeniden kullanıldı", "skipped")
                 continue
             with tempfile.TemporaryDirectory(prefix="upscale_", dir=output_root) as scratch:
                 trial = Path(scratch) / "enhanced.png"
@@ -215,10 +230,12 @@ def process(
             result["items"].append(metadata)
             result["upscaled"] += 1
             notify(f"4K hazır: {row['sku']} → {output.name}")
+            _emit(index, f"{row.get('sku', '?')} · {output.name}", "success")
         except (OSError, ValueError, KeyError, UpscaleError, subprocess.TimeoutExpired) as exc:
             result["failed"] += 1
             result["errors"].append({"sku": str(row.get("sku", "?")), "reason": str(exc)})
             notify(f"4K ATLANDI {row.get('sku', '?')}: {exc}")
+            _emit(index, f"{row.get('sku', '?')} · hata · {exc}", "failed")
     if result["failed"]:
         result["status"] = "PARTIAL_4K" if result["status"] != "STOPPED" else "STOPPED"
     # 4K verification remains in the per-output JSON receipts. The unified

@@ -9,9 +9,9 @@ import json
 # Shared purple design tokens. Localized and read-only; missing/corrupt JSON
 # safely falls back to the same built-in palette without affecting production.
 _FALLBACK = {
-    'background':'#111827','sidebar':'#0E1424','panel':'#1D2638',
-    'raised':'#29344B','border':'#384466','accent':'#7A4DFA',
-    'accent_hover':'#6239C7','text':'#F4F6FF','muted':'#C7D3E8'
+    'background':'#0B101B','sidebar':'#0F1622','panel':'#131C2B',
+    'raised':'#182238','border':'#22304A','accent':'#17D3A3',
+    'accent_hover':'#0FAC80','text':'#E9EFF9','muted':'#93A6C4'
 }
 try:
     _raw = json.loads(Path(__file__).with_name('ui_mor_tokens_vnext.json').read_text(encoding='utf-8'))
@@ -37,14 +37,14 @@ def apply_dark_theme(root: tk.Misc):
     st.configure('.', background=BG, foreground=FG, font=('Segoe UI', 11))
     for kind in ('TFrame', 'TLabelframe', 'TLabel', 'TCheckbutton', 'TRadiobutton'):
         st.configure(kind, background=BG, foreground=FG)
-    st.map('TCheckbutton', foreground=[('disabled','#c4c8d8'),('active','#f1f0ff'),('pressed','#ffffff')],
+    st.map('TCheckbutton', foreground=[('disabled','#93A6C4'),('active','#93A6C4'),('pressed','#ffffff')],
            background=[('disabled',BG),('active',BG),('pressed',BG)],
            indicatorbackground=[('disabled',ENTRY),('active',ENTRY)])
-    st.map('TRadiobutton', foreground=[('disabled','#c4c8d8'),('active','#f1f0ff')],
+    st.map('TRadiobutton', foreground=[('disabled','#93A6C4'),('active','#93A6C4')],
            background=[('disabled',BG),('active',BG)])
     st.configure('TLabelframe.Label', background=BG, foreground=FG)
     st.configure('TButton', background=ENTRY, foreground=FG, borderwidth=1, padding=(12, 9), relief='flat')
-    st.map('TButton', background=[('disabled', PANEL), ('pressed', ACCENT), ('active', HOVER)], foreground=[('disabled', MUTED), ('active', '#ffffff')])
+    st.map('TButton', background=[('disabled', PANEL), ('pressed', ACCENT), ('active', HOVER)], foreground=[('disabled', MUTED), ('active', '#04140E')])
     st.configure('TEntry', fieldbackground=ENTRY, foreground=FG, insertcolor=FG, bordercolor=ENTRY, padding=8)
     st.map('TEntry', fieldbackground=[('readonly', PANEL), ('disabled', PANEL)], foreground=[('readonly', FG)])
     st.configure('TCombobox', fieldbackground=ENTRY, background=ENTRY, foreground=FG, arrowcolor=FG, padding=8)
@@ -52,12 +52,26 @@ def apply_dark_theme(root: tk.Misc):
     st.configure('Vertical.TScrollbar', background=ENTRY, troughcolor=BG, arrowcolor=FG)
     st.configure('Horizontal.TScrollbar', background=ENTRY, troughcolor=BG, arrowcolor=FG)
     st.configure('TSeparator', background=ENTRY)
-    st.configure('Premium.TLabelframe', background=PANEL, foreground=FG, bordercolor='#56606d')
-    st.configure('Premium.TLabelframe.Label', background=PANEL, foreground='#e2d9ff', font=('Segoe UI', 12, 'bold'))
-    st.configure('Premium.Primary.TButton', background=ACCENT, foreground='#ffffff', font=('Segoe UI', 11, 'bold'), padding=(15, 11))
-    st.map('Premium.Primary.TButton', background=[('active', '#a77cff'), ('pressed', '#6c3fce')])
+    # ttk.Treeview (figure: lists + log panes in the new screens)
+    st.configure('Treeview', background=PANEL, fieldbackground=PANEL, foreground=FG,
+                 rowheight=26, borderwidth=0)
+    st.configure('Treeview.Heading', background=ENTRY, foreground=FG, relief='flat', padding=(6, 4))
+    st.map('Treeview', background=[('selected', ACCENT)], foreground=[('selected', '#04140E')])
+    st.configure('TNotebook', background=BG, borderwidth=0)
+    st.configure('TNotebook.Tab', background=ENTRY, foreground=FG, padding=(12, 7))
+    st.map('TNotebook.Tab', background=[('selected', ACCENT)], foreground=[('selected', '#04140E')])
+    st.configure('Premium.TLabelframe', background=PANEL, foreground=FG, bordercolor='#22304A')
+    st.configure('Premium.TLabelframe.Label', background=PANEL, foreground='#E9EFF9', font=('Segoe UI', 12, 'bold'))
+    st.configure('Premium.Primary.TButton', background=ACCENT, foreground='#04140E',
+                 font=('Segoe UI', 11, 'bold'), padding=(18, 11), borderwidth=0,
+                 relief='flat', anchor='center')
+    # Explicit disabled colors prevent ttk from leaking the platform's
+    # default green/active map into the primary action while a batch runs.
+    st.map('Premium.Primary.TButton',
+           background=[('disabled', PANEL), ('pressed', '#17D3A3'), ('active', '#0FAC80')],
+           foreground=[('disabled', MUTED), ('active', '#04140E')])
     st.configure('Premium.Secondary.TButton', background=ENTRY, foreground=FG, padding=(12, 10))
-    st.map('Premium.Secondary.TButton', background=[('active', '#4e5664')])
+    st.map('Premium.Secondary.TButton', background=[('active', '#1F2C44')])
     root.configure(background=BG)
     root.option_add('*TCombobox*Listbox.background', ENTRY)
     root.option_add('*TCombobox*Listbox.foreground', FG)

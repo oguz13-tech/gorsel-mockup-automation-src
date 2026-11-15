@@ -13,7 +13,7 @@ def test_new_premium_dashboard_with_legacy_fallback():
                    'self.advanced_panel'):
         assert target.replace('self.','app.') in premium
     assert 'Şablonları İncele ve Onayla' in premium
-    assert 'Magenta LAB' in premium and 'open_magenta_replace_v486' in premium
+    assert 'Dosya Denetimi' in premium
 
 
 def test_web_theme_and_all_original_controls_remain():

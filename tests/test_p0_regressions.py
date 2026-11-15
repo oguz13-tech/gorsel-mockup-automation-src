@@ -44,6 +44,10 @@ class TestSecretsRemoved(unittest.TestCase):
         self.assertGreater(len(json_files), 0, "No ayarlar JSON files found")
 
         for jf in json_files:
+            # Yerel gerçek anahtar dosyası .gitignore ile kapsam dışında
+            # tutulur (ayarlar.local.json); depoya girecek dosyalar denetlenir.
+            if os.path.basename(jf) == 'ayarlar.local.json':
+                continue
             with open(jf, "r", encoding="utf-8") as f:
                 data = json.load(f)
             cloud = data.get("bulut_ayarlari", {})

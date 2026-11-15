@@ -1,0 +1,241 @@
+/* ============================================================
+   V6 GRAPHITE / AURORA — Birleşik Arayüz Dili (tüm uygulama)
+   v6_review.css tasarım belirteçleriyle birebir aynı palet.
+   Bu dosya tüm CSS'lerden SONRA yüklenir; son söz onundur.
+   Yalnızca sunum; üretim/geometri/maske mantığına dokunmaz.
+   ============================================================ */
+:root{
+  --v6-bg0:#0B101B; --v6-bg1:#0F1622; --v6-panel:#131C2B; --v6-panel2:#182238; --v6-panel3:#1F2C44;
+  --v6-border:#22304A; --v6-border-soft:#1A2639;
+  --v6-text:#E9EFF9; --v6-muted:#93A6C4; --v6-faint:#66789B;
+  --v6-accent:#17D3A3; --v6-accent-d:#0B7A5F; --v6-accent-soft:rgba(23,211,163,.12);
+  --v6-blue:#5AA9FF; --v6-amber:#F0B84C; --v6-red:#EF6A73; --v6-green:#3FD98A; --v6-purple:#8A7CF0;
+  --v6-radius:10px; --v6-radius-sm:8px;
+  color-scheme:dark;
+}
+
+/* ---------- Sahne / arka plan ---------- */
+body, #main, #petekV477Editor{
+  background:var(--v6-bg0) !important;
+  color:var(--v6-text);
+  font-family:'Segoe UI Variable','Segoe UI',system-ui,-apple-system,'Helvetica Neue',Arial,sans-serif;
+}
+#canvas-container{
+  background:#080C14 !important;
+  background-image:radial-gradient(1200px 600px at 50% 38%, rgba(31,44,68,.35), transparent 65%) !important;
+}
+#petekV477Drawing{
+  background:#080C14 !important;
+  background-image:radial-gradient(1000px 500px at 50% 40%, rgba(31,44,68,.28), transparent 65%) !important;
+}
+#sidebar, .petek-v477-list-pane.in-sidebar{
+  background:var(--v6-bg1) !important;
+  border-right:1px solid var(--v6-border-soft) !important;
+}
+#toolbar, .petek-v477-head, .petek-v477-selectrow, #right-toolbar, .petek-v477-tools{
+  background:var(--v6-panel) !important;
+  border-color:var(--v6-border-soft) !important;
+}
+.resizer{ background:var(--v6-border-soft) !important; border-color:var(--v6-border) !important; }
+.resizer:hover, .resizer.active{ background:var(--v6-accent) !important; }
+
+/* ---------- Butonlar (tamamı) ---------- */
+button, input[type=button], input[type=submit], input[type=reset], .btn, .tools-center-button{
+  border-radius:var(--v6-radius-sm) !important;
+  font-family:'Segoe UI Variable','Segoe UI',system-ui,sans-serif !important;
+}
+button:not(:disabled):hover{ border-color:var(--v6-panel3); }
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible,
+textarea:focus-visible, [role=tab]:focus-visible, .ui-card-drag:focus-visible{
+  outline:2px solid var(--v6-accent) !important;
+  outline-offset:2px !important;
+}
+button:disabled{ opacity:.5 !important; cursor:not-allowed !important; }
+button.success, .v46-approve-btn, #bulkApproveButton, #petekV498BulkApprove, .petek-v498-approve{
+  background:linear-gradient(135deg,#1FC48D,#0E8F6E) !important;
+  border:1px solid #2BB890 !important;
+  color:#04140E !important;
+  font-weight:700 !important;
+}
+button.success:hover, .v46-approve-btn:hover, #bulkApproveButton:hover{
+  background:linear-gradient(135deg,#27D69C,#11996F) !important;
+}
+.tools-center-button{
+  background:var(--v6-panel2) !important;
+  border:1px solid rgba(138,124,240,.55) !important;
+  color:#CFC8FF !important;
+}
+.tools-center-button:hover{ background:var(--v6-panel3) !important; border-color:var(--v6-purple) !important; }
+
+/* ---------- Girdi alanları ---------- */
+input[type=text], input[type=number], input[type=search], input[type=password],
+input[type=email], input[type=url], select, textarea{
+  background:var(--v6-panel) !important;
+  border:1px solid var(--v6-border) !important;
+  color:var(--v6-text) !important;
+  border-radius:var(--v6-radius-sm) !important;
+  accent-color:var(--v6-accent);
+}
+input::placeholder, textarea::placeholder{ color:var(--v6-faint) !important; opacity:1; }
+input:focus-visible, select:focus-visible, textarea:focus-visible{
+  border-color:var(--v6-accent) !important;
+  box-shadow:0 0 0 2px var(--v6-accent-soft) !important;
+}
+input[type=checkbox], input[type=radio]{ accent-color:var(--v6-accent) !important; }
+select option{ background:var(--v6-panel); color:var(--v6-text); }
+
+/* ---------- Kartlar / paneller / ipuçları ---------- */
+.panel-hint, .status-legend, .notice, .tool-note{
+  color:var(--v6-muted) !important;
+  border-color:var(--v6-border) !important;
+  border-radius:var(--v6-radius) !important;
+}
+.panel-hint, .status-legend, .notice, .v46-alignment, .v46-secondary-tools,
+#bulk-select-panel, .v499-status-filter, .advanced-tools, .petek-v484-bulk,
+.petek-v484-summary, .petek-v484-legend, #bulk-select-panel{
+  background:var(--v6-panel) !important;
+  border-color:var(--v6-border) !important;
+}
+.v46-quick-approval{
+  background:linear-gradient(160deg, rgba(23,211,163,.14), rgba(14,143,110,.05)) !important;
+  border:1px solid rgba(23,211,163,.45) !important;
+  border-radius:12px !important;
+}
+.graphite-flow-step{ border-radius:var(--v6-radius-sm) !important; }
+.ui-review-card, .petek-v498-review-card, .petek-v477-batch-preview-card{
+  background:var(--v6-panel) !important;
+  border-color:var(--v6-border) !important;
+  border-radius:var(--v6-radius) !important;
+}
+.ui-review-tab{ border-radius:var(--v6-radius-sm) !important; }
+.ui-review-tab.selected{ background:var(--v6-accent) !important; color:#04140E !important; border-color:var(--v6-accent) !important; }
+
+/* ---------- Şablon listeleri (7 kategori + PETEK) ---------- */
+#categories .category-title, .category-title{
+  background:var(--v6-panel) !important;
+  border:1px solid var(--v6-border) !important;
+  color:var(--v6-text) !important;
+  border-radius:var(--v6-radius-sm) !important;
+}
+#categories .category-title:hover, .category-title:hover{
+  background:var(--v6-panel2) !important;
+  border-color:var(--v6-accent) !important;
+}
+.category-title.selected, .petek-v477-nav.selected, #petekV477Nav[aria-current=page]{
+  background:var(--v6-accent-soft) !important;
+  border-color:rgba(23,211,163,.45) !important;
+  color:var(--v6-text) !important;
+}
+#categories .template-item, #petekV477List .petek-v484-item-wrap, #petekV477List .petek-v477-list-item{
+  border-radius:var(--v6-radius-sm) !important;
+}
+#categories .template-item.active, #categories .template-item.bulk-selected,
+#petekV477List .petek-v484-selected, #petekV477List .petek-v477-list-item.selected{
+  background:var(--v6-accent-soft) !important;
+  outline:1px solid rgba(23,211,163,.55) !important;
+  outline-offset:-1px !important;
+  border-color:transparent !important;
+}
+/* Durum rozetleri — v6 pill dili */
+.v499-status-new{ background:rgba(90,169,255,.12) !important; border-color:rgba(90,169,255,.45) !important; color:#BFE0FF !important; }
+.v499-status-approved{ background:rgba(63,217,138,.12) !important; border-color:rgba(63,217,138,.45) !important; color:#B9F3DC !important; }
+.v499-status-draft{ background:rgba(240,184,76,.12) !important; border-color:rgba(240,184,76,.45) !important; color:#FBE7B0 !important; }
+.v499-status-error{ background:rgba(239,106,115,.12) !important; border-color:rgba(239,106,115,.45) !important; color:#FFD3D6 !important; }
+.petek-status-new{ background:rgba(90,169,255,.12) !important; border-color:rgba(90,169,255,.55) !important; }
+.petek-status-approved{ background:rgba(63,217,138,.12) !important; border-color:rgba(63,217,138,.55) !important; }
+.petek-status-pending{ background:rgba(240,184,76,.12) !important; border-color:rgba(240,184,76,.55) !important; }
+.petek-status-error{ background:rgba(239,106,115,.12) !important; border-color:rgba(239,106,115,.55) !important; }
+.v499-state-new{ color:#8FC2FF !important; background:rgba(90,169,255,.12) !important; }
+.v499-state-approved{ color:#7BE3A8 !important; background:rgba(63,217,138,.12) !important; }
+.v499-state-draft{ color:#F6CE7E !important; background:rgba(240,184,76,.12) !important; }
+.v499-state-error{ color:#FF9AA0 !important; background:rgba(239,106,115,.12) !important; }
+.v499-status-filter input[type=checkbox]{ accent-color:var(--v6-accent) !important; }
+
+/* ---------- /tools sayfası ---------- */
+body:has(.page){
+  background:radial-gradient(ellipse at top right,#151A2E 0%, var(--v6-bg0) 42%, var(--v6-bg0) 90%) !important;
+}
+.page .card{ border-radius:var(--v6-radius) !important; border-color:var(--v6-border) !important; }
+.page .card:hover{ border-color:var(--v6-accent) !important; box-shadow:0 12px 30px rgba(0,0,0,.4) !important; }
+.page .card button{ background:var(--v6-accent) !important; color:#04140E !important; }
+.page .card button:hover{ background:#12B98A !important; }
+
+/* ---------- Diyaloglar / bindirmeler ---------- */
+.copyable-report-dialog, .copyable-report-text,
+.petek-v498-review-dialog, #batchAnalyzePanel, .ui-layout-shell, #workspace-audit-bar{
+  border-radius:12px !important;
+  border-color:var(--v6-border) !important;
+}
+.copyable-report-dialog, .petek-v498-review-dialog, #batchAnalyzePanel, .ui-layout-shell{
+  background:var(--v6-panel) !important;
+  color:var(--v6-text) !important;
+  box-shadow:0 18px 60px rgba(0,0,0,.55) !important;
+}
+.copyable-report-text{ background:var(--v6-bg1) !important; }
+.copyable-report-dialog::backdrop, .petek-v498-review-dialog::backdrop{ background:rgba(3,5,12,.82) !important; }
+#help-sidebar{ background:var(--v6-panel) !important; border-color:var(--v6-border) !important; border-radius:var(--v6-radius) !important; }
+.graphite-safety-banner{ background:#3A1216 !important; border-color:rgba(239,106,115,.5) !important; }
+
+/* ---------- kayan çubuklar ve seçim ---------- */
+::-webkit-scrollbar{ width:10px; height:10px; }
+::-webkit-scrollbar-track{ background:var(--v6-bg1); }
+::-webkit-scrollbar-thumb{ background:var(--v6-panel3); border-radius:6px; }
+::-webkit-scrollbar-thumb:hover{ background:var(--v6-border); }
+::selection{ background:rgba(23,211,163,.32); color:#04140E; }
+
+
+/* ============================================================
+   V6 ENTEGRASYON — index.html shell (v6_review düzeni)
+   Tüm mevcut ID'ler (sidebar/right-toolbar/canvas-container vb.)
+   JS uyumu için korunur; yalnızca v6 görünüm sınıfı eklenir.
+   ============================================================ */
+/* rail: eski #sidebar, v6 ray genişliği */
+#sidebar.rail{
+  width:264px !important; min-width:264px;
+  background:var(--v6-bg1) !important;
+  border-right:1px solid var(--v6-border-soft) !important;
+  padding:0 !important; display:flex; flex-direction:column;
+}
+#sidebar.rail > h2{ font-size:15px; margin:0; padding:12px 12px 0; color:var(--v6-text); }
+#sidebar.rail .panel-hint{ margin:8px 12px 4px; }
+#sidebar.rail .tools-center-link{ margin:4px 12px; }
+#sidebar.rail .tools-center-note{ margin:0 12px 6px; }
+#sidebar.rail #bulk-select-panel{ margin:0 12px 8px; }
+#sidebar.rail .v499-status-filter{ margin:0 12px 8px; }
+#sidebar.rail #categories{ flex:1 1 auto; min-height:0; overflow-y:auto; margin:0 4px; }
+#sidebar.rail .status-legend{ margin:4px 12px 8px; }
+#sidebar.rail #help-sidebar{ position:static !important; left:auto !important; top:auto !important; margin:0 12px 8px; }
+#sidebar.rail .rail-actions{ padding:8px 12px; border-top:1px solid var(--v6-border-soft); }
+/* inspector: eski #right-toolbar, v6 genişliği */
+#right-toolbar.inspector{
+  width:316px !important; min-width:316px;
+  background:var(--v6-bg1) !important;
+  border-left:1px solid var(--v6-border-soft) !important;
+  padding:0 !important;
+}
+#right-toolbar.inspector > *{ margin:0 12px; }
+#right-toolbar.inspector > *:first-child{ margin-top:12px; }
+#right-toolbar.inspector > *:last-child{ margin-bottom:12px; }
+/* contextbar esnek */
+#contextbar{ height:auto !important; min-height:54px; flex-wrap:wrap; }
+#contextbar .toolbar-action .tool-note{ display:none; }
+/* statusbar: action dock barındırır */
+#statusbar{ height:auto !important; min-height:48px; padding:0 8px; gap:8px; }
+#statusbar #graphiteActionDock{ flex:0 0 auto; min-height:40px; background:transparent !important; border-top:0 !important; padding:4px 0; }
+#statusbar #graphiteActionStatus{ min-width:130px; color:var(--v6-muted); font-size:11px; }
+#statusbar .toolbar-status{ margin-left:auto; color:var(--v6-muted); font-size:11px; white-space:nowrap; }
+/* stage: canvas kaplar */
+#stage #reviewWorkspace{ flex:1; min-height:0; display:flex; }
+#stage #canvas-container{ flex:1; min-width:0; min-height:0; }
+/* topnav linkleri */
+#topnav a.navbtn{ text-decoration:none; }
+#topnav .cnt{ margin-left:2px; font-size:10px; opacity:.75; background:rgba(0,0,0,.25); border-radius:8px; padding:1px 6px; }
+/* rail listesi scroll */
+#sidebar.rail .rail-list{ flex:1; overflow-y:auto; min-height:0; }
+/* petek editor section v6 zemin */
+#petekV477Editor{ background:var(--v6-bg0) !important; }
+
+/* ---------- Azaltılmış hareket ---------- */
+@media (prefers-reduced-motion:reduce){
+  *{ transition:none !important; animation:none !important; }
+}

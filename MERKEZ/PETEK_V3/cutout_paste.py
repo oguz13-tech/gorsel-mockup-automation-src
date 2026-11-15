@@ -122,6 +122,7 @@ def render_with_cutout_paste(
     edge_feather_px: float = 1.4,
     shadow_style: str = "classic",
     corner_side: str = "right",
+    window_shadow_field_enabled: bool = True,
 ) -> tuple[np.ndarray, np.ndarray, dict]:
     """Full-Bleed (zero-blur) render + Cut-and-Paste RGBA overlay extraction & restoration."""
     scene = engine.read_bgr(source) if not isinstance(source, np.ndarray) else source
@@ -139,6 +140,7 @@ def render_with_cutout_paste(
         edge_feather_px=edge_feather_px,
         shadow_style=shadow_style,
         corner_side=corner_side,
+        window_shadow_field_enabled=window_shadow_field_enabled,
     )
     qa.update(cutout_meta)
     qa["cut_and_paste_verified"] = True

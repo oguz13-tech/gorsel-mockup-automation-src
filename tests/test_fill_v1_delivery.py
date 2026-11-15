@@ -4,6 +4,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'99_SISTEM_MOTORLARI_VE_KODLAR'))
+sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'99_SISTEM_MOTORLARI_VE_KODLAR'))
 from SISTEM_MOTORU.pc_master_factory import MockupRenderer
 
 @pytest.mark.parametrize('shape,ratio', [((100,140,3),4/3),((110,140,3),4/3),((140,100,3),3/4)])

@@ -7,13 +7,16 @@ import legacy_manager as manager
 
 
 def test_missing_selected_root_never_falls_back(tmp_path):
+    import pytest
     env = {'LOCALAPPDATA': str(tmp_path)}
     state = manager.local_state_dir(env)
     state.mkdir(parents=True)
     selected = tmp_path / 'kayip seçili kök'
     (state / 'workspace.json').write_text(json.dumps({'path': str(selected)}))
-    assert manager.preferred_runtime(env=env) == selected
-    assert not selected.exists()
+    # Yeni sözleşme: seçilmiş ama eksik veri kökü ile çalışma (sessiz fallback) yasak;
+    # güvenli hata verir, başka bir veri köküne düşmez.
+    with pytest.raises(manager.LegacyLaunchError):
+        manager.preferred_runtime(env=env)
 
 
 def test_server_requires_pid_token_and_both_roots(tmp_path):
@@ -34,7 +37,11 @@ def test_unavailable_server_is_not_ready(tmp_path):
 
 def test_online_backup_restore_preserves_source(tmp_path):
     import sqlite3,hashlib
-    root=tmp_path/'runtime'; db=root/'SABLON_V2_MIMARI'/'ayarlar.db'
+    root=tmp_path/'runtime'
+    for rel,folder in (('2_SABLON_HAVUZU',None),('2_SABLON_HAVUZU_ORIJINAL_YEDEK',None)):
+        (root/rel).mkdir(parents=True)
+    (root/'ayarlar.json').write_text('{}', encoding='utf-8')
+    db=root/'SABLON_V2_MIMARI'/'ayarlar.db'
     db.parent.mkdir(parents=True)
     with sqlite3.connect(db) as con:
         con.execute('CREATE TABLE approvals(quad TEXT)')

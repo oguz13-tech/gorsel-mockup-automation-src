@@ -10,11 +10,24 @@ from __future__ import annotations
 import cv2
 import numpy as np
 
+from ._frame_memo import get_or_compute
+
 MODES = ('natural', 'strong', 'off')
 
 
+def _hsv(scene: np.ndarray) -> np.ndarray:
+    """One HSV view of a scene per content, shared by every render stage."""
+    return get_or_compute('hsv', (scene,),
+                          lambda: cv2.cvtColor(scene, cv2.COLOR_BGR2HSV))
+
+
 def _magenta_pixels(scene: np.ndarray) -> np.ndarray:
-    hsv=cv2.cvtColor(scene,cv2.COLOR_BGR2HSV)
+    return get_or_compute('magenta', (scene,),
+                          lambda: _magenta_pixels_impl(scene))
+
+
+def _magenta_pixels_impl(scene: np.ndarray) -> np.ndarray:
+    hsv=_hsv(scene)
     b,g,r=(scene[:,:,i].astype(np.int16) for i in range(3))
     return ((hsv[:,:,0]>=125)&(hsv[:,:,0]<=178)&(hsv[:,:,1]>=55)
             &(hsv[:,:,2]>=65)&(r>g+25)&(b>g+16))
@@ -22,7 +35,12 @@ def _magenta_pixels(scene: np.ndarray) -> np.ndarray:
 
 def _neutral_white(scene: np.ndarray, mask: np.ndarray):
     """Nearby REAL painted-white furniture; never chroma-key magenta."""
-    hsv=cv2.cvtColor(scene,cv2.COLOR_BGR2HSV)
+    return get_or_compute('neutral_white', (scene, mask),
+                          lambda: _neutral_white_impl(scene, mask))
+
+
+def _neutral_white_impl(scene: np.ndarray, mask: np.ndarray):
+    hsv=_hsv(scene)
     neutral=(mask==0)&(hsv[:,:,1]<=48)&(hsv[:,:,2]>=130)&(hsv[:,:,2]<=252)&~_magenta_pixels(scene)
     yy,xx=np.where(mask>127)
     if yy.size:
@@ -42,10 +60,15 @@ def _neutral_white(scene: np.ndarray, mask: np.ndarray):
 
 def light_map(scene: np.ndarray, mask: np.ndarray) -> np.ndarray:
     """Original photographic illuminance without any magenta RGB sampling."""
+    return get_or_compute('light_map', (scene, mask),
+                          lambda: _light_map_impl(scene, mask))
+
+
+def _light_map_impl(scene: np.ndarray, mask: np.ndarray) -> np.ndarray:
     h,w=mask.shape
     ref,_=_neutral_white(scene,mask)
     rgb=np.asarray(scene)
-    hsv=cv2.cvtColor(rgb,cv2.COLOR_BGR2HSV)
+    hsv=_hsv(rgb)
     valid=(mask>=220)&~_magenta_pixels(scene)&(hsv[:,:,1]<=62)&(hsv[:,:,2]>=90)
     # A magenta original has no physical printable-wood photometry: do NOT
     # invent pink illumination from its chroma marker.
@@ -63,11 +86,14 @@ def light_map(scene: np.ndarray, mask: np.ndarray) -> np.ndarray:
 
 
 def _window_shadow_field(shape, mask, *, shadow_style="classic", corner_side="right"):
-    """EXACTLY TWO soft, continuous, near-horizontal sun-shade bands.
+    """Build one deterministic scene-space window-shadow field.
 
     One scene-space field is reused for ink and a separately qualified wall
     region; their center-lines therefore coincide at the wall/front seam.
-    No freehand spot/blotch shadows and no artificial specular highlight.
+    ``classic`` and ``corner`` are retained for the six-category and legacy
+    PETEK contracts.  ``projected`` is the PETEK sales-render profile: its
+    soft window frame is oblique, asymmetric and gently feathered instead of
+    looking like two duplicated horizontal bars.
     """
     h,w=shape[:2]
     yy,xx=np.where(mask>127)
@@ -75,6 +101,7 @@ def _window_shadow_field(shape, mask, *, shadow_style="classic", corner_side="ri
         return np.zeros((h,w),np.float32)
     x0,x1=int(xx.min()),int(xx.max())
     y0,y1=int(yy.min()),int(yy.max())
+    pw,ph=max(1.,float(x1-x0)),max(1.,float(y1-y0))
     H,W=192,256
     gy,gx=np.mgrid[0:H,0:W].astype(np.float32)
     # Coordinates of the whole PHOTO, NOT separately normalized wall/print.
@@ -100,20 +127,99 @@ def _window_shadow_field(shape, mask, *, shadow_style="classic", corner_side="ri
         for center,width,weight in bands:
             d=ny-(center+.025*(nx-.5))
             shadow+=weight*np.exp(-.5*(d/width)**2)
+    elif shadow_style == 'projected':
+        # The sales reference is a single, clearly readable window-plane
+        # shadow.  A feathered quadrilateral is more faithful and much more
+        # stable than trying to infer a window from arbitrary artwork pixels.
+        # It is drawn in the same full-photo coordinates used by the wall
+        # continuation, so the diagonal edge cannot jump at the product seam.
+        if corner_side == 'right':
+            poly = np.float32([[.02,.06],[.96,.06],[.38,.96],[.02,.96]])
+        else:
+            poly = np.float32([[.04,.06],[.98,.06],[.98,.96],[.62,.96]])
+        # Extend the virtual window beyond the cabinet so the same cast plane
+        # remains visible on the classified wall above/alongside it.
+        sx0=x0-pw*.75; sx1=x1+pw*.75
+        sy0=y0-ph*.65; sy1=y1+ph*.20
+        pts=np.round(np.column_stack((
+            ((sx0+poly[:,0]*(sx1-sx0))/(max(1,w-1)))*(W-1),
+            ((sy0+poly[:,1]*(sy1-sy0))/(max(1,h-1)))*(H-1)))).astype(np.int32)
+        plane=np.zeros((H,W),np.float32)
+        cv2.fillConvexPoly(plane,pts,1.0)
+        plane=cv2.GaussianBlur(plane,(0,0),max(2.4,H*.018))
+        # A second, much weaker frame return gives the broad plane a natural
+        # window-edge rolloff without producing the old pair of flat bars.
+        return_poly=poly.copy()
+        if corner_side == 'right':
+            return_poly[[0,1],1]+=.10; return_poly[[2,3],1]-=.07
+        else:
+            return_poly[[0,1],1]+=.10; return_poly[[2,3],1]-=.07
+        rpts=np.round(np.column_stack((
+            ((sx0+return_poly[:,0]*(sx1-sx0))/(max(1,w-1)))*(W-1),
+            ((sy0+return_poly[:,1]*(sy1-sy0))/(max(1,h-1)))*(H-1)))).astype(np.int32)
+        rim=np.zeros((H,W),np.float32); cv2.polylines(rim,[rpts],True,.22, max(2,int(H*.018)))
+        shadow=np.clip(plane+cv2.GaussianBlur(rim,(0,0),max(2.0,H*.012)),0,1)
     else:
         raise ValueError('PETEK_SHADOW_STYLE_INVALID')
-    shadow=cv2.GaussianBlur(np.clip(shadow,0,1),(0,0),1.15)
+    sigma = 1.35 if shadow_style == 'projected' else 1.15
+    shadow=cv2.GaussianBlur(np.clip(shadow,0,1),(0,0),sigma)
     return cv2.resize(shadow,(w,h),interpolation=cv2.INTER_LINEAR)
 
 
-def _diffuse_window_shadows(shape, mask, intensity, *, shadow_style="classic", corner_side="right"):
-    """Printable-panel part of the two-band wall-to-PETEK scene shadow."""
+def right_upper_quarter_mask(shape, quad):
+    """Perspective-correct 2x2 right-upper quadrant of the PETEK face.
+
+    The returned mask is a geometric *permission* mask only.  It is always
+    intersected with the approved print mask by the caller, so vents, curves,
+    floor and cabinet edges remain protected.
+    """
+    h, w = shape[:2]
+    q = np.asarray(quad, np.float32).reshape(4, 2)
+    # q order is TL, TR, BR, BL.  Bilinear midpoints preserve perspective.
+    top_mid = (q[0] + q[1]) * .5
+    right_mid = (q[1] + q[2]) * .5
+    center = (q[0] + q[1] + q[2] + q[3]) * .25
+    poly = np.round(np.asarray([top_mid, q[1], right_mid, center], np.float32)).astype(np.int32)
+    out = np.zeros((h, w), np.uint8)
+    cv2.fillConvexPoly(out, poly, 255)
+    return out > 0
+
+
+def right_upper_continuation_band(shape, quad):
+    """Wall-side band that continues the right-upper PETEK quadrant.
+
+    It deliberately stops at the perspective midline, preventing a projected
+    shadow from appearing on the lower wall or on the other three quarters.
+    """
+    h, w = shape[:2]
+    q = np.asarray(quad, np.float32).reshape(4, 2)
+    top = (q[0] + q[1]) * .5
+    right = (q[1] + q[2]) * .5
+    center = (q[0] + q[1] + q[2] + q[3]) * .25
+    # The upper-quarter ceiling/floor at the right edge; retain a small
+    # antialiasing allowance so the wall seam is visually continuous.
+    y0 = float(min(q[0, 1], q[1, 1])) - 2.0
+    y1 = float(max(right[1], center[1])) + 2.0
+    yy = np.arange(h, dtype=np.float32)[:, None]
+    return (yy >= y0) & (yy <= y1)
+
+
+def _diffuse_window_shadows(shape, mask, intensity, *, shadow_style="classic", corner_side="right", quad=None):
+    """Printable-panel part of the wall-to-PETEK scene shadow.
+
+    The projected PETEK profile is restricted to the perspective-correct
+    right-upper quarter when quad geometry is available.  ``quad=None`` keeps
+    the legacy standalone behavior used by older render tests.
+    """
     field=_window_shadow_field(shape,mask,shadow_style=shadow_style,corner_side=corner_side)
-    return np.clip(field*float(intensity)*(mask>0),0,
+    permission = (mask > 0)
+    if shadow_style == 'projected' and quad is not None:
+        permission &= right_upper_quarter_mask(shape, quad)
+    return np.clip(field*float(intensity)*permission,0,
                    .36 if intensity>=.5 else .18 if intensity<.2 else .36)
 
 
-def apply(scene: np.ndarray, art: np.ndarray, mask: np.ndarray, mode: str='natural', *, shadow_style='classic', corner_side='right') -> np.ndarray:
+def apply(scene: np.ndarray, art: np.ndarray, mask: np.ndarray, mode: str='natural', *, shadow_style='classic', corner_side='right', quad=None, window_shadow_field_enabled=True) -> np.ndarray:
     """Moderate material/photo tonality; avoids old +47% brightness and fake glare."""
     if mode not in MODES:
         raise ValueError('Işık ve kontrast modu tanınmadı')
@@ -136,28 +242,41 @@ def apply(scene: np.ndarray, art: np.ndarray, mask: np.ndarray, mode: str='natur
                  1.045 if mode=='natural' else 1.075)
     # A gentle print contrast, with filmic toe / shoulder. Bright colors do not
     # go neon, and midtones retain separation without a global blur pass.
-    x=art.astype(np.float32)/255.
+    x=art.astype(np.float32)
+    x/=255.
     contrast=1.065 if mode=='natural' else 1.115
-    x=np.clip((x-.46)*contrast+.46,0,1)
+    x-=0.46
+    x*=contrast
+    x+=0.46
+    np.clip(x,0,1,out=x)
     # Soft tone shoulder above 0.83 reduces white clipping after illumination.
     toe=.83
     x=np.where(x>toe, toe+(1.-toe)*(1.-np.exp(-np.maximum(0.,x-toe)/(1.-toe)))/(1.-np.exp(-1.)), x)
-    x=np.clip(x*gain[:,:,None],0,1)
+    np.multiply(x,gain[:,:,None],out=x)
+    np.clip(x,0,1,out=x)
     # Tiny scene-derived warm/cool cast, no fabricated golden spotlights.
     average=np.median(field[valid],axis=0)
     channel=field/np.maximum(average[None,None,:],.18)
-    channel/=np.maximum(np.mean(channel,axis=2,keepdims=True),.2)
+    # Three-channel reductions are on the hottest path.  Keep the same
+    # float32 arithmetic while avoiding NumPy's generic axis-reduction
+    # machinery; this is pixel-equivalent for the uint8-derived arrays used
+    # by the renderer and does not change the recipe or protection gates.
+    channel_mean=((channel[:,:,0]+channel[:,:,1]+channel[:,:,2])/
+                  np.float32(3.0))[:,:,None]
+    channel/=np.maximum(channel_mean,.2)
     colour_power=.16 if mode=='natural' else .24
     tint=np.power(np.clip(channel,.90,1.10),colour_power)
-    x=np.clip(x*tint,0,1)
+    np.multiply(x,tint,out=x)
+    np.clip(x,0,1,out=x)
 
     # Bright neutral artwork regions (especially white backgrounds) must not
     # jump to display-white and reveal a pasted sticker. Derive a scene-native
     # "paper white" from the photographed panel illumination and softly pull
     # very bright low-chroma print areas toward it.
     scene_white,_has_photographed_white=_neutral_white(scene,mask)
-    luma=np.mean(x,axis=2)
-    chroma=np.max(x,axis=2)-np.min(x,axis=2)
+    luma=(x[:,:,0]+x[:,:,1]+x[:,:,2])/np.float32(3.0)
+    chroma=(np.maximum(np.maximum(x[:,:,0],x[:,:,1]),x[:,:,2])-
+            np.minimum(np.minimum(x[:,:,0],x[:,:,1]),x[:,:,2]))
     white_like=np.clip((luma-.76)/.20,0,1)*np.clip((.18-chroma)/.18,0,1)
     if np.any(white_like>0):
         t=(white_like**1.4)[:,:,None]
@@ -174,7 +293,7 @@ def apply(scene: np.ndarray, art: np.ndarray, mask: np.ndarray, mode: str='natur
     edge_mix=np.clip(1.-distance/6.5,0,1)
     if np.any(edge_mix>0):
         scene_norm=np.clip(scene.astype(np.float32)/255.,0,1)
-        hsv_source=cv2.cvtColor(scene,cv2.COLOR_BGR2HSV)
+        hsv_source=_hsv(scene)
         safe_source=(~_magenta_pixels(scene))&(hsv_source[:,:,1]<=48)&(hsv_source[:,:,2]>=100)
         mix=((edge_mix**1.8)*.16*safe_source)[:,:,None]
         x=x*(1.-mix)+scene_norm*mix
@@ -206,13 +325,25 @@ def apply(scene: np.ndarray, art: np.ndarray, mask: np.ndarray, mode: str='natur
         x=x*(1.-white_weight)+ramp*white_weight
 
     # White-only lift uses the pre-shadow surface colour, never source magenta.
-    white_luma=np.mean(x,axis=2)
-    white_chroma=np.max(x,axis=2)-np.min(x,axis=2)
+    white_luma=(x[:,:,0]+x[:,:,1]+x[:,:,2])/np.float32(3.0)
+    white_chroma=(np.maximum(np.maximum(x[:,:,0],x[:,:,1]),x[:,:,2])-
+                  np.minimum(np.minimum(x[:,:,0],x[:,:,1]),x[:,:,2]))
     white_gate=(np.clip((white_luma-.64)/.20,0,1)*
                 np.clip((.14-white_chroma)/.14,0,1))
     # Matte, non-specular daylight: shadows darken ink, never make white blow out.
-    window_shadow=_diffuse_window_shadows(scene.shape,mask,.12 if mode=='natural' else .33,
-                                          shadow_style=shadow_style,corner_side=corner_side)
+    shadow_intensity = (.12 if mode=='natural' else .33)
+    # The projected window plane is a visible photographic cast shadow, but
+    # must retain the artwork's colour/value (the reference is blue/green,
+    # never a black overlay). Keep legacy classic strength unchanged.
+    if shadow_style == 'projected':
+        # Deliberately visible on pale/white artwork: the reference contains
+        # a readable window plane, not a barely measurable exposure drift.
+        shadow_intensity = .24 if mode == 'natural' else .30
+    window_shadow=(_diffuse_window_shadows(scene.shape,mask,shadow_intensity,
+                                          shadow_style=shadow_style,corner_side=corner_side,
+                                          quad=quad)
+                   if window_shadow_field_enabled else
+                   np.zeros(mask.shape,np.float32))
     x*=1.-window_shadow[:,:,None]
     # Neutral-white photographic recovery (not a global gamma/brightness
     # increase): lift white printed backgrounds by a few RGB code values,
@@ -229,7 +360,9 @@ def apply(scene: np.ndarray, art: np.ndarray, mask: np.ndarray, mode: str='natur
     if mode=='strong':
         rng=np.random.default_rng(41631)
         grain=rng.normal(0.,.0034,size=mask.shape).astype(np.float32)
-        x=np.clip(x*(1.+grain[:,:,None]),0,1)
+        grain+=1.0
+        x*=grain[:,:,None]
+        np.clip(x,0,1,out=x)
         # The tiny random matte grain must not turn recovered white into
         # isolated clipped #FFFFFF glints. Colour artwork is untouched.
         x=np.where((white_gate>0)[:,:,None],np.minimum(x,.988),x)

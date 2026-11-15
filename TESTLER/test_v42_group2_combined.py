@@ -96,7 +96,7 @@ def test_xlsx_file_hyperlink_is_clickable_and_csv_independent(engine_name,tmp_pa
 
 
 def test_js_preserves_approved_v_and_uses_H_for_new_templates():
-    js=(ROOT/'SABLON_V2_MIMARI/static/js/main.js').read_text()
+    js=(ROOT/'SABLON_V2_MIMARI/static/js/main.js').read_text(encoding='utf-8')
     assert "(value === 'H' || value === 'V') ? value : ((mixed && !approved) ? 'H' : '')" in js
     assert 'requestToken !== templateLoadToken' in js
     assert 'approvedCat === currentCat && approvedName === currentTmpl' in js

@@ -10,18 +10,23 @@ import os
 from pathlib import Path
 import re
 import tempfile
+
+try:
+    from URETIM_V4 import ui_table_v1 as _table_tools
+except Exception:
+    _table_tools = None
 import tkinter as tk
 from tkinter import ttk, colorchooser, simpledialog, messagebox
 
 DASH_IDS = ('review','production','designs','tools','petek','stage','reports','tests','notes','search')
-PROD_IDS = ('templates','designs','quality','actions')
+PROD_IDS = ('templates','designs','stores','quality')
 CARD_NAMES = {
  'review':'Şablon İnceleme','production':'Seri Üretim','designs':'Ham Tasarımlar',
  'tools':'Profesyonel Araçlar','petek':'PETEK İşlemleri','stage':'Yeni Şablon Ekle',
  'reports':'Raporlar ve Kurtarma','tests':'Yapmam Gereken Testler',
  'notes':'Notlarım ve Görevlerim','search':'Özellik / Araç Ara',
- 'templates':'Şablonlar ve Filtreleme','quality':'4K / PETEK / Efekt / Excel',
- 'actions':'Üretimi Başlat / Duraklat / Durdur'}
+ 'templates':'Şablon Seçimi','designs':'Baskı Tasarımları','stores':'Mağaza Seçimi',
+ 'quality':'Üretim Ayarları'}
 
 
 def contrast_ratio(a,b):
@@ -41,8 +46,8 @@ def settings_path():
 
 def initial():
     return {'schema':1,
-        'dashboard':{'tabs':{'Ana Sayfa':list(DASH_IDS)},'accent':'#7A4DFA','effect':'hafif','colors':{}},
-        'production':{'tabs':{'Tümü':list(PROD_IDS)},'accent':'#7A4DFA','effect':'hafif','colors':{}}}
+        'dashboard':{'tabs':{'Ana Sayfa':list(DASH_IDS)},'accent':'#8A7CF0','effect':'hafif','colors':{}},
+        'production':{'tabs':{'Tümü':list(PROD_IDS)},'accent':'#8A7CF0','effect':'hafif','colors':{}}}
 
 
 def normalize(raw):
@@ -52,7 +57,7 @@ def normalize(raw):
     for mode,ids,home in [('dashboard',DASH_IDS,'Ana Sayfa'),('production',PROD_IDS,'Tümü')]:
         src=raw.get(mode,{})
         if not isinstance(src,dict):continue
-        color=src.get('accent','#7A4DFA')
+        color=src.get('accent','#8A7CF0')
         if isinstance(color,str) and re.fullmatch('#[0-9a-fA-F]{6}',color):
             default[mode]['accent']=color.lower()
         if src.get('effect') in ('kapalı','hafif','belirgin'):
@@ -64,9 +69,9 @@ def normalize(raw):
                 and re.fullmatch('#[0-9a-fA-F]{6}',value)}
             # Reject theme edits that would hide buttons or titles on a dark UI.
             for color_key in ('background','panel','button'):
-                if color_key in valid and contrast_ratio(valid[color_key],'#f1f0ff')<4.5:
+                if color_key in valid and contrast_ratio(valid[color_key],'#E9EFF9')<4.5:
                     valid.pop(color_key)
-            if 'title' in valid and contrast_ratio(valid['title'],valid.get('panel','#343c46'))<4.5:
+            if 'title' in valid and contrast_ratio(valid['title'],valid.get('panel','#22304A'))<4.5:
                 valid.pop('title')
             default[mode]['colors']=valid
         tabs=src.get('tabs')
@@ -127,7 +132,7 @@ class LayoutEditor:
         self.callback=on_save;self.selected_tab=self.home
         self.win=tk.Toplevel(parent);self.win.title('Arayüzü Düzenle · Güvenli Görünüm Modu')
         self.win.geometry('1100x660');self.win.minsize(930,530)
-        self.win.configure(bg='#292f37')
+        self.win.configure(bg='#22304A')
         self.win.protocol('WM_DELETE_WINDOW',self.close)
         self._make()
 
@@ -138,38 +143,42 @@ class LayoutEditor:
     def _tabs(self):return self.working[self.mode]['tabs']
 
     def _make(self):
-        fg='#f4efff';bg='#292f37';mid='#3a4350'
+        fg='#E9EFF9';bg='#22304A';mid='#22304A'
         tk.Label(self.win,text='GÖRÜNÜM DÜZENLEYİCİ  •  Üretim kodlarını değiştirmez',
              bg=bg,fg=fg,font=('Segoe UI',16,'bold')).pack(fill='x',padx=17,pady=12)
         tk.Label(self.win,text='Kartları fareyle sıralayın; sekme oluşturun, başka sekmeye taşıyın. '
-             'Kaydet yalnız görsel ayarlara yazar.',bg=bg,fg='#b9c4da',wraplength=790).pack(fill='x',padx=17)
+             'Kaydet yalnız görsel ayarlara yazar.',bg=bg,fg='#93A6C4',wraplength=790).pack(fill='x',padx=17)
         center=tk.Frame(self.win,bg=bg);center.pack(fill='both',expand=True,padx=17,pady=10)
         left=tk.Frame(center,bg=mid);left.pack(side='left',fill='both',expand=False,padx=(0,9))
         tk.Label(left,text='Sekmeler',bg=mid,fg=fg,font=('Segoe UI',12,'bold')).pack(fill='x',pady=8)
-        self.tab_list=tk.Listbox(left,height=16,width=22,bg=mid,fg=fg,selectbackground='#6544a5',borderwidth=0,exportselection=False)
+        self.tab_list=tk.Listbox(left,height=16,width=22,bg=mid,fg=fg,selectbackground='#17D3A3',borderwidth=0,exportselection=False)
         self.tab_list.pack(fill='both',expand=True,padx=8)
         self.tab_list.bind('<<ListboxSelect>>',self._tab_selected)
+        if _table_tools is not None:
+            _table_tools.attach_listbox_tooltip(self.tab_list)
         for title,callback in [('＋ Yeni Sekme',self.new_tab),('Sekmeyi Sil',self.delete_tab),('Yeniden Adlandır',self.rename_tab)]:
-            tk.Button(left,text=title,command=callback,bg='#373050',fg=fg,relief='flat').pack(fill='x',padx=7,pady=3)
+            tk.Button(left,text=title,command=callback,bg='#131C2B',fg=fg,relief='flat').pack(fill='x',padx=7,pady=3)
         right=tk.Frame(center,bg=mid);right.pack(side='left',fill='both',expand=True)
         tk.Label(right,text='Kartlar — sürükleyip sıralayın',bg=mid,fg=fg,font=('Segoe UI',12,'bold')).pack(fill='x',pady=8)
-        self.cards=tk.Listbox(right,height=10,bg='#313b47',fg=fg,selectbackground='#6544a5',borderwidth=0,exportselection=False,font=('Segoe UI',11))
+        self.cards=tk.Listbox(right,height=10,bg='#22304A',fg=fg,selectbackground='#17D3A3',borderwidth=0,exportselection=False,font=('Segoe UI',11))
         self.cards.pack(fill='both',expand=True,padx=10)
         self.cards.bind('<ButtonPress-1>',self._drag_start)
         self.cards.bind('<B1-Motion>',self._drag_move)
+        if _table_tools is not None:
+            _table_tools.attach_listbox_tooltip(self.cards)
         move_row=tk.Frame(right,bg=mid);move_row.pack(fill='x',padx=10,pady=9)
         tk.Label(move_row,text='Seçili kartı sekmeye taşı:',bg=mid,fg=fg).pack(side='left')
         self.target=tk.StringVar(value=self.home)
         self.target_combo=ttk.Combobox(move_row,textvariable=self.target,state='readonly',width=22)
         self.target_combo.pack(side='left',padx=6)
-        tk.Button(move_row,text='Taşı',command=self.move_card,bg='#4d397f',fg=fg,relief='flat').pack(side='left',padx=4)
+        tk.Button(move_row,text='Taşı',command=self.move_card,bg='#182238',fg=fg,relief='flat').pack(side='left',padx=4)
         theme=tk.Frame(self.win,bg=mid);theme.pack(fill='x',padx=17,pady=(0,8))
-        tk.Button(theme,text='🎨 Vurgu Rengi Seç',command=self.select_color,bg='#4d397f',fg=fg).pack(side='left',padx=7,pady=7)
+        tk.Button(theme,text='🎨 Vurgu Rengi Seç',command=self.select_color,bg='#182238',fg=fg).pack(side='left',padx=7,pady=7)
         self.accent=tk.StringVar(value=self.working[self.mode]['accent'])
         tk.Label(theme,textvariable=self.accent,bg=mid,fg=fg).pack(side='left')
         for key,label in [('background','Zemin'),('panel','Kart'),('button','Düğme'),('title','Başlık'),('border','Kenar')]:
             tk.Button(theme,text='🎨 '+label,command=lambda k=key:self.select_palette(k),
-                      bg='#373050',fg=fg,relief='flat').pack(side='left',padx=2,pady=7)
+                      bg='#131C2B',fg=fg,relief='flat').pack(side='left',padx=2,pady=7)
         tk.Label(theme,text='Efekt:',bg=mid,fg=fg).pack(side='left',padx=(9,5))
         self.effect=tk.StringVar(value=self.working[self.mode]['effect'])
         combo=ttk.Combobox(theme,textvariable=self.effect,values=('kapalı','hafif','belirgin'),state='readonly',width=12)
@@ -177,7 +186,7 @@ class LayoutEditor:
         combo.bind('<<ComboboxSelected>>',self._effect_change)
         bottom=tk.Frame(self.win,bg=bg);bottom.pack(fill='x',padx=17,pady=(3,15))
         for label,cmd in [('↶ Geri Al',self.undo),('Varsayılana Dön',self.reset),('Vazgeç',self.close),('✓ Kaydet',self.commit)]:
-            tk.Button(bottom,text=label,command=cmd,bg='#4d397f' if label.startswith('✓') else '#282e46',fg=fg,
+            tk.Button(bottom,text=label,command=cmd,bg='#182238' if label.startswith('✓') else '#131C2B',fg=fg,
                       relief='flat',padx=15,pady=9).pack(side='left',padx=4)
         self.refresh()
 

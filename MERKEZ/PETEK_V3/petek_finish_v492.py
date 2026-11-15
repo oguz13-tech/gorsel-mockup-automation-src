@@ -8,6 +8,7 @@ from __future__ import annotations
 import cv2
 import numpy as np
 from . import engine
+from .petek_slot_geometry_vnext import MIN_REAL_VENTS, MAX_REAL_VENTS
 
 STRENGTH = {'off':0.0, 'hafif':0.34, 'orta':0.60, 'guclu':0.78}
 RECIPE = 'petek-finishing-v492-conservative-1'
@@ -45,7 +46,7 @@ def estimate_slots(source, mask, quad):
             slots.append((x,y,w,h))
     # Over-segmented real openings are a warning, not permission to draw.
     slots=sorted(slots,key=lambda b:b[0]+b[2]/2)
-    if not (10 <= len(slots) <= 16):
+    if not (MIN_REAL_VENTS <= len(slots) <= MAX_REAL_VENTS):
         return [], {'status':'ATLANDI_GUVEN_YETERSIZ', 'count':len(slots)}
     centers=np.array([x+w/2 for x,_,w,_ in slots],float)
     distances=np.diff(centers)
@@ -152,7 +153,7 @@ def despill_lower_left(source, mask, quad, *, enabled=False):
 
 # V4.9.3 controlled geometry-first option. This does NOT modify or reapprove a
 # stored V3 mask; it adds visible, photo-perspective vents to a print output.
-# Count is measured from original source (10..16), NEVER fabricated to 15.
+# Count is measured from original source (5..17), NEVER fabricated to 15.
 FIFTEEN_RECIPE = 'petek-real-count-independent-photo-mask-rescue-vnext-5'
 
 
@@ -170,7 +171,7 @@ def draw_fifteen_slots(source, rendered, mask, quad, *, mode='orta', geometry=No
     if mode=='off':return rendered.copy(),{'status':'KAPALI','count':0,'changed_pixels':0}
     from .petek_slot_geometry_vnext import measure_real_vents, RECT_W, RECT_H
     slots, measured=measure_real_vents(source,mask,q)
-    if not (10 <= len(slots) <= 16):
+    if not (MIN_REAL_VENTS <= len(slots) <= MAX_REAL_VENTS):
         raise engine.MaskError('PETEK_IZGARA_GERCEK_SAYI_OLCULEMEDI')
     outer=np.zeros((RECT_H,RECT_W),np.uint8)
     inner=np.zeros_like(outer)

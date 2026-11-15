@@ -25,6 +25,21 @@ class FakeProc:
         return None if self.active else 0
 
 
+def test_owned_webview_tree_is_killed_with_descendants(monkeypatch):
+    c = appmod.Center.__new__(appmod.Center)
+    c._log = Mock()
+    proc = FakeProc()
+    calls = []
+    def fake_run(*args, **kwargs):
+        calls.append((args, kwargs)); proc.active = False
+        return types.SimpleNamespace(returncode=0, stdout='', stderr='')
+    monkeypatch.setattr(appmod.subprocess, 'run', fake_run)
+    assert c._stop_owned_process_tree(proc, label='WebView2') is True
+    assert calls
+    assert calls[0][0][0] == ['taskkill.exe', '/PID', '1234', '/T', '/F']
+    proc.wait.assert_called_once()
+
+
 def center(monkeypatch):
     obj=appmod.Center.__new__(appmod.Center)
     obj._closing=False

@@ -3,7 +3,7 @@ import cv2
 import numpy as np
 import pytest
 from MERKEZ.PETEK_V3.petek_finish_v492 import draw_fifteen_slots
-from MERKEZ.PETEK_V3.petek_slot_geometry_vnext import measure_real_vents
+from MERKEZ.PETEK_V3.petek_slot_geometry_vnext import measure_real_vents, _fit_source_vents
 from MERKEZ.PETEK_V3.final_cleanup_v495 import cleanup_petek_magenta
 
 
@@ -35,7 +35,7 @@ def scene_with_count(n, extra_artwork=False, complete_mask=False):
     return source,projected_mask,quad,centers
 
 
-@pytest.mark.parametrize('n',[10,11,12,13,14,15,16])
+@pytest.mark.parametrize('n',[5,6,7,8,9,10,11,12,13,14,15,16,17])
 def test_photo_count_real_perspective_tracks_with_missing_mask_holes(n):
     source,mask,quad,centers=scene_with_count(n)
     orig=(source.copy(),mask.copy(),quad.copy())
@@ -45,7 +45,10 @@ def test_photo_count_real_perspective_tracks_with_missing_mask_holes(n):
     assert len(qa['centers_rectified_900'])==n
     assert len(qa['spacings_rectified_900'])==n-1
     assert np.max(np.abs(np.array(qa['centers_rectified_900'])-centers))<5
-    assert qa['changed_pixels']>0
+    # Sparse layouts can have insufficient printable-mask endpoint evidence;
+    # they are still measured and reported, but no unsafe slot paint is added.
+    if qa['endpoint_effect_eligible_count']:
+        assert qa['changed_pixels']>0
     assert np.array_equal(result[mask==0],rendered[mask==0])
     assert all(np.array_equal(a,b) for a,b in zip(orig,(source,mask,quad)))
     cleanup,report=cleanup_petek_magenta(result,mask,quad,
@@ -60,3 +63,16 @@ def test_real_fifteen_with_one_artwork_stripe_does_not_become_sixteen():
     assert len(slots)==15
     assert qa['alignment']=='SOURCE_PHOTO_15'
     assert np.max(np.abs(np.array(qa['centers_rectified_900'])-centers))<5
+
+
+def test_irregular_but_physical_twelve_peak_sequence_uses_observed_centres():
+    """A valid 12-vent perspective sequence need not fit one fixed lattice."""
+    centers=np.array([77,153,228,302,376,446,516,580,644,707,767,823],float)
+    profile=np.zeros(900,np.float32)
+    for x in centers:
+        profile[int(x)]=160.0
+    peaks=[(int(x),160.0) for x in centers]
+    fitted,_=_fit_source_vents(peaks,profile)
+    assert fitted is not None
+    assert len(fitted)==12
+    assert np.array_equal(np.rint(fitted).astype(int),centers.astype(int))

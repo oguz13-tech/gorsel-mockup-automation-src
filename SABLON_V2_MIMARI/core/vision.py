@@ -14,13 +14,13 @@ import sys
 import threading
 from pathlib import Path
 
+try:
+    from MERKEZ.workspace_contract import resolve_contract as _resolve_contract
+except ImportError:  # direct utility import compatibility
+    from workspace_contract import resolve_contract as _resolve_contract
+
 SOURCE_ROOT = Path(__file__).resolve().parents[2]
-_runtime_override = str(os.environ.get("MOCKUP_RUNTIME_WORKSPACE") or "").strip()
-RUNTIME_ROOT = (
-    Path(_runtime_override).expanduser().resolve()
-    if _runtime_override
-    else SOURCE_ROOT.resolve()
-)
+RUNTIME_ROOT = _resolve_contract(code_root=SOURCE_ROOT, validate=False).runtime_root
 
 # ======================== LOGGING SETUP ========================
 LOG_DIR = os.fspath(

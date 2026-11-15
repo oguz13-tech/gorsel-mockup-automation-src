@@ -1,9 +1,14 @@
 import os
+import sys
 import tempfile
 import unittest
+from pathlib import Path
 
 import cv2
 import numpy as np
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / 'SABLON_V2_MIMARI'))
 
 from core.template_intelligence import CandidateGenerators, GeometryValidator, TemplateAnalyzer
 

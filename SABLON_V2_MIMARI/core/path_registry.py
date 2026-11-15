@@ -4,6 +4,11 @@ import os
 from pathlib import Path
 from typing import Dict
 
+try:
+    from MERKEZ.workspace_contract import resolve_contract as _resolve_contract
+except ImportError:  # direct ``python core/...`` compatibility
+    from workspace_contract import resolve_contract as _resolve_contract
+
 
 PATHS: Dict[str, str] = {
     "KAGGLE_APPROVAL_INBOX": "0_KAGGLE_ONAY_BEKLEYENLER",
@@ -106,38 +111,10 @@ def rollback_runtime_pointer() -> Path:
 
 
 def resolve_runtime_root(source_root: str | Path | None = None) -> Path:
-    explicit_root = str(os.environ.get("GORSEL_RUNTIME_ROOT") or "").strip()
-    if explicit_root:
-        return Path(explicit_root).expanduser().resolve()
-    override = str(os.environ.get("MOCKUP_RUNTIME_WORKSPACE") or "").strip()
-    if override:
-        return Path(override).expanduser().resolve()
-
-    pointer = read_runtime_pointer()
-    if pointer is not None:
-        return pointer
-
-    source = (
-        Path(source_root).expanduser().resolve()
-        if source_root is not None
-        else Path(__file__).resolve().parents[2]
-    )
-    home = Path.home()
-    source_parent = Path(source_root).expanduser().resolve() if source_root is not None else Path(__file__).resolve().parents[2]
-    candidates = [
-        source_parent.parent if source_parent.name == "CODEX_ACTIVE" else source_parent,
-        home / "OneDrive" / "Masaüstü" / "GörselÜretme-ve-Mockup Otomasyonu",
-        home / "Desktop" / "GörselÜretme-ve-Mockup Otomasyonu",
-        source,
-    ]
-    for candidate in candidates:
-        if (
-            candidate
-            / PATHS["REVIEW_SYSTEM"]
-            / "ayarlar.db"
-        ).is_file():
-            return candidate.resolve()
-    return source
+    return _resolve_contract(
+        code_root=source_root,
+        validate=False,
+    ).runtime_root
 
 
 def runtime_path(

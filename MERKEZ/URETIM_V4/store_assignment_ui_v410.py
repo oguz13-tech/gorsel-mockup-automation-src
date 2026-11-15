@@ -13,6 +13,11 @@ from .store_profiles_v47 import StoreProfiles, key_for
 from .store_assignment_v410 import status_inventory, checked_assignment, assigned_for_store
 from .unlimited_selection import CATEGORY_LABELS_TR
 
+try:
+    from URETIM_V4 import ui_table_v1 as _table_tools
+except Exception:
+    _table_tools = None
+
 
 class StoreAssignmentWindow:
     def __init__(self, parent, *, state_root, get_approved, on_change,
@@ -59,7 +64,7 @@ class StoreAssignmentWindow:
         ttk.Label(body, text='1. Mağaza seç     →     2. Kategori seç     →     3. Onaylı mockupları seç     →     4. Önizle ve Ata',
                   font=('Segoe UI', 11, 'bold')).pack(anchor='w', pady=(0, 7))
         ttk.Label(body, text='Aynı baskı tasarımı bütün mağazalarda kullanılabilir. Aynı mockup kaynak fotoğrafı başka mağazaya atanamaz.',
-                  foreground='#cbd7ee', wraplength=1180).pack(anchor='w', pady=(0, 13))
+                  foreground='#93A6C4', wraplength=1180).pack(anchor='w', pady=(0, 13))
 
         top = ttk.LabelFrame(body, text='1  MAĞAZA VE KATEGORİ', style='Premium.TLabelframe', padding=(12, 10))
         top.pack(fill='x', pady=(0, 12))
@@ -70,9 +75,12 @@ class StoreAssignmentWindow:
         self.stores = ttk.Combobox(row, textvariable=self.store, state='readonly', width=22)
         self.stores.pack(side='left', padx=(0, 12))
         self.stores.bind('<<ComboboxSelected>>', lambda _event: self._changed_store())
-        ttk.Label(row, text='Yeni mağaza kodu:').pack(side='left', padx=(5, 6))
+        ttk.Label(row, text='Yeni mağaza adı:').pack(side='left', padx=(5, 6))
         self.new_store = tk.StringVar()
         ttk.Entry(row, textvariable=self.new_store, width=18).pack(side='left')
+        ttk.Label(row, text='Kısa kod:').pack(side='left', padx=(5, 4))
+        self.new_store_short = tk.StringVar()
+        ttk.Entry(row, textvariable=self.new_store_short, width=9).pack(side='left')
         ttk.Button(row, text='Mağaza Oluştur', command=self.add_store).pack(side='left', padx=(6, 18))
         ttk.Label(row, text='Kategori:').pack(side='left', padx=(2, 5))
         self.category = tk.StringVar(value='')
@@ -82,11 +90,13 @@ class StoreAssignmentWindow:
         self.categories.bind('<<ComboboxSelected>>', lambda _event: self.refresh())
         ttk.Button(row, text='Listeyi Yenile', command=self.refresh).pack(side='left', padx=3)
 
-        main = ttk.Frame(body)
+        main = tk.PanedWindow(body, orient='horizontal', bg=PANEL, bd=0,
+                              sashwidth=7, sashrelief='raised',
+                              sashcursor='sb_h_double_arrow')
         main.pack(fill='both', expand=True)
         left = ttk.LabelFrame(main, text='2  YENİ ATANACAK MOCKUPLAR — sadece soldaki kutular ATAMA içindir',
                               style='Premium.TLabelframe', padding=9)
-        left.pack(side='left', fill='both', expand=True, padx=(0, 7))
+        main.add(left, minsize=430, sticky='nsew')
         filters = ttk.Frame(left)
         filters.pack(fill='x', pady=(2, 7))
         search_row = ttk.Frame(filters)
@@ -101,7 +111,7 @@ class StoreAssignmentWindow:
         ttk.Button(select_row, text='Kategorideki Tüm Uygunları Seç', command=self.select_all_available).pack(side='left')
         ttk.Button(select_row, text='Seçimi Temizle', command=self.clear_selection).pack(side='right')
         self.status = tk.StringVar(value='Önce mağaza seçin; ardından kategoriyi belirleyin.')
-        ttk.Label(left, textvariable=self.status, foreground='#cbd7ee').pack(anchor='w', pady=(0, 5))
+        ttk.Label(left, textvariable=self.status, foreground='#93A6C4').pack(anchor='w', pady=(0, 5))
         pager=ttk.Frame(left)
         pager.pack(fill='x',pady=(0,5))
         ttk.Button(pager,text='◀ Önceki',command=lambda:self.change_page(-1)).pack(side='left')
@@ -119,21 +129,26 @@ class StoreAssignmentWindow:
             self.pool.heading(key, text=title)
             self.pool.column(key, width=width, minwidth=45, stretch=stretch,
                              anchor='center' if key in ('mark','state') else 'w')
-        self.pool.tag_configure('available', foreground='#b9dfec')
-        self.pool.tag_configure('assigned_here', foreground='#6ef5aa')
-        self.pool.tag_configure('used_elsewhere', foreground='#fb9e9e')
-        self.pool.tag_configure('stale', foreground='#ffbc77')
+        if _table_tools is not None:
+            _table_tools.enhance_tree(self.pool, ('mark', 'uid', 'state', 'owner'),
+                                      min_width=40)
+        self.pool.tag_configure('available', foreground='#8DEBD5')
+        self.pool.tag_configure('assigned_here', foreground='#3FD98A')
+        self.pool.tag_configure('used_elsewhere', foreground='#FF9AA0')
+        self.pool.tag_configure('stale', foreground='#F0B84C')
         scroll = ttk.Scrollbar(left, orient='vertical', command=self.pool.yview)
         self.pool.configure(yscrollcommand=scroll.set)
         self.pool.pack(side='left', fill='both', expand=True)
         scroll.pack(side='right', fill='y')
+        if _table_tools is not None:
+            _table_tools.add_packed_horizontal_scrollbar(left, self.pool)
         self.pool.bind('<ButtonRelease-1>', self._toggle_row)
         self.pool.bind('<space>', self._toggle_keyboard)
         self.pool.bind('<<TreeviewSelect>>', self._preview_selected, add='+')
 
         right = ttk.LabelFrame(main, text='3  MEVCUT ATAMALAR — SAĞ SEÇİM YALNIZCA KALDIRMA İÇİN',
                                style='Premium.TLabelframe', padding=10)
-        right.pack(side='left', fill='both', expand=True, padx=(7, 0))
+        main.add(right, minsize=380, sticky='nsew')
         self.assigned_summary = tk.StringVar(value='Henüz mağaza seçilmedi.')
         self.assigned_summary_label = ttk.Label(right, textvariable=self.assigned_summary, wraplength=310)
         self.assigned_summary_label.pack(anchor='w', pady=(0, 5))
@@ -144,16 +159,21 @@ class StoreAssignmentWindow:
         for key, label, width in [('template','Kategori / Atanmış mockup',242),('condition','Durum',98)]:
             self.assigned.heading(key, text=label)
             self.assigned.column(key, width=width, minwidth=60, stretch=True)
-        self.assigned.tag_configure('healthy',foreground='#6ef5aa')
-        self.assigned.tag_configure('stale',foreground='#fdba74')
+        if _table_tools is not None:
+            _table_tools.enhance_tree(self.assigned, ('template', 'condition'),
+                                      min_width=60)
+        self.assigned.tag_configure('healthy',foreground='#3FD98A')
+        self.assigned.tag_configure('stale',foreground='#F0B84C')
         self.assigned.bind('<<TreeviewSelect>>', lambda _event: self._assigned_selection_changed())
         self.assigned.pack(side='left', fill='x', expand=True)
         assigned_scroll = ttk.Scrollbar(assigned_table, orient='vertical', command=self.assigned.yview)
         assigned_scroll.pack(side='right', fill='y')
         self.assigned.configure(yscrollcommand=assigned_scroll.set)
+        if _table_tools is not None:
+            _table_tools.add_packed_horizontal_scrollbar(assigned_table, self.assigned)
         self.assigned_selected_count = tk.StringVar(value='0 atama seçildi')
         ttk.Label(right, textvariable=self.assigned_selected_count,
-                  foreground='#cbd7ee').pack(anchor='w', pady=(0, 4))
+                  foreground='#93A6C4').pack(anchor='w', pady=(0, 4))
         choose = ttk.Frame(right)
         choose.pack(fill='x', pady=(0, 5))
         ttk.Button(choose, text='Tüm Atamaları Seç',
@@ -177,7 +197,7 @@ class StoreAssignmentWindow:
         self.marked_count = tk.StringVar(value='0 mockup seçildi')
         ttk.Label(bottom, textvariable=self.marked_count, font=('Segoe UI', 12, 'bold')).pack(side='left')
         ttk.Label(bottom, text='Kırmızı: başka mağazada · Yeşil: bu mağazada · Mavi: atanabilir',
-                  foreground='#cbd7ee').pack(side='left', padx=22)
+                  foreground='#93A6C4').pack(side='left', padx=22)
         ttk.Button(bottom, text='Kapat', command=self.pop.destroy).pack(side='right')
         self.assign_button=ttk.Button(bottom, text='✓ SOLDAN SEÇİLENLERİ MAĞAZAYA ATA',
                    style='Premium.Primary.TButton', command=self.assign)
@@ -256,7 +276,11 @@ class StoreAssignmentWindow:
         try:
             name = self.new_store.get().strip()
             self.mgr.add_store(name)
+            short = self.new_store_short.get().strip()
+            if short:
+                self.mgr.set_short_code(name, short)
             self.new_store.set('')
+            self.new_store_short.set('')
             self.reload_stores(name)
             self.on_change()
         except (ValueError, OSError) as exc:
@@ -493,7 +517,7 @@ class StoreAssignmentWindow:
         ttk.Label(body,text=f'Kategori: {CATEGORY_LABELS_TR.get(category,category)}',
                   font=('Segoe UI',12,'bold')).pack(anchor='w',pady=(4,8))
         ttk.Label(body,text=f'YALNIZCA aşağıdaki {len(names)} onaylı mockup atanacak.',
-                  foreground='#6ef5aa',font=('Segoe UI',12,'bold')).pack(anchor='w',pady=(0,9))
+                  foreground='#3FD98A',font=('Segoe UI',12,'bold')).pack(anchor='w',pady=(0,9))
         ttk.Label(body,text='Aynı HAM baskı tasarımını başka mağazada farklı mockup ile kullanabilirsin.',
                   wraplength=630).pack(anchor='w',pady=(0,7))
         content=ttk.Frame(body)
@@ -504,6 +528,9 @@ class StoreAssignmentWindow:
         sb=ttk.Scrollbar(content,orient='vertical',command=listbox.yview)
         sb.pack(side='right',fill='y')
         listbox.configure(yscrollcommand=sb.set)
+        if _table_tools is not None:
+            _table_tools.attach_listbox_tooltip(listbox)
+            _table_tools.add_listbox_xscroll(listbox)
         for i,name in enumerate(names,1):
             listbox.insert('end',f'{i:03d}  {name}')
         result=[False]
@@ -560,7 +587,7 @@ class StoreAssignmentWindow:
         body.pack(fill='both',expand=True)
         ttk.Label(body,text=f'Mağaza: {store}',font=('Segoe UI',15,'bold')).pack(anchor='w')
         ttk.Label(body,text=f'YALNIZCA seçilen {len(names)} mağaza eşleştirmesi kaldırılacak.',
-                  font=('Segoe UI',12,'bold'),foreground='#fbbf77').pack(anchor='w',pady=(8,5))
+                  font=('Segoe UI',12,'bold'),foreground='#F0B84C').pack(anchor='w',pady=(8,5))
         ttk.Label(body,text='Şablon dosyaları, onaylı maskeler, dört köşeler, üretim geçmişi ve Excel çıktıları silinmez. '
                   'Kaldırılan mockup başka mağazaya yeniden atanabilir.',
                   wraplength=650).pack(anchor='w',pady=(0,10))
@@ -572,6 +599,9 @@ class StoreAssignmentWindow:
         sb=ttk.Scrollbar(holder,orient='vertical',command=lst.yview)
         sb.pack(side='right',fill='y')
         lst.configure(yscrollcommand=sb.set)
+        if _table_tools is not None:
+            _table_tools.attach_listbox_tooltip(lst)
+            _table_tools.add_listbox_xscroll(lst)
         for i,name in enumerate(names,1):
             lst.insert('end',f'{i:03d}  {name}')
         result=[False]

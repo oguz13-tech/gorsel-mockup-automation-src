@@ -21,11 +21,22 @@ import sys
 import uuid
 import time
 import contextlib
+import unicodedata
 from pathlib import Path
 from typing import Callable
 
+# The tools page launches this file as a standalone child process on Windows.
+# Make the shared CODEX_ACTIVE/MERKEZ modules importable in that mode; package
+#-relative imports are not available when ``__package__`` is empty.
+_TOOL_PACKAGE_ROOT = Path(__file__).resolve().parent
+_TOOL_ACTIVE_ROOT = _TOOL_PACKAGE_ROOT.parent
+_TOOL_MERKEZ_ROOT = _TOOL_ACTIVE_ROOT / "MERKEZ"
+for _tool_import_path in (_TOOL_ACTIVE_ROOT, _TOOL_MERKEZ_ROOT, _TOOL_PACKAGE_ROOT):
+    if str(_tool_import_path) not in sys.path:
+        sys.path.insert(0, str(_tool_import_path))
+
 import requests
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 from PIL import Image
 
 try:
@@ -67,7 +78,168 @@ except ImportError:
 
 
 SOURCE_ROOT = Path(__file__).resolve().parent.parent
+PROJECT_ROOT = SOURCE_ROOT.parent
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp", ".bmp"}
+_PETEK_MEASUREMENT_RANK = {"76": 0, "96": 1, "116": 2, "136": 3}
+_PETEK_MEASUREMENT_PREFIX = re.compile(r"^(76|96|116|136)(?:CM)?[-_]", re.IGNORECASE)
+_PETEK_MEASUREMENT_ANY = re.compile(r"(?:^|[-_])((?:76|96|116|136))(?:CM)?(?:[-_]|$)", re.IGNORECASE)
+
+
+def excel_row_sort_key(path: object) -> tuple:
+    """Filename-only counterpart used by the independent link utility."""
+    name = Path(str(path)).name.casefold()
+    match = _PETEK_MEASUREMENT_PREFIX.match(name)
+    if match:
+        rank = _PETEK_MEASUREMENT_RANK.get(match.group(1), 4)
+        base = name[match.end():]
+    else:
+        embedded = _PETEK_MEASUREMENT_ANY.search(name)
+        rank = _PETEK_MEASUREMENT_RANK.get(embedded.group(1), 4) if embedded else 4
+        base = name
+    chunks = tuple((0, int(part)) if part.isdigit() else (1, part)
+                   for part in re.split(r'(\d+)', base) if part)
+    return rank, chunks
+
+
+def _petek_measurement_and_code(path: Path) -> tuple[str, str]:
+    """Read the PETEK measurement and stable design code from an output name.
+
+    Overlay outputs use names such as ``CODE__76CM__S...__OV....png`` while
+    older exports use ``76-CODE``.  Keep the measurement explicit in Excel and
+    never derive ordering from lexical filename order.
+    """
+    stem = Path(path).stem
+    match = _PETEK_MEASUREMENT_ANY.search(stem)
+    if not match:
+        return "", stem
+    measurement = match.group(1)
+    code = stem[:match.start()].strip("_- ") or stem[match.end():].split("__", 1)[0]
+    return measurement, code
+
+
+def _normalized_business_text(value: object) -> str:
+    text = unicodedata.normalize("NFKD", str(value or ""))
+    text = "".join(ch for ch in text if not unicodedata.combining(ch))
+    return re.sub(r"[^a-z0-9]+", "", text.casefold())
+
+
+def _overlay_stem(path: Path) -> str:
+    """Remove the immutable overlay suffix while preserving the source name."""
+    stem = Path(path).stem
+    return re.split(r"__(?:76|96|116|136)(?:CM)?__", stem, maxsplit=1, flags=re.IGNORECASE)[0]
+
+
+def _measurement_from_path(path: Path, root: Path) -> str:
+    """Resolve PETEK size from categorized folders first, then filename."""
+    try:
+        relative_parts = path.resolve().relative_to(root.resolve()).parts[:-1]
+    except ValueError:
+        relative_parts = path.parts[:-1]
+    for part in reversed(relative_parts):
+        match = re.fullmatch(r"(?:PETEK[_ -]*)?(76|96|116|136)(?:CM)?", str(part), re.IGNORECASE)
+        if match:
+            return match.group(1)
+    match = _PETEK_MEASUREMENT_ANY.search(path.stem)
+    return match.group(1) if match else ""
+
+
+def _mapping_workbooks() -> list[Path]:
+    candidates = [
+        PROJECT_ROOT / "4_EXCEL_YUKLEME_LISTELERI" / "Urun_Yukleme_Listesi.xlsx",
+        PROJECT_ROOT / "4_EXCEL_YUKLEME_LISTELERI" / "Trendyol_Urun_Yukleme_Listesi.xlsx",
+    ]
+    candidates.extend(sorted((PROJECT_ROOT / "4_EXCEL_YUKLEME_LISTELERI").glob("*.xlsx"))
+                         if (PROJECT_ROOT / "4_EXCEL_YUKLEME_LISTELERI").is_dir() else [])
+    unique = []
+    for path in candidates:
+        if path.is_file() and path not in unique:
+            unique.append(path)
+    return unique
+
+
+def _load_business_code_index() -> tuple[dict[str, dict], list[Path]]:
+    """Load existing stock/barcode/model identities read-only from Excel."""
+    aliases = {
+        "stock": {"stok kodu", "stok", "sku", "satici stok kodu", "seller stock code"},
+        "barcode": {"barkod", "barcode", "ean"},
+        "model": {"model kodu", "model code", "model"},
+        "category": {"kategori", "category"},
+        # Some existing workbooks contain legacy Turkish-encoding spellings
+        # (for example ``Ham Bask� Dosyas�``); include their normalized forms.
+        "raw": {"ham baski dosyasi", "ham bask dosyas", "ham gorsel", "tasarim", "design", "source file"},
+        "mockup": {"mockup dosya adi", "mockup dosya ad", "mockup", "dosya adi", "file name"},
+    }
+    index: dict[str, dict] = {}
+    used = []
+    for workbook_path in _mapping_workbooks():
+        try:
+            workbook = load_workbook(workbook_path, read_only=True, data_only=True)
+            used.append(workbook_path)
+            for sheet in workbook.worksheets:
+                rows = sheet.iter_rows(values_only=True)
+                header = next(rows, None)
+                if not header:
+                    continue
+                columns = {}
+                for number, value in enumerate(header):
+                    normalized = _normalized_business_text(value)
+                    for field, names in aliases.items():
+                        if normalized in {_normalized_business_text(x) for x in names}:
+                            columns.setdefault(field, number)
+                if not {"stock", "barcode", "model"}.issubset(columns):
+                    continue
+                for values in rows:
+                    def cell(field):
+                        column = columns.get(field)
+                        value = values[column] if column is not None and column < len(values) else ""
+                        return str(value or "").strip()
+                    record = {
+                        "stock": cell("stock"), "barcode": cell("barcode"),
+                        "model": cell("model"), "category": cell("category"),
+                        "raw": cell("raw"), "mockup": cell("mockup"),
+                        "mapping_file": str(workbook_path),
+                    }
+                    keys = {record["raw"], record["mockup"]}
+                    for value in tuple(keys):
+                        if value:
+                            keys.add(Path(value).stem)
+                    for key in keys:
+                        token = _normalized_business_text(key)
+                        if token:
+                            index.setdefault(token, record)
+            workbook.close()
+        except Exception:
+            continue
+    return index, used
+
+
+def _measurement_code(value: str, measurement: str) -> str:
+    text = str(value or "").strip()
+    if not text or not measurement:
+        return text
+    for prefix in ("76-", "96-", "116-", "136-"):
+        if text.startswith(prefix):
+            text = text[len(prefix):]
+            break
+    return f"{measurement}-{text}"
+
+
+def _resolve_business_record(source: Path, root: Path, index: dict[str, dict]) -> tuple[dict | None, str, str]:
+    measurement = _measurement_from_path(source, root)
+    stem = _overlay_stem(source)
+    candidates = [source.name, source.stem, stem]
+    _, filename_code = _petek_measurement_and_code(source)
+    if filename_code:
+        candidates.append(filename_code)
+    record = next((index.get(_normalized_business_text(candidate)) for candidate in candidates
+                   if _normalized_business_text(candidate) in index), None)
+    if record is None:
+        return None, measurement, "KOD_ESLESMEDI"
+    resolved = dict(record)
+    resolved["measurement"] = measurement
+    resolved["stock"] = _measurement_code(record["stock"], measurement)
+    resolved["barcode"] = _measurement_code(record["barcode"], measurement)
+    return resolved, measurement, "KOD_ESLESTI"
 
 
 def resolve_runtime_root() -> Path:
@@ -84,6 +256,11 @@ def _ui():
     from tkinter import filedialog, messagebox, simpledialog
 
     root = tk.Tk()
+    try:
+        from dark_theme_v42 import apply_dark_theme
+        apply_dark_theme(root)
+    except Exception:
+        pass
     root.withdraw()
     try:
         root.attributes("-topmost", True)
@@ -873,13 +1050,17 @@ def upload_to_imgbb(image_path: Path, api_keys: list[str]) -> str | None:
     return None
 
 
-def images_to_link_excel(files: list[Path]) -> tuple[Path, int, int]:
-    selected = [Path(p).resolve() for p in files]
+def images_to_link_excel(files: list[Path], root: Path | None = None) -> tuple[Path, int, int]:
+    selected = [Path(p).resolve() for p in files if Path(p).is_file()]
     if not selected:
-        raise ValueError("Linke dönüştürülecek görsel seçilmedi.")
-    parents = {p.parent for p in selected}
-    if len(parents) != 1:
-        raise ValueError("Görseller aynı klasörden seçilmelidir.")
+        raise ValueError("Seçilen klasörde linklenecek görsel bulunamadı.")
+    root = Path(root or selected[0].parent).resolve()
+    index, mapping_files = _load_business_code_index()
+    if not index:
+        raise RuntimeError(
+            "Stok/barkod/model kod eşleştirme Excel'i bulunamadı. "
+            "Önce 4_EXCEL_YUKLEME_LISTELERI/Urun_Yukleme_Listesi.xlsx dosyasını hazırlayın."
+        )
 
     keys = _imgbb_keys()
     if not keys:
@@ -891,22 +1072,40 @@ def images_to_link_excel(files: list[Path]) -> tuple[Path, int, int]:
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = "Görsel Linkleri"
-    sheet.append(["Dosya Adı", "Resim Linki", "Sistem Dosya Yolu"])
+    sheet.append(["Sıra", "Ölçü (cm)", "Stok Kodu", "Barkod", "Model Kodu",
+                  "Kategori", "Dosya Adı", "Resim Linki", "Durum", "Sistem Dosya Yolu"])
 
     success = 0
     failed = 0
-    for index, source in enumerate(selected, start=1):
-        print(f"[{index}/{len(selected)}] Yükleniyor: {source.name}")
+    unresolved = 0
+    ordered = sorted(selected, key=lambda path: (
+        _PETEK_MEASUREMENT_RANK.get(_measurement_from_path(path, root), 4),
+        _normalized_business_text(_overlay_stem(path)),
+        _normalized_business_text(path.name),
+    ))
+    for number, source in enumerate(ordered, start=1):
+        business, measurement, status = _resolve_business_record(source, root, index)
+        if business is None:
+            unresolved += 1
+            failed += 1
+            print(f"[{number}/{len(ordered)}] KOD EŞLEŞMEDİ: {source.name}")
+            sheet.append([number, measurement, "", "", "", "", source.name, "", status, str(source)])
+            continue
+        print(f"[{number}/{len(ordered)}] Yükleniyor: {source.name} ({measurement or 'ölçüsüz'})")
         url = upload_to_imgbb(source, keys)
         if url:
             success += 1
-            sheet.append([source.name, url, str(source)])
+            sheet.append([number, measurement, business["stock"], business["barcode"],
+                          business["model"], business["category"], source.name, url,
+                          "LINK_HAZIR", str(source)])
         else:
             failed += 1
-            sheet.append([source.name, "YÜKLEME_HATASI", str(source)])
+            sheet.append([number, measurement, business["stock"], business["barcode"],
+                          business["model"], business["category"], source.name,
+                          "YÜKLEME_HATASI", "YUKLEME_HATASI", str(source)])
 
     output = _unique_destination(
-        selected[0].parent / "Gorsel_Linkleri.xlsx"
+        root / "Gorsel_Linkleri.xlsx"
     )
     workbook.save(output)
     return output, success, failed
@@ -1240,7 +1439,9 @@ def interactive_recursive_png() -> int:
                 message,
                 parent=root,
             )
-            return 1
+            # Partial upload is recorded in the workbook; do not make the
+            # launcher report a generic exit-code failure after useful output.
+            return 0
 
         messagebox.showinfo(
             "Recursive PNG — Tamamlandı",
@@ -1304,27 +1505,35 @@ def interactive_watermark() -> int:
 def interactive_links() -> int:
     root, filedialog, messagebox, _simpledialog = _ui()
     try:
-        files = filedialog.askopenfilenames(
-            title="Linke Dönüştürülecek Görselleri Seçin",
-            filetypes=[
-                ("Görseller", "*.png *.jpg *.jpeg *.webp *.bmp"),
-                ("Tüm Dosyalar", "*.*"),
-            ],
+        source_folder = filedialog.askdirectory(
+            title="76 / 96 / 116 / 136 klasörlerini içeren ana görsel klasörünü seçin"
+        )
+        if not source_folder:
+            return 0
+        source_root = Path(source_folder).resolve()
+        files = sorted(
+            path for path in source_root.rglob("*")
+            if path.is_file() and path.suffix.casefold() in IMAGE_EXTS
+            and path.name.casefold() != "gorsel_linkleri.xlsx"
         )
         if not files:
-            return 0
+            raise ValueError("Seçilen klasörün altında PNG/JPG/WEBP görsel bulunamadı.")
         output, success, failed = images_to_link_excel(
-            [Path(p) for p in files]
+            files, root=source_root
         )
         _open_folder(output.parent)
         if failed:
             messagebox.showwarning(
                 "İşlem Tamamlandı",
-                f"Başarılı: {success}\nHatalı: {failed}\n"
+                f"Başarılı link: {success}\nEşleşmeyen/yüklenemeyen: {failed}\n"
+                "Kod eşleşmeyen görseller buluta gönderilmedi.\n"
                 f"Excel: {output}",
                 parent=root,
             )
-            return 1
+            # The workbook is valid and contains all successful links.  A
+            # partial upload is reported in the dialog/Excel instead of being
+            # misclassified by the launcher as a process crash.
+            return 0
         messagebox.showinfo(
             "Tamamlandı",
             f"{success} görsel linke dönüştürüldü.\nExcel: {output}",
